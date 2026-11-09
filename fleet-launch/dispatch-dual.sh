@@ -51,7 +51,7 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
 GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
-ticket=""; lock=""; marker=""; FLEET_CAP=0
+ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0
 gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
 mkdir -p "$OUT"
 
@@ -59,7 +59,8 @@ drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
 ensure_ticket() {
   [ -n "$ticket" ] && [ -f "$ticket" ] && return
   mkdir -p "$GMK_Q"
-  ticket="$GMK_Q/${TICKET_NS:-$(date +%s%N)}-$SEAT"
+  ticket_number=${TICKET_NS:-${ticket_number:-$(date +%s%N)}}
+  ticket="$GMK_Q/$ticket_number-$SEAT"
   echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
   echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
 }
@@ -68,12 +69,14 @@ yield_ticket() {
 }
 restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
 repository_hold_applies() {
-  local raw compact
+  local raw compact content
   HOLD_KINDS=all
-  HOLD_REASON=$(sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
-  HOLD_UNTIL=$(sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  # Read the file once, so reason, until and kinds all come from one version of it.
+  content=$(cat "$REPO_HOLD_FILE" 2>/dev/null)
+  HOLD_REASON=$(printf '%s\n' "$content" | sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }')
+  HOLD_UNTIL=$(printf '%s\n' "$content" | sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }')
   [ -e "$REPO_HOLD_FILE" ] || return 1
-  raw=$(sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  raw=$(printf '%s\n' "$content" | sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }')
   compact=$(printf '%s' "$raw" | tr -d '[:space:]')
   case "$compact" in
     dispatch|resume|dispatch,resume|resume,dispatch) HOLD_KINDS=$compact ;;
@@ -82,11 +85,28 @@ repository_hold_applies() {
   case ",$HOLD_KINDS," in *",$1,"*) return 0 ;; esac
   return 1
 }
-log_repository_hold() {
+repository_hold_details() {
   local details="kinds=$HOLD_KINDS"
   [ -n "$HOLD_REASON" ] && details="$details reason=$HOLD_REASON"
   [ -n "$HOLD_UNTIL" ] && details="$details until=$HOLD_UNTIL"
-  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $details: yield FIFO head"
+  printf '%s' "$details"
+}
+log_repository_hold() {
+  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $(repository_hold_details): yield FIFO head"
+}
+# launch_hold_applies: succeeds when a hold applying to an impl launch exists, setting HOLD_SOURCE
+# (repository or gmktec) and HOLD_DESC, the text of the hold it read.
+launch_hold_applies() {
+  if repository_hold_applies dispatch; then
+    HOLD_SOURCE=repository; HOLD_DESC="repository hold ($REPO_HOLD_FILE): $(repository_hold_details)"
+    return 0
+  fi
+  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
+    HOLD_SOURCE=gmktec
+    HOLD_DESC="gmktec hold ($FLEET_LAUNCH_HOLD_FILE): $(tr '\n' ' ' < "$FLEET_LAUNCH_HOLD_FILE" 2>/dev/null | cut -c1-300 | sed 's/ *$//')"
+    return 0
+  fi
+  return 1
 }
 give_up() {
   echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
@@ -103,14 +123,14 @@ read_fleet_cap() { FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/de
 
 rows_count() { if [ "$1" = U ]; then echo U; else printf '%s' "$1" | grep -c .; fi; }
 
-# marker_snapshot: the items of the live in-flight markers, one per line, or U
-# when the directory cannot be read.  Taken BEFORE the boards are read: a
-# launcher drops its marker only after a board lists its run, so a marker that
-# vanishes after this snapshot belongs to a run the later board read lists.
-# Reading the boards first undercounted a run that listed between the two
-# reads (bd-ib-uhcn36, run 01M6H3VFB451).
+# marker_snapshot: live in-flight marker paths, item ids and listed observations,
+# tab-separated, or U when the directory cannot be read. Taken BEFORE the
+# boards are read: a launcher drops its marker only after a board lists its
+# run, so a marker that vanishes after this snapshot belongs to a run the later
+# board read lists. Reading the boards first undercounted a run that listed
+# between the two reads (bd-ib-uhcn36, run 01M6H3VFB451).
 marker_snapshot() {
-  local f p it items=""
+  local f p it listed entries=""
   mkdir -p "$INFLIGHT" 2>/dev/null
   [ -d "$INFLIGHT" ] && [ -r "$INFLIGHT" ] && [ -x "$INFLIGHT" ] || { echo U; return; }
   for f in "$INFLIGHT"/*; do
@@ -122,19 +142,34 @@ marker_snapshot() {
     if ! { [ -n "$p" ] && kill -0 "$p" 2>/dev/null; }; then
       [ -n "$it" ] && pgrep -u "$(id -u)" -f -- "drive.py .*--action impl:${it}( |$)" >/dev/null 2>&1 || continue
     fi
-    items="$items$it
-"
+    listed=0
+    grep -qx 'listed=1' "$f" 2>/dev/null && listed=1
+    entries="${entries}${f}"$'\t'"${it}"$'\t'"${listed}"$'\n'
   done
-  printf '%s' "$items"
+  printf '%s' "$entries"
 }
 
-# unlisted_markers <snapshot> <listed-rows>: the snapshot's launches whose run the (later) board read does not list.
+# mark_marker_listed <marker>: retain the observed transition in a marker whose
+# launcher is gone but whose drive can still merge-poll after the run ends.
+mark_marker_listed() {
+  local marker="$1"
+  [ -e "$marker" ] || return
+  grep -qx 'listed=1' "$marker" 2>/dev/null || printf 'listed=1\n' >> "$marker" 2>/dev/null
+}
+
+# unlisted_markers <snapshot> <listed-rows>: count a snapshot marker until its
+# run lists. After a board observation has recorded that transition, the marker
+# stays out of the count even after the run has left the board.
 unlisted_markers() {
-  local snapshot="$1" listed="$2" it n=0
+  local snapshot="$1" listed="$2" marker it was_listed n=0
   [ "$snapshot" = U ] && { echo U; return; }
-  while IFS= read -r it; do
+  while IFS=$'\t' read -r marker it was_listed; do
     [ -n "$it" ] || continue
-    printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}' && continue
+    if printf '%s\n' "$listed" | awk -v it="$it" '$4==it {found=1} END{exit !found}'; then
+      mark_marker_listed "$marker"
+      continue
+    fi
+    [ "$was_listed" = 1 ] && continue
     n=$((n + 1))
   done <<EOF_SNAPSHOT
 $snapshot
@@ -262,126 +297,189 @@ evaluated=0
 if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
   ensure_ticket
 fi
-while [ -z "$target" ]; do
-  if repository_hold_applies dispatch; then
-    ensure_ticket
-    yield_ticket repository-hold
-    log_repository_hold
-    sleep "$FLEET_LAUNCH_POLL_S"
-    continue
-  fi
-  restore_ticket
-  if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
-    ahead=$(oldest_live_ticket "$GMK_Q")
-    if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
-      [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
-      evaluated=1
-      # Spend FIFO wait time on this launcher's own Definition-of-Done
-      # preflight. Do it once while queued; launch_preflight decides whether
-      # the cached pass is still reusable when this ticket reaches the head.
-      if [ "$queue_preflight_done" = 0 ]; then launch_preflight; queue_preflight_done=1; fi
-      echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
+# --- holds re-read until admission --------------------------------------------------------------
+# After the drive is invoked the launcher re-reads every hold that applies to its launch on each poll
+# it makes while waiting for the run to list, until the item reads active, the run lists or the
+# drive exits. A hold set while the item still reads something other than active stops the drive.
+drive_admitted=0
+drive_stopped=0
+item_status() {
+  local out
+  out=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" status "$plugin" "$REPO" "$ITEM" 2>/dev/null) || return 1
+  out=$(printf '%s\n' "$out" | sed -n 's/^LEDGER-STATUS //p' | tail -n 1)
+  [ -n "$out" ] && printf '%s' "$out"
+}
+descendant_pids() {
+  local child
+  for child in $(pgrep -P "$1" 2>/dev/null); do descendant_pids "$child"; echo "$child"; done
+}
+stop_drive() {
+  local pids deadline
+  pids="$(descendant_pids "$drive_pid") $drive_pid"
+  # shellcheck disable=SC2086 # a word-split pid list is the intent
+  kill -TERM $pids 2>/dev/null
+  deadline=$(( $(date +%s) + FLEET_LAUNCH_STOP_GRACE_S ))
+  while kill -0 "$drive_pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.1; done
+  # shellcheck disable=SC2086
+  kill -KILL $pids 2>/dev/null
+  wait "$drive_pid" 2>/dev/null
+}
+# drive_hold_poll: one poll. Returns 10 after it stopped the drive for a hold; otherwise 0.
+drive_hold_poll() {
+  local status
+  [ "$drive_admitted" = 1 ] && return 0
+  launch_hold_applies || return 0
+  status=$(item_status)
+  if [ "$status" = active ]; then drive_admitted=1; return 0; fi
+  stop_drive
+  rm -f "$marker"; marker=""; release_lock
+  status=$(item_status) || status=active
+  if [ "$status" = active ]; then stopped_after_admission; fi
+  ensure_ticket
+  [ "$HOLD_SOURCE" = repository ] && yield_ticket repository-hold
+  echo "$(date -u +%FT%TZ) hold set before admission: stopped the drive for $ITEM (ticket ${ticket_number:-none}): $HOLD_DESC"
+  drive_stopped=1
+  return 10
+}
+# stopped_after_admission: the drive admitted the item before the stop took effect. The terminal
+# line is written first, then the one ledger comment; no ticket is re-taken.
+stopped_after_admission() {
+  local body
+  echo "$(date -u +%FT%TZ) hold set before admission: stopped the drive for $ITEM (ticket ${ticket_number:-none}): $HOLD_DESC"
+  echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=stopped-after-admission"
+  body="Fleet launcher $SEAT stopped its drive for $ITEM after a hold appeared (${HOLD_DESC}), but the drive had already admitted the item, so the item reads active with a pending claim stamp. This exit was not a run ending: ticket ${ticket_number:-none} was dropped and not re-taken. Remedy: the operator move valve (drive --action move:$ITEM:<status>) for the claim."
+  (cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" comment "$plugin" "$REPO" "$ITEM" "$body") >/dev/null 2>&1 \
+    || echo "$(date -u +%FT%TZ) ledger comment for $ITEM failed: the stopped-after-admission note was not recorded"
+  exit 75
+}
+
+while :; do
+  target=""; drive_stopped=0; drive_admitted=0
+  while [ -z "$target" ]; do
+    if repository_hold_applies dispatch; then
+      ensure_ticket
+      yield_ticket repository-hold
+      log_repository_hold
+      sleep "$FLEET_LAUNCH_POLL_S"
+      continue
     fi
-  fi
-  [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
-  evaluated=1
-  gmk_idle=
-  if ! fleet_green; then echo "$(date -u +%FT%TZ) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
-  launch_preflight
-  if [ -n "${ONLY_HL:-}" ]; then
-    if [ "$hl_live" != U ] && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
-      echo "$(date -u +%FT%TZ) mi-homelab green (live=$hl_live fleet=$fleet): queue for the gmktec mutex"
+    restore_ticket
+    if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
+      ahead=$(oldest_live_ticket "$GMK_Q")
+      if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
+        [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+        evaluated=1
+        # Spend FIFO wait time on this launcher's own Definition-of-Done
+        # preflight. Do it once while queued; launch_preflight decides whether
+        # the cached pass is still reusable when this ticket reaches the head.
+        if [ "$queue_preflight_done" = 0 ]; then launch_preflight; queue_preflight_done=1; fi
+        echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
+      fi
+    fi
+    [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+    evaluated=1
+    gmk_idle=
+    if ! fleet_green; then echo "$(date -u +%FT%TZ) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
+    if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
+    launch_preflight
+    if [ -n "${ONLY_HL:-}" ]; then
+      if [ "$hl_live" != U ] && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
+        echo "$(date -u +%FT%TZ) mi-homelab green (live=$hl_live fleet=$fleet): queue for the gmktec mutex"
+        if take_mutex "$GMK_Q" "$GMK_LOCK"; then
+          taken=$(date +%s)
+          if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
+            if repository_hold_applies dispatch; then
+              rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+            else
+              drop_ticket; target=mi-homelab; break
+            fi
+          fi
+          [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
+          echo "$(date -u +%FT%TZ) under the gmktec mutex: mi-homelab no longer green (hl=$hl_live fleet=$fleet): release"; release_lock
+        fi
+      else echo "$(date -u +%FT%TZ) mi-homelab not green: live=$hl_live cap=$FLEET_LAUNCH_HL_CAP"; fi
+      sleep "$FLEET_LAUNCH_POLL_S"; continue
+    fi
+    if { [ -z "${CAPTURE_NULL:-}" ] || [ "${CAPTURE_EXPECT:-}" = petri ]; } && gmk_green; then
+      echo "$(date -u +%FT%TZ) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle fleet=$fleet): queue for the gmktec mutex"
       if take_mutex "$GMK_Q" "$GMK_LOCK"; then
         taken=$(date +%s)
-        if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
+        if bind_count petri && gmk_green; then
           if repository_hold_applies dispatch; then
             rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
           else
-            drop_ticket; target=mi-homelab; break
+            drop_ticket; target=petri; break
           fi
         fi
         [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
-        echo "$(date -u +%FT%TZ) under the gmktec mutex: mi-homelab no longer green (hl=$hl_live fleet=$fleet): release"; release_lock
+        echo "$(date -u +%FT%TZ) under the gmktec mutex: no longer green (gmktec=$gmk_live fleet=$fleet): release"; release_lock
       fi
-    else echo "$(date -u +%FT%TZ) mi-homelab not green: live=$hl_live cap=$FLEET_LAUNCH_HL_CAP"; fi
-    sleep "$FLEET_LAUNCH_POLL_S"; continue
-  fi
-  if { [ -z "${CAPTURE_NULL:-}" ] || [ "${CAPTURE_EXPECT:-}" = petri ]; } && gmk_green; then
-    echo "$(date -u +%FT%TZ) gmktec green (live=$gmk_live hl=$hl_live idle=$gmk_idle fleet=$fleet): queue for the gmktec mutex"
-    if take_mutex "$GMK_Q" "$GMK_LOCK"; then
-      taken=$(date +%s)
-      if bind_count petri && gmk_green; then
-        if repository_hold_applies dispatch; then
-          rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
-        else
-          drop_ticket; target=petri; break
-        fi
-      fi
-      [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
-      echo "$(date -u +%FT%TZ) under the gmktec mutex: no longer green (gmktec=$gmk_live fleet=$fleet): release"; release_lock
+      sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
-    sleep "$FLEET_LAUNCH_POLL_S"; continue
-  fi
-  echo "$(date -u +%FT%TZ) no factory green: gmktec=$gmk_live (idle ${gmk_idle:-?}) markers=$markers fleet=$fleet/$FLEET_CAP"
-  sleep "$FLEET_LAUNCH_POLL_S"
-done
-
-# Release the launch mutex right after the binding count; the in-flight marker stays until the run
-# lists or the dispatch exits.
-release_lock; echo "$(date -u +%FT%TZ) mutex released after the count (marker kept)"
-if [ "$target" = petri ]; then
-  FABRO_DEV_TOKEN__petri=$(ssh -o BatchMode=yes "$FLEET_LAUNCH_GMK_SSH" cat "$FLEET_LAUNCH_GMK_SERVER_ENV" | sed -n 's/^FABRO_DEV_TOKEN=//p' | tail -n 1)
-  export FABRO_DEV_TOKEN__petri
-  tserver=$GMK
-else
-  tserver=$HL
-fi
-if [ -n "${CAPTURE_NULL:-}" ]; then
-  [ "$target" = "${CAPTURE_EXPECT:-}" ] || { echo "CAPTURE_NULL but target=$target (expected ${CAPTURE_EXPECT:-unset}): refuse"; exit 70; }
-  unset LIVESPEC_FABRO_FACTORY; echo "$(date -u +%FT%TZ) CAPTURE_NULL: LIVESPEC_FABRO_FACTORY unset, no --factory"
-else
-  export LIVESPEC_FABRO_FACTORY=$target
-fi
-git -C "$REPO" fetch -q origin && git -C "$REPO" merge --ff-only -q origin/master
-build=$(installed_build)
-plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$build"
-build_version=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$plugin/plugin.json" 2>/dev/null)
-cred=$(cd "$REPO" && timeout 120 "$WRAP" -- python3 "$plugin/scripts/bin/dispatcher.py" claude-cred-status 2>/dev/null)
-printf '%s\n' "$cred" | grep -q "is usable" || { echo "$(date -u +%FT%TZ) credential probe NOT usable: hold, no launch"; printf '%s\n' "$cred" | tail -3; rm -f "$marker"; marker=""; release_lock; exit 75; }
-echo "$(date -u +%FT%TZ) credential probe usable (HTTP 200)"
-rcout=$(ready_check); rcrc=$?
-if [ $rcrc != 0 ]; then echo "$(date -u +%FT%TZ) ready-set re-check refused before launch: $rcout"; rm -f "$marker"; marker=""; release_lock; exit 3; fi
-echo "$(date -u +%FT%TZ) LAUNCH target=$target head=$(git -C "$REPO" rev-parse --short HEAD) build=$build version=${build_version:-?}"
-if [ -n "${RELEASE_BLOCKED:-}" ]; then
-  rel=$(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "resolve-blocked:${ITEM}:ready" --invoker "claude:$SEAT" --json 2>&1); rrc=$?
-  echo "$(date -u +%FT%TZ) resolve-blocked:${ITEM}:ready rc=$rrc $(printf '%s' "$rel" | tr '\n' ' ' | cut -c1-300)"
-  [ $rrc = 0 ] || { echo "release refused: no launch"; exit 75; }
-fi
-(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
-drive_pid=$!
-if [ -n "${CAPTURE_NULL:-}" ]; then
-  # Watch for the first fabro run of THIS item and check that its argv names the expected server.
-  while kill -0 "$drive_pid" 2>/dev/null; do
-    fp=""
-    for p in $(pgrep -f "fabro run"); do a=$p; while [ "$a" -gt 1 ]; do [ "$a" = "$drive_pid" ] && { fp=$p; break 2; }; a=$(ps -o ppid= -p "$a" 2>/dev/null | tr -d ' '); [ -n "$a" ] || break; done; done
-    if [ -n "$fp" ]; then
-      argv=$(tr '\0' ' ' < "/proc/$fp/cmdline" 2>/dev/null)
-      echo "$(date -u +%FT%TZ) CAPTURE fabro run pid=$fp argv: $argv" | tee "$OUT/$ITEM-r267.capture-argv"
-      if printf '%s' "$argv" | grep -q -- "--server $tserver"; then echo "$(date -u +%FT%TZ) CAPTURE argv OK: --server $tserver"; else
-        kill -TERM "$fp" 2>/dev/null; echo "$(date -u +%FT%TZ) CAPTURE FAILURE: argv lacks --server $tserver; killed fabro run pid $fp"; fi
-      break
-    fi
-    sleep 0.2
+    echo "$(date -u +%FT%TZ) no factory green: gmktec=$gmk_live (idle ${gmk_idle:-?}) markers=$markers fleet=$fleet/$FLEET_CAP"
+    sleep "$FLEET_LAUNCH_POLL_S"
   done
-fi
-run_row=""
-while :; do
-  run_row=$(board_rows "$FABRO" "$tserver" | awk -v it="$ITEM" '$4==it {print; exit}')
-  if [ -n "$run_row" ]; then echo "$(date -u +%FT%TZ) LISTED on $target: $run_row"; break; fi
-  if ! kill -0 "$drive_pid" 2>/dev/null; then echo "$(date -u +%FT%TZ) drive exited before listing"; break; fi
-  if [ -n "$lock" ] && [ $(( $(date +%s) - taken )) -ge "$FLEET_LAUNCH_MUTEX_HOLD_S" ]; then echo "$(date -u +%FT%TZ) mutex hold elapsed: release (marker kept until listing or drive exit)"; release_lock; fi
-  sleep "$FLEET_LAUNCH_LISTING_POLL_S"
+
+  # Release the launch mutex right after the binding count; the in-flight marker stays until the run
+  # lists or the dispatch exits.
+  release_lock; echo "$(date -u +%FT%TZ) mutex released after the count (marker kept)"
+  if [ "$target" = petri ]; then
+    FABRO_DEV_TOKEN__petri=$(ssh -o BatchMode=yes "$FLEET_LAUNCH_GMK_SSH" cat "$FLEET_LAUNCH_GMK_SERVER_ENV" | sed -n 's/^FABRO_DEV_TOKEN=//p' | tail -n 1)
+    export FABRO_DEV_TOKEN__petri
+    tserver=$GMK
+  else
+    tserver=$HL
+  fi
+  if [ -n "${CAPTURE_NULL:-}" ]; then
+    [ "$target" = "${CAPTURE_EXPECT:-}" ] || { echo "CAPTURE_NULL but target=$target (expected ${CAPTURE_EXPECT:-unset}): refuse"; exit 70; }
+    unset LIVESPEC_FABRO_FACTORY; echo "$(date -u +%FT%TZ) CAPTURE_NULL: LIVESPEC_FABRO_FACTORY unset, no --factory"
+  else
+    export LIVESPEC_FABRO_FACTORY=$target
+  fi
+  git -C "$REPO" fetch -q origin && git -C "$REPO" merge --ff-only -q origin/master
+  build=$(installed_build)
+  plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$build"
+  build_version=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$plugin/plugin.json" 2>/dev/null)
+  cred=$(cd "$REPO" && timeout 120 "$WRAP" -- python3 "$plugin/scripts/bin/dispatcher.py" claude-cred-status 2>/dev/null)
+  printf '%s\n' "$cred" | grep -q "is usable" || { echo "$(date -u +%FT%TZ) credential probe NOT usable: hold, no launch"; printf '%s\n' "$cred" | tail -3; rm -f "$marker"; marker=""; release_lock; exit 75; }
+  echo "$(date -u +%FT%TZ) credential probe usable (HTTP 200)"
+  rcout=$(ready_check); rcrc=$?
+  if [ $rcrc != 0 ]; then echo "$(date -u +%FT%TZ) ready-set re-check refused before launch: $rcout"; rm -f "$marker"; marker=""; release_lock; exit 3; fi
+  echo "$(date -u +%FT%TZ) LAUNCH target=$target head=$(git -C "$REPO" rev-parse --short HEAD) build=$build version=${build_version:-?}"
+  if [ -n "${RELEASE_BLOCKED:-}" ]; then
+    rel=$(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "resolve-blocked:${ITEM}:ready" --invoker "claude:$SEAT" --json 2>&1); rrc=$?
+    echo "$(date -u +%FT%TZ) resolve-blocked:${ITEM}:ready rc=$rrc $(printf '%s' "$rel" | tr '\n' ' ' | cut -c1-300)"
+    [ $rrc = 0 ] || { echo "release refused: no launch"; exit 75; }
+  fi
+  (cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
+  drive_pid=$!
+  if [ -n "${CAPTURE_NULL:-}" ]; then
+    # Watch for the first fabro run of THIS item and check that its argv names the expected server.
+    while kill -0 "$drive_pid" 2>/dev/null; do
+      fp=""
+      for p in $(pgrep -f "fabro run"); do a=$p; while [ "$a" -gt 1 ]; do [ "$a" = "$drive_pid" ] && { fp=$p; break 2; }; a=$(ps -o ppid= -p "$a" 2>/dev/null | tr -d ' '); [ -n "$a" ] || break; done; done
+      if [ -n "$fp" ]; then
+        argv=$(tr '\0' ' ' < "/proc/$fp/cmdline" 2>/dev/null)
+        echo "$(date -u +%FT%TZ) CAPTURE fabro run pid=$fp argv: $argv" | tee "$OUT/$ITEM-r267.capture-argv"
+        if printf '%s' "$argv" | grep -q -- "--server $tserver"; then echo "$(date -u +%FT%TZ) CAPTURE argv OK: --server $tserver"; else
+          kill -TERM "$fp" 2>/dev/null; echo "$(date -u +%FT%TZ) CAPTURE FAILURE: argv lacks --server $tserver; killed fabro run pid $fp"; fi
+        break
+      fi
+      drive_hold_poll || break
+      sleep 0.2
+    done
+  fi
+  run_row=""
+  while [ "$drive_stopped" = 0 ]; do
+    run_row=$(board_rows "$FABRO" "$tserver" | awk -v it="$ITEM" '$4==it {print; exit}')
+    if [ -n "$run_row" ]; then echo "$(date -u +%FT%TZ) LISTED on $target: $run_row"; break; fi
+    if ! kill -0 "$drive_pid" 2>/dev/null; then echo "$(date -u +%FT%TZ) drive exited before listing"; break; fi
+    drive_hold_poll || break
+    if [ -n "$lock" ] && [ $(( $(date +%s) - taken )) -ge "$FLEET_LAUNCH_MUTEX_HOLD_S" ]; then echo "$(date -u +%FT%TZ) mutex hold elapsed: release (marker kept until listing or drive exit)"; release_lock; fi
+    sleep "$FLEET_LAUNCH_LISTING_POLL_S"
+  done
+  [ "$drive_stopped" = 1 ] && continue
+  break
 done
 release_lock; rm -f "$marker"; marker=""
 echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?} listed=${run_row:-none}" > "$OUT/$ITEM-r267.verdict"

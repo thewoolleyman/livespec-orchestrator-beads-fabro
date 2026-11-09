@@ -1,8 +1,9 @@
 """Integration-tier acceptance for an exhausted merge-poll budget on an open pull request.
 
 Binds SPECIFICATION/scenarios.md "Scenario 220 — An exhausted merge-poll budget
-on an open pull request rests the item for resume" and the final sentences of the
-`contracts.md` paragraph "Armed pull request overtaken by the default branch".
+hands an armed, passing pull request to reconciliation" and the final sentences
+of the `contracts.md` paragraph "Armed pull request overtaken by the default
+branch".
 
 THE JOURNEY IS THE REAL ONE. The production engine (`run_dispatch`: confirm the
 pull request, poll for its merge, take the final read) produces the outcome, and
@@ -13,9 +14,10 @@ item anywhere other than through the ratified transition would show here.
 
 EACH CASE CARRIES A CONTROL THAT RETURNS THE OTHER ANSWER. The same scripted
 forge reports the pull request MERGED at the final read in one case and OPEN in
-the other, and a conflicting pull request is read through the identical journey,
-so a build that rested every exhausted wait could not satisfy the second case and
-a build that rested none could not satisfy the first.
+the other, an UNARMED pull request is read through the identical journey as the
+armed one, and a conflicting pull request is read through it too, so a build that
+handed off every exhausted wait could not satisfy the unarmed case and a build
+that handed off none could not satisfy the armed one.
 """
 
 from __future__ import annotations
@@ -61,6 +63,7 @@ _TENANT_CONFIG = """{
 }
 """
 _MARKER = "livespec-merge-poll-budget-exhausted"
+_HANDOFF_MARKER = "livespec-merge-wait-handed-off"
 
 
 @pytest.fixture(autouse=True)
@@ -114,17 +117,27 @@ def _plan(*, repo: Path) -> DispatchPlan:
     )
 
 
-def _view(*, state: str, merge_state: str, failed_check: str | None = None) -> str:
+def _view(
+    *,
+    state: str,
+    merge_state: str,
+    failed_check: str | None = None,
+    running_check: str | None = None,
+    armed: bool = True,
+) -> str:
+    rollup: list[dict[str, object]] = []
+    if failed_check is not None:
+        rollup.append({"name": failed_check, "conclusion": "failure"})
+    if running_check is not None:
+        rollup.append({"name": running_check, "status": "IN_PROGRESS", "conclusion": None})
     return json.dumps(
         {
             "number": 3913,
             "state": state,
-            "autoMergeRequest": {"enabledAt": "now"},
+            "autoMergeRequest": {"enabledAt": "now"} if armed else None,
             "mergeStateStatus": merge_state,
             "mergeCommit": {"oid": "cafe05"} if state == "MERGED" else None,
-            "statusCheckRollup": (
-                [] if failed_check is None else [{"name": failed_check, "conclusion": "failure"}]
-            ),
+            "statusCheckRollup": rollup,
             "headRefOid": "8ad6cd7b2",
             "baseRefOid": "1c0ffee",
         }
@@ -143,6 +156,8 @@ class _Forge:
     final_state: str
     merge_state: str = "BLOCKED"
     failed_required_check: str | None = None
+    running_required_check: str | None = None
+    armed: bool = True
     views: int = 0
     calls: list[list[str]] = field(default_factory=list)
 
@@ -158,7 +173,7 @@ class _Forge:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
         if argv[:3] == ["gh", "api", "graphql"]:
-            check = self.failed_required_check or ""
+            check = self.failed_required_check or self.running_required_check or ""
             return CommandResult(
                 exit_code=0,
                 stdout=json.dumps(
@@ -201,6 +216,8 @@ class _Forge:
                 state=state,
                 merge_state=self.merge_state,
                 failed_check=self.failed_required_check,
+                running_check=self.running_required_check,
+                armed=self.armed,
             ),
             stderr="",
         )
@@ -253,12 +270,36 @@ def _rested() -> WorkItem:
     return next(one for one in read_work_items(path=_store()) if one.id == _ITEM_ID)
 
 
-def test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resume(
+def test_an_armed_open_pull_request_at_expiry_is_handed_off_and_the_item_stays_active(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.chdir(tmp_path)
-    # Three OPEN reads cover the confirmation and both polls; the final read is OPEN too.
-    forge = _Forge(open_reads=99, final_state="OPEN")
+    forge = _Forge(open_reads=99, final_state="OPEN", running_required_check="check-coverage")
+
+    outcome, journal = _journey(repo=tmp_path, forge=forge)
+
+    assert (outcome.status, outcome.stage) == ("handed-off", "merge-poll")
+    assert "needs-human" not in outcome.detail
+    assert f"`resolve-blocked:{_ITEM_ID}:ready`" not in outcome.detail
+    assert dispatch_exit_code(outcomes=[outcome]) == 0
+    kept = _rested()
+    assert (kept.status, kept.assignee, kept.blocked_reason) == ("active", "fabro", None)
+    comments = read_work_item_comments(path=_store(), work_item_id=_ITEM_ID)
+    assert [c.text.splitlines()[0] for c in comments] == [
+        _HANDOFF_MARKER,
+        "livespec-preserved-tree",
+    ]
+    assert "check-coverage" in comments[0].text
+    rows = [r for r in journal.records if r.get("stage") == "merge-wait-handed-off"]
+    assert [r["running_checks"] for r in rows] == [["check-coverage"]]
+    assert [r for r in journal.records if r.get("stage") == "needs-human-blocked"] == []
+
+
+def test_an_open_pull_request_whose_arming_stands_no_longer_rests_the_item_for_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    forge = _Forge(open_reads=99, final_state="OPEN", armed=False)
 
     outcome, journal = _journey(repo=tmp_path, forge=forge)
 

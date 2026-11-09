@@ -69,10 +69,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    incident_acceptance_for,
+    incident_holds,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
     read_dispatch_labels,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
@@ -229,6 +234,8 @@ def _grade_and_dispose(
     # unreadable label set is NOT a declaration, so it fails closed to the empty
     # marker set exactly as the dispatch-path acceptance valve does.
     labels = read_dispatch_labels(repo=repo, item=item)
+    config = store_config(repo=repo)
+    incident = incident_acceptance_for(config=config, item_id=item.id, merged_pr=merged.number)
     result = run_acceptance_pass(
         repo=repo,
         item=item,
@@ -239,6 +246,7 @@ def _grade_and_dispose(
         # journal is the only place either identifier of the merging dispatch
         # survives into this process.
         journal_path=journal.path,
+        incident=incident.scope,
     )
     # `unsafe_perform_io` is required: `IOResult.value_or` returns `IO[value]`.
     policy = unsafe_perform_io(
@@ -249,8 +257,10 @@ def _grade_and_dispose(
     # a named constant here reads to the lint rule set as a hardcoded secret.
     if result.verdict != "PASS":
         return _leave_regraded_item(item=item, outcome=outcome, verdict=result.verdict)
-    if result.proof is not None and (
-        result.proof.pending_host_captured or result.proof.pending_human_attested
+    # A PASS on an incident that still owes final normal proof parks rather than closes.
+    if incident_holds(incident=incident, journal=journal, route="regrade") or (
+        result.proof is not None
+        and (result.proof.pending_host_captured or result.proof.pending_human_attested)
     ):
         return _park_regraded_item(
             repo=repo,

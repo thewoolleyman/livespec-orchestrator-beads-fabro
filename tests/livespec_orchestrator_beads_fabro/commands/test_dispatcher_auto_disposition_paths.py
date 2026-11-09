@@ -24,13 +24,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    IncidentAcceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate import (
     ReviewGateEmission,
     emit_review_gate_from_fabro_events,
 )
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentStanding
 from livespec_orchestrator_beads_fabro.types import WorkItem
+
+_NORMAL = IncidentStanding(
+    item_id="bd-ib-item", kind="normal", repository=None, history=(), outstanding=()
+)
 
 
 @dataclass(kw_only=True)
@@ -172,6 +180,11 @@ def test_ai_auto_accept_path_journals_governing_setting(
     journal = _MemoryJournal()
     item = _item(acceptance_policy="ai-only")
     monkeypatch.setattr(_dispatcher_completion, "store_config", lambda **_: tmp_path)
+    monkeypatch.setattr(
+        _dispatcher_completion,
+        "incident_acceptance_for",
+        lambda **_: IncidentAcceptance(standing=_NORMAL, scope=None, config=tmp_path),
+    )
     monkeypatch.setattr(
         _dispatcher_completion, "write_work_item_status_and_reconcile", lambda **_: None
     )

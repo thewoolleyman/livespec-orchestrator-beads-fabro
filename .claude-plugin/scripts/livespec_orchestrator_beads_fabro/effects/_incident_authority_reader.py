@@ -40,7 +40,7 @@ from livespec_orchestrator_beads_fabro.errors import (
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
-__all__: list[str] = ["read_authority"]
+__all__: list[str] = ["read_authority", "read_history", "read_incident_head"]
 _GENESIS_KEYS = frozenset(("schema", "repository", "item_id", "root_token_id"))
 _TRANSITION_KEYS = frozenset(
     ("schema", "repository", "item_id", "prior_token_id", "next_token_id", "attempt")
@@ -174,12 +174,23 @@ def _select(
     ]
     if len(matches) != 1:
         return _refuse(code="incident-authority-identity-mismatch", detail=item_id)
-    committed, attempt = matches[0]
+    committed = matches[0][0]
+    return _reading(client=client, history=history, current=current, committed=committed)
+
+
+def _reading(
+    *,
+    client: BeadsClient,
+    history: list[tuple[str, IncidentAttempt]],
+    current: str,
+    committed: str,
+) -> IncidentReading | AuthorityRefusal:
     # A close is the server-side generation fence. Re-check the successor AFTER
     # decoding/selecting; an old invocation can never silently follow a new head.
     standing = client.show_issue(issue_id=current)
     if standing.get("status") != "backlog" or standing.get("title") != TOKEN_TITLE:
         return _refuse(code="incident-authority-changed", detail=current)
+    attempt = next(snapshot for token, snapshot in history if token == committed)
     return IncidentReading(
         attempt=attempt,
         committed_token_id=committed,
@@ -187,6 +198,30 @@ def _select(
         is_current=history[-1][0] == committed,
         operation_ids=tuple(snapshot.operation_id for _, snapshot in history),
     )
+
+
+_OUTAGES = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
+
+
+def _head(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> IncidentReading | AuthorityRefusal:
+    root = _genesis(client=client, repository=repository, item_id=item_id)
+    if isinstance(root, AuthorityRefusal):
+        return root
+    chain = _walk(client=client, repository=repository, item_id=item_id, root=root)
+    if isinstance(chain, AuthorityRefusal):
+        return chain
+    history, current = chain
+    if not history:
+        return _refuse(code="incident-authority-identity-mismatch", detail=item_id)
+    return _reading(client=client, history=history, current=current, committed=history[-1][0])
 
 
 def read_authority(
@@ -206,11 +241,43 @@ def read_authority(
             query=query,
             historical=historical,
         )
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsCredentialMissingError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
+    except _OUTAGES as exc:
+        return _refuse(code="incident-authority-unavailable", detail=str(exc))
+
+
+def read_history(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> tuple[IncidentAttempt, ...] | AuthorityRefusal:
+    """Every committed attempt of the retained chain, oldest first, or a named refusal.
+
+    History authorizes no current effect: it is the provenance a consumer binds
+    exact PR, head and landed identities against after labels and environment
+    are gone. A chain that cannot be walked refuses by name; an outage is
+    unavailable, never an empty history.
+    """
+    try:
+        root = _genesis(client=client, repository=repository, item_id=item_id)
+        if isinstance(root, AuthorityRefusal):
+            return root
+        chain = _walk(client=client, repository=repository, item_id=item_id, root=root)
+    except _OUTAGES as exc:
+        return _refuse(code="incident-authority-unavailable", detail=str(exc))
+    if isinstance(chain, AuthorityRefusal):
+        return chain
+    history, _current = chain
+    return tuple(attempt for _, attempt in history)
+
+
+def read_incident_head(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> IncidentReading | AuthorityRefusal:
+    """The chain's current generation, selected by the chain itself rather than a query.
+
+    For a consumer that knows only the item: merged-PR resolution and proof
+    publication. The reading is current at the instant of the read; a writer
+    still revalidates it immediately before its side effect.
+    """
+    try:
+        return _head(client=client, repository=repository, item_id=item_id)
+    except _OUTAGES as exc:
         return _refuse(code="incident-authority-unavailable", detail=str(exc))

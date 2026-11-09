@@ -144,6 +144,10 @@ _JANITOR_ADMISSION_ADDED = {"janitor_admission"}
 # The red-janitor brief route (Scenario 305) sits on the janitor's red edge ahead of
 # `fix`, and closes no cycle of its own.
 _JANITOR_REFRESH_ROUTE_ADDED = {"janitor_refresh_route"}
+# The no-progress classifier runs after the established janitor refresh route
+# and before the established fix settle path. Both nodes close no cycle: they
+# turn one repeated unchanged-head failure into the existing terminal.
+_FIX_NO_PROGRESS_ROUTE_ADDED = {"fix_progress_route", "janitor_failure_route"}
 # This command node sits before `disposition`, preserving its three-visit
 # review-fix budget while converting a fourth request into a named terminal
 # route instead of the engine's unroutable entry abort.
@@ -757,6 +761,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED
+        | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )
@@ -786,6 +791,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED
+        | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )

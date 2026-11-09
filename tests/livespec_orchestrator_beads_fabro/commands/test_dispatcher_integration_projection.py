@@ -285,6 +285,24 @@ def test_prompt_variables_project_every_sandbox_facing_field() -> None:
     assert variables["merge_mode"] == MERGE_MODE_DEFAULT
 
 
+def test_sandbox_check_suite_default_reinstalls_the_worktree_pack_without_wrapping_declarations() -> (
+    None
+):
+    """A fleet fallback heals a refreshed pack; an adopter command stays verbatim."""
+    defaulted = contract_prompt_variables(
+        resolved=resolve_repo_integration_contract(config_text=_config(), default_branch="trunk")
+    )
+    declared = contract_prompt_variables(
+        resolved=resolve_repo_integration_contract(
+            config_text=_config(dispatcher={"janitor": {"check_suite": "make ci"}}),
+            default_branch="trunk",
+        )
+    )
+
+    assert defaulted["sandbox_check_suite"] == "mise exec -- just install-worktree-pack check"
+    assert declared["sandbox_check_suite"] == "make ci"
+
+
 def test_run_inputs_are_gated_on_the_input_names_the_workflow_declares() -> None:
     """fabro rejects an input a workflow does not declare, so the projection intersects."""
     resolved = resolve_repo_integration_contract(config_text=_config(), default_branch="trunk")

@@ -28,6 +28,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     resolve_claim_tokens,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._incident_authority_lifecycle import (
+    LIFECYCLE_PAYLOADS,
+    lifecycle_body,
+    run_lifecycle_action,
+)
 from livespec_orchestrator_beads_fabro.commands._intake_valve_claim_writes import TakeoverWait
 from livespec_orchestrator_beads_fabro.commands.incident_local_gate_lookup import (
     LocalGateLookup,
@@ -49,6 +55,9 @@ from livespec_orchestrator_beads_fabro.incident_authority import (
     publish_incident_genesis,
     read_incident_authority,
 )
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
+from livespec_orchestrator_beads_fabro.incident_normal_repayment import RepaymentEntry
+from livespec_orchestrator_beads_fabro.incident_regression_recovery import RecoveryEntry
 from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = ["main"]
@@ -60,15 +69,26 @@ _Reply = (
     | LocalGateReceipt
     | GenesisReceipt
     | FilingReceipt
+    | RepaymentEntry
+    | RecoveryEntry
+    | IncidentCompletion
 )
 
-_ACTION_ARGUMENTS = {
-    "commit-transition": "successor_json",
-    "record-local-gates": "receipt_json",
-    "read-local-gates": "receipt_id",
-    "publish-genesis": "genesis_json",
-    "file-incident": "filing_json",
+# Each writing action and the payload arguments it alone requires.
+_ACTION_ARGUMENTS: dict[str, tuple[str, ...]] = {
+    "commit-transition": ("successor_json",),
+    "record-local-gates": ("receipt_json",),
+    "read-local-gates": ("receipt_id",),
+    "publish-genesis": ("genesis_json",),
+    "file-incident": ("filing_json",),
+    **LIFECYCLE_PAYLOADS,
 }
+_PAYLOAD_OWNERS = {
+    field: tuple(action for action, owned in _ACTION_ARGUMENTS.items() if field in owned)
+    for field in dict.fromkeys(field for owned in _ACTION_ARGUMENTS.values() for field in owned)
+}
+_ADVANCE = "advance-repayment"
+_HISTORICAL = frozenset(("read-history", "commit-transition", *LIFECYCLE_PAYLOADS))
 _FILING = "file-incident"
 _IDENTITY = ("item", "attempt", "phase", "generation")
 _TRANSITION_PENDING = "incident-genesis-claim-transition-pending"
@@ -79,8 +99,9 @@ def _parse(*, argv: Sequence[str] | None) -> argparse.Namespace:
     """Each action-only payload argument belongs to exactly one action."""
     parser = argparse.ArgumentParser(prog="incident-authority")
     _ = parser.add_argument("action", choices=(*_ACTION_ARGUMENTS, "read-current", "read-history"))
-    for field in _ACTION_ARGUMENTS.values():
+    for field in _PAYLOAD_OWNERS:
         _ = parser.add_argument("--" + field.replace("_", "-"))
+    _ = parser.add_argument("--admission-complete", action="store_true")
     _ = parser.add_argument("--repo", required=True, type=Path)
     for name in ("repository", "operation", "owner"):
         _ = parser.add_argument(f"--{name}", required=True)
@@ -88,10 +109,12 @@ def _parse(*, argv: Sequence[str] | None) -> argparse.Namespace:
         _ = parser.add_argument(f"--{name}")
     _ = parser.add_argument("--generation", type=int)
     args = parser.parse_args(argv)
-    for action, field in _ACTION_ARGUMENTS.items():
-        if (args.action == action) != (getattr(args, field) is not None):
+    for field, owners in _PAYLOAD_OWNERS.items():
+        if (args.action in owners) != (getattr(args, field) is not None):
             flag = "--" + field.replace("_", "-")
-            parser.error(f"{flag} is required by, and only valid for, {action}")
+            parser.error(f"{flag} is required by, and only valid for, {', '.join(owners)}")
+    if args.admission_complete and args.action != _ADVANCE:
+        parser.error(f"--admission-complete is only valid for {_ADVANCE}")
     # A filing has no item identity yet; every other action names one exactly.
     if any((getattr(args, name) is None) != (args.action == _FILING) for name in _IDENTITY):
         parser.error(_IDENTITY_RULE)
@@ -117,7 +140,7 @@ def main(*, argv: Sequence[str] | None = None) -> int:
             "generation": args.generation,
             "owner": args.owner,
         },
-        historical=args.action in {"read-history", "commit-transition"},
+        historical=args.action in _HISTORICAL,
     )
     if args.action == "commit-transition" and isinstance(result, IncidentReading):
         raw = parse_json(text=args.successor_json)
@@ -138,6 +161,10 @@ def main(*, argv: Sequence[str] | None = None) -> int:
         result = record_local_gates(client=client, observed=result, text=args.receipt_json)
     if args.action == "read-local-gates" and isinstance(result, IncidentReading):
         result = read_local_gates(client=client, observed=result, receipt_id=args.receipt_id)
+    if args.action in LIFECYCLE_PAYLOADS and isinstance(result, IncidentReading):
+        result = run_lifecycle_action(
+            args=args, client=client, reading=result, runner=ShellCommandRunner()
+        )
     return _reply(result=result, authorizes=args.action == "read-current")
 
 
@@ -210,6 +237,8 @@ def _result_body(*, result: _Reply) -> dict[str, object]:
     body = asdict(result)
     if isinstance(result, IncidentReading | GenesisReceipt):
         body["attempt"] = attempt_record(attempt=result.attempt)
+    if isinstance(result, RepaymentEntry | RecoveryEntry | IncidentCompletion):
+        lifecycle_body(result=result, body=body)
     return body
 
 

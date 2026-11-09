@@ -42,6 +42,7 @@ __all__: list[str] = [
     "parse_event",
     "read_changed_paths",
     "read_event",
+    "read_landed_commits",
 ]
 
 _DIFF_TIMEOUT_SECONDS = 30.0
@@ -55,6 +56,8 @@ class PullRequestEvent:
     labels: tuple[str, ...]
     base_sha: str
     head_sha: str
+    pr_number: int = 0
+    repository: str = ""
 
 
 def _mapping(*, value: object) -> dict[str, object]:
@@ -86,15 +89,19 @@ def parse_event(*, payload_text: str) -> PullRequestEvent | None:
         return None
     if not isinstance(parsed, dict):
         return None
-    raw_pull_request = cast("dict[str, object]", parsed).get("pull_request")
+    payload = cast("dict[str, object]", parsed)
+    raw_pull_request = payload.get("pull_request")
     if not isinstance(raw_pull_request, dict):
         return None
     pull_request = cast("dict[str, object]", raw_pull_request)
+    number = payload.get("number")
     return PullRequestEvent(
         author_login=_text(mapping=_mapping(value=pull_request.get("user")), key="login"),
         labels=_label_names(pull_request=pull_request),
         base_sha=_text(mapping=_mapping(value=pull_request.get("base")), key="sha"),
         head_sha=_text(mapping=_mapping(value=pull_request.get("head")), key="sha"),
+        pr_number=number if type(number) is int else 0,
+        repository=_text(mapping=_mapping(value=payload.get("repository")), key="full_name"),
     )
 
 
@@ -127,3 +134,20 @@ def read_changed_paths(
     if diff.exit_code != 0:
         return None
     return tuple(line.strip() for line in diff.stdout.splitlines() if line.strip())
+
+
+def read_landed_commits(
+    *,
+    event: PullRequestEvent,
+    repo: Path,
+    runner: CommandRunner,
+) -> tuple[str, ...] | None:
+    """Read the exact ordered commits proposed by this pull request, or refuse."""
+    commits = runner.run(
+        argv=["git", "rev-list", "--reverse", f"{event.base_sha}..{event.head_sha}"],
+        cwd=repo,
+        timeout_seconds=_DIFF_TIMEOUT_SECONDS,
+    )
+    if commits.exit_code != 0:
+        return None
+    return tuple(line.strip() for line in commits.stdout.splitlines() if line.strip())

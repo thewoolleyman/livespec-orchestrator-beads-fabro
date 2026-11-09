@@ -58,20 +58,23 @@ def _payload(
     *,
     login: str = "thewoolleyman",
     labels: list[dict[str, str]] | None = None,
+    number: int = 73,
 ) -> str:
     return json.dumps(
         {
+            "number": number,
+            "repository": {"full_name": "owner/repository"},
             "pull_request": {
                 "user": {"login": login},
                 "labels": [] if labels is None else labels,
                 "base": {"sha": "base1234"},
                 "head": {"sha": "head5678"},
-            }
+            },
         }
     )
 
 
-def test_parse_event_reduces_a_pull_request_payload_to_its_four_fields() -> None:
+def test_parse_event_reduces_a_pull_request_payload_to_its_repository_and_five_pr_fields() -> None:
     module = _module()
     event = module.parse_event(payload_text=_payload(labels=[{"name": "factory-override"}]))
     assert event is not None
@@ -79,6 +82,8 @@ def test_parse_event_reduces_a_pull_request_payload_to_its_four_fields() -> None
     assert event.labels == ("factory-override",)
     assert event.base_sha == "base1234"
     assert event.head_sha == "head5678"
+    assert event.pr_number == 73
+    assert event.repository == "owner/repository"
 
 
 def test_parse_event_returns_none_for_non_json_text() -> None:
@@ -153,3 +158,38 @@ def test_read_changed_paths_returns_none_when_the_diff_cannot_be_read(tmp_path: 
     event = module.parse_event(payload_text=_payload())
     runner = RecordingRunner(result=CommandResult(exit_code=128, stdout="", stderr="bad revision"))
     assert module.read_changed_paths(event=event, repo=tmp_path, runner=runner) is None
+
+
+def test_read_landed_commits_returns_none_when_the_range_cannot_be_read(tmp_path: Path) -> None:
+    module = _module()
+    event = module.parse_event(payload_text=_payload())
+    runner = RecordingRunner(result=CommandResult(exit_code=128, stdout="", stderr="bad revision"))
+    assert module.read_landed_commits(event=event, repo=tmp_path, runner=runner) is None
+    assert runner.argvs == [["git", "rev-list", "--reverse", "base1234..head5678"]]
+
+
+def test_read_landed_commits_returns_the_ordered_range_without_blank_lines(tmp_path: Path) -> None:
+    module = _module()
+    event = module.parse_event(payload_text=_payload())
+    runner = RecordingRunner(result=CommandResult(exit_code=0, stdout="c1\n\nc2\n", stderr=""))
+    assert module.read_landed_commits(event=event, repo=tmp_path, runner=runner) == ("c1", "c2")
+    assert runner.argvs == [["git", "rev-list", "--reverse", "base1234..head5678"]]
+
+
+def test_parse_event_without_a_number_or_repository_binds_neither() -> None:
+    module = _module()
+    event = module.parse_event(
+        payload_text=json.dumps(
+            {
+                "number": "73",
+                "pull_request": {
+                    "user": {"login": "thewoolleyman"},
+                    "labels": [],
+                    "base": {"sha": "base1234"},
+                    "head": {"sha": "head5678"},
+                },
+            }
+        )
+    )
+    assert event is not None
+    assert (event.pr_number, event.repository) == (0, "")

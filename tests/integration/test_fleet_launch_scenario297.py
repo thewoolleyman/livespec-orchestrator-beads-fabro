@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 
@@ -16,12 +18,15 @@ _TARGET_EXTRACTOR = _REPO_ROOT / "dev-tooling" / "aggregate-targets.sh"
 _HARNESS_HANG_GUARD_SECONDS = 600
 
 
-def _run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
+def _run(
+    *, argv: list[str], environment: dict[str, str] | None = None
+) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         argv,
         cwd=_REPO_ROOT,
         capture_output=True,
         check=False,
+        env=environment,
         text=True,
         timeout=_HARNESS_HANG_GUARD_SECONDS,
     )
@@ -40,13 +45,20 @@ def _last_output(error: subprocess.TimeoutExpired) -> str:
 
 
 def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() -> None:
-    """The shipped check proves queued preflight reuse, FIFO order, and failure cleanup."""
-    targets = _run(argv=["bash", str(_TARGET_EXTRACTOR)])
+    """The shipped check tolerates delayed preflights while proving FIFO behavior."""
+    temporary_directory = TemporaryDirectory()
+    delayed_launcher_startup = Path(temporary_directory.name) / "delayed-launcher-startup.sh"
+    delayed_launcher_startup.write_text(
+        '[ "${0##*/}" = "dispatch-dual.sh" ] && sleep 30\n', encoding="utf-8"
+    )
+    environment = {**os.environ, "BASH_ENV": str(delayed_launcher_startup)}
+
+    targets = _run(argv=["bash", str(_TARGET_EXTRACTOR)], environment=environment)
     assert targets.returncode == 0, targets.stderr
     assert "check-fleet-launch" in targets.stdout.split()
 
     try:
-        checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"])
+        checked = _run(argv=["bash", str(_CHECK_DRIVER), "scenario297"], environment=environment)
     except subprocess.TimeoutExpired as error:
         pytest.fail(
             "".join(
@@ -89,8 +101,10 @@ def test_scenario297_timeout_reports_a_hung_harness_with_its_last_output(
         ),
     ]
 
-    def timed_run(*, argv: list[str]) -> subprocess.CompletedProcess[str]:
-        del argv
+    def timed_run(
+        *, argv: list[str], environment: dict[str, str] | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        del argv, environment
         result = results.pop(0)
         if isinstance(result, subprocess.TimeoutExpired):
             raise result

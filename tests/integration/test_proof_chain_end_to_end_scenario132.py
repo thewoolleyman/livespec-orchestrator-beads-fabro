@@ -114,6 +114,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_VERIFIED,
 )
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -564,6 +565,24 @@ def _always_succeeded(*, node: str, visit: int) -> tuple[str, str | None]:
     return _SUCCEEDED, None
 
 
+def _reported_outcome(*, node: str, visit: int) -> tuple[str, str | None]:
+    """Return the routing state a successful proof-chain node reports."""
+    if node == _REVIEW:
+        return _SUCCEEDED, (_LABEL_FIX if visit == 1 else _LABEL_APPROVE)
+    if node == _DISPOSITION:
+        return _SUCCEEDED, _LABEL_FIX
+    if node == "implement_completion":
+        return _SUCCEEDED, "complete"
+    if node == _PROOF_VERIFY:
+        return _SUCCEEDED, _LABEL_APPROVE
+    if node in {
+        _PUBLISH_MERGED_RECONCILE_ROUTE,
+        _PR_REFRESH_MERGED_RECONCILE_ROUTE,
+    }:
+        return _FAILED, None
+    return _SUCCEEDED, None
+
+
 def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | None]]:
     """What each node of the reserved workflow does to the forge, and what it reports.
 
@@ -599,18 +618,7 @@ def _sandbox(*, forge: _Forge, branch: str) -> Callable[..., tuple[str, str | No
         elif node == _PR:
             forge.mark_ready_and_merge()
         forge.snapshot()
-        if node == _REVIEW:
-            return _SUCCEEDED, (_LABEL_FIX if visit == 1 else _LABEL_APPROVE)
-        if node == _DISPOSITION:
-            return _SUCCEEDED, _LABEL_FIX
-        if node == _PROOF_VERIFY:
-            return _SUCCEEDED, _LABEL_APPROVE
-        if node in {
-            _PUBLISH_MERGED_RECONCILE_ROUTE,
-            _PR_REFRESH_MERGED_RECONCILE_ROUTE,
-        }:
-            return _FAILED, None
-        return _SUCCEEDED, None
+        return _reported_outcome(node=node, visit=visit)
 
     return _act
 
@@ -776,6 +784,7 @@ def _acceptance_pass_over(*, runner: _Forge) -> Callable[..., AcceptancePassResu
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         return run_acceptance_pass(
             repo=repo,
@@ -784,6 +793,7 @@ def _acceptance_pass_over(*, runner: _Forge) -> Callable[..., AcceptancePassResu
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     return _call

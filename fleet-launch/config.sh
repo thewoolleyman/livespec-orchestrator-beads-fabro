@@ -33,10 +33,10 @@
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
 
-# The Fabro client that reads the boards: the build gmktec serves, 85af3547e,
+# The Fabro client that reads the boards: the build gmktec serves, bbe693847,
 # which requests compressed board reads and filters plain `ps` on the server
 # (bd-ib-xoh477). Keep it equal to dispatcher.factories.petri.bin.
-: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-85af3547e/fabro}"
+: "${FLEET_LAUNCH_FABRO:=/home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro}"
 
 # The shared factory-board snapshot (board-snapshot.sh). Every launcher on the host reads a factory's
 # board through one snapshot file per factory, so the factory server receives at most one run listing
@@ -78,6 +78,9 @@
 # advances on that state instead of sitting out a production-sized interval.
 : "${FLEET_LAUNCH_MUTEX_POLL_S:=10}"
 : "${FLEET_LAUNCH_LISTING_POLL_S:=15}"
+# How long an impl launcher waits for a drive it stopped for a hold to exit after TERM before it
+# sends KILL.
+: "${FLEET_LAUNCH_STOP_GRACE_S:=30}"
 # How long a resume launcher keeps its in-flight marker counted after the resume
 # client has exited, while it waits for the run to list on the factory board.
 : "${FLEET_LAUNCH_LISTING_WAIT_S:=600}"

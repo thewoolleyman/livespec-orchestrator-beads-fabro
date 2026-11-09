@@ -42,6 +42,20 @@ does not lock arbitrary later effects: a canonical writer must commit its own
 server conditional transition. Historical records remain provenance after labels,
 environment, owner, or phase have changed, and never become normal factory proof.
 
+The factory-provenance merge gate and the retrospective factory-bypass audit
+consume this history through `read_incident_history`. Each locates a candidate
+only by an explicit `--incident-item <id>` (repeatable) and binds the exact
+repository, pull request number, head and complete landed commit set the retained
+attempt recorded; a title mention, label, trailer, marker or environment variable
+locates nothing and authorizes nothing. Only a `repair`, `master-observation` or
+`reverting` attempt whose verification was deferred admits its carrier, and the audit reports that
+exception with its normal repayment outstanding until the chain reaches `closed`.
+A carrier the chain records in a repayment phase must earn normal factory
+provenance: the gate refuses it the `factory-override` label. A named item whose
+chain cannot be read is unobservable to the gate (exit 2) and a reported refusal
+in the audit, whose carriers stay flagged. The audit reaches the ledger through
+`--project-root`, the checkout whose store configuration names the tenant.
+
 An authenticated installed controller can commit an existing chain through the
 same process entrance using `commit-transition`, the complete prior identity
 arguments above, and `--successor-json`. The successor is the full immutable
@@ -69,6 +83,29 @@ its authority generation or lifecycle state. A pre-PR snapshot may carry
 Other phases still require an identified PR. This permits pre-commit evidence
 on a previously provisioned chain; it does not create the chain.
 
+## Recording the merge
+
+`record-merge` is the named writer of `master-observation`. It takes only the
+shared identity arguments, naming the current `repair` attempt with a `pr-bound`
+carrier. It reads the PR the chain names through `gh pr view`, refuses one that
+has not merged or whose head differs from the carrier, and reads the landed
+commits and trees from git over the merge commit's first-parent history. The
+successor keeps the attempt, head and carrier; only its phase, operation,
+generation and landed pairs change. An exact retry recovers the recorded
+generation, with `recovered: true`.
+
+The script that merges runs it right after `POST /bind`. It is never a
+precondition of the first-failure revert: the observer acts on its retained arm
+with no ledger read, and a required leaf can fail about 90 seconds after the
+merge. The action reads the merge commit rather than the tip of master, so it
+still records correctly after the revert landed. `reopen-regression`,
+`enter-repayment` and original-run `collect` all need this generation, so whoever
+runs the first of those runs `record-merge` first if the script did not.
+
+`reopen-regression` accepts a `master-observation` head as well as a repayment
+phase or `closed`, so a merged attempt's first master failure reaches
+`reverting` and a corrected attempt on the same route as a later regression.
+
 ## Carrier state
 
 An attempt may carry an explicit `carrier` record (specification v302,
@@ -81,23 +118,296 @@ An attempt may carry an explicit `carrier` record (specification v302,
 | `pr-bound` | the same keys as `head-published` | positive |
 
 `target_ref` is a fully qualified `refs/heads/...` name; the other values are
-full lowercase Git object ids. A pre-PR state also requires phase `repair` and no
-landed commit/tree pairs. A PR number exists exactly when the carrier is
-`pr-bound`; a placeholder or a positive number on a pre-PR carrier is invalid.
+full lowercase Git object ids. A pre-PR state also requires a pre-PR phase
+(`repair`, or `repayment-admission`, `repayment-ready` and `repayment-active`
+before the repayment run's own PR exists) and no landed commit/tree pairs. A PR
+number exists exactly when the carrier is `pr-bound`; a placeholder or a
+positive number on a pre-PR carrier is invalid.
 
 A transition may advance a carrier (`branch-reserved` to `head-published` to
 `pr-bound`) but never regress it, drop it once present, change its target ref, or
 rewrite the recorded input parent and staged tree after the reservation was
 published. Only a still-reserved carrier may refresh its boundary. Once bound, the
-PR number is fixed. A record naming an unknown state, an extra key or a malformed
-value is refused as `incident-carrier-unsupported`, never read as normal mode.
+PR number is fixed. The one exception is repayment entry: a `master-observation`
+attempt whose expedited carrier is `pr-bound` may be succeeded by a
+`repayment-admission` attempt on a fresh `branch-reserved` carrier with a
+different target ref, because the repayment run needs its own branch and PR.
+A record naming an unknown state, an extra key or a malformed value is refused
+as `incident-carrier-unsupported`, never read as normal mode.
+
+## Normal repayment
+
+`livespec_orchestrator_beads_fabro.incident_normal_repayment` carries the
+same-item normal factory repayment (specification "Expedited incident
+lifecycle", scenario "a successful incident merge reenters normal factory on
+the same item"). `plan_repayment` derives ONE repayment operation from the
+current `master-observation` attempt and a `MasterCiRun` that is complete,
+`success`, and names one of the attempt's landed commits; anything else is a
+named refusal (`incident-repayment-not-eligible`,
+`incident-repayment-master-ci-outstanding`). The operation id is a digest of
+the successful attempt and the master run, so a restart or duplicate delivery
+derives the same id. `enter_repayment` records `repayment-admission` as the
+next generation and returns the item to `pending-approval` through its claim
+token, in the same write releasing the incident holder's `dispatch_claim` stamp
+that canonical entry left on the item (the retained `incident_claim` record
+stays); `advance_repayment` records `repayment-ready` (only with ordinary
+admission complete), `repayment-active` (only once the item rests `active`,
+assigned `fabro`, under a factory dispatch claim stamp; an incident holder's
+stamp is refused `incident-repayment-claim-missing` like a missing one) and `repayment-acceptance`,
+each only against the lifecycle state the contract table pairs with it
+(`incident-phase-state-mismatch` otherwise). Repeated delivery of any step
+recovers the recorded generation (`recovered: true`) and writes nothing.
+
+`repayment_scope` and `validate_repayment_carrier` name what the repayment
+carrier owes beyond marker removal: every remaining
+`EXPEDITED_INCIDENT_RESPONSE flag: <item>` marker, every cumulative original
+path normal validation did not exercise, and every recorded deferred debt not
+repaid. `scrub_incident_flags` removes both `EXPEDITED_INCIDENT_RESPONSE` and
+`EXPEDITED_INCIDENT_RESPONSE_REVERT` from a normal dispatch's environment at
+the head of `dispatch_preamble`, before provider selection and every sandbox,
+hook or pull-request subprocess, and the janitor's scrub set removes them
+again from its gate runs. `select_incident_pull_request` selects only the
+current attempt's bound PR among merged candidates; an unbound repayment
+attempt refuses rather than falling back to the earlier repair PR.
 
 Migration: schema-1 attempts written before this model carry no `carrier` key.
 They remain readable with their exact earlier meaning, including the repair-only
 `pr_number: 0` case, and they serialize back without the key, so their receipt
-bytes do not change. A successor of such an attempt may introduce a carrier. This
-change models and validates the state only: it neither pushes, observes a forge,
-binds a PR nor fences a factory.
+bytes do not change. A successor of such an attempt may introduce a carrier. The library
+models and validates the state only: it neither pushes, observes a forge,
+binds a PR nor fences a factory. The process boundary's lifecycle actions
+(section "Lifecycle actions" below) are its operator entrance.
+
+## Regression recovery
+
+`livespec_orchestrator_beads_fabro.incident_regression_recovery` (planning in
+`_incident_recovery_plan` and `_incident_recovery_correction`) carries what
+happens when an incident change turns out to be wrong after it merged
+(specification "Expedited incident lifecycle"; scenarios "an attributable
+regression fences repayment and reopens the same incident" and "a
+deferred-proof-only finding is repaired without reverting healthy master";
+bd-ib-k5teti). A `Finding` names its `surface` (`trunk` for the repository's
+default branch, `pull-request`, `consumer` or `deferred-proof`), the subject and failing run it was observed
+on, the head that run evaluated, the landed incident commit its change
+evidence names, and whether deployed master is healthy.
+
+`reopen_for_regression` takes the current reading of a live repayment
+(`repayment-admission` through `repayment-acceptance`) or of a `closed`
+incident, the attributed attempt and the finding. The attributed attempt is
+re-read from the retained chain, so caller bytes confer nothing
+(`incident-reopen-attribution-mismatch`). The finding must be a trunk,
+pull-request or consumer failure whose attributed commit is one of that
+attempt's landed commits (`incident-regression-unattributed` otherwise). The
+same item is reopened as the next generation in phase `reverting`, bound to
+the attributed merged carrier and PR, with `repayment_required` kept true. The
+transition writer admits that one carrier change at a reopen, and a corrected
+repair's fresh branch after the revert receipt; every other carrier rule is
+unchanged. The item then returns to `active` under the incident owner through
+its claim token, the incident holder's stamp replacing the factory's (the
+factory stamp is retained as `prior_claim`), so the superseded run's terminal,
+proof or cleanup write answers `claim-changed`. The operation id is a digest
+of the superseded generation and the finding, so a repeated delivery recovers
+the recorded generation and writes nothing more. A
+`livespec-incident-recovery-v1` comment records the recovery request: the
+superseded and attributed generations, the attributed PR, the retained
+failures and `repayment_owed: true`. The revert itself stays the trusted
+controller's.
+
+`require_repayment_current(client, observed, effect)` is the gate a repayment
+merge, proof or closure takes immediately before its side effect. A repayment
+generation the chain has moved past is refused `incident-repayment-superseded`,
+naming the effect. Any other stale observation keeps
+`incident-generation-stale`.
+
+A `deferred-proof` finding while master is healthy never reopens
+(`incident-finding-deferred-proof-only`). `record_deferred_finding` records it
+as `deferred-finding:<run>` debt on the live repayment generation (admission,
+ready or active), so `validate_repayment_carrier` names it outstanding until
+the repayment pull request repays it. Item lifecycle, claim and master stay
+as they are. A deferred finding with master unhealthy is
+`incident-finding-not-isolated`, and a trunk, pull-request or consumer finding
+is `incident-finding-requires-recovery`.
+
+`record_revert_receipt` reconciles the controller's `RevertReceipt` and moves
+`reverting` to `collecting-failures`. `enter_corrected_attempt` then opens a
+corrected `repair` attempt on its own `branch-reserved` carrier, only from
+`collecting-failures` (`incident-correction-not-eligible`) and only while the
+original failures stay retained (`incident-correction-failures-missing`). Its
+`Correction` must be fresh. A `repair` whose head is a failed or already
+landed head, or any correction that reuses a failing run as its evidence, is
+`incident-correction-unchanged-reland`. A `measured-resolution` may keep the
+original head when its measurement is new. Any other kind, or empty evidence,
+is `incident-correction-evidence-missing`. The corrected attempt keeps its
+deferred debt and `repayment_required`, so final normal repayment stays owed,
+and its retained record carries the original failures beside the correction.
+`retained_failures` and `recovery_attempts` read those records. Recovery is
+counted there, apart from ordinary acceptance rework and nonconvergence
+budgets.
+
+## Incident completion
+
+`livespec_orchestrator_beads_fabro.incident_completion` carries final normal
+proof (specification "Expedited incident lifecycle", scenario "incident
+completion requires final normal proof rather than an old repair merge").
+
+`read_incident_standing` locates an incident only by the item's own genesis
+comment and walks the chain the genesis names. A `normal` item has no genesis
+and closes as before. An `incident` standing carries every obligation the chain
+still owes with nothing observed, which is empty only once the chain records
+`closed`. An `unreadable` standing (comments unreadable, a malformed or
+ambiguous genesis, a chain that refuses) is an obligation too, never a normal
+item.
+
+Every closure route reads the standing immediately before it closes and holds
+the item while anything is outstanding: the Dispatcher's completion valve
+(which `reconcile-merged` and a proof-only resume reach) parks the item instead
+of taking its completed or no-change-needed close; `reconcile-merged --regrade`
+parks a PASS; the `accept:<id>` valve refuses `incident-obligation-outstanding`;
+`close-work-item` refuses every resolution with `IncidentClosureRefusedError`
+and exit 5. Each hold is journaled as `incident-obligation-outstanding` with its
+route and the named obligations.
+
+Acceptance grades the original expedited carrier PRs together with the current
+repayment carrier: the merged-diff leg is every original PR's diff followed by
+the current one. A merge the chain does not bind as the current repayment
+carrier (the earlier repair PR resumed for proof, or a repayment not yet bound
+as `repayment-acceptance`) is ungradeable, so the pass parks at
+NEEDS_ATTENTION, and no proof pointer is written for it
+(`incident-proof-pointer-refused`). A marker-removal diff alone never grades.
+
+`complete_incident` takes the observed `IncidentCompletionEvidence` and records
+`closed` only when nothing is outstanding: the current phase is
+`repayment-acceptance` with its PR bound, merged and landed; that PR's normal
+master run is complete, `success` and names a repayment landed commit; the head
+tree carries no marker; every cumulative original path was validated; every
+deferred verification and spec debt was repaid; the manual outcome is recorded;
+and no related consumer or PR failure lacks a disposition. Missing, cancelled,
+incomplete or unreadable evidence is a named obligation
+(`repayment-master-ci-missing`, `repayment-master-ci-cancelled:<run>`,
+`marker-removal-unobserved`, ...). A repeated delivery after `closed` recovers
+it. The transition writer refuses any `closed` successor that does not follow
+`repayment-acceptance`, whoever commits it.
+
+Each standing also carries the chain head it observed, and every effect site
+revalidates that generation through `require_repayment_current` (bd-ib-k5teti)
+immediately before its side effect: the proof pointer write (effect `proof`),
+the completion valve's and the regrade arm's close, the `accept:<id>` valve and
+`close-work-item` (effect `closure`), and `complete_incident`'s `closed`
+transition. A repayment generation a regression reopen superseded is refused
+`incident-repayment-superseded`, any other moved generation
+`incident-generation-stale`; the refusal is journaled or reported like any
+other outstanding obligation and nothing is written.
+
+The operator entrance that gathers the completion evidence and calls
+`complete_incident` is the `complete-incident` action (section "Lifecycle
+actions" below), and `bind-repayment-acceptance` binds the merged repayment
+PR first. Not in this slice: doing either from the Dispatcher automatically.
+Until an operator binds the repayment and runs `complete-incident`, an incident
+item parks in acceptance with its obligations named.
+
+## Lifecycle actions
+
+The `incident_authority.py` process boundary exposes repayment, regression
+recovery and correction as actions (bd-ib-nabx3u). Each is a thin adapter over
+the released function above. Each takes the same `--repo`, `--repository`,
+`--item`, `--attempt`, `--phase`, `--operation`, `--generation` and `--owner`
+identity as the other actions, naming the CURRENT attempt it acts on, and
+prints one schema-1 reply. A success carries the recorded generation under
+`result.reading.attempt`; a refusal exits 78 and names the library's code. A
+payload argument is valid only for its own action, and a missing one is a
+usage error (exit 2).
+
+| Action | Payload | Calls |
+| --- | --- | --- |
+| `enter-repayment` | `--master-run <run-id> --target-ref <ref>` | `enter_repayment` |
+| `advance-repayment` | `--to-phase <phase> [--admission-complete]` | `advance_repayment` |
+| `bind-repayment-acceptance` | `--pr <number>` | `bind_repayment_acceptance` |
+| `reopen-regression` | `--attributed-json <attempt> --finding-json <finding> --principal <owner>` | `reopen_for_regression` |
+| `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
+| `record-revert-receipt` | `--revert-receipt-json <receipt>` | `record_revert_receipt` |
+| `record-rollback-conflict` | `--rollback-conflict-json <conflict>` | `record_rollback_conflict` |
+| `resolve-rollback-conflict` | `--rollback-resolution-json <resolution>` | `resolve_rollback_conflict` |
+| `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
+| `complete-incident` | `--master-run <run-id> --completion-json <attestation>` | `complete_incident` |
+
+`enter-repayment` does not take the master result from its caller. It reads
+the named run with `gh run view <run-id> --repo <repository> --json
+headSha,status,conclusion`, so the run's own completion and conclusion gate
+the repayment. A run the forge cannot report is
+`incident-repayment-master-ci-unobservable`. A run still in progress, or one
+that failed, is `incident-repayment-master-ci-outstanding`, and nothing is
+recorded. `--admission-complete` asserts that ordinary admission approved the
+unchanged incident Definition of Done; only `advance-repayment` accepts it.
+`--principal` names the incident owner a reopened item returns to.
+`record-revert-receipt` records the trusted controller's receipt. It is the
+step that makes `correct-attempt` eligible.
+`record-rollback-conflict` records an owned inverse-patch conflict for the
+current `reverting` attempt with its release condition, writing the
+`rollback-conflict` phase and the `blocked` lifecycle status in one transition;
+`resolve-rollback-conflict` releases it by that condition into `reverting` while
+the inverse recovery is still owed, or `collecting-failures` once the resolution
+carries a revert receipt. An exact retry of either recovers the recorded
+transition.
+
+`bind-repayment-acceptance` records `repayment-acceptance` once the factory
+run's repayment PR has merged (bd-ib-pqz3nw). `advance-repayment --to-phase
+repayment-acceptance` cannot do this. It changes only the phase and generation,
+so the transition writer refuses it once the carrier has a PR. Name the current
+`repayment-active` attempt while the item rests in `acceptance`
+(`incident-repayment-phase-order`, `incident-repayment-stale-observation` or
+`incident-phase-state-mismatch` otherwise). The action reads the PR with
+`gh pr view <pr> --repo <repository> --json
+number,state,headRefName,headRefOid,mergeCommit,commits`:
+
+- A PR that is not `MERGED` is `incident-repayment-pr-unmerged`.
+- A PR the forge cannot report is `incident-repayment-pr-unobservable`.
+- A head branch that is not the carrier's reserved ref is
+  `incident-repayment-carrier-mismatch`.
+
+It then fetches the merge commit and reads its first-parent history with
+`git log`. A rebase merge (one commit per PR commit, with the same subjects)
+binds every landed commit and its tree, oldest first. A squash or merge commit
+binds the merge commit alone. History that cannot be read is
+`incident-repayment-landed-unobservable`. The successor binds the PR number,
+the PR head and a `pr-bound` carrier whose remote head is that head. It is
+committed through the canonical transition writer, and nothing is written on
+any refusal.
+
+`complete-incident` is the operator entrance that records `closed` (bd-ib-pqz3nw).
+Name the current `repayment-acceptance` attempt. The action gathers what
+`complete_incident` needs, and takes none of it from the caller as a result:
+
+- The repayment merge comes from `gh pr view <pr> --repo <repository> --json
+  number,state` of the PR the named attempt binds. Only `MERGED` counts as
+  observed. A repayment with no bound PR is not read at all.
+- The master result comes from the same `gh run view` read that
+  `enter-repayment` takes, for `--master-run`. The run must be complete and
+  successful, and its head must be one of the repayment's landed commits.
+- The marker scan fetches that run head (`git fetch origin <head>` in `--repo`)
+  and runs `git grep -l -F` for `incident_marker(<item>)` over its tree. A tree
+  that cannot be read stays `marker-removal-unobserved`.
+- `--completion-json` is the operator's attestation. It is the canonical
+  encoding of exactly `manual_outcome` (a boolean), `repaid_debt`,
+  `undisposed_failures` and `validated_paths` (each a list of strings), for
+  example `{"manual_outcome":true,"repaid_debt":["normal-factory-proof"],"undisposed_failures":[],"validated_paths":["app.py"]}`.
+
+When anything is still owed, the reply is `incident-completion-outstanding`,
+naming the item and every obligation in order (for example
+`repayment-master-ci-incomplete:<run>`, `marker-present:<path>`,
+`deferred-debt-outstanding:<work>` or `manual-outcome-missing`), and nothing is
+written. A PR the forge cannot report is
+`incident-completion-repayment-pr-unobservable`, and a run it cannot report is
+`incident-repayment-master-ci-unobservable`. On success, `result.recorded` is
+true and `result.reading.attempt` is the `closed` generation. Repeating the
+action after `closed` returns `recovered: true` with no reading and writes
+nothing more.
+
+Every JSON payload must be the canonical encoding (sorted keys, compact
+separators) of exactly its record's fields with their types: a `Finding`, a
+`RevertReceipt`, a `Correction`, or for `--attributed-json` a complete attempt
+record as the chain retains it. Anything else is
+`incident-action-invalid-payload`, naming the argument, and nothing is
+written.
 
 ## Genesis
 
@@ -216,10 +526,22 @@ exact current reading, is refused as `incident-generation-stale`, and
 `commit-transition` applies the same gate before any close. A legacy attempt
 without a carrier cannot select one (`incident-carrier-unsupported`).
 
-Not in this slice: wiring `carrier_selection` into the Dispatcher's
-reconcile-merged and post-host-record calls, returning ownership for normal
-repayment, and the live multi-host proof the contract requires before
-enablement.
+The Dispatcher's two merge-resolving valves take that selector. For an item
+that carries a genesis record, `reconcile-merged` resolves the repository
+through the forge, reads the chain's current generation (`read_incident_head`),
+selects through `carrier_selection`, and resolves the merge of THAT pull
+request with the carrier's head branch as the plan branch, so the forge view
+that validates the selection identifies the merge by the incident carrier
+itself; an operator `--pr` naming another pull request is refused.
+`post-host-record` publishes its record on the pull request the chain names.
+Both refuse, with exit 3 and no effect, a superseded reading as
+`incident-carrier-stale`, a carrier that is not yet `pr-bound` as
+`incident-carrier-unbound`, and an unresolvable repository as
+`incident-repository-unresolved`. An item with no genesis record makes no chain
+or forge read here and resolves exactly as before.
+
+Not in this slice: returning ownership for normal repayment, and the live
+multi-host proof the contract requires before enablement.
 
 The canonical JSON receipt contains `receipt_id`, `hook` (`pre-commit`,
 `commit-msg`, or `pre-push`), the exact Git `tree`, `mode`,

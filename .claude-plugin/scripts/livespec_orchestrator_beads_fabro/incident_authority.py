@@ -34,7 +34,11 @@ from livespec_orchestrator_beads_fabro._incident_entry import (
     incident_claim_decided,
 )
 from livespec_orchestrator_beads_fabro._incident_genesis import GenesisReceipt, GenesisRequest
-from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
+from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import (
+    read_authority,
+    read_history,
+    read_incident_head,
+)
 from livespec_orchestrator_beads_fabro.effects._incident_authority_transition import (
     commit_transition,
 )
@@ -65,6 +69,8 @@ __all__: list[str] = [
     "incident_claim_decided",
     "publish_incident_genesis",
     "read_incident_authority",
+    "read_incident_head",
+    "read_incident_history",
     "require_current_generation",
 ]
 
@@ -81,6 +87,13 @@ def read_incident_authority(
     return read_authority(
         client=client, repository=repository, item_id=item_id, query=query, historical=historical
     )
+
+
+def read_incident_history(
+    *, client: BeadsClient, repository: str, item_id: str
+) -> tuple[IncidentAttempt, ...] | AuthorityRefusal:
+    """Every retained attempt of one item, oldest first: provenance that authorizes nothing."""
+    return read_history(client=client, repository=repository, item_id=item_id)
 
 
 def commit_incident_transition(

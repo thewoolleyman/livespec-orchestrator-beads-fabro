@@ -27,8 +27,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria 
     CriterionCheck,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
+    IncidentAcceptance,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentStanding
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -1137,6 +1141,61 @@ def test_regrade_pass_with_an_unverified_host_assertion_parks_in_acceptance(
     assert "acceptance-parking-record" in stages
     parking = next(record for record in records if record["stage"] == "acceptance-parking-record")
     assert parking["pending"] == ["host-captured record for 'The released command works.'"]
+
+
+def test_regrade_pass_on_an_incident_owing_final_normal_proof_parks_instead_of_closing(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A re-graded PASS cannot discharge an incident whose chain has not recorded `closed`."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    owing = IncidentStanding(
+        item_id=item.id,
+        kind="incident",
+        repository="owner/repository",
+        history=(),
+        outstanding=("normal-repayment-unmerged:master-observation",),
+    )
+    monkeypatch.setattr(
+        regrade,
+        "incident_acceptance_for",
+        lambda **_: IncidentAcceptance(standing=owing, scope=None, config=_config()),
+    )
+    monkeypatch.setattr(regrade, "run_acceptance_pass", lambda **_: _AcceptancePass(verdict="PASS"))
+
+    exit_code = main(
+        argv=["reconcile-merged", "--repo", str(repo), "--item", item.id, "--regrade", "--json"]
+    )
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert (payload[0]["status"], payload[0]["stage"]) == ("green", "acceptance")
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.status == "acceptance"
+    records = _journal_records(repo=repo)
+    hold = next(
+        record for record in records if record["stage"] == "incident-obligation-outstanding"
+    )
+    assert (hold["route"], hold["outstanding"]) == (
+        "regrade",
+        ["normal-repayment-unmerged:master-observation"],
+    )
+    assert "ledger-regrade-accept" not in [record["stage"] for record in records]
 
 
 def test_regrade_park_reaches_the_lifecycle_reconcile_chokepoint(

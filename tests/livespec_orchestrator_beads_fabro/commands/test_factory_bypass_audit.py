@@ -234,7 +234,7 @@ def test_render_report_with_findings() -> None:
     assert "Flagged 1 product-code PR(s)" in text
     assert "- PR #7 by @thewoolleyman" in text
     assert f"    - {_PRODUCT}" in text
-    assert "Factory-Override exception" not in text
+    assert "factory exception" not in text
 
 
 def test_render_report_lists_recorded_exceptions() -> None:
@@ -243,7 +243,7 @@ def test_render_report_lists_recorded_exceptions() -> None:
         policy=_policy(),
     )
     text = render_report(report=report, policy=_policy())
-    assert "Recorded 1 Factory-Override exception(s):" in text
+    assert "Recorded 1 factory exception(s):" in text
     assert "- PR #21 by @thewoolleyman" in text
 
 
@@ -276,7 +276,14 @@ def test_render_json_carries_recorded_exceptions() -> None:
     payload = json.loads(render_json(report=report, policy=_policy()))
     assert payload["exception_count"] == 1
     assert payload["exceptions"] == [
-        {"number": 31, "title": "feat: change", "author": "thewoolleyman"}
+        {
+            "author": "thewoolleyman",
+            "item_id": "",
+            "kind": "factory-override",
+            "number": 31,
+            "repayment_outstanding": False,
+            "title": "feat: change",
+        }
     ]
 
 
@@ -397,3 +404,118 @@ def test_main_threads_limit_and_since_and_one_repo_to_both_gh_reads(
 
 def test_default_factory_app_login_tracks_renamed_fleet_app() -> None:
     assert DEFAULT_FACTORY_APP_LOGIN == "app/thewoolleyman-factory-bot"
+
+
+# --------------------------------------------------------------------------
+# main — incident receipts are read from the named items' retained chains
+# --------------------------------------------------------------------------
+
+
+def test_main_requires_a_repository_to_bind_incident_receipts() -> None:
+    with pytest.raises(SystemExit, match="2"):
+        _ = main(argv=["--incident-item", "incident-1"], seam=_seam(prs_stdout="[]"))
+
+
+def test_main_reports_an_unverifiable_incident_and_keeps_its_carriers_flagged(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient
+
+    code = main(
+        argv=["--json", "--repo", "owner/repository", "--incident-item", "incident-1"],
+        seam=_seam(prs_stdout=_stdout_one_bypass()),
+        authority_client=FakeBeadsClient(),
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 1
+    assert payload["exceptions"] == []
+    assert len(payload["incident_refusals"]) == 1
+    assert payload["incident_refusals"][0].startswith("incident item incident-1 could not be")
+    assert "incident-authority-unavailable" in payload["incident_refusals"][0]
+
+
+def test_main_records_an_exact_incident_exception_read_from_the_named_items_chain(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, IssueDraft
+    from livespec_orchestrator_beads_fabro._incident_authority_payload import (
+        GENESIS_MARKER,
+        TOKEN_TITLE,
+        TRANSITION_MARKER,
+    )
+
+    def canonical(value: object) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    client = FakeBeadsClient()
+    client.create_issue(
+        draft=IssueDraft(
+            issue_id="incident-1",
+            issue_type="bug",
+            title="incident",
+            description="behavior",
+            assignee=None,
+            created_at="2026-11-04T00:00:00Z",
+        )
+    )
+    root = client.create_no_history_issue(title=TOKEN_TITLE, description="token")
+    successor = client.create_no_history_issue(title=TOKEN_TITLE, description="token")
+    client.add_comment(
+        issue_id="incident-1",
+        body=GENESIS_MARKER
+        + canonical(dict(schema=1, repository="o/r", item_id="incident-1", root_token_id=root)),
+    )
+    attempt = dict(
+        repository="o/r",
+        item_id="incident-1",
+        attempt_id="attempt-1",
+        phase="repair",
+        operation_id="operation-1",
+        generation=1,
+        owner="operator:alice",
+        base="a" * 40,
+        head="b" * 40,
+        pr_number=55,
+        landed_commits=["c" * 40],
+        landed_trees=["d" * 40],
+        original_paths=[_PRODUCT],
+        deferred_work=["normal-factory-proof"],
+        repayment_required=True,
+    )
+    client.close_issue_without_verdict(
+        issue_id=root,
+        reason=TRANSITION_MARKER
+        + canonical(
+            dict(
+                schema=1,
+                repository="o/r",
+                item_id="incident-1",
+                prior_token_id=root,
+                next_token_id=successor,
+                attempt=attempt,
+            )
+        ),
+    )
+    merged = json.loads(_stdout_one_bypass())
+    merged[0]["headRefOid"] = "b" * 40
+    merged[0]["commits"] = [{"oid": "c" * 40, "messageHeadline": "fix", "messageBody": ""}]
+    code = main(
+        argv=["--json", "--repo", "o/r", "--incident-item", "incident-1"],
+        seam=_seam(prs_stdout=json.dumps(merged)),
+        authority_client=client,
+    )
+    assert code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["count"] == 0
+    assert payload["incident_refusals"] == []
+    assert payload["exceptions"] == [
+        {
+            "author": "thewoolleyman",
+            "item_id": "incident-1",
+            "kind": "incident-receipt",
+            "number": 55,
+            "repayment_outstanding": True,
+            "title": "feat: sneaky",
+        }
+    ]

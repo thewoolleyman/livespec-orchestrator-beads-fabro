@@ -241,6 +241,9 @@ def _publish(*, post: HostRecordPost, item: WorkItem, evidence: Evidence, seams:
         emit(_IDENTITY_REFUSAL_TEXT.format(reason=NO_IDENTITY_REFUSAL))
         return _EXIT_REFUSED
     pr_number = host_record_target(repo=post.repo, item=item, runner=runner)
+    if isinstance(pr_number, str):
+        emit(pr_number)
+        return _EXIT_REFUSED
     if pr_number is None:
         emit(_NO_TARGET_REFUSAL.format(item_id=item.id))
         return _EXIT_REFUSED
@@ -333,7 +336,7 @@ def _render_and_post(
         return _EXIT_FAILED
     if post.verdict not in REPLAY_VERDICTS:
         return 0
-    return seams.reconcile(work_item_id=item.id)
+    return seams.reconcile(work_item_id=item.id, pull_request=pr_number)
 
 
 def _attachment_target(*, post: HostRecordPost, identity: str) -> AttachmentTarget:

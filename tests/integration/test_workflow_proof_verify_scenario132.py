@@ -473,7 +473,7 @@ def test_a_failed_replay_parks_and_an_unmatched_verdict_falls_through_to_needs_h
 
 
 def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
-    """`fix.max_visits` IS the bound, and three nodes route into it.
+    """`fix.max_visits` IS the bound, and three agent-finding nodes route into it.
 
     A node that reaches `max_visits` ABORTS the run at entry
     (`VisitLimitExceeded` on the pinned engine; a firing-budget failure on the
@@ -491,9 +491,11 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     with a different number of rounds; asserting the three equal would now be
     asserting a coincidence.
 
-    The PRODUCER COUNT is asserted as the tripwire: a fifth node routing into
-    `fix` would silently halve somebody's share, and this is the assertion that
-    notices.
+    The PRODUCER COUNT is asserted as the tripwire: a fourth agent-finding node
+    routing into `fix` would silently halve somebody's share, and this is the
+    assertion that notices. `janitor_failure_route` is excluded because it only
+    classifies the ordinary `janitor_refresh_route` failure; it does not add a
+    new fix-loop allocation.
 
     THE FOURTH PRODUCER IS NOT AN AGENT FINDING and is excluded from the
     two-apiece arithmetic deliberately. v134's "Refresh-repair accounting"
@@ -509,14 +511,21 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
         _source_of(edge=edge) for edge in _edges(text=text) if _target_of(edge=edge) == "fix"
     }
 
-    assert producers == {"janitor_refresh_route", "proof_capture", _VERIFY, "refresh_repair"}
+    assert producers == {
+        "fix_commit_settle",
+        "janitor_failure_route",
+        "janitor_refresh_route",
+        "proof_capture",
+        _VERIFY,
+        "refresh_repair",
+    }
     budgets = {
         node: re.search(r"max_visits=(?P<value>\d+)", _node_body(text=text, node=node) or "")
         for node in ("fix", "disposition", "review_fix")
     }
     assert all(match is not None for match in budgets.values()), budgets
     values = {node: int(match.group("value")) for node, match in budgets.items() if match}
-    assert values["fix"] >= 2 * len(producers - {"refresh_repair"})
+    assert values["fix"] >= 2 * len(producers - {"janitor_failure_route", "refresh_repair"})
     assert values["disposition"] == values["review_fix"]
 
 

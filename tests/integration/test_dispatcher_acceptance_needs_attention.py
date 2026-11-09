@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.commands.drive import run_action
+from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     materialize_work_items,
@@ -240,6 +241,7 @@ def _acceptance_pass_over(
         outcome: DispatchOutcome,
         raw_labels: Sequence[str] = (),
         journal_path: Path | None = None,
+        incident: IncidentAcceptanceScope | None = None,
     ) -> AcceptancePassResult:
         judged = (
             replace(item, acceptance_criteria=None, description="Do the thing.")
@@ -253,6 +255,7 @@ def _acceptance_pass_over(
             runner=runner,
             raw_labels=raw_labels,
             journal_path=journal_path,
+            incident=incident,
         )
 
     return _call

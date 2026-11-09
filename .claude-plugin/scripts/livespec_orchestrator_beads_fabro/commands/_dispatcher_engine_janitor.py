@@ -24,6 +24,7 @@ import os
 from contextlib import ExitStack
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro._incident_repayment_scope import INCIDENT_FLAGS
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     StageJournalOptions,
     journal_stage,
@@ -92,8 +93,14 @@ _JANITOR_TIMEOUT_SECONDS = 3600.0
 # cross-module private import is the one thing this package's layering forbids;
 # the invoker name is PUBLIC at its reader, so it comes from there. A later
 # variable the Dispatcher reads to select a factory or to attribute a journal
-# record belongs in this tuple.
-JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = ("LIVESPEC_FABRO_FACTORY", INVOKER_ENV_VAR)
+# record belongs in this tuple. The two incident execution flags ride it too:
+# a normal repayment's hooks and gates run with both removed, whatever an
+# inherited value held.
+JANITOR_REMOVED_ENV_VARS: tuple[str, ...] = (
+    "LIVESPEC_FABRO_FACTORY",
+    INVOKER_ENV_VAR,
+    *INCIDENT_FLAGS,
+)
 
 
 def janitor_removed_env_vars() -> tuple[str, ...]:

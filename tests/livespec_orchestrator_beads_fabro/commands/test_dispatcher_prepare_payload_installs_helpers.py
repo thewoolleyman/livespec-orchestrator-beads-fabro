@@ -26,6 +26,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program i
     HOOK_LIMIT_PROGRAM_FILENAME,
     hook_limit_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_commit_programs import (
+    COMMIT_GREEN_PROGRAM_FILENAME,
+    COMMIT_RED_PROGRAM_FILENAME,
+    commit_green_program_source,
+    commit_red_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
@@ -121,6 +127,8 @@ def _landed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         (RECORD_FILE_PROGRAM_FILENAME, record_file_program_source),
         (HOOK_LIMIT_PROGRAM_FILENAME, hook_limit_program_source),
         (COMMIT_RUNNER_PROGRAM_FILENAME, commit_runner_program_source),
+        (COMMIT_RED_PROGRAM_FILENAME, commit_red_program_source),
+        (COMMIT_GREEN_PROGRAM_FILENAME, commit_green_program_source),
         (PROOF_GRADE_PROGRAM_FILENAME, proof_grade_program_source),
     ],
 )

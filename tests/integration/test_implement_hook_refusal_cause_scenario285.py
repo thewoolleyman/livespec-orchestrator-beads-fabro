@@ -19,8 +19,13 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
+    COMMIT_RUNNER_PROGRAM_FILENAME,
+    commit_runner_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -81,6 +86,15 @@ def _route(
     return subprocess.run(
         ["sh", "-c", script], cwd=repo, check=False, capture_output=True, text=True, env=env
     )
+
+
+def _child_environment() -> dict[str, str]:
+    """Keep the real runner process outside this suite's Git and coverage state."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(("GIT_", "COV_CORE_")) and name != "COVERAGE_PROCESS_START"
+    }
 
 
 def _cause(*, repo: Path) -> str:
@@ -297,3 +311,124 @@ def test_a_commit_run_refusal_is_attributed_from_its_recorded_brief(tmp_path: Pa
     assert "hook exit status: 3" in cause
     assert "failed targets: check-types check-lint" in cause
     assert f"first error line: {_ERROR_LINE}" in cause
+
+
+def test_a_git_refusal_after_a_passing_hook_is_not_reported_as_a_hook_refusal(
+    tmp_path: Path,
+) -> None:
+    """A terminal runner report preserves Git's refusal after the aggregate passed."""
+    repo = _clone(tmp_path=tmp_path, hook="#!/bin/sh\nexit 0\n")
+    runner = tmp_path / COMMIT_RUNNER_PROGRAM_FILENAME
+    _ = runner.write_text(commit_runner_program_source(), encoding="utf-8")
+    run_id = "commit-00000000000000000000000000000001"
+    record = repo / ".git" / "livespec-commit-runs" / f"{run_id}.json"
+    record.parent.mkdir()
+    _ = record.write_text(
+        json.dumps({"state": "failed", "exit_code": 1, "hook_ran": True}), encoding="utf-8"
+    )
+    refusal = "You asked to amend the most recent commit, but doing so would make it empty."
+    _ = record.with_suffix(".output").write_text(
+        "lefthook hook: pre-commit\nAll 94 targets passed\n" + refusal + "\n",
+        encoding="utf-8",
+    )
+
+    waited = subprocess.run(
+        [sys.executable, str(runner), "wait", run_id, "--timeout-seconds", "0"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_child_environment(),
+    )
+    report = json.loads(waited.stdout)
+
+    assert report["hook_passed"] is True
+    assert report["git_refusal_line"] == refusal
+    settle = subprocess.run(
+        [
+            sys.executable,
+            str(runner),
+            "settle",
+            "--timeout-seconds",
+            "0",
+            "--brief-file",
+            str(repo / ".git" / _LIVE),
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=_child_environment(),
+    )
+    assert settle.returncode == 0
+    _ = (repo / ".git" / _REENTRIES).write_text("1\n", encoding="utf-8")
+
+    result = _route(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    cause = _cause(repo=repo)
+    assert refusal in cause
+    assert "repository commit hook refused" not in cause
+
+
+def test_a_passing_commit_after_a_passing_hook_carries_no_git_refusal_line(
+    tmp_path: Path,
+) -> None:
+    """Git's refusal line belongs only to a non-zero commit; a commit that exited 0 has none."""
+    hook = "#!/bin/sh\nprintf 'lefthook hook: pre-commit\\nAll 3 targets passed\\n'\nexit 0\n"
+    repo = _clone(tmp_path=tmp_path, hook=hook)
+    runner = tmp_path / COMMIT_RUNNER_PROGRAM_FILENAME
+    _ = runner.write_text(commit_runner_program_source(), encoding="utf-8")
+    commit = ["git", "commit", "-m", "feat: a passing commit"]
+    environment = {
+        **_child_environment(),
+        "GIT_AUTHOR_NAME": "Test",
+        "GIT_AUTHOR_EMAIL": "test@example.com",
+        "GIT_COMMITTER_NAME": "Test",
+        "GIT_COMMITTER_EMAIL": "test@example.com",
+    }
+
+    _ = subprocess.run(
+        ["git", "commit", "--quiet", "-m", "chore: base"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        env=environment,
+    )
+    _ = (repo / "module.py").write_text("x = 2\n", encoding="utf-8")
+    _ = subprocess.run(["git", "add", "module.py"], cwd=repo, check=True)
+
+    started = subprocess.run(
+        [sys.executable, str(runner), "start", "--", *commit],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    waited = subprocess.run(
+        [
+            sys.executable,
+            str(runner),
+            "wait",
+            started.stdout.strip(),
+            "--timeout-seconds",
+            "60",
+        ],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+    report = json.loads(waited.stdout)
+
+    assert report["state"] == "passed"
+    assert report["hook_passed"] is True
+    assert "git_refusal_line" not in report
+    record = json.loads(
+        (repo / ".git" / "livespec-commit-runs" / f"{started.stdout.strip()}.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert "git_refusal_line" not in record

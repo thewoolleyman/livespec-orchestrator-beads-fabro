@@ -45,6 +45,7 @@ __all__: list[str] = [
     "ENTRY_MARKER",
     "FILING_METADATA_KEY",
     "GENERATION_STALE",
+    "HOLDER_DISPATCH_PREFIX",
     "INCIDENT_CLAIM_METADATA_KEY",
     "CarrierSelection",
     "FilingReceipt",
@@ -67,6 +68,8 @@ ENTRY_LABEL = "incident:entry"
 INCIDENT_CLAIM_METADATA_KEY = "incident_claim"
 FILING_METADATA_KEY = "incident_filing"
 GENERATION_STALE = "incident-generation-stale"
+# The holder stamp's dispatch and run ids carry this prefix; no factory dispatch id does.
+HOLDER_DISPATCH_PREFIX = "incident:"
 _DEFERRED_TO_REPAYMENT = ("ordinary-admission", "spec-debt")
 _FILING_TEXT_KEYS = (
     "repository",
@@ -237,9 +240,9 @@ def takeover_metadata(
     prior row is retained beside it, with the cancellation it did not observe.
     """
     stamp = ClaimStamp(
-        dispatch_id=f"incident:{operation_id}",
+        dispatch_id=f"{HOLDER_DISPATCH_PREFIX}{operation_id}",
         dispatching_host=principal,
-        run_id=f"incident:{root_token_id}",
+        run_id=f"{HOLDER_DISPATCH_PREFIX}{root_token_id}",
         factory_name=None,
         factory_server=None,
     )

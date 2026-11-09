@@ -49,6 +49,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_janitor import post_merge
+from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_pr import (
+    incident_selection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     invoker_from_args,
     require_invoker_refusal,
@@ -157,6 +160,12 @@ def run_reconcile_merged_command(
     # Absent on the namespaces the probe and the host-record primitive build, which
     # never select a pull request.
     selected_pr: int | None = getattr(args, "pr", None)
+    selection = incident_selection(
+        repo=repo, item=item, runner=command_runner, plan=plan, selected_pr=selected_pr
+    )
+    if isinstance(selection, int):
+        return selection
+    plan, selected_pr = selection
     if args.regrade:
         outcome = run_regrade(
             repo=repo, item=item, plan=plan, runner=command_runner, journal=journal

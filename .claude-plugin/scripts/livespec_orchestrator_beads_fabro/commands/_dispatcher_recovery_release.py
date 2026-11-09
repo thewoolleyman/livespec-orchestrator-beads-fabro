@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_records import (
     PROVIDER_LIMIT_RELEASE_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_records import (
+    STALE_ASSIGNEE_CLEAR_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition import (
     STALL_RELEASE_STAGE,
 )
@@ -60,13 +63,16 @@ __all__: list[str] = [
 # lands, with nothing saying so.
 ADAPTER_LAUNCH_RELEASE_STAGE = "adapter-launch-release"
 
-# The three releases the clause enumerates. The other two are IMPORTED from the
-# modules that write them, so a rename moves both ends together.
+# The releases the clause enumerates. All but the adapter launch release are
+# IMPORTED from the modules that write them, so a rename moves both ends
+# together. A `stale-assignee-clear` row keeps the item released after the
+# clearance has removed the assignee the other half of the release reads.
 RELEASE_STAGES = frozenset(
     {
         STALL_RELEASE_STAGE,
         PROVIDER_LIMIT_RELEASE_STAGE,
         ADAPTER_LAUNCH_RELEASE_STAGE,
+        STALE_ASSIGNEE_CLEAR_STAGE,
     }
 )
 
