@@ -7892,7 +7892,7 @@ Feature: The claim half of run reconciliation
     And host B lists the claim in held with the reason owner-elsewhere
 
   Scenario: Marked and held items are not surveyed
-    Given one active fabro item carries rework:pending and another carries a merge-hold: label
+    Given one active fabro item carries rework:pending as a parked rework and another carries a merge-hold: label
     And neither item's stamped run exists on its factory
     When a reconcile-runs pass runs
     Then neither item changes status
@@ -13707,4 +13707,35 @@ Feature: A sandbox checks a tree with the tooling release that tree pins, and wo
     And each is writable by the run's agent
     And each is non-shallow or carries the depth its repository declares sufficient
     And livespec's wiring-completeness-cross-repo check reads the sibling clones under /livespec-siblings
+```
+
+## Scenario 337 — A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed
+
+```gherkin
+Feature: Reconciliation completes a handed-off rework
+  As the maintainer of a repository dispatched to the factory
+  I want a merged rework re-dispatch completed like any other merged dispatch
+  So that a fix-forward rework does not rest active under rework:pending forever
+
+  Scenario: A merged handed-off rework is completed and loses its marker
+    Given an active fabro item carrying rework:pending whose newest dispatch is a rework dispatch
+    And that dispatch's run succeeded and journaled merge-wait-handed-off for its pull request
+    And the forge reports that pull request merged
+    When a reconcile-runs pass runs on the owning host
+    Then the item moves to acceptance
+    And the item no longer carries rework:pending
+
+  Scenario: An open handed-off rework is held with a named reason
+    Given an active fabro item carrying rework:pending whose newest rework dispatch journaled merge-wait-handed-off
+    And the forge reports its pull request open with auto-merge armed and every required check passing or running
+    When a reconcile-runs pass runs on the owning host
+    Then the item stays active and still carries rework:pending
+    And held lists the item as run-succeeded naming merge-wait-handed-off
+
+  Scenario: A parked rework is not surveyed
+    Given an active fabro item carrying rework:pending whose rework dispatch has not started
+    And another active fabro item carrying rework:pending whose rework dispatch died before publishing
+    When a reconcile-runs pass runs
+    Then neither item changes status and both still carry rework:pending
+    And held lists neither item
 ```
