@@ -72,6 +72,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_wip import 
     WipRefUnobservable,
     verified_latest_wip_seed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_id_for
 
 __all__: list[str] = [
     "NEEDS_HUMAN_REF_PREFIX",
@@ -199,7 +200,20 @@ def verified_preserved_seed(
             )
         )
     asked: list[str] = [PRESERVED_SOURCE_TERMINAL_TREE]
-    terminal = _needs_human_seed(runner=runner, repo=repo, earlier_run_ids=(latest,))
+    terminal = _needs_human_seed(
+        runner=runner,
+        repo=repo,
+        earlier_run_ids=tuple(
+            dict.fromkeys(
+                one
+                for one in (
+                    latest,
+                    dispatch_id_for(records=journal_records, work_item_id=work_item_id),
+                )
+                if one
+            )
+        ),
+    )
     if terminal is not None:
         return terminal
     # The published tree is named by this item's OWN journal, so with no row
