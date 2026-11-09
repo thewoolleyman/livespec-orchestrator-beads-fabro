@@ -4118,7 +4118,21 @@ work order. A `fix` visit entered on a proof finding MUST end either with a
 tree change addressing the finding or through the structured needs-human
 ending stating why the finding is wrong; it MUST NOT end succeeded with
 an unchanged tree. A `fix` visit entered from a red janitor is unchanged
-and receives the janitor's failure output as before. The proof loops
+and receives the janitor's failure output as before. A janitor visit
+that its node timeout ended before its check aggregate reported a
+verdict is NOT a red janitor for that sentence: it reached no verdict,
+so it has no failure output to give `fix`. Such a visit MUST NOT enter
+`fix`. It MUST be followed by exactly one further janitor visit on the
+same head, with no agent turn between the two visits, and that further
+visit MUST NOT consume a fix-loop round. When the further visit is also
+ended by its node timeout before its check aggregate reported a verdict,
+the run MUST end at `needs_human` with its tree preserved, and the
+recorded cause MUST state that both janitor visits were ended by the
+node timeout with no check-suite verdict. A janitor visit whose check
+aggregate reported a failing verdict, including one whose verdict was
+recorded before a later kill, is a red janitor and still enters `fix`
+exactly as that sentence states. Scenario 138 in `scenarios.md`
+exercises this rule. The proof loops
 stay bounded by the two finding-count bounds above — the third
 `preferred_label=fix` from `proof_capture` and the third behaviour
 `not_reproduced` from `proof_verify` each route to `non_converged`.
