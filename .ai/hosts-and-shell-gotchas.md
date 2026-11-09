@@ -80,3 +80,19 @@ fails with `can't read 30935546 .rw-rw-r-- …: No such file` (measured
 In scripts and command substitutions, use `find <dir> -maxdepth 1 -name
 '*.md'`, a literal path, `command ls`, `/bin/cat` or `/usr/bin/grep`. Never
 read the first token of an `ls` listing as a filename.
+
+## Never `git fetch` in a shared primary checkout
+
+Never run `git fetch` in a shared primary checkout: the checkout has ONE
+`FETCH_HEAD` and one ref namespace, and the Dispatcher stages source worktrees
+from it while you work. A fetch by explicit refspec (measured 2026-11-08: a plan
+seat fetched another item's needs-human tip while `bd-ib-n5e5py` was resuming)
+overwrote the answer a concurrent Dispatcher fetch was about to read, and the
+resume refused with a head it never asked for. The Dispatcher now reads its own
+private ref (`bd-ib-ysgz56`), but every other reader of `FETCH_HEAD` in a shared
+checkout is exposed the same way.
+
+To read a remote head, use `git ls-remote` (for example `git ls-remote origin
+refs/heads/<branch>`), which writes nothing locally. When you need the objects themselves, fetch in a scratch
+clone (`git clone --no-checkout <origin-url> /tmp/scratch`) and never in the
+primary checkout.
