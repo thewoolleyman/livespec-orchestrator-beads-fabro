@@ -3008,6 +3008,34 @@ clones the dispatch path makes are of the dispatch TARGET repo (the work
 site, cloned host-side and again inside the Fabro sandbox); the
 orchestrator's own source is never a dispatch-time prerequisite.
 
+**The release channel.** Fleet members and adopters resolve this plugin
+through the moving `release` branch: every consumer's marketplace
+registration names `ref: release`, and a session-start plugin refresh
+installs whatever commit `release` names. So the commit `release` names
+IS the build a clone can adopt. A *canary* of a release is the set of
+factory runs launched on that release's build from the clones an
+operator moved to it first: this repository's clone for orchestrator
+work, and a named other repository's clone for a non-orchestrator leg.
+Its *canary samples* are those runs' observed outcomes. The *roll step*
+is the operator step that, after the canary samples, adopts that
+release's build in every fleet clone. `release` MUST advance only when
+an operator dispatches
+`.github/workflows/fast-forward-release-branch.yml` with a `tag` input
+naming a published release tag of this repository. That dispatch starts
+the release's canary, at a time the operator chooses, and the canary's
+clones then adopt the build `release` names. The roll step MUST follow
+the canary samples. A `release: published` event MUST NOT advance
+`release`, and the workflow's job MUST NOT run for that event. The
+advance MUST be fast-forward-only: when the named tag's commit does not
+descend from the commit `release` names, the run MUST fail, and
+`release` MUST keep its commit. The dispatch command is
+`gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z`. While a
+fleet clone's session-start refresh still installs whatever `release`
+names, advancing `release` moves that clone as well, so before
+dispatching an operator MUST hold factory launches from every such clone
+outside the canary until the canary samples are judged. Scenario 331 in
+`scenarios.md` exercises this paragraph.
+
 The host-side Dispatcher MUST run on the packaged payload alone — the
 Python standard library plus the vendored runtime under
 `scripts/_vendor/` — with no dependency on an orchestrator working
