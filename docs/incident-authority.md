@@ -328,6 +328,7 @@ usage error (exit 2).
 | `record-rollback-conflict` | `--rollback-conflict-json <conflict>` | `record_rollback_conflict` |
 | `resolve-rollback-conflict` | `--rollback-resolution-json <resolution>` | `resolve_rollback_conflict` |
 | `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
+| `correct-unmerged-attempt` | `--failed-run <run-id> --correction-json <correction> --target-ref <ref>` | `enter_unmerged_correction` |
 | `complete-incident` | `--master-run <run-id> --completion-json <attestation>` | `complete_incident` |
 
 `enter-repayment` does not take the master result from its caller. It reads
@@ -341,6 +342,36 @@ unchanged incident Definition of Done; only `advance-repayment` accepts it.
 `--principal` names the incident owner a reopened item returns to.
 `record-revert-receipt` records the trusted controller's receipt. It is the
 step that makes `correct-attempt` eligible.
+`correct-unmerged-attempt` is the corrected attempt for a `repair` whose
+`pr-bound` expedited PR failed a retained fast check before merge and was then
+closed unmerged (bd-ib-elq5ry). Name the current `pr-bound` `repair` attempt;
+anything else is `incident-correction-not-eligible`, and the forge is not
+read. The action takes no forge result from its caller. It reads the attempt's
+own PR with `gh pr view <pr> --repo <repository> --json
+number,state,headRefName,headRefOid`, and the run the operator names with
+`gh run view <run-id> --repo <repository> --json headSha,status,conclusion`:
+
+- A PR that is not `CLOSED` (open, or merged) is
+  `incident-correction-pr-not-closed-unmerged`.
+- A PR whose head branch or head commit is not the carrier's is
+  `incident-correction-carrier-mismatch`.
+- A run that is not completed with conclusion `failure` on the carrier's exact
+  head is `incident-correction-run-not-failed-on-head`.
+- A PR or run the forge cannot report is `incident-correction-pr-unobservable`
+  or `incident-correction-run-unobservable`.
+- A `--target-ref` equal to the failed carrier's ref is
+  `incident-correction-target-reused`.
+
+The correction is held to the same freshness rule as `correct-attempt`: a
+repair whose head equals any retained failed head, or evidence that reuses a
+retained failed run, is `incident-correction-unchanged-reland`. On success the
+next generation is a new `repair` attempt on a fresh `branch-reserved` carrier
+at `--target-ref`; the failed `pr-bound` attempt stays in the history as
+recorded. A `corrected-attempt` recovery record with `source:
+"unmerged-pull-request"` retains the closed PR and the failed run, and that run
+joins the item's retained failures. Readers need no change for this transition:
+the attempt schema is unchanged, and only the transition writer validates
+successors.
 `record-rollback-conflict` records an owned inverse-patch conflict for the
 current `reverting` attempt with its release condition, writing the
 `rollback-conflict` phase and the `blocked` lifecycle status in one transition;

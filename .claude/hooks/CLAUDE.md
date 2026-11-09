@@ -51,7 +51,8 @@ crossing each boundary:
 - `livespec_tdd_order_targets.py` — which paths a tool is about to write,
   from the structured `file_path` and from five shell write forms.
 - `livespec_tdd_order_policy.py` — the pure decision table over HEAD state,
-  existence at HEAD, and a pending test change.
+  existence at HEAD, a pending test change, and whether an in-progress merge,
+  rebase or cherry-pick left the path unmerged (admitted whatever HEAD says).
 - `livespec_tdd_order_span.py` — one scrubbed OTLP decision span per verdict.
 
 Two fail directions, and they are deliberately opposite. The DECISION is

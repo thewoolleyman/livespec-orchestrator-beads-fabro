@@ -19,6 +19,9 @@ retained `livespec-incident-recovery-v1` record for inspection:
 - `record_revert_receipt` and `enter_corrected_attempt` carry a corrected
   expedited attempt that retains the original failures and needs fresh repair
   or measured resolution evidence; final normal repayment stays owed.
+- `enter_unmerged_correction` opens the same kind of corrected attempt from a
+  `repair` whose bound expedited PR closed unmerged after a retained fast check
+  failed on its head, retaining that failed run with the item's failures.
 
 First-failure recovery itself (the revert) belongs to the trusted controller;
 this module records its request and receipt. Recovery attempts are counted
@@ -60,6 +63,10 @@ from livespec_orchestrator_beads_fabro._incident_recovery_plan import (
     plan_reopen,
     recovery_comment,
 )
+from livespec_orchestrator_beads_fabro._incident_unmerged_correction import (
+    UnmergedFailure,
+    plan_unmerged_correction,
+)
 from livespec_orchestrator_beads_fabro._store_claim_tokens import change_claim
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
@@ -82,8 +89,10 @@ __all__: list[str] = [
     "FindingDisposition",
     "RecoveryEntry",
     "RevertReceipt",
+    "UnmergedFailure",
     "classify_finding",
     "enter_corrected_attempt",
+    "enter_unmerged_correction",
     "record_deferred_finding",
     "record_revert_receipt",
     "recovery_attempts",
@@ -96,6 +105,9 @@ RECOVERY_WRITER = "incident-regression-recovery"
 _REOPEN_INTENT = "incident-regression-reopen"
 _QUERY_FIELDS = ("attempt_id", "phase", "operation_id", "generation", "owner")
 _FINDING_KEYS = frozenset(f.name for f in fields(Finding))
+# Records whose `retained_failures` the item keeps to terminal evidence: a
+# recovery request's attributed failure, and every corrected attempt's own.
+_FAILURE_KINDS = ("recovery-request", "corrected-attempt")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -111,8 +123,8 @@ def _refuse(*, code: str, detail: str) -> AuthorityRefusal:
     return AuthorityRefusal(code=code, detail=detail)
 
 
-def _records(*, client: BeadsClient, item_id: str, kind: str) -> list[dict[str, Any]]:
-    """Distinct retained recovery records of one kind on this item, in append order."""
+def _records(*, client: BeadsClient, item_id: str, kinds: tuple[str, ...]) -> list[dict[str, Any]]:
+    """Distinct retained recovery records of the given kinds on this item, in append order."""
     seen: dict[str, dict[str, Any]] = {}
     for row in client.list_comments(issue_id=item_id):
         text = row.get("text")
@@ -121,15 +133,15 @@ def _records(*, client: BeadsClient, item_id: str, kind: str) -> list[dict[str, 
         record = parse_json(text=text[len(RECOVERY_MARKER) :])
         if isinstance(record, dict):
             body = cast("dict[str, Any]", record)
-            if body.get("item_id") == item_id and body.get("kind") == kind:
+            if body.get("item_id") == item_id and body.get("kind") in kinds:
                 _ = seen.setdefault(text, body)
     return list(seen.values())
 
 
 def retained_failures(*, client: BeadsClient, item_id: str) -> tuple[Finding, ...]:
-    """Every original failure a recovery request retained, kept to terminal evidence."""
+    """Every failure a recovery request or corrected attempt retained, kept to terminal evidence."""
     found: dict[Finding, None] = {}
-    for record in _records(client=client, item_id=item_id, kind="recovery-request"):
+    for record in _records(client=client, item_id=item_id, kinds=_FAILURE_KINDS):
         failures = record.get("retained_failures")
         for raw in cast("list[object]", failures) if isinstance(failures, list) else []:
             if isinstance(raw, dict) and frozenset(cast("dict[str, Any]", raw)) == _FINDING_KEYS:
@@ -139,7 +151,7 @@ def retained_failures(*, client: BeadsClient, item_id: str) -> tuple[Finding, ..
 
 def recovery_attempts(*, client: BeadsClient, item_id: str) -> int:
     """Recovery requests recorded on the item: an account apart from rework budgets."""
-    return len(_records(client=client, item_id=item_id, kind="recovery-request"))
+    return len(_records(client=client, item_id=item_id, kinds=("recovery-request",)))
 
 
 def _append(*, client: BeadsClient, item_id: str, record: dict[str, Any]) -> None:
@@ -290,5 +302,30 @@ def enter_corrected_attempt(
     retained = retained_failures(client=client, item_id=reading.attempt.item_id)
     plan = plan_corrected_attempt(
         reading=reading, retained=retained, correction=correction, target_ref=target_ref
+    )
+    return _commit(client=client, reading=reading, plan=plan)
+
+
+def enter_unmerged_correction(
+    *,
+    client: BeadsClient,
+    reading: IncidentReading,
+    observed: UnmergedFailure,
+    correction: Correction,
+    target_ref: str,
+) -> RecoveryEntry | AuthorityRefusal:
+    """Open a corrected `repair` after the bound PR closed unmerged on a failed fast check.
+
+    `observed` is what the forge reported; the planner refuses by name unless it
+    shows the bound PR closed unmerged at the carrier head and the named run
+    failed on that head. The failed run joins the item's retained failures.
+    """
+    prior = retained_failures(client=client, item_id=reading.attempt.item_id)
+    plan = plan_unmerged_correction(
+        reading=reading,
+        observed=observed,
+        prior=prior,
+        correction=correction,
+        target_ref=target_ref,
     )
     return _commit(client=client, reading=reading, plan=plan)

@@ -12308,6 +12308,22 @@ Feature: an attributable regression fences repayment and reopens the same incide
     And stale cleanup cannot merge or close the corrected attempt
     And failed original CI evidence is retained while a corrected attempt requires new repair or resolution evidence
     And final normal factory repayment remains owed on that item
+
+  Scenario: an expedited repair PR closed unmerged after a failed fast check opens a corrected attempt
+    Given an incident repair attempt whose carrier is pr-bound to an expedited pull request
+    And a retained fast check run concluded failure on that pull request's exact bound head
+    And the forge shows that pull request closed and not merged
+    When the operator opens a corrected repair attempt naming that run with fresh repair evidence on a new target ref
+    Then the same incident item records a new repair attempt at the next generation on a fresh branch-reserved carrier
+    And the failed pr-bound attempt remains in the authority history as recorded
+    And the failed run and its head are retained as the corrected attempt's failure evidence
+    And final normal factory repayment remains owed on that item
+
+  Scenario: a corrected attempt from an unmerged expedited PR is refused without forge proof or fresh evidence
+    Given an incident repair attempt whose carrier is pr-bound to an expedited pull request
+    When the forge shows that pull request open or merged, the named run did not conclude failure on its bound head, or the correction's head equals that failed head or its evidence reuses that failed run
+    Then opening the corrected repair attempt MUST be refused by name
+    And no generation and no recovery record is written
 ```
 
 ## Scenario: incident entry owns one initial authority before a carrier PR exists

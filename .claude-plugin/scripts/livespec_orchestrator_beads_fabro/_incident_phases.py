@@ -90,8 +90,9 @@ def recovery_carrier(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
 
     A reopen binds the merged carrier the failure is attributed to, which is not
     any repayment carrier it supersedes; a corrected repair after the
-    revert receipt opens its own fresh reserved branch. Everything else about
-    the attempt still has to agree, which the transition writer checks.
+    revert receipt, or after its bound PR closed unmerged on a failed check,
+    opens its own fresh reserved branch. Everything else about the attempt
+    still has to agree, which the transition writer checks.
     """
     reopen = (
         before.phase in REOPEN_FROM
@@ -106,7 +107,26 @@ def recovery_carrier(*, before: IncidentAttempt, after: IncidentAttempt) -> bool
         and before.carrier is not None
         and after.carrier.target_ref != before.carrier.target_ref
     )
-    return reopen or corrected
+    return reopen or corrected or _unmerged_correction(before=before, after=after)
+
+
+def _unmerged_correction(*, before: IncidentAttempt, after: IncidentAttempt) -> bool:
+    """A corrected `repair` after the bound expedited PR closed unmerged on a failed check.
+
+    The bound carrier stays in history as recorded; the successor is a new
+    attempt on its own fresh reserved branch with no PR. The forge facts that
+    admit it (the PR closed unmerged at the bound head, the named run failed on
+    that head) are the writer's gate and its retained recovery record.
+    """
+    return (
+        before.phase == after.phase == "repair"
+        and isinstance(before.carrier, PrBound)
+        and before.pr_number > 0
+        and isinstance(after.carrier, BranchReserved)
+        and after.carrier.target_ref != before.carrier.target_ref
+        and after.pr_number == 0
+        and after.attempt_id != before.attempt_id
+    )
 
 
 def closure_successor_allowed(*, before: IncidentAttempt, after: IncidentAttempt) -> bool:
