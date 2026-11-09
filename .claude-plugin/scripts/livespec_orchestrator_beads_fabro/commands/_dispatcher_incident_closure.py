@@ -16,10 +16,18 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
+from livespec_orchestrator_beads_fabro._incident_repayment_scope import (
+    repayment_scope,
+    validate_repayment_carrier,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer_write import (
     write_proof_pointer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import acceptance_decision
+from livespec_orchestrator_beads_fabro.commands._incident_authority_completion import (
+    pr_head_marker_paths,
+)
 from livespec_orchestrator_beads_fabro.incident_completion import (
     IncidentAcceptanceScope,
     IncidentStanding,
@@ -32,6 +40,7 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
     from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
     from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import ProofLeg
     from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import AcceptanceDecision
@@ -58,11 +67,17 @@ INCIDENT_OBLIGATION_ERR = "incident-obligation-outstanding"
 
 @dataclass(frozen=True, kw_only=True)
 class IncidentAcceptance:
-    """One acceptance pass's incident inputs: the standing, what it grades, and its tenant."""
+    """One acceptance pass's incident inputs: the standing, what it grades, and its tenant.
+
+    `marker_paths` are the paths of the graded repayment PR's head that still
+    carry the incident marker; `None` means that head was not read, which leaves
+    `marker-removal-unobserved` standing rather than reporting the marker gone.
+    """
 
     standing: IncidentStanding
     scope: IncidentAcceptanceScope | None
     config: StoreConfig
+    marker_paths: tuple[str, ...] | None = None
 
 
 def incident_standing_for(*, config: StoreConfig, item_id: str) -> IncidentStanding:
@@ -71,15 +86,64 @@ def incident_standing_for(*, config: StoreConfig, item_id: str) -> IncidentStand
 
 
 def incident_acceptance_for(
-    *, config: StoreConfig, item_id: str, merged_pr: int | None
+    *,
+    config: StoreConfig,
+    item_id: str,
+    merged_pr: int | None,
+    runner: CommandRunner | None = None,
 ) -> IncidentAcceptance:
-    """The standing plus the carriers one acceptance pass of this merge grades."""
+    """The standing plus the carriers one acceptance pass of this merge grades.
+
+    When the merge is the chain's current repayment carrier and the tenant
+    descriptor names its checkout (`repo_root`), the PR's head is read for the
+    incident marker, so a repayment that left it in place is graded with that
+    marker named as an outstanding obligation.
+    """
     standing = incident_standing_for(config=config, item_id=item_id)
+    scope = incident_acceptance_scope(standing=standing, merged_pr=merged_pr)
     return IncidentAcceptance(
         standing=standing,
-        scope=incident_acceptance_scope(standing=standing, merged_pr=merged_pr),
+        scope=scope,
         config=config,
+        marker_paths=_repayment_head_markers(
+            standing=standing, scope=scope, repo=config.repo_root, runner=runner
+        ),
     )
+
+
+def _repayment_head_markers(
+    *,
+    standing: IncidentStanding,
+    scope: IncidentAcceptanceScope | None,
+    repo: Path | None,
+    runner: CommandRunner | None,
+) -> tuple[str, ...] | None:
+    """The marker-carrying paths of the graded repayment PR's head; `()` when none is graded."""
+    if scope is None or scope.refusal is not None or scope.current_pr is None:
+        return ()
+    if repo is None or standing.repository is None:
+        return None
+    return pr_head_marker_paths(
+        runner=runner if runner is not None else ShellCommandRunner(),
+        repo=repo,
+        repository=standing.repository,
+        pr_number=scope.current_pr,
+        item_id=standing.item_id,
+    )
+
+
+def _marker_obligations(*, incident: IncidentAcceptance) -> tuple[str, ...]:
+    """`marker-present:<path>` for each path of the graded head that still carries the marker."""
+    if not incident.marker_paths:
+        return ()
+    attempt = incident.standing.history[-1]
+    scope = repayment_scope(attempt=attempt)
+    return validate_repayment_carrier(
+        scope=scope,
+        marker_paths=incident.marker_paths,
+        validated_paths=scope.original_paths,
+        repaid_debt=scope.deferred_work,
+    ).outstanding
 
 
 def _refused_effect(
@@ -168,7 +232,7 @@ def incident_holds(*, incident: IncidentAcceptance, journal: JournalFile, route:
     observed is no longer the chain's head immediately before the close.
     """
     standing = incident.standing
-    outstanding = standing.outstanding
+    outstanding = (*standing.outstanding, *_marker_obligations(incident=incident))
     if not outstanding:
         refused = _refused_effect(config=incident.config, standing=standing, effect="closure")
         outstanding = () if refused is None else (refused,)
