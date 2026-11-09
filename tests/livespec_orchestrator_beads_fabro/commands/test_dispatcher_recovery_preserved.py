@@ -155,6 +155,41 @@ def test_the_latest_runs_highest_numbered_wip_capture_beats_the_published_head()
     )
 
 
+def test_the_latest_runs_needs_human_ref_under_its_dispatch_id_beats_an_older_wip_ref() -> None:
+    """One run answers to its run id AND its dispatch id, and the terminal ref may sit under either.
+
+    The ref is named by the dispatch id here, with a WIP ref also standing, so a
+    reader that asks only the run id falls through to the lower-preference WIP
+    capture instead of the newer terminal tree.
+    """
+    dispatch_id = "d9af2b5643ee40caa497060496f227ca"
+    runner = _Runner(
+        answers={
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/{_RUN} "
+            f"{NEEDS_HUMAN_REF_PREFIX}/{dispatch_id}": CommandResult(
+                exit_code=0,
+                stdout=f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{dispatch_id}\n",
+                stderr="",
+            ),
+            f"ls-remote {SEED_REMOTE} {_WIP_PREFIX}/*": CommandResult(
+                exit_code=0, stdout=f"{_WIP_FIRST_COMMIT}\t{_WIP_PREFIX}/1\n", stderr=""
+            ),
+        }
+    )
+
+    assert _seed(
+        runner=runner,
+        journal_records=(
+            {"stage": "dispatch-id", "work_item_id": _ITEM_ID, "dispatch_id": dispatch_id},
+        ),
+    ) == RecoverySeed(
+        source_run_id=dispatch_id,
+        remote=SEED_REMOTE,
+        commit_sha=_TERMINAL_COMMIT,
+        preservation_ref=f"{NEEDS_HUMAN_REF_PREFIX}/{dispatch_id}",
+    )
+
+
 def test_an_unreadable_terminal_reference_is_unobservable_and_stops_the_search() -> None:
     """ "An unreadable reference is not confirmed absence."
 
