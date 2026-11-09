@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.309.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.308.0...v0.309.0) (2026-11-09)
+
+
+### Features
+
+* seed recovery from latest WIP capture ([f780d7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f780d7f6de1925e5f98dd05475232db991dce919))
+
+
+### Bug Fixes
+
+* an incident repair whose expedited PR closed unmerged after a failed fast check opens a corrected attempt (bd-ib-elq5ry) ([50b966f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/50b966f987f6c8c64d60cbfc8ef4deb809637352))
+* needs-human seed asks every identifier of the latest run ([f1b63a8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f1b63a8b80b101a723398e4af72495d0e52ba358))
+
 ## [0.308.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.307.0...v0.308.0) (2026-11-09)
 
 
