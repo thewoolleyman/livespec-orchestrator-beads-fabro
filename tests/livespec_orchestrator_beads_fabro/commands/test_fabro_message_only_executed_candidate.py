@@ -61,6 +61,8 @@ class _SubcommandRunner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
+        if argv[0] == "kubectl":
+            return CommandResult(exit_code=1, stdout="", stderr="no cluster reachable")
         return self.replies[argv[1]]
 
 

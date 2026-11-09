@@ -71,6 +71,8 @@ class ArgvRunner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
+        if argv[0] == "kubectl":
+            return CommandResult(exit_code=1, stdout="", stderr="no cluster reachable")
         return self.replies[argv[1]]
 
 
@@ -177,7 +179,7 @@ def test_a_shared_sentence_is_attributed_to_the_claude_candidate_that_ran(
     assert observed.failure.provider_usage_limit is True
     assert observed.failure.provider_usage_limit_provider == "anthropic"
     assert observed.failure.provider_usage_limit_entitlement == _ANTHROPIC_CANDIDATE
-    assert [argv[1] for argv in runner.calls] == ["inspect", "ps", "events"]
+    assert [argv[1] for argv in runner.calls] == ["inspect", "ps", "events", "get"]
 
 
 def test_an_ordinary_failure_spends_no_second_read_for_labels(*, tmp_path: Path) -> None:
@@ -210,7 +212,7 @@ def test_an_ordinary_failure_spends_no_second_read_for_labels(*, tmp_path: Path)
     assert observed.failure is not None
     assert observed.failure.provider_usage_limit is False
     assert observed.failure.provider_usage_limit_provider is None
-    assert [argv[1] for argv in runner.calls] == ["inspect", "events"]
+    assert [argv[1] for argv in runner.calls] == ["inspect", "events", "get"]
 
 
 def test_an_unreadable_labels_read_keeps_the_v107_cause_text_attribution(*, tmp_path: Path) -> None:

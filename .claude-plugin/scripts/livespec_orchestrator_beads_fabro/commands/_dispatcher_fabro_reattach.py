@@ -21,6 +21,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     RECAPTURE_EXHAUSTED_MARKER,
     DispatchPlan,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_termination import (
+    sandbox_termination_attachment,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     fabro_port_for_plan,
@@ -104,23 +107,29 @@ def inspect_run(
     """
     if run_id is None:
         return None
-    return terminal_events_attachment(
+    return sandbox_termination_attachment(
         plan=plan,
         runner=runner,
         journal=journal,
         run_id=run_id,
-        inspect=executed_candidate_attribution(
+        inspect=terminal_events_attachment(
             plan=plan,
             runner=runner,
             journal=journal,
             run_id=run_id,
-            inspect=_observed_run(
+            inspect=executed_candidate_attribution(
                 plan=plan,
                 runner=runner,
                 journal=journal,
                 run_id=run_id,
-                follow_live=follow_live,
-                timing=timing,
+                inspect=_observed_run(
+                    plan=plan,
+                    runner=runner,
+                    journal=journal,
+                    run_id=run_id,
+                    follow_live=follow_live,
+                    timing=timing,
+                ),
             ),
         ),
     )

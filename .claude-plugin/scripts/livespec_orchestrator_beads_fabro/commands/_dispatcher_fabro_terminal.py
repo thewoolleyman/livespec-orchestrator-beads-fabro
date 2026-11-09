@@ -35,6 +35,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_acquire_failure import (
     sandbox_acquire_failure_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_termination import (
+    outcome_naming_sandbox_termination,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_events import (
     terminal_event_output,
 )
@@ -77,6 +80,8 @@ def fabro_run_terminal_outcome(
     mapping below produced it: a refusal booked as a successful turn mints its
     candidate hold even when a later failure kept its own route, so the evidence
     rides the outcome the disposition reads instead of being re-derived there.
+    The sandbox provider's termination report is named on every one of them for
+    the same reason: an OOM-killed run can end at any terminal.
     """
     outcome = _terminal_outcome(
         outcome_type=outcome_type,
@@ -89,7 +94,8 @@ def fabro_run_terminal_outcome(
     if outcome is None:
         return None
     turns = reclassified_turns(plan=plan, inspect=inspect, run_id=run_id)
-    return replace(outcome, reclassified_turns=turns) if turns else outcome
+    named = replace(outcome, reclassified_turns=turns) if turns else outcome
+    return outcome_naming_sandbox_termination(outcome=named, inspect=inspect)
 
 
 def _terminal_outcome(

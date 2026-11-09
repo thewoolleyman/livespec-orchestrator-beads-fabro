@@ -12,6 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_permanent_failure im
     fabro_provider_message,
     fabro_usage_limit_provider,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_resource_exhaustion import (
+    ResourceExhaustion,
+)
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -64,6 +67,12 @@ class FabroFailureDetail:
     provider read off a recorded identity and an entitlement read off anything
     else would be two answers about one attempt.
 
+    `resource_exhaustion` is the typed state of a sandbox the provider reports
+    the kernel killed for memory (Scenario 335). It is a DIFFERENT state from
+    `provider_usage_limit`: that sandbox is permanent, but it is not a spend
+    ceiling, so setting one never sets the other. It is read from the sandbox
+    provider after the failure block is parsed, never from the cause text.
+
     `succeeded_turn_output` is the one field that does not describe an
     engine-recorded failure: it carries the recorded output of an agent turn the
     engine booked as SUCCEEDED, for the case where the contract treats that turn
@@ -79,6 +88,7 @@ class FabroFailureDetail:
     provider_usage_limit_provider: str | None = None
     provider_usage_limit_entitlement: str | None = None
     succeeded_turn_output: str | None = None
+    resource_exhaustion: ResourceExhaustion | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
