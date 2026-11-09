@@ -178,6 +178,28 @@ def reset_running_waits(directory, stage):
         waited_running_path(directory, stage).unlink(missing_ok=True)
 
 
+def open_wait_path(directory, run_id):
+    return directory / "open-waits" / (run_id + ".json")
+
+
+def claim_open_wait(directory, run_id):
+    """Record this process's wait as the run's one open wait, or None when another is open."""
+    path = open_wait_path(directory, run_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    own = process_table("/proc").get(os.getpid())
+    claim = {"pid": os.getpid(), "start_ticks": own[4] if own is not None else None}
+    staged = path.with_name(path.name + "." + str(os.getpid()) + ".tmp")
+    staged.write_text(json.dumps(claim, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        # A hard link is atomic and fails when the name exists, so two waits cannot both claim.
+        os.link(staged, path)
+    except FileExistsError:
+        return None
+    finally:
+        staged.unlink(missing_ok=True)
+    return path
+
+
 def read_record(path):
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -416,18 +438,30 @@ def wait(run_id, timeout_seconds):
             "commit run " + run_id + " already reported running during " + stage
             + " stage visit; current state is " + state + "; " + settle_node + " will wait on it"
         )
-    deadline = time.monotonic() + max(0.0, timeout_seconds)
-    while True:
-        record = read_record(path)
-        if record is None:
-            raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
-        if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
-            payload, state = report_payload(run_id, path, record)
-            if settle_node is not None and state == RUNNING:
-                remember_running_wait(directory, stage, run_id)
-            print(json.dumps(payload, sort_keys=True))
-            return 0
-        time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+    record = read_record(path)
+    if record is None:
+        raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+    marker = claim_open_wait(directory, run_id)
+    if marker is None:
+        raise RunnerRefusal(
+            "commit run " + run_id + " is " + current_state(path, record)
+            + "; another wait on it is open, so this wait returns at once"
+        )
+    try:
+        deadline = time.monotonic() + max(0.0, timeout_seconds)
+        while True:
+            record = read_record(path)
+            if record is None:
+                raise RunnerRefusal("no commit run " + run_id + " is recorded in this repository")
+            if current_state(path, record) != RUNNING or time.monotonic() >= deadline:
+                payload, state = report_payload(run_id, path, record)
+                if settle_node is not None and state == RUNNING:
+                    remember_running_wait(directory, stage, run_id)
+                print(json.dumps(payload, sort_keys=True))
+                return 0
+            time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
+    finally:
+        marker.unlink(missing_ok=True)
 
 
 def full_output(path):
