@@ -79,6 +79,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_measu
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_observe import (
     journal_records_or_none,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_projection import (
+    projected_claim,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_records import (
     HeldClaim,
     RecoveredClaim,
@@ -234,7 +237,7 @@ def _measure_and_act(
             handoff=measured.handoff,
         )
     if inputs.dry_run:
-        return _projected(
+        return projected_claim(
             item=item, attributed=attributed, inventory=inventory, action=graded.action
         )
     if measured.handoff is not None:
@@ -268,31 +271,6 @@ def _measure_and_act(
             terminal=measured.terminal if graded.action == ACTION_TERMINAL_COMPLETION else None,
         ),
         now_iso=inputs.now_iso,
-    )
-
-
-def _projected(
-    *,
-    item: WorkItem,
-    attributed: AttributedClaim,
-    inventory: FactoryInventory,
-    action: str,
-) -> RecoveredClaim:
-    """What a live pass WOULD do to this claim, with no effect performed.
-
-    The item's CURRENT status is reported rather than the status the route
-    would land it on: a projection that claimed the destination would read, in
-    a `--json` payload, exactly like a live pass that had already written it.
-    """
-    return RecoveredClaim(
-        work_item_id=item.id,
-        run_id=attributed.run_id,
-        factory_name=inventory.name,
-        factory_server_url=inventory.server_url,
-        reason=action,
-        route=action,
-        status=item.status,
-        effects_written=(),
     )
 
 
