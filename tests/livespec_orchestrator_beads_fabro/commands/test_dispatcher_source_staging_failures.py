@@ -216,4 +216,4 @@ def test_cleanup_failure_is_journaled_without_rewriting_the_run_result(
     assert failed[0]["branch"] == inner.branch
     assert failed[0]["detail"] == "injected failure"
     if failure[-1] == "remove":
-        assert not any(call[0][:2] == ["git", "update-ref"] for call in inner.calls)
+        assert not any(call[0][3:] == [f"refs/heads/{inner.branch}", _HEAD] for call in inner.calls)

@@ -23,6 +23,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     INVOKER_FLAG,
     InvokerIdentity,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    HANDED_OFF_STATUS,
+)
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
 __all__: list[str] = [
@@ -182,6 +185,11 @@ def _dispatch_status(*, returncode: int, parsed: object) -> str:
 def _dispatch_summary(*, status: str, work_item_ref: str) -> str:
     if status == "green":
         return f"Dispatcher reported green for {work_item_ref}."
+    if status == HANDED_OFF_STATUS:
+        return (
+            f"Dispatcher handed the merge wait for {work_item_ref} off to reconciliation: "
+            "its pull request is armed and its required checks are passing or still running."
+        )
     if status == "blocked":
         return f"Dispatcher reported a human-gated blocked run for {work_item_ref}."
     return f"Dispatcher did not report green for {work_item_ref}."

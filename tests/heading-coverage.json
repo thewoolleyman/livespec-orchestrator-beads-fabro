@@ -1976,9 +1976,8 @@
     "heading": "## Scenario 210 \u2014 Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified in v169 with proposal stale-fabro-assignee-reconciliation, and the owning work-item bd-ib-3lbt4o lands the integration-tier test that binds this entry.",
-    "work_item": "bd-ib-3lbt4o"
+    "test": "tests.integration.test_stale_assignee_clearance_scenario210",
+    "reason": "Completed by bd-ib-3lbt4o (v169). The integration module drives the real reconcile-runs pass: a failed, absent and succeeded run each clear the assignee, leave the item released for recovery and write one journal record and one comment, a second pass writes nothing, and an unattributable, other-host or live-run stale assignee is held unchanged. test_dispatcher_stale_assignee_clearance drives the claim survey over the in-memory ledger for each sub-scenario: a failed, absent and succeeded run each clear the assignee with one journal record and one comment; every hold reason of the stale assignee hold order is listed and leaves the item unchanged; an interrupted clearance writes only its missing effects; a second pass writes nothing; and a human move before the assignee write is held claim-changed. test_dispatcher_stale_assignee_release binds the released-for-recovery grading, and the reconcile-merged ready-item case lives in tests.integration.test_reconcile_merged_locally_built_item_scenario245."
   },
   {
     "heading": "## Scenario 206 \u2014 The spec-change tier is decided by the spec-stated judgement, and a feature waits for ratification",
@@ -2139,8 +2138,8 @@
     "heading": "## Scenario 220 \u2014 An exhausted merge-poll budget hands an armed, passing pull request to reconciliation",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "tests.integration.test_merge_poll_budget_exhausted_scenario220.test_a_pull_request_merged_on_the_final_read_is_not_rested",
-    "reason": "Integration-tier binding retained across the v324 retitle of Scenario 220 (proposal a-dispatched-pull-request-whose). The named case still exercises the heading's unchanged sub-scenario 'A pull request merged at expiry is not rested': it drives the production engine and post-run disposition against the in-memory tenant with the forge reporting the pull request MERGED on the final read, and asserts the item is not rested and carries no needs-human comment. The previously bound case, test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resume, asserts the superseded rest and exit code 4 for an armed pull request with no failed required check, which v324 makes a handed-off merge wait; the integration-tier tests for the handed-off merge wait and its stranded-claim reconciliation are owed by bd-ib-bacahf, which also rewrites that superseded case.",
+    "test": "tests.integration.test_merge_wait_handoff_lifecycle_scenario220.test_a_handed_off_pull_request_that_merges_is_accepted_by_the_next_pass",
+    "reason": "Integration-tier binding for the handed-off merge wait. The named case drives the production engine and post-run disposition against the in-memory tenant until the merge wait ends on an armed pull request whose required check is still running (item left active, exit 0, journal row and ledger comment), then drives the production stranded-claim survey over the dispatch journal that dispatch wrote: the claim is held while the pull request is open and passing, and reconciled with no resolve-blocked and no resume once the forge reports it merged. The same module binds the failed-required-check and closed-without-merging endings, and test_merge_poll_budget_exhausted_scenario220 binds the merged-at-expiry, disarmed, conflicting and failed-check endings of the merge wait itself.",
     "work_item": "bd-ib-bacahf"
   },
   {
@@ -3012,5 +3011,13 @@
     "test": "TODO",
     "reason": "A harness-tier test is owed for this heading: the owning work-item bd-ib-j6rbdx adds check-fleet-launch cases in which an impl launcher stops its drive for a hold set before admission and keeps its ticket, leaves a drive alone once its item reads active, runs unchanged with no hold, and makes a stopped-after-admission non-run exit with one move-valve ledger comment.",
     "work_item": "bd-ib-j6rbdx"
+  },
+  {
+    "heading": "## Scenario 331 \u2014 The release branch advances only on an operator dispatch that starts a canary",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sghxlk dispatches fast-forward-release-branch.yml against this repository's real release branch and shows that a published release leaves release unmoved with the job skipped, an operator-dispatched descendant tag fast-forwards release, and a non-descendant or missing tag fails the run and leaves release unchanged. bd-ib-sghxlk owns it.",
+    "work_item": "bd-ib-sghxlk"
   }
 ]

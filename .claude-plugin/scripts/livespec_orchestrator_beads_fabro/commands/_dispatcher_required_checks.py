@@ -25,12 +25,14 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
         CommandRunner,
+        DispatchOutcome,
         JournalWriter,
     )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
 
 __all__: list[str] = [
     "parse_required_check_names",
+    "required_check_failure_outcome",
     "required_check_names",
     "required_check_names_argv",
 ]
@@ -82,6 +84,36 @@ def required_check_names(
     if result.exit_code != 0:
         return None
     return parse_required_check_names(stdout=result.stdout)
+
+
+def required_check_failure_outcome(
+    *,
+    outcome_type: type[DispatchOutcome],
+    plan: DispatchPlan,
+    number: int,
+    merge_sha: str | None,
+    failed: list[str],
+) -> DispatchOutcome:
+    """The terminal outcome when a check the forge reports as required has failed for good.
+
+    ONE builder for every surface that records this ending, so the merge wait's own
+    poll, its final read after the budget and the stranded-claim pass that completes
+    a handed-off merge wait all record exactly the same outcome.
+    """
+    return outcome_type(
+        work_item_id=plan.work_item_id,
+        status="blocked",
+        stage="merge-poll",
+        pr_number=number,
+        merge_sha=merge_sha,
+        detail=(
+            f"required check failed terminally: {', '.join(failed)}; the factory run "
+            "succeeded but its pull request cannot merge. Recover with "
+            f"`resolve-blocked:{plan.work_item_id}:ready`, then "
+            f"`resume --item {plan.work_item_id}`, which checks out the pull request's "
+            "published head for rework."
+        ),
+    )
 
 
 def parse_required_check_names(*, stdout: str) -> frozenset[str] | None:

@@ -5,6 +5,9 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import run_id
+from livespec_orchestrator_beads_fabro.commands._dispatcher_merge_wait_handoff import (
+    HANDED_OFF_STATUS,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_notify import (
     HttpNotifyPoster,
     NotifyPoster,
@@ -31,10 +34,16 @@ EXIT_BLOCKED = 4
 EXIT_UNGRADEABLE_CRITERIA = 5
 
 
+# A handed-off merge wait is a SUCCESSFUL dispatch: its pull request is armed and
+# going to merge by itself, so the dispatch reports exit 0 under the Dispatcher's
+# exit codes and no code is added or redefined.
+_EXIT_ZERO_STATUSES = frozenset({"green", "capacity-deferred", HANDED_OFF_STATUS})
+
+
 def dispatch_exit_code(*, outcomes: list[DispatchOutcome]) -> int:
-    if all(outcome.status in {"green", "capacity-deferred"} for outcome in outcomes):
+    if all(outcome.status in _EXIT_ZERO_STATUSES for outcome in outcomes):
         return 0
-    if all(outcome.status in {"green", "blocked", "capacity-deferred"} for outcome in outcomes):
+    if all(outcome.status in {*_EXIT_ZERO_STATUSES, "blocked"} for outcome in outcomes):
         return EXIT_BLOCKED
     return EXIT_FAILURE
 

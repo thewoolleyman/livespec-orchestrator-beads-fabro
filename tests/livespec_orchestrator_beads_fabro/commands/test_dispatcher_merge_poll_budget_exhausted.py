@@ -1,10 +1,14 @@
-"""An exhausted merge-poll budget on an open pull request rests the item for resume.
+"""An exhausted merge-poll budget on an open pull request whose arming stands no longer rests it.
 
 Scenario 220 of `SPECIFICATION/scenarios.md`, and the final sentences of the
 "Armed pull request overtaken by the default branch" paragraph of
 `contracts.md`: when the poll budget is exhausted the Dispatcher reads the pull
-request once more, proceeds on MERGED, and otherwise rests the item at
-`blocked / needs-human` with the cause `merge-poll-budget-exhausted`.
+request once more, proceeds on MERGED, hands an armed, passing pull request off
+(bound by `test_dispatcher_merge_wait_handoff.py`), and otherwise rests the item
+at `blocked / needs-human` with the cause `merge-poll-budget-exhausted`.
+
+THE PULL REQUESTS HERE ARE UNARMED, which is the open pull request the clause
+still rests: auto-merge is no longer armed, so nothing will merge it.
 
 EVERY CASE HAS A CONTROL THAT COULD RETURN THE OTHER ANSWER. A disposition that
 rested the item on every exhausted budget would satisfy the positive case on its
@@ -88,12 +92,12 @@ class _Journal:
         self.records.append(record)
 
 
-def _pr_json(*, state: str = "OPEN", merge_state: str = "BLOCKED") -> str:
+def _pr_json(*, state: str = "OPEN", merge_state: str = "BLOCKED", armed: bool = False) -> str:
     return json.dumps(
         {
             "number": 3913,
             "state": state,
-            "autoMergeRequest": {"enabledAt": "now"},
+            "autoMergeRequest": {"enabledAt": "now"} if armed else None,
             "mergeStateStatus": merge_state,
             "mergeCommit": {"oid": "cafe05"} if state == "MERGED" else None,
             "headRefOid": "head1111",
@@ -111,6 +115,7 @@ def _after_exhaustion(*, repo: Path, runner: _Runner) -> DispatchOutcome:
         merged=None,
         pr_number=3913,
         run_id=_RUN_ID,
+        waited_seconds=2400,
     )
 
 
@@ -166,7 +171,7 @@ def _active_item() -> WorkItem:
     )
 
 
-def test_an_open_non_conflicting_pull_request_at_expiry_ends_blocked_with_the_named_cause(
+def test_an_open_unarmed_pull_request_at_expiry_ends_blocked_with_the_named_cause(
     tmp_path: Path,
 ) -> None:
     runner = _Runner(queue=[CommandResult(exit_code=0, stdout=_pr_json(), stderr="")])
@@ -263,7 +268,7 @@ def test_a_pull_request_merged_on_the_final_read_proceeds_as_a_merge_within_the_
 @pytest.mark.parametrize(
     "final_read",
     [
-        CommandResult(exit_code=0, stdout=_pr_json(merge_state="DIRTY"), stderr=""),
+        CommandResult(exit_code=0, stdout=_pr_json(merge_state="DIRTY", armed=True), stderr=""),
         CommandResult(exit_code=0, stdout=_pr_json(state="CLOSED"), stderr=""),
         CommandResult(exit_code=1, stdout="", stderr="gh failed"),
         CommandResult(exit_code=0, stdout="not json", stderr=""),

@@ -64,6 +64,10 @@ class LauncherFactory(Protocol):
     def __call__(self, *, repository: Path) -> ProbeLauncher: ...
 
 
+class TelemetryFactory(Protocol):
+    def __call__(self, *, environ: dict[str, str]) -> SessionTelemetry: ...
+
+
 @dataclass(frozen=True, kw_only=True)
 class SessionWaitCliSeams:
     primary_repository: PrimaryRepository
@@ -72,6 +76,7 @@ class SessionWaitCliSeams:
     process_generation: ProcessGeneration
     wall_clock: Callable[[], float]
     use_tmp_directory: bool = False
+    telemetry_factory: TelemetryFactory = SessionTelemetry.from_environ
 
 
 _DEFAULT_SEAMS = SessionWaitCliSeams(
@@ -215,7 +220,7 @@ def main(*, argv: list[str] | None = None, seams: SessionWaitCliSeams = _DEFAULT
     # bounded shutdown allowance can never sit on a wait's deadline path. An
     # unconfigured host says so once on stderr; the result is unchanged.
     environ = dict(os.environ)
-    telemetry = SessionTelemetry.from_environ(environ=environ)
+    telemetry = seams.telemetry_factory(environ=environ)
     publisher = SessionWaitPublisher(
         sink=telemetry,
         associations=associations_from_environ(environ=environ),

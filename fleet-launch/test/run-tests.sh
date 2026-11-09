@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario242|scenario297|scenario316) ;;
+    all|scenario242|scenario297|scenario316|scenario330) ;;
     *)
-        echo "usage: run-tests.sh [scenario242|scenario297|scenario316]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario316|scenario330]" >&2
         exit 2
         ;;
 esac
@@ -168,6 +168,22 @@ for argument in "$@"; do
             printf 'stub launch-time Definition-of-Done preflight\n'
             exit "${STUB_PREFLIGHT_EXIT:-0}"
             ;;
+        ledger-item.py)
+            mode=""
+            seen=0
+            for token in "$@"; do
+                if [ "$seen" = 1 ] && [ -z "$mode" ]; then mode=$token; fi
+                case ${token##*/} in ledger-item.py) seen=1 ;; esac
+            done
+            case $mode in
+                status)
+                    [ ! -e "$STUB_ITEM_STATUS_UNREADABLE_FILE" ] || exit 1
+                    printf 'LEDGER-STATUS %s\n' "$(cat "$STUB_ITEM_STATUS_FILE")"
+                    ;;
+                comment) printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS" ;;
+            esac
+            exit 0
+            ;;
         dispatcher.py)
             printf 'stub: the Claude credential is usable (HTTP 200)\n'
             exit 0
@@ -199,9 +215,31 @@ for argument in "$@"; do
             else
                 printf 'released %s\n' "$item" >> "$STUB_DRIVE_MUTEX_LOG"
             fi
+            if [ -n "${STUB_DRIVE_ADMIT_GATE:-}" ]; then
+                # A drive waiting in its master-CI preflight: the item reads
+                # `ready` until the gate file appears, then `active` (admitted),
+                # and the run is submitted only after STUB_DRIVE_SUBMIT_GATE too.
+                printf '%s\n' "$item" >> "$STUB_DRIVE_WAITING"
+                printf '%s\n' "$$" >> "$STUB_DRIVE_PIDS"
+                if [ -n "${STUB_DRIVE_ADMIT_ON_TERM:-}" ]; then
+                    trap 'printf "active\n" > "$STUB_ITEM_STATUS_FILE"; exit 143' TERM
+                fi
+                wait_deadline=$(( $(date +%s) + 60 ))
+                while [ ! -e "$STUB_DRIVE_ADMIT_GATE" ] && [ "$(date +%s)" -lt "$wait_deadline" ]; do
+                    sleep "$HARNESS_POLL_S"
+                done
+                printf 'active\n' > "$STUB_ITEM_STATUS_FILE"
+                while [ -n "${STUB_DRIVE_SUBMIT_GATE:-}" ] && [ ! -e "$STUB_DRIVE_SUBMIT_GATE" ] \
+                    && [ "$(date +%s)" -lt "$wait_deadline" ]; do
+                    sleep "$HARNESS_POLL_S"
+                done
+            fi
             if [ -n "$item" ] && [ -n "$server" ]; then
                 printf '%s %s\n' "$server" "$item" > "$STUB_DRIVEN_DIR/$item"
             fi
+            # A gated drive lingers after submitting, as a real drive polls the run, so the
+            # launcher's listing poll sees the run before it sees the drive exit.
+            [ -z "${STUB_DRIVE_ADMIT_GATE:-}" ] || sleep 0.5
             printf '{"status": "stub-dispatched", "work_item_id": "%s"}\n' "$item"
             exit 0
             ;;
@@ -356,6 +394,18 @@ new_case() {
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
     export STUB_PREFLIGHT_RELEASE="$CASE_DIR/release-held-preflight"
     export STUB_SSH_IDLE=95.00
+    export STUB_ITEM_STATUS_FILE="$CASE_DIR/item-status"
+    printf 'ready\n' > "$STUB_ITEM_STATUS_FILE"
+    export STUB_LEDGER_COMMENTS="$CASE_DIR/ledger-comments"
+    : > "$STUB_LEDGER_COMMENTS"
+    export STUB_DRIVE_WAITING="$CASE_DIR/drive-waiting"
+    : > "$STUB_DRIVE_WAITING"
+    export STUB_DRIVE_PIDS="$CASE_DIR/drive-pids"
+    : > "$STUB_DRIVE_PIDS"
+    export STUB_DRIVE_ADMIT_GATE_FILE="$CASE_DIR/admit-gate"
+    export STUB_DRIVE_SUBMIT_GATE_FILE="$CASE_DIR/submit-gate"
+    export STUB_ITEM_STATUS_UNREADABLE_FILE="$CASE_DIR/item-status-unreadable"
+    unset STUB_DRIVE_ADMIT_GATE STUB_DRIVE_SUBMIT_GATE STUB_DRIVE_ADMIT_ON_TERM
 
     export REPO_OVERRIDE="$TENANT"
     export WRAPPER="$STUB/wrapper"
@@ -401,6 +451,7 @@ new_case() {
     export FLEET_LAUNCH_BOARD_REFRESH_WAIT_S=60
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     export FLEET_LAUNCH_LISTING_WAIT_S=60
+    export FLEET_LAUNCH_STOP_GRACE_S=5
     unset STUB_RESUME_UNLISTED
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
 }
@@ -1358,6 +1409,212 @@ else
     fail "a launch-point repository hold did not cleanly yield its bound launch"
     tail -10 "$LAUNCH_POINT_LOG" >&2
 fi
+fi
+
+# --- 20. a hold re-read until admission stops a launched drive ---------------
+# Scenario 330. The stub drive waits in its master-CI preflight (the item reads
+# `ready`) until the harness opens an admission gate, then reads `active`, and
+# submits its run only after a second gate. A hold file created while the drive
+# waits must stop it before any run is submitted and keep the launcher's ticket;
+# a hold created once the item reads `active` must not.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario330 ]; then
+echo "--- 20. holds are re-read until admission"
+
+# prepare_330_case <name>: a fresh case with empty boards and a waiting drive.
+prepare_330_case() {
+    new_case "$1"
+    export FLEET_LAUNCH_MAX_WAIT_S=120
+    : > "$BOARD_GMK"
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+    export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
+    export STUB_DRIVE_SUBMIT_GATE="$STUB_DRIVE_SUBMIT_GATE_FILE"
+}
+# wait_for_drive_invocations <count> <seconds>: until the stub drive has started <count> times.
+wait_for_drive_invocations() {
+    local count="$1" limit="$2" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
+        if [ "$(wc -l < "$STUB_DRIVE_WAITING")" -ge "$count" ]; then return 0; fi
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+}
+# wait_for_item_status <status> <seconds>: until the stub item reads <status>.
+wait_for_item_status() {
+    local want="$1" limit="$2" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
+        if [ "$(cat "$STUB_ITEM_STATUS_FILE")" = "$want" ]; then return 0; fi
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+}
+# line_has_all <log> <needle>...: some single line of the log holds every needle.
+line_has_all() {
+    local log="$1" line needle all
+    shift
+    while IFS= read -r line; do
+        all=1
+        for needle in "$@"; do
+            case $line in *"$needle"*) ;; *) all=0; break ;; esac
+        done
+        [ "$all" = 1 ] && return 0
+    done < "$log"
+    return 1
+}
+# set_hold <path> <text>: create a hold file whole in one step, so a launcher polling the path never reads it half written.
+set_hold() {
+    printf '%b\n' "$2" > "$1.new"
+    mv "$1.new" "$1"
+}
+# drive_gone: no stub drive process is left running for this case.
+drive_gone() {
+    local pid
+    while read -r pid; do kill -0 "$pid" 2>/dev/null && return 1; done < "$STUB_DRIVE_PIDS"
+    return 0
+}
+inflight_empty() { [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ]; }
+
+# 20a. A hold set before admission stops the drive; the ticket survives; the
+# positive control (hold removed, gates opened) then launches and lists.
+prepare_330_case hold-before-admission
+STOP_LOG="$CASE_DIR/launcher.log"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-before > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+if wait_for_drive_invocations 1 10; then
+    set_hold "$HOLD_FILE" 'engine restart'
+    if wait_for_line "$STOP_LOG" "stopped the drive for bd-ib-hold-before" 10 \
+        && kill -0 "$stop_pid" 2>/dev/null \
+        && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+        && inflight_empty && drive_gone \
+        && [ ! -e "$STUB_DRIVEN_DIR/bd-ib-hold-before" ] \
+        && line_has_all "$STOP_LOG" 'stopped the drive for bd-ib-hold-before' 'ticket 100' 'engine restart'; then
+        pass "a hold set before admission stops the drive, keeps ticket 100 and logs the hold text"
+    else
+        fail "a hold set before admission did not stop the drive and keep its ticket"
+        tail -n 8 "$STOP_LOG" >&2
+    fi
+    rm -f "$HOLD_FILE"
+    : > "$STUB_DRIVE_ADMIT_GATE_FILE"
+    : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+    wait "$stop_pid"
+    stop_rc=$?
+    if [ "$stop_rc" = 0 ] && [ "$(drive_log_items)" = "bd-ib-hold-before bd-ib-hold-before" ] \
+        && log_has "$STOP_LOG" "LISTED on petri" && [ ! -s "$STUB_LEDGER_COMMENTS" ]; then
+        pass "with the hold removed the stopped launcher re-launches and its run lists"
+    else
+        fail "the stopped launcher did not re-launch once the hold was removed (rc=$stop_rc)"
+        tail -n 8 "$STOP_LOG" >&2
+    fi
+else
+    fail "the stub drive never started for the hold-before-admission case"
+    stop_launcher "$stop_pid"
+    wait "$stop_pid" 2>/dev/null
+fi
+
+# 20b. A repository hold scoped to dispatch stops the drive and logs its fields;
+# one scoped to resume does not.
+prepare_330_case repository-hold-before-admission
+STOP_LOG="$CASE_DIR/launcher.log"
+printf 'kinds: resume\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-repo-hold > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+if wait_for_drive_invocations 1 10; then
+    sleep 0.3
+    if log_has "$STOP_LOG" "stopped the drive"; then
+        fail "a resume-scoped repository hold stopped an impl drive"
+    fi
+    set_hold "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")" \
+        'kinds: dispatch\nreason: commit_green ceiling\nuntil: PR 4440 merged'
+    if wait_for_line "$STOP_LOG" "stopped the drive for bd-ib-repo-hold" 10 \
+        && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] && inflight_empty \
+        && line_has_all "$STOP_LOG" 'stopped the drive' 'reason=commit_green ceiling until=PR 4440 merged'; then
+        pass "a dispatch-scoped repository hold stops the drive and a resume-scoped one does not"
+    else
+        fail "a dispatch-scoped repository hold did not stop the drive with its fields"
+        tail -n 8 "$STOP_LOG" >&2
+    fi
+else
+    fail "the stub drive never started for the repository-hold case"
+fi
+stop_launcher "$stop_pid"
+wait "$stop_pid" 2>/dev/null
+
+# 20c. A hold set after the item reads active does not stop the drive.
+prepare_330_case hold-after-admission
+STOP_LOG="$CASE_DIR/launcher.log"
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+if wait_for_item_status active 10; then
+    set_hold "$HOLD_FILE" 'engine restart'
+    sleep 0.3
+    held_alive=0
+    if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
+    : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+    wait "$stop_pid"
+    stop_rc=$?
+    if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
+        && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after ]; then
+        pass "a hold set after the item reads active leaves the drive alone and the run lists"
+    else
+        fail "a hold set after admission disturbed the drive (rc=$stop_rc alive=$held_alive)"
+        tail -n 8 "$STOP_LOG" >&2
+    fi
+else
+    fail "the stub item never read active in the hold-after-admission case"
+    stop_launcher "$stop_pid"
+    wait "$stop_pid" 2>/dev/null
+fi
+
+# 20d. With no hold file the drive proceeds from launch to listing as before.
+prepare_330_case no-hold
+STOP_LOG="$CASE_DIR/launcher.log"
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+: > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+ONLY_GMK=1 TICKET_NS=100 run_launcher bd-ib-no-hold "$STOP_LOG"
+if [ "$RC" = 0 ] && log_has "$STOP_LOG" "LISTED on petri" && ! log_has "$STOP_LOG" "stopped the drive" \
+    && [ "$(drive_log_items)" = bd-ib-no-hold ]; then
+    pass "with no hold file the drive proceeds from launch to the run listing"
+else
+    fail "a launch with no hold file did not proceed to listing (rc=$RC)"
+    tail -n 8 "$STOP_LOG" >&2
+fi
+
+# 20e. A drive that admits its item as the stop takes effect, or whose status
+# cannot be read after the stop, ends in a stopped-after-admission non-run exit.
+for after_stop in admitted unreadable; do
+    prepare_330_case "stopped-after-admission-$after_stop"
+    STOP_LOG="$CASE_DIR/launcher.log"
+    if [ "$after_stop" = admitted ]; then
+        export STUB_DRIVE_ADMIT_ON_TERM=1
+    fi
+    ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-stop-admit > "$STOP_LOG" 2>&1 &
+    stop_pid=$!
+    if wait_for_drive_invocations 1 10; then
+        if [ "$after_stop" = unreadable ]; then : > "$STUB_ITEM_STATUS_UNREADABLE_FILE"; fi
+        set_hold "$HOLD_FILE" 'engine restart'
+        wait "$stop_pid"
+        stop_rc=$?
+        if [ "$stop_rc" != 0 ] \
+            && line_has_all "$STOP_LOG" 'terminal:' 'item=bd-ib-stop-admit' 'ticket=100' 'cause=stopped-after-admission' \
+            && [ ! -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+            && [ "$(wc -l < "$STUB_LEDGER_COMMENTS")" = 1 ] \
+            && grep -qF 'ticket 100' "$STUB_LEDGER_COMMENTS" \
+            && grep -qF 'move' "$STUB_LEDGER_COMMENTS" \
+            && [ "$(drive_log_items)" = bd-ib-stop-admit ] && inflight_empty; then
+            pass "a stopped drive that admitted its item ($after_stop) exits stopped-after-admission, re-takes no ticket and comments once"
+        else
+            fail "a stopped drive that admitted its item ($after_stop) did not make the stopped-after-admission exit (rc=$stop_rc)"
+            tail -n 8 "$STOP_LOG" >&2
+        fi
+    else
+        fail "the stub drive never started for the stopped-after-admission case"
+        stop_launcher "$stop_pid"
+        wait "$stop_pid" 2>/dev/null
+    fi
+done
 fi
 
 echo

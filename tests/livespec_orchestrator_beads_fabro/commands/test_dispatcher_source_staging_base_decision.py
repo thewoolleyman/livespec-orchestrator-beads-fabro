@@ -144,13 +144,15 @@ def test_an_unobservable_origin_head_fails_the_staging_closed(
     # Nothing is staged on a base nobody could prove current, and no cleanup
     # leg runs against a worktree and a ref that were never created.
     assert not any(call[:2] == ["git", "worktree"] for call in runner.calls)
-    assert not any(call[:2] == ["git", "update-ref"] for call in runner.calls)
+    assert not any(
+        call[:3] == ["git", "update-ref", "-d"] and "heads" in call[3] for call in runner.calls
+    )
     staged = next(row for row in journal.records if row["stage"] == "source-checkout-stage")
     assert staged["status"] == "failed"
     assert staged["reason"] == "source-origin-head-unobservable"
     assert staged["terminal"] is True
     if unobservable == "unreadable-head":
-        assert "rev-parse FETCH_HEAD" in result.stderr
+        assert "named no commit" in result.stderr
     else:
         assert result.stderr == "fetch refused"
 
@@ -190,7 +192,9 @@ def test_a_resume_stages_only_the_recorded_pull_request_head(
     ).run(argv=["fabro", "run"], cwd=tmp_path, timeout_seconds=30)
 
     fetch = next(call for call in runner.calls if call[:2] == ["git", "fetch"])
-    assert fetch == ["git", "fetch", "--quiet", "origin", plan.branch]
+    assert fetch[:4] == ["git", "fetch", "--quiet", "origin"]
+    assert fetch[4].startswith(f"+refs/heads/{plan.branch}:refs/livespec/staging/")
+    assert not any("FETCH_HEAD" in arg for call in runner.calls for arg in call)
     staged = next(row for row in journal.records if row["stage"] == "source-checkout-stage")
     if expected_detail is None:
         added = next(call for call in runner.calls if call[:3] == ["git", "worktree", "add"])
