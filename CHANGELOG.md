@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.307.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.306.0...v0.307.0) (2026-11-09)
+
+
+### Features
+
+* complete a handed-off merge wait from the stranded-claim reconciliation pass ([682fc3d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/682fc3dfaf431fef23f549f754f205a25b8b1e27))
+* hand an armed, passing pull request off when the merge wait's poll budget ends ([9b90895](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9b90895048cb31f28fa053e1ba7f1d35a0e1800f))
+
+
+### Bug Fixes
+
+* **dev-tooling:** make the warm-seed directory overridable so tests never touch the shared cache ([0c38d8b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0c38d8b1d6c273452c070490a7ce625758bb3e38))
+
 ## [0.306.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.305.1...v0.306.0) (2026-11-08)
 
 

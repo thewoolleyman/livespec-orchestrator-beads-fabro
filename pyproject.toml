@@ -459,6 +459,7 @@ supervisor_entry_files = [
     "plan/fabro-currency/research/004-fake-acp-agent.py",
     # fleet-launch/: provisional operator scripts run directly by a seat (see fleet-launch/README.md).
     "fleet-launch/ready-set-check.py",
+    "fleet-launch/ledger-item.py",
     "fleet-launch/host-capture-payload.py",
     "fleet-launch/_capture_evidence.py",
     # The Enemy Unit Test copy of that fake agent: it owns ACP JSON-RPC stdout

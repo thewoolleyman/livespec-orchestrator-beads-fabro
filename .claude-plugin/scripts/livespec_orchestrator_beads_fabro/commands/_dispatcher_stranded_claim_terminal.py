@@ -113,6 +113,7 @@ __all__: list[str] = [
     "TerminalReadContext",
     "apply_terminal_disposition",
     "observe_terminal_outcome",
+    "terminal_plan",
 ]
 
 # The two effects this module performs, named so a recovery record can say
@@ -212,7 +213,7 @@ def observe_terminal_outcome(
     any release route claims, so it must not be released and must not be
     converted into a needs-human decision.
     """
-    plan = _terminal_plan(
+    plan = terminal_plan(
         repo=context.repo,
         work_item_id=work_item_id,
         fabro_bin=context.fabro_bin,
@@ -341,7 +342,7 @@ def _watchdog_cancelled(
     )
 
 
-def _terminal_plan(
+def terminal_plan(
     *,
     repo: Path,
     work_item_id: str,
