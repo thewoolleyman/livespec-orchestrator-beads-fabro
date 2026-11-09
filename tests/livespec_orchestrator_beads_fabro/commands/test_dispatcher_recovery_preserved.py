@@ -91,20 +91,30 @@ def _asked(*, runner: _Runner, needle: str) -> bool:
 def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> None:
     """The needs-human ref carries the run's whole tree, so nothing below it is read.
 
-    The newest identifier's ref is taken even though an OLDER run also has one, and
-    the publish branch is carrying a different head at the same moment — so a
-    reading that preferred either would land on a well-formed wrong commit.
+    The descendant tip is taken even though an OLDER run also has a ref and the
+    publish branch is carrying a different head at the same moment — so a reading
+    that preferred either would land on a well-formed wrong commit.
     """
+    older_ref = f"{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}"
     runner = _Runner(
         answers={
             f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=(
                     f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
-                    f"{_EARLIER_HEAD}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
+                    f"{_EARLIER_HEAD}\t{older_ref}\n"
                 ),
                 stderr="",
-            )
+            ),
+            "show -s --format=%H %ct": CommandResult(
+                exit_code=0,
+                stdout=f"{_TERMINAL_COMMIT} 200\n{_EARLIER_HEAD} 100\n",
+                stderr="",
+            ),
+            f"is-ancestor {_EARLIER_HEAD} {_TERMINAL_COMMIT}": CommandResult(
+                exit_code=0, stdout="", stderr=""
+            ),
+            "is-ancestor": CommandResult(exit_code=1, stdout="", stderr=""),
         }
     )
 
@@ -113,6 +123,7 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
         remote=SEED_REMOTE,
         commit_sha=_TERMINAL_COMMIT,
         preservation_ref=f"{NEEDS_HUMAN_REF_PREFIX}/{_RUN}",
+        passed_over_needs_human=((older_ref, _EARLIER_HEAD),),
     )
     assert not _asked(runner=runner, needle=_BRANCH_REF)
     assert not _asked(runner=runner, needle=_PRESERVED_PUBLISH_PREFIX)
