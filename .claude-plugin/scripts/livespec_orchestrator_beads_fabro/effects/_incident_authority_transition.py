@@ -9,10 +9,12 @@ A close exit code is never a winner verdict; the committed reason is read back.
 from __future__ import annotations
 
 import json
+from contextlib import suppress
 from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._incident_authority_payload import (
+    HEAD_HINT_KEY,
     TOKEN_TITLE,
     TRANSITION_MARKER,
     attempt_record,
@@ -30,7 +32,10 @@ from livespec_orchestrator_beads_fabro._incident_phases import (
     recovery_carrier,
 )
 from livespec_orchestrator_beads_fabro.effects import parse_json
-from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_authority
+from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import (
+    read_authority,
+    read_history,
+)
 from livespec_orchestrator_beads_fabro.effects._incident_entry_writer import (
     require_current_generation,
 )
@@ -46,6 +51,14 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
 
 __all__: list[str] = ["commit_transition"]
+
+_LEDGER_ERRORS = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsCredentialMissingError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 def _read(
@@ -116,6 +129,12 @@ def _close(
         return AuthorityRefusal(
             code="incident-transition-lost-race", detail=observed.current_token_id
         )
+    # The hint is where a current read starts, never authority: a lost write only
+    # lengthens the next forward walk, so it must not turn a committed close into an error.
+    with suppress(*_LEDGER_ERRORS):
+        client.update_issue(
+            issue_id=successor.item_id, metadata={HEAD_HINT_KEY: observed.current_token_id}
+        )
     return _read(client=client, attempt=successor, historical=False)
 
 
@@ -141,7 +160,12 @@ def _commit(
     current = require_current_generation(client=client, observed=observed)
     if isinstance(current, AuthorityRefusal):
         return current
-    if decoded.operation_id in current.operation_ids:
+    # A current read walks only the segment after the item's head hint, so reuse is
+    # judged against the whole retained history.
+    history = read_history(client=client, repository=decoded.repository, item_id=decoded.item_id)
+    if isinstance(history, AuthorityRefusal):
+        return history
+    if decoded.operation_id in {prior.operation_id for prior in history}:
         return AuthorityRefusal(
             code="incident-transition-operation-reused", detail=decoded.operation_id
         )
@@ -154,13 +178,7 @@ def commit_transition(
     """Commit one next generation, or recover a retry without another effect."""
     try:
         return _commit(client=client, observed=observed, successor=successor)
-    except (
-        BeadsCommandError,
-        BeadsConnectionError,
-        BeadsCredentialMissingError,
-        BeadsMappingError,
-        BeadsTenantMissingError,
-    ) as exc:
+    except _LEDGER_ERRORS as exc:
         # Keep an unknown candidate: deleting it could sever our own successful
         # transition after a failed readback. A retry recovers the original.
         return AuthorityRefusal(code="incident-transition-unavailable", detail=str(exc))

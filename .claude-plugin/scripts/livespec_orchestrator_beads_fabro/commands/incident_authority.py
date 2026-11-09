@@ -9,6 +9,7 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, cast
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
@@ -253,8 +254,24 @@ def _filing(*, args: argparse.Namespace) -> FilingReceipt | AuthorityRefusal:
     )
 
 
+def _without_walk_scope(*, value: object) -> object:
+    """Leave out the operations a reading happened to walk.
+
+    That set is the whole chain for a historical read and only the segment after the
+    item's head hint for a current one, so the same committed reading would otherwise
+    serialize differently when a retry recovers it.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _without_walk_scope(value=item)
+            for key, item in cast("dict[str, object]", value).items()
+            if key != "operation_ids"
+        }
+    return value
+
+
 def _result_body(*, result: _Reply) -> dict[str, object]:
-    body = asdict(result)
+    body = cast("dict[str, Any]", _without_walk_scope(value=asdict(result)))
     if isinstance(result, IncidentReading | GenesisReceipt):
         body["attempt"] = attempt_record(attempt=result.attempt)
     if isinstance(result, RepaymentEntry | RecoveryEntry | IncidentCompletion):
