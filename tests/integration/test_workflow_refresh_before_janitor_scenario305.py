@@ -57,14 +57,13 @@ def _commit(*, cwd: Path, path: str, text: str, subject: str) -> str:
     return _git("rev-parse", "HEAD", cwd=cwd).stdout.strip()
 
 
-def _script(*, node: str, check_suite: str, conformance_hook_install: str = "") -> str:
+def _script(*, node: str, check_suite: str) -> str:
     graph = parse_dot_graph(text=_WORKFLOW.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     script: str = graph.nodes[node]["script"]
     return (
         script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
         .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", conformance_hook_install)
         .replace(r"\"", '"')
     )
 
@@ -78,12 +77,6 @@ def _world(*, root: Path, conflicting: bool = False) -> tuple[Path, Path]:
     _ = _git("config", "user.name", "Test", cwd=seed)
     _ = _git("config", "user.email", "test@example.invalid", cwd=seed)
     _ = _commit(cwd=seed, path="shared.txt", text="base\n", subject="chore: seed")
-    _ = _commit(
-        cwd=seed,
-        path="canonical-hook-body",
-        text="old canonical hook body\n",
-        subject="chore: seed canonical hook body",
-    )
     _ = _git("remote", "add", "origin", str(origin), cwd=seed)
     _ = _git("push", "-u", "origin", _DEFAULT_BRANCH, cwd=seed)
 
@@ -142,23 +135,10 @@ def _environment(*, plugins: Path) -> dict[str, str]:
 
 
 def _run(
-    *,
-    node: str,
-    cwd: Path,
-    plugins: Path,
-    check_suite: str,
-    conformance_hook_install: str = "",
+    *, node: str, cwd: Path, plugins: Path, check_suite: str
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [
-            "sh",
-            "-c",
-            _script(
-                node=node,
-                check_suite=check_suite,
-                conformance_hook_install=conformance_hook_install,
-            ),
-        ],
+        ["sh", "-c", _script(node=node, check_suite=check_suite)],
         check=False,
         capture_output=True,
         cwd=cwd,
@@ -212,117 +192,6 @@ def test_scenario305_refreshes_before_janitor_and_pushes_that_exact_green_head(
     remote = _git("ls-remote", "origin", f"refs/heads/{_PUBLISH_BRANCH}", cwd=run)
     assert remote.stdout.split()[0] == green_head
     assert "LIVESPEC_PUBLISH_DRAFT_REFRESH_SKIPPED" in pushed.stderr
-
-
-def test_scenario305_janitor_reinstalls_conformance_hooks_after_a_clean_refresh(
-    *, tmp_path: Path
-) -> None:
-    """The aggregate sees the hook body from the tree janitor just rebased onto."""
-    run, default = _world(root=tmp_path)
-    plugins = _plugins(root=tmp_path)
-    # The run's hook body is deliberately stale once the separate default clone
-    # advances. The suite below checks the installed bytes rather than merely
-    # counting installer calls, so it distinguishes a pre-refresh install from
-    # the required post-refresh install.
-    _ = _commit(
-        cwd=default,
-        path="canonical-hook-body",
-        text="new canonical hook body\n",
-        subject="chore: update canonical hook body",
-    )
-    _ = _git("push", "origin", _DEFAULT_BRANCH, cwd=default)
-    trace = tmp_path / "conformance-hook-installs"
-    installer = tmp_path / "install-conformance-hooks"
-    installer.write_text(
-        "#!/bin/sh\n"
-        f"printf '%s\\n' install >> {shlex.quote(str(trace))}\n"
-        "body=$(cat canonical-hook-body)\n"
-        "for hook in pre-commit pre-push commit-msg; do\n"
-        "    printf '#!/bin/sh\\n# canonical: %s\\n' \"$body\" > .git/hooks/$hook\n"
-        "    chmod 755 .git/hooks/$hook\n"
-        "done\n",
-        encoding="utf-8",
-    )
-    installer.chmod(installer.stat().st_mode | stat.S_IXUSR)
-    _ = subprocess.run([str(installer)], cwd=run, check=True, capture_output=True, text=True)
-    suite = _suite(
-        root=tmp_path,
-        body=(
-            "body=$(cat canonical-hook-body)\n"
-            "for hook in pre-commit pre-push commit-msg; do\n"
-            '    grep -qxF "# canonical: $body" .git/hooks/$hook || exit 1\n'
-            "done"
-        ),
-    )
-
-    janitor = _run(
-        node="janitor",
-        cwd=run,
-        plugins=plugins,
-        check_suite=str(suite),
-        conformance_hook_install=shlex.quote(str(installer)),
-    )
-
-    assert janitor.returncode == 0, janitor.stderr
-    assert trace.read_text(encoding="utf-8") == "install\ninstall\n"
-    for hook in ("pre-commit", "pre-push", "commit-msg"):
-        assert "# canonical: new canonical hook body" in (run / ".git" / "hooks" / hook).read_text(
-            encoding="utf-8"
-        )
-
-
-def test_scenario305_refresh_repair_restores_the_pre_refresh_hook_body(*, tmp_path: Path) -> None:
-    """A red refreshed suite leaves hooks matching the head fix receives."""
-    run, default = _world(root=tmp_path)
-    plugins = _plugins(root=tmp_path)
-    before = _git("rev-parse", "HEAD", cwd=run).stdout.strip()
-    _ = _commit(
-        cwd=default,
-        path="canonical-hook-body",
-        text="new canonical hook body\n",
-        subject="chore: update canonical hook body",
-    )
-    _ = _git("push", "origin", _DEFAULT_BRANCH, cwd=default)
-    trace = tmp_path / "conformance-hook-installs"
-    installer = tmp_path / "install-conformance-hooks"
-    installer.write_text(
-        "#!/bin/sh\n"
-        f"printf '%s\\n' install >> {shlex.quote(str(trace))}\n"
-        "body=$(cat canonical-hook-body)\n"
-        "for hook in pre-commit pre-push commit-msg; do\n"
-        "    printf '#!/bin/sh\\n# canonical: %s\\n' \"$body\" > .git/hooks/$hook\n"
-        "    chmod 755 .git/hooks/$hook\n"
-        "done\n",
-        encoding="utf-8",
-    )
-    installer.chmod(installer.stat().st_mode | stat.S_IXUSR)
-    _ = subprocess.run([str(installer)], cwd=run, check=True, capture_output=True, text=True)
-    suite = _suite(
-        root=tmp_path,
-        body=(
-            "body=$(cat canonical-hook-body)\n"
-            "for hook in pre-commit pre-push commit-msg; do\n"
-            '    grep -qxF "# canonical: $body" .git/hooks/$hook || exit 1\n'
-            "done\n"
-            "exit 23"
-        ),
-    )
-
-    janitor = _run(
-        node="janitor",
-        cwd=run,
-        plugins=plugins,
-        check_suite=str(suite),
-        conformance_hook_install=shlex.quote(str(installer)),
-    )
-
-    assert janitor.returncode == 23, janitor.stderr
-    assert _git("rev-parse", "HEAD", cwd=run).stdout.strip() == before
-    assert trace.read_text(encoding="utf-8") == "install\ninstall\ninstall\n"
-    for hook in ("pre-commit", "pre-push", "commit-msg"):
-        assert "# canonical: old canonical hook body" in (run / ".git" / "hooks" / hook).read_text(
-            encoding="utf-8"
-        )
 
 
 def test_scenario305_preserves_an_existing_publish_branch_during_janitor_refresh(

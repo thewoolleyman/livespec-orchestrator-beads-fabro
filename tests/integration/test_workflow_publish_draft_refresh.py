@@ -128,7 +128,6 @@ def _publish_script(*, check_suite: str = "true") -> str:
         .replace(r"\"", '"')
         .replace("{{ inputs.default_branch }}", "master")
         .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", "")
     )
 
 

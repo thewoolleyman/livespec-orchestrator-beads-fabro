@@ -22,8 +22,7 @@ called out.
 
 WHAT IS SIMULATED, AND WHY EACH SUBSTITUTION IS SAFE.
 
-- `{{ inputs.default_branch }}`, `{{ inputs.sandbox_check_suite }}` and
-  `{{ inputs.conformance_hook_install }}` are
+- `{{ inputs.default_branch }}` and `{{ inputs.sandbox_check_suite }}` are
   substituted here because the pinned ENGINE owns that templating, not this
   repository. The check suite is a per-repository DECLARATION -- an arbitrary
   command the governed repo names -- so standing a controlled script in for it
@@ -207,10 +206,8 @@ _RENDERINGS = (
 
 def _bind_engine_tokens(*, script: str, check_suite: str) -> str:
     """Bind the engine's OWN tokens, and nothing else the stage carries."""
-    return (
-        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
-        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", "")
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
     )
 
 
@@ -1790,13 +1787,10 @@ def test_the_executed_bytes_are_the_committed_bytes(tmp_path: Path) -> None:
     committed = graph.nodes["pr_refresh"]["script"]
     assert "{{ inputs.default_branch }}" in committed
     assert "{{ inputs.sandbox_check_suite }}" in committed
-    assert "{{ inputs.conformance_hook_install }}" in committed
     executed = _refresh_script(check_suite=_PASSING_GATE)
     assert "{{" not in executed
-    assert executed == (
-        committed.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
-        .replace("{{ inputs.sandbox_check_suite }}", _PASSING_GATE)
-        .replace("{{ inputs.conformance_hook_install }}", "")
+    assert executed == committed.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", _PASSING_GATE
     )
     # And the one program the stage re-enters is the production one, written from
     # its own source rather than restated: a control whose push helper was a

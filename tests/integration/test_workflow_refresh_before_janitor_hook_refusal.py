@@ -53,7 +53,6 @@ def _janitor_script() -> str:
     return (
         script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
         .replace("{{ inputs.sandbox_check_suite }}", "true")
-        .replace("{{ inputs.conformance_hook_install }}", "")
         .replace(r"\"", '"')
     )
 
