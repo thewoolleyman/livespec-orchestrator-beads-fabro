@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario242|scenario297|scenario316|scenario330) ;;
+    all|scenario242|scenario297|scenario316|scenario330|launcher-reexec) ;;
     *)
-        echo "usage: run-tests.sh [scenario242|scenario297|scenario316|scenario330]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario316|scenario330|launcher-reexec]" >&2
         exit 2
         ;;
 esac
@@ -1615,6 +1615,196 @@ for after_stop in admitted unreadable; do
         wait "$stop_pid" 2>/dev/null
     fi
 done
+fi
+
+# --- 21. a running launcher follows its script on disk ------------------------
+# A bash launcher keeps executing the script content it started with, so a hold
+# check added to the script after the launcher started never reached it
+# (bd-ib-5ycmsm: bd-ib-fkd4ve launched straight through a repository hold on
+# 2026-11-08). Each case starts a launcher from a private copy of the committed
+# scripts whose hold check is DISABLED, replaces that copy on disk with the
+# committed script exactly as a deploy does (write beside, then mv), and holds a
+# repository hold file. Every refusal is contrasted with a launch once the hold
+# is removed.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = launcher-reexec ]; then
+copy_launchers() { mkdir -p "$1" && cp "$LAUNCH_DIR"/*.sh "$1/"; }
+replace_script() { cp "$2" "$1.new" && chmod +x "$1.new" && mv -f "$1.new" "$1"; }
+without_hold_handling() {
+    sed 's/^repository_hold_applies() {$/repository_hold_applies() { return 1/' "$1"
+}
+as_legacy_launcher() {
+    sed -e 's/^script_changed() {$/script_changed() { return 1/' \
+        -e 's/^reexec_on_script_change() {$/reexec_on_script_change() { return 0/' "$1"
+}
+ticket_pid() { grep -oE 'pid=[0-9]+' "$1" 2>/dev/null | head -1; }
+
+echo "--- 21. an impl launcher started before a hold check was added honours the hold"
+new_case launcher-reexec-dispatch
+export FLEET_LAUNCH_MAX_WAIT_S=120
+launchers="$CASE_DIR/launchers"
+copy_launchers "$launchers"
+cp "$launchers/dispatch-dual.sh" "$CASE_DIR/committed-dispatch-dual.sh"
+without_hold_handling "$CASE_DIR/committed-dispatch-dual.sh" > "$launchers/dispatch-dual.sh"
+chmod +x "$launchers/dispatch-dual.sh"
+if cmp -s "$CASE_DIR/committed-dispatch-dual.sh" "$launchers/dispatch-dual.sh"; then
+    fail "the harness could not disable the copy's hold check"
+fi
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '0\n' > "$CAP_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$launchers/dispatch-dual.sh" bd-ib-reexec > "$CASE_DIR/impl.log" 2>&1 &
+reexec_pid=$!
+ticket_path="$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat"
+wait_for_line "$CASE_DIR/impl.log" "fleet not green" 10 || fail "the impl launcher never reached its waiting loop"
+ticket_before=$(ticket_pid "$ticket_path")
+printf 'reason: canary gate\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+replace_script "$launchers/dispatch-dual.sh" "$CASE_DIR/committed-dispatch-dual.sh"
+wait_for_line "$CASE_DIR/impl.log" "launcher script changed on disk" 10 \
+    || fail "the waiting launcher never noticed its script changed on disk"
+printf '8\n' > "$CAP_FILE"
+wait_for_line "$CASE_DIR/impl.log" "repository hold present" 10 \
+    || fail "the waiting launcher never read the repository hold"
+sleep 0.3
+if kill -0 "$reexec_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ] \
+    && [ -n "$ticket_before" ] && [ "$(ticket_pid "$ticket_path")" = "$ticket_before" ]; then
+    pass "a hold file created while the launcher waits stops it, keeping its original queue ticket"
+else
+    fail "the launcher started before the hold check launched through the hold (dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/impl.log" >&2
+fi
+rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+wait_for_line "$CASE_DIR/impl.log" "drive rc=" 20
+if [ "$(drive_log_items)" = bd-ib-reexec ]; then
+    pass "control: removing the hold launches the same launcher"
+else
+    fail "control: the launcher did not launch once the hold was removed (dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/impl.log" >&2
+fi
+stop_launcher "$reexec_pid"
+wait "$reexec_pid" 2>/dev/null
+
+echo "--- 21a. an impl launcher bound at the mutex re-reads changed hold code before launching"
+new_case launcher-reexec-launch-point
+export FLEET_LAUNCH_MAX_WAIT_S=120
+launchers="$CASE_DIR/launchers"
+copy_launchers "$launchers"
+cp "$launchers/dispatch-dual.sh" "$CASE_DIR/committed-dispatch-dual.sh"
+without_hold_handling "$CASE_DIR/committed-dispatch-dual.sh" > "$launchers/dispatch-dual.sh"
+chmod +x "$launchers/dispatch-dual.sh"
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+mkdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+sleep 600 &
+holder_pid=$!
+printf 'owner=other-seat pid=%s item=bd-ib-holder\n' "$holder_pid" > "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+ONLY_GMK=1 TICKET_NS=100 "$launchers/dispatch-dual.sh" bd-ib-reexec-bound > "$CASE_DIR/impl.log" 2>&1 &
+reexec_pid=$!
+wait_for_line "$CASE_DIR/impl.log" "queue for the gmktec mutex" 10 || fail "the launcher did not wait for the mutex"
+printf 'reason: canary gate\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+replace_script "$launchers/dispatch-dual.sh" "$CASE_DIR/committed-dispatch-dual.sh"
+kill "$holder_pid" 2>/dev/null
+wait "$holder_pid" 2>/dev/null
+rm -f "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+rmdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+wait_for_line "$CASE_DIR/impl.log" "repository hold present" 10 \
+    || fail "the bound launcher never read the repository hold"
+sleep 0.3
+if kill -0 "$reexec_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ] \
+    && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] \
+    && [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ]; then
+    pass "a launcher bound at the mutex when its script changed holds under the changed code and keeps its ticket"
+else
+    fail "the bound launcher launched under its old hold code (dispatches: $(drive_log_items))"
+    tail -6 "$CASE_DIR/impl.log" >&2
+fi
+stop_launcher "$reexec_pid"
+wait "$reexec_pid" 2>/dev/null
+
+echo "--- 21b. a resume launcher started before a hold check was added honours the hold"
+new_case launcher-reexec-resume
+export FLEET_LAUNCH_MAX_WAIT_S=120
+launchers="$CASE_DIR/launchers"
+copy_launchers "$launchers"
+cp "$launchers/resume-capped.sh" "$CASE_DIR/committed-resume-capped.sh"
+without_hold_handling "$CASE_DIR/committed-resume-capped.sh" > "$launchers/resume-capped.sh"
+chmod +x "$launchers/resume-capped.sh"
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '0\n' > "$CAP_FILE"
+"$launchers/resume-capped.sh" bd-ib-reexec-resume > "$CASE_DIR/resume.log" 2>&1 &
+reexec_pid=$!
+wait_for_line "$CASE_DIR/resume.log" "fleet at cap under mutex" 10 || fail "the resume launcher never reached its waiting loop"
+ticket_path=$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)
+ticket_before=$(ticket_pid "$ticket_path")
+printf 'reason: canary gate\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+replace_script "$launchers/resume-capped.sh" "$CASE_DIR/committed-resume-capped.sh"
+wait_for_line "$CASE_DIR/resume.log" "launcher script changed on disk" 10 \
+    || fail "the waiting resume launcher never noticed its script changed on disk"
+printf '8\n' > "$CAP_FILE"
+wait_for_line "$CASE_DIR/resume.log" "repository hold present" 10 \
+    || fail "the waiting resume launcher never read the repository hold"
+sleep 0.3
+if kill -0 "$reexec_pid" 2>/dev/null && [ ! -s "$RESUME_LOG" ] \
+    && [ -n "$ticket_before" ] && [ -e "$ticket_path" ] && [ "$(ticket_pid "$ticket_path")" = "$ticket_before" ]; then
+    pass "a hold file created while the resume launcher waits stops it, keeping its original queue ticket"
+else
+    fail "the resume launcher started before the hold check launched through the hold"
+    tail -6 "$CASE_DIR/resume.log" >&2
+fi
+rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+wait "$reexec_pid" 2>/dev/null
+if [ "$(tr '\n' ' ' < "$RESUME_LOG" | sed 's/ *$//')" = bd-ib-reexec-resume ]; then
+    pass "control: removing the hold resumes the same launcher"
+else
+    fail "control: the resume launcher did not resume once the hold was removed"
+    tail -6 "$CASE_DIR/resume.log" >&2
+fi
+stop_launcher "$reexec_pid"
+
+echo "--- 22. launcher-versions.sh marks the launcher running a stale script"
+new_case launcher-versions
+export FLEET_LAUNCH_MAX_WAIT_S=120
+stale_dir="$CASE_DIR/stale-launchers"
+fresh_dir="$CASE_DIR/fresh-launchers"
+copy_launchers "$stale_dir"
+copy_launchers "$fresh_dir"
+as_legacy_launcher "$LAUNCHER" > "$stale_dir/dispatch-dual.sh"
+chmod +x "$stale_dir/dispatch-dual.sh"
+stale_started=$(sha256sum < "$stale_dir/dispatch-dual.sh" | cut -c1-12)
+fresh_started=$(sha256sum < "$fresh_dir/dispatch-dual.sh" | cut -c1-12)
+: > "$BOARD_GMK"
+: > "$BOARD_HL"
+printf '0\n' > "$CAP_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$stale_dir/dispatch-dual.sh" bd-ib-stale > "$CASE_DIR/stale.log" 2>&1 &
+stale_pid=$!
+ONLY_GMK=1 TICKET_NS=200 "$fresh_dir/dispatch-dual.sh" bd-ib-fresh > "$CASE_DIR/fresh.log" 2>&1 &
+fresh_pid=$!
+wait_for_line "$CASE_DIR/stale.log" "fleet not green" 10 || fail "the stale-case launcher never reached its waiting loop"
+wait_for_line "$CASE_DIR/fresh.log" "queued behind an older gmktec ticket" 10 || fail "the fresh-case launcher never reached its waiting loop"
+{ cat "$stale_dir/dispatch-dual.sh"; printf '# changed on disk\n'; } > "$CASE_DIR/stale-replacement.sh"
+replace_script "$stale_dir/dispatch-dual.sh" "$CASE_DIR/stale-replacement.sh"
+stale_on_disk=$(sha256sum < "$stale_dir/dispatch-dual.sh" | cut -c1-12)
+queue_before=$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -name "[0-9]*" | sort | tr '\n' ' ')
+report=$(bash "$LAUNCH_DIR/launcher-versions.sh" 2>&1)
+stale_row=$(printf '%s\n' "$report" | awk -v p="$stale_pid" '$1==p')
+fresh_row=$(printf '%s\n' "$report" | awk -v p="$fresh_pid" '$1==p')
+if printf '%s\n' "$stale_row" | awk -v r="$stale_started" -v d="$stale_on_disk" '$2=="STALE" && $3==r && $4==d {ok=1} END{exit !ok}' \
+    && printf '%s\n' "$fresh_row" | awk -v r="$fresh_started" '$2=="current" && $3==r && $4==r {ok=1} END{exit !ok}'; then
+    pass "the readback lists each launcher's running script version and marks only the one that differs from disk"
+else
+    fail "the readback did not mark the stale launcher (stale row: ${stale_row:-none}; fresh row: ${fresh_row:-none})"
+    printf '%s\n' "$report" >&2
+fi
+if [ "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -name "[0-9]*" | sort | tr '\n' ' ')" = "$queue_before" ] \
+    && kill -0 "$stale_pid" 2>/dev/null && kill -0 "$fresh_pid" 2>/dev/null; then
+    pass "the readback changes no queue ticket and stops no launcher"
+else
+    fail "the readback disturbed a launcher or its ticket"
+fi
+stop_launcher "$stale_pid" "$fresh_pid"
+wait "$stale_pid" 2>/dev/null
+wait "$fresh_pid" 2>/dev/null
 fi
 
 echo
