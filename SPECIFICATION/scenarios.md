@@ -7380,6 +7380,21 @@ Feature: Recovery routing for an automatically released item
     Then the route is seeded with needs-human/A as the preservation reference and its tip as the immutable commit
     And the route is not seeded from P and is not fresh
 
+  Scenario: A needs-human ref that carries no work is passed over
+    Given an item released for recovery whose latest run L published ref needs-human/D at its ending
+    And needs-human/D's tip tree is identical to the tree of its merge base with the default branch
+    And an earlier run of the item left a verified preserved tree at ref P
+    When the Dispatcher grades the item's recovery route
+    Then the route is seeded from P, not from needs-human/D
+    And the recovery-route record lists needs-human/D with its commit and the reason no-change in passed_over_needs_human
+
+  Scenario: An item whose only needs-human ref carries no work is routed fresh with the loss recorded
+    Given an item released for recovery whose only needs-human ref, needs-human/D, carries no work
+    And no other preserved work of the item is verified
+    When the Dispatcher grades the item's recovery route
+    Then the route is fresh
+    And the recovery-route record lists needs-human/D with its commit and the reason no-change in passed_over_needs_human
+
   Scenario: A recovery route names every needs-human tree it passed over
     Given an item released for recovery whose route resumes its published pull request
     And needs-human ref N's tip commit carries the trailer Fabro-Run naming one of the item's earlier runs
