@@ -82,6 +82,7 @@ _WORKFLOW = (
 
 _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
+_CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _DEFAULT_BRANCH = "master"
 _BRANCH = "feat/bd-ib-cwrllw"
 _SHARED_FILE = "shared.txt"
@@ -179,8 +180,10 @@ def _node_script(*, node: str, check_suite: str, shell_quoted_input: bool) -> st
     script: str = graph.nodes[node]["script"]
     assert script.count(_CHECK_SUITE_TOKEN) == 1, node
     rendered = shlex.quote(check_suite) if shell_quoted_input else check_suite
-    return script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH).replace(
-        _CHECK_SUITE_TOKEN, rendered
+    return (
+        script.replace(_DEFAULT_BRANCH_TOKEN, _DEFAULT_BRANCH)
+        .replace(_CHECK_SUITE_TOKEN, rendered)
+        .replace(_CONFORMANCE_HOOK_INSTALL_TOKEN, "")
     )
 
 
