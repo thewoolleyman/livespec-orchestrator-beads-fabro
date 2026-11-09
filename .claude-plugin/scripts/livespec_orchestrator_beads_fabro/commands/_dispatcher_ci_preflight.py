@@ -36,38 +36,28 @@ owns one journal handle and appends every step's record through it.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_pipeline_view import (
     MasterCiPipeline,
     resolve_master_ci_pipeline,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_ancestors import (
-    green_ancestor,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_classify import (
+    classify_run,
+    unprovable_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookup_failure import (
     lookup_failure_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_lookups import (
     UNKNOWN_RUN,
-    CiJob,
-    CiRun,
-    find_job,
-    job_records,
     list_runs,
-    run_id_of,
     run_records,
-    view_run_jobs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusals import (
     BRANCH_REMEDY,
     NO_RUNS_REMEDY,
-    PENDING_REMEDY,
     PIPELINE_REMEDY,
     MasterCiOutcome,
-    green_ancestor_outcome,
-    pass_outcome,
-    red_outcome,
     unprovable_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
@@ -86,13 +76,6 @@ __all__: list[str] = [
 ]
 
 _UNRESOLVED_BRANCH = "<unresolved>"
-_GREEN_CONCLUSIONS: frozenset[str] = frozenset({"success"})
-_PENDING_STATUSES: frozenset[str] = frozenset(
-    {"queued", "in_progress", "waiting", "pending", "requested"},
-)
-_RED_CONCLUSIONS: frozenset[str] = frozenset(
-    {"failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure"},
-)
 # Resolved once, at import, so the production effects are the signature's own
 # default and no caller has to know the seam exists.
 _DEFAULT_WAIT = MasterCiWait()
@@ -156,7 +139,7 @@ def _read_latest(
         )
     runs = run_records(result=result)
     if runs is None:
-        return _unprovable(
+        return unprovable_reading(
             pipeline=pipeline,
             branch=branch,
             cause="unexpected `gh run list` payload shape",
@@ -165,149 +148,10 @@ def _read_latest(
     if not runs:
         if observed_runs:
             return PendingReading(run_id=UNKNOWN_RUN, status=TRANSIENT_EMPTY_RUN_LISTING)
-        return _unprovable(
+        return unprovable_reading(
             pipeline=pipeline,
             branch=branch,
             cause="the resolved pipeline has no runs yet on the resolved default branch",
             remedy=NO_RUNS_REMEDY,
         )
-    return _classify_run(repo=repo, runner=runner, pipeline=pipeline, branch=branch, first=runs[0])
-
-
-def _classify_run(
-    *,
-    repo: Path,
-    runner: CommandRunner,
-    pipeline: MasterCiPipeline,
-    branch: str,
-    first: object,
-) -> MasterCiOutcome | PendingReading:
-    if not isinstance(first, dict):
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            cause="unexpected `gh run list` record shape",
-            remedy=PIPELINE_REMEDY,
-        )
-    run = cast("CiRun", first)
-    run_id = run_id_of(run=run)
-    status = run.get("status")
-    if isinstance(status, str) and status in _PENDING_STATUSES:
-        return _ancestor_or_pending(
-            repo=repo,
-            runner=runner,
-            pipeline=pipeline,
-            branch=branch,
-            pending=PendingReading(run_id=run_id, status=status),
-        )
-    return _classify_job(repo=repo, runner=runner, pipeline=pipeline, branch=branch, run_id=run_id)
-
-
-def _classify_job(
-    *,
-    repo: Path,
-    runner: CommandRunner,
-    pipeline: MasterCiPipeline,
-    branch: str,
-    run_id: str,
-) -> MasterCiOutcome | PendingReading:
-    result = view_run_jobs(repo=repo, runner=runner, run_id=run_id)
-    if result.exit_code != 0:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause=f"the aggregate-job lookup failed: {result.stderr.strip() or '<empty stderr>'}",
-            remedy=PIPELINE_REMEDY,
-        )
-    jobs = job_records(result=result)
-    if jobs is None:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause="unexpected `gh run view` payload shape",
-            remedy=PIPELINE_REMEDY,
-        )
-    job = find_job(jobs=jobs, name=pipeline.job)
-    if job is None:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause=f"aggregate job `{pipeline.job}` is missing from run {run_id}",
-            remedy=PIPELINE_REMEDY,
-        )
-    classification = _classify_conclusion(pipeline=pipeline, branch=branch, run_id=run_id, job=job)
-    if isinstance(classification, MasterCiOutcome):
-        return classification
-    return _ancestor_or_pending(
-        repo=repo,
-        runner=runner,
-        pipeline=pipeline,
-        branch=branch,
-        pending=classification,
-    )
-
-
-def _ancestor_or_pending(
-    *,
-    repo: Path,
-    runner: CommandRunner,
-    pipeline: MasterCiPipeline,
-    branch: str,
-    pending: PendingReading,
-) -> MasterCiOutcome | PendingReading:
-    ancestor = green_ancestor(
-        repo=repo,
-        runner=runner,
-        pipeline=pipeline,
-        branch=branch,
-        pending_run_id=pending.run_id,
-    )
-    if ancestor is None:
-        return pending
-    run_id, head_sha = ancestor
-    return green_ancestor_outcome(
-        pipeline=pipeline,
-        branch=branch,
-        run_id=run_id,
-        head_sha=head_sha,
-        pending_run_id=pending.run_id,
-        pending_status=pending.status,
-    )
-
-
-def _classify_conclusion(
-    *, pipeline: MasterCiPipeline, branch: str, run_id: str, job: CiJob
-) -> MasterCiOutcome | PendingReading:
-    job_status = job.get("status")
-    conclusion = job.get("conclusion")
-    if isinstance(job_status, str) and job_status in _PENDING_STATUSES:
-        return PendingReading(run_id=run_id, status=job_status)
-    if conclusion in _RED_CONCLUSIONS:
-        return red_outcome(
-            pipeline=pipeline, branch=branch, run_id=run_id, conclusion=str(conclusion)
-        )
-    if conclusion not in _GREEN_CONCLUSIONS:
-        return _unprovable(
-            pipeline=pipeline,
-            branch=branch,
-            run_id=run_id,
-            cause=f"aggregate job conclusion `{conclusion}` is neither green nor red",
-            remedy=PENDING_REMEDY,
-        )
-    return pass_outcome(pipeline=pipeline, branch=branch, run_id=run_id)
-
-
-def _unprovable(
-    *,
-    pipeline: MasterCiPipeline,
-    branch: str,
-    cause: str,
-    remedy: str,
-    run_id: str = UNKNOWN_RUN,
-) -> MasterCiOutcome:
-    return unprovable_outcome(
-        pipeline=pipeline, branch=branch, run_id=run_id, cause=cause, remedy=remedy
-    )
+    return classify_run(repo=repo, runner=runner, pipeline=pipeline, branch=branch, first=runs[0])

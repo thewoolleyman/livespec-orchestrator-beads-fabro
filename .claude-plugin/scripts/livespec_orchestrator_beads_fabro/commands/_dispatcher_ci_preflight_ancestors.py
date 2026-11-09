@@ -1,4 +1,4 @@
-"""Find a concluded green ancestor while the newest master-CI run is pending."""
+"""Find the newest master-CI run that carries a verdict while the latest one has none."""
 
 from __future__ import annotations
 
@@ -25,11 +25,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
 )
 
-__all__: list[str] = ["green_ancestor"]
+__all__: list[str] = ["green_ancestor", "newest_verdict_run"]
 
 _PENDING_STATUSES = frozenset({"queued", "in_progress", "waiting", "pending", "requested"})
 _RED_CONCLUSIONS = frozenset(
-    {"failure", "timed_out", "action_required", "stale", "startup_failure"},
+    {"failure", "timed_out", "action_required", "stale"},
 )
 _NON_CANDIDATE_RUN_CONCLUSIONS = frozenset({"cancelled", "skipped"})
 
@@ -43,18 +43,12 @@ def green_ancestor(
     pending_run_id: str,
 ) -> tuple[str, str] | None:
     """Return the newest concluded green ancestor run, or no proof to pass on."""
-    result = list_recent_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
-    if result.exit_code != 0:
-        return None
-    runs = _readable_runs(result=result)
-    if runs is None:
-        return None
-    candidate = _newest_concluded_run(
+    candidate = newest_verdict_run(
         repo=repo,
         runner=runner,
         pipeline=pipeline,
-        pending_run_id=pending_run_id,
-        runs=runs,
+        branch=branch,
+        skipped_run_id=pending_run_id,
     )
     if candidate is None:
         return None
@@ -64,6 +58,35 @@ def green_ancestor(
     if ancestor_of_branch(repo=repo, runner=runner, commit=head_sha, branch=branch) is not True:
         return None
     return run_id, head_sha
+
+
+def newest_verdict_run(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    skipped_run_id: str,
+) -> tuple[str, str, str] | None:
+    """Return the newest run, other than the skipped one, whose aggregate job is green or red.
+
+    The tuple is the run id, its head commit and the aggregate job's conclusion.
+    A run whose aggregate job is missing, cancelled, skipped or startup_failure
+    carries no verdict and is walked past, not read as red.
+    """
+    result = list_recent_runs(repo=repo, runner=runner, workflow=pipeline.workflow, branch=branch)
+    if result.exit_code != 0:
+        return None
+    runs = _readable_runs(result=result)
+    if runs is None:
+        return None
+    return _newest_concluded_run(
+        repo=repo,
+        runner=runner,
+        pipeline=pipeline,
+        pending_run_id=skipped_run_id,
+        runs=runs,
+    )
 
 
 def _readable_runs(*, result: CommandResult) -> list[object] | None:
