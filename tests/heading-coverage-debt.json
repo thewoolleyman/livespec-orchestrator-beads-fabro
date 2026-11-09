@@ -499,13 +499,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 210 — Reconciliation clears a stale fabro assignee from a ready item, and holds with a named reason every one it cannot clear",
-    "work_item": "bd-ib-3lbt4o",
-    "first_seen": "2026-10-20"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 213 — The plan timeline reports the record kinds it does not return",
     "work_item": "bd-ib-p38r",
     "first_seen": "2026-10-21"

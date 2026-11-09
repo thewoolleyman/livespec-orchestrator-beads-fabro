@@ -211,7 +211,7 @@ def _stages(*, journal: JournalFile) -> list[object]:
 @pytest.mark.parametrize(
     "overrides",
     [
-        {"status": "ready"},
+        {"status": "backlog"},
         {"assignee": None},
         {"rework_pending": True},
     ],
