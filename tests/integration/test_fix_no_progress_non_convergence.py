@@ -31,7 +31,11 @@ def _script(*, node: str) -> str:
     graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     assert node in graph.nodes
-    return graph.nodes[node]["script"].replace("{{ inputs.default_branch }}", "master")
+    return (
+        graph.nodes[node]["script"]
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.conformance_hook_install }}", "")
+    )
 
 
 def _run(*, node: str, repo: Path) -> subprocess.CompletedProcess[str]:
