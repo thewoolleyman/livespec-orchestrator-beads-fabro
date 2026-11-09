@@ -76,8 +76,13 @@ bootstrap a chain, authorize phase eligibility, update the item's lifecycle stat
 cancel factory work, or provision writer credentials. An absent chain remains
 `incident-authority-missing`, and a tenant outage remains unavailable.
 
-`record-local-gates` accepts the same exact current-identity query plus
-`--receipt-json`. This records evidence on that incident item without changing
+`record-local-gates` accepts the same exact current-identity query plus exactly
+one receipt source: `--receipt-json <receipt>` or `--receipt-stdin`, which reads
+the receipt from standard input. The stdin source exists because Linux caps one
+argv entry at 131072 bytes, so a receipt between 128 KiB and the authority's own
+1 MiB bound cannot travel as an argument; with `--receipt-stdin` the authority's
+bound is the only limit, and a larger receipt is refused
+`incident-receipt-invalid` with nothing recorded. This records evidence on that incident item without changing
 its authority generation or lifecycle state. A pre-PR snapshot may carry
 `pr_number: 0` only during repair and only with no landed commit/tree pairs.
 Other phases still require an identified PR. This permits pre-commit evidence

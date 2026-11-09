@@ -12,7 +12,7 @@ import json
 import math
 import re
 from dataclasses import asdict, dataclass
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, BinaryIO, cast
 
 from returns.io import impure_safe
 from returns.pipeline import is_successful
@@ -34,6 +34,7 @@ __all__: list[str] = [
     "current_receipt_authority",
     "decode_receipt",
     "matching_receipts",
+    "read_receipt_stream",
     "receipt_body",
     "receipt_mapping",
     "record_local_gates",
@@ -56,6 +57,18 @@ class LocalGateReceipt:
     checksum: str
     committed_token_id: str
     current_token_id: str
+
+
+def read_receipt_stream(*, stream: BinaryIO) -> str:
+    """Read a receipt from a byte stream, holding at most one byte past the size bound.
+
+    A receipt supplied on a stream is not limited by the 128 KiB argv entry cap,
+    so the authority's own bound is the only limit. Reading one byte past it is
+    enough for `decode_receipt` to refuse an oversize receipt, and it keeps an
+    unbounded producer from filling memory. Bytes that are not UTF-8 become
+    replacement characters, which the canonical-text comparison then refuses.
+    """
+    return stream.read(_MAX_BYTES + 1).decode("utf-8", "replace")
 
 
 def receipt_mapping(*, value: object) -> dict[str, Any]:
