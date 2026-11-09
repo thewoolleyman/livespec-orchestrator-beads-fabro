@@ -34,10 +34,39 @@ while read -r run pod node; do
   if [[ "$workers" == *" $node "* ]]; then
     # rd <command>: run one read-only command inside the pod's sandbox container, through the API server.
     rd() { sshn poweredge-xubuntu "sudo -n k3s kubectl exec -n factory $pod -c sandbox -- sh -c $(printf '%q' "$1")"; }
-    # rd_files <list>: the listed files (relative to $G), concatenated in order. The list goes on stdin:
-    # as exec arguments it would ride in the exec request's URL, which a large object store outgrows.
-    rd_files() { tr '\n' '\0' < "$1" | ssh -o BatchMode=yes $CP poweredge-xubuntu \
-      "sudo -n k3s kubectl exec -i -n factory $pod -c sandbox -- sh -c $(printf '%q' "cd $G && xargs -0 -r cat")"; }
+    # rd_files <list>: the listed files (relative to $G), concatenated in order, read in
+    # BOUNDED chunks. One exec stream carrying the whole tree (31.8 MiB for the first M4 run,
+    # 2026-11-09 23:18Z) was reset mid-transfer by the API server every time, so each exec
+    # carries at most PRESERVE_EXEC_CHUNK_BYTES (a whole number of MiB, default 4): small files
+    # are batched, and a larger file is read in byte ranges with dd. The list goes on stdin:
+    # as exec arguments it would ride in the exec request's URL.
+    rd_files() {
+      local chunk=${PRESERVE_EXEC_CHUNK_BYTES:-4194304} mib=1048576 size rel off bsum=0
+      local -a batch=()
+      flush() {
+        [ "${#batch[@]}" -gt 0 ] || return 0
+        printf '%s\0' "${batch[@]}" | ssh -o BatchMode=yes $CP poweredge-xubuntu \
+          "sudo -n k3s kubectl exec -i -n factory $pod -c sandbox -- sh -c $(printf '%q' "cd $G && xargs -0 -r cat")" \
+          || return 1
+        batch=()
+        bsum=0
+      }
+      while read -r size rel; do
+        if [ "$size" -gt "$chunk" ]; then
+          flush || return 1
+          off=0
+          while [ "$off" -lt "$size" ]; do
+            rd "dd if=$G/$rel bs=$mib skip=$((off / mib)) count=$((chunk / mib)) status=none" || return 1
+            off=$((off + chunk))
+          done
+        else
+          if [ $((bsum + size)) -gt "$chunk" ]; then flush || return 1; fi
+          batch+=("$rel")
+          bsum=$((bsum + size))
+        fi
+      done < "${1%.list}.sizes"
+      flush
+    }
     rd 'test -d /workspace/.git' 2>/dev/null || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
     G=/workspace/.git
   else
