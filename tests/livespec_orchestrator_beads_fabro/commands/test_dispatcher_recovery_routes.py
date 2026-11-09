@@ -252,7 +252,7 @@ def test_a_fallback_permitting_refusal_with_no_preserved_work_is_fresh_with_the_
         ),
         preserved_work=PRESERVED_WORK_ABSENT,
     )
-    assert len([call for call in _Shell.calls if "ls-remote" in call]) == 3
+    assert len([call for call in _Shell.calls if "ls-remote" in call]) == 4
     # A `fresh` item IS reclaimed for: clearing the dead run's branch is what
     # lets the new run's `publish_draft` push a plain fast-forward.
     assert routed.reclaims(work_item_id=_ITEM_ID) is True
