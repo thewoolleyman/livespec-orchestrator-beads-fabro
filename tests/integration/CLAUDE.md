@@ -1437,7 +1437,11 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   excerpt of at most 200 characters (marked truncated), an unknown-target statement
   naming absent, unreadable or target-free output, and never an environment value
   (verbatim or JSON-escaped, 8 characters or longer). Each excerpt case sits beside a
-  sibling that would pass for a cause naming only the exit status.
+  sibling that would pass for a cause naming only the exit status. When no excerpt is
+  found (the measured commit-msg stall kill of `bd-ib-fkd4ve`), the cause instead
+  carries the last five non-empty lines of the same recorded output, inline, each
+  credential-checked and capped at 160 characters; a found excerpt is the control that
+  gets no tail.
 
 - `test_implement_completion_field_scenario204.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 204 and the v165 clause "An implement
