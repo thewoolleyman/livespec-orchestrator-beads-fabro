@@ -513,6 +513,7 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
 
     assert producers == {
         "fix_commit_settle",
+        "fix_open_red_route",
         "janitor_failure_route",
         "janitor_refresh_route",
         "proof_capture",
@@ -525,7 +526,9 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     }
     assert all(match is not None for match in budgets.values()), budgets
     values = {node: int(match.group("value")) for node, match in budgets.items() if match}
-    assert values["fix"] >= 2 * len(producers - {"janitor_failure_route", "refresh_repair"})
+    assert values["fix"] >= 2 * len(
+        producers - {"janitor_failure_route", "refresh_repair", "fix_open_red_route"}
+    )
     assert values["disposition"] == values["review_fix"]
 
 
