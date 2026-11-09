@@ -12491,6 +12491,25 @@ Feature: The committed fleet-launch launchers enforce the interim launcher's gat
     When the repository hold file for repository A is removed
     Then the repository A launcher takes its FIFO place back in the order of the ticket it kept
 
+  Scenario: A canary repository hold yields every launch except an exempt item
+    Given impl launchers for work items bd-s and bd-u of repository A holding the two oldest gmktec FIFO tickets, and an impl launcher for repository B behind them
+    And the canary repository hold file for repository A exists
+    And the canary exemption list names bd-s and not bd-u
+    When the launchers run
+    Then the bd-s launcher binds and launches into repository A
+    And the bd-u launcher keeps its ticket and launches nothing into repository A
+    And the repository B launcher binds and launches
+    When the canary repository hold file for repository A is removed
+    Then the bd-u launcher takes its FIFO place back in the order of the ticket it kept
+
+  Scenario: A yielding ticket does not block a launchable ticket behind it
+    Given the oldest gmktec FIFO ticket belongs to a live launcher and its file carries a line beginning held=
+    And the next ticket belongs to a live launcher and its file carries the line wip-wait=1
+    And the third ticket belongs to a launcher whose repository no hold or gate holds
+    When the third launcher computes its FIFO place
+    Then it skips both marked tickets, binds and launches
+    And both marked tickets keep their ticket numbers
+
   Scenario: A repository at its WIP cap yields the FIFO head without running the preflight
     Given an impl launcher whose target repository's counted-claims count, read through the capacity projection, equals its configured wip_cap
     When the launcher runs
@@ -12513,8 +12532,35 @@ Feature: The committed fleet-launch launchers enforce the interim launcher's gat
 
   Scenario: The gmktec factory hold file holds every gmktec launch
     Given the gmktec factory hold file at the path the launcher assigns exists
+    And the launcher's work item is neither listed in the freeze allowlist nor priority 1
     When a gmktec launcher reaches the head of the FIFO
     Then it launches nothing onto any gmktec factory instance until the hold file is removed
+
+  Scenario: An allowlisted item launches once through the gmktec hold
+    Given the gmktec factory hold file exists
+    And the freeze allowlist names work item bd-x
+    When a gmktec launcher for bd-x reaches the launch
+    Then it launches bd-x
+    And the freeze allowlist no longer names bd-x
+    When a second gmktec launcher for bd-x reaches the head of the FIFO
+    Then it launches nothing until the hold file is removed
+
+  Scenario: A priority-1 item launches through the gmktec hold
+    Given the gmktec factory hold file exists
+    And work item bd-p has priority 1 and is not in the freeze allowlist
+    When a gmktec launcher for bd-p reaches the launch
+    Then it launches bd-p
+    And the freeze allowlist is unchanged
+
+  Scenario: A held head does not block a released ticket behind it
+    Given the gmktec factory hold file exists
+    And the oldest gmktec FIFO ticket is for work item bd-h, which is neither allowlisted nor priority 1
+    And the next ticket is for work item bd-x, which the freeze allowlist names
+    When the launchers run
+    Then the bd-x launcher binds and launches
+    And the bd-h launcher keeps its ticket number and launches nothing
+    When the hold file is removed
+    Then the bd-h launcher takes its FIFO place back in the order of the ticket it kept
 
   Scenario: The gmktec target setting selects the candidate only below its cap
     Given the gmktec target setting names the candidate instance
@@ -13545,7 +13591,7 @@ Feature: An impl launcher honours a hold until its item is admitted
 Governing clause: `contracts.md` §"Self-contained plugin dispatch".
 
 ```gherkin
-Feature: The release branch advances only on an operator dispatch that starts a canary
+Feature: The release branch advances only at the roll step, after its canary passes
 
   Scenario: a published release does not move the release branch
     Given the `release` branch names the commit of release tag v1.0.0
@@ -13553,11 +13599,34 @@ Feature: The release branch advances only on an operator dispatch that starts a 
     Then the `fast-forward-release-branch.yml` run for that event finishes with its job skipped
     And the `release` branch still names the commit of v1.0.0
 
-  Scenario: an operator dispatch advances the release branch to start a canary
+  Scenario: a canary clone adopts a release tag while the release branch keeps its commit
+    Given the `release` branch names the commit of release tag v1.0.0
+    And fleet clones A and B each have this plugin installed at project scope at v1.0.0's commit
+    When an operator takes the named-build adopt naming clone A and tag v1.1.0
+    Then clone A's install record names v1.1.0's commit
+    And clone B's install record still names v1.0.0's commit
+    And the `release` branch still names the commit of v1.0.0
+    And a canary sample whose record names a clone A install-record gitCommitSha other than v1.1.0's commit is discarded, not judged
+
+  Scenario: a session start outside the canary installs no unjudged build
+    Given the `release` branch names the commit of release tag v1.0.0
+    And clone A is a canary clone of release v1.1.0, adopted by the named-build adopt
+    When a Claude Code session starts in fleet clone B and its session-start plugin refresh runs
+    Then clone B's install record names v1.0.0's commit
+
+  Scenario: the roll step advances the release branch after the canary passes
     Given the `release` branch names the commit of release tag v1.0.0
     And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0's canary samples were judged to pass
     When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
     Then the `release` branch names the commit of v1.1.0 when the run ends
+
+  Scenario: a failed canary leaves the release branch on the last rolled build
+    Given the `release` branch names the commit of release tag v1.0.0
+    And clone A is a canary clone of release v1.1.0
+    When release v1.1.0's canary samples are judged to fail
+    Then the `release` branch still names the commit of v1.0.0
+    And an operator returns clone A to v1.0.0's commit by naming that build
 
   Scenario: a tag that does not descend from the release branch moves nothing
     Given the `release` branch names the commit of release tag v1.1.0
@@ -13738,4 +13807,52 @@ Feature: Reconciliation completes a handed-off rework
     When a reconcile-runs pass runs
     Then neither item changes status and both still carry rework:pending
     And held lists neither item
+```
+
+## Scenario 338 — The committed fleet launcher runs under the tenant wrapper, from the origin tip, with paced re-tickets and the configured routing
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet launcher runs under the tenant wrapper, from the origin tip, with paced re-tickets and the configured routing
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub origin, stub wrappers and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A non-family target runs under its own credential wrapper
+    Given a target repository whose .livespec.jsonc declares a stub tenant credential_wrapper
+    When an impl launcher for one of its items runs to launch
+    Then the ready-set check, the preflight, every ledger read and the drive each run under that tenant wrapper
+    And each runs under the tenant wrapper nested inside the default wrapper, with the family BEADS_DOLT_PASSWORD absent from the tenant wrapper's environment
+
+  Scenario: A launch is refused off the origin tip
+    Given a target checkout that has diverged from the stub origin's default branch
+    When an impl launcher for one of its items runs
+    Then it runs no preflight and launches nothing
+    And its terminal line names the item, its ticket number and the cause checkout-not-at-origin-tip
+
+  Scenario: A behind checkout is brought to the origin tip and launches
+    Given a target checkout one commit behind the stub origin's default branch, which is named main
+    When an impl launcher for one of its items runs
+    Then the checkout's HEAD is the fetched tip of origin's main before the preflight runs
+    And the launcher launches
+
+  Scenario: Early-exit re-tickets are paced
+    Given a stub drive that exits 1 before its run lists on every attempt
+    When the launcher handles three consecutive early exits
+    Then it re-takes the same ticket number after the first, second and third configured delays in that order
+    And it holds no mutex and no in-flight marker while it waits
+
+  Scenario: A failed goal-minijinja-preflight stage is not retried
+    Given a stub drive that exits 1 and reports the stage goal-minijinja-preflight with status failed
+    When the launcher handles the exit
+    Then it re-takes no ticket
+    And it leaves a goal-minijinja-preflight terminal line and one ledger comment that carries no goal-template opening delimiter
+
+  Scenario: Configured routing reaches every drive
+    Given an overrides file with two override lines and one comment line, and a non-empty DoD-judgement model host value
+    When the launcher starts a drive
+    Then the stub drive receives exactly two --acp-node arguments in file order
+    And LIVESPEC_DOD_JUDGEMENT_MODEL is set in its environment
+    When the overrides file is removed
+    Then the next drive receives no --acp-node argument
 ```
