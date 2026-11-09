@@ -1,4 +1,4 @@
-"""Scenario 285 (v290) — an exhausted implement hook refusal is attributable from the ledger.
+"""Scenario 285 (v290) \u2014 an exhausted implement hook refusal is attributable from the ledger.
 
 `SPECIFICATION/contracts.md` "A refused commit's needs-human cause is attributable
 from the ledger" and `SPECIFICATION/scenarios.md` "Scenario 285" (work-item
@@ -476,3 +476,105 @@ def test_a_numbered_source_context_line_is_never_an_error_line(tmp_path: Path) -
     cause, _ = _exhausted(tmp_path=tmp_path, body=body)
 
     assert "no failing test id or error line was found in the hook output" in cause
+
+
+_STALL_OUTPUT = "\n".join(
+    [
+        "\u2502 \U0001f94a lefthook v1.13.6  hook: pre-commit \u2502",
+        "All 95 targets passed.",
+        "\u2503  01-red-green-replay \u276f ",
+        "",
+        "first dropped line",
+        "suite-green stall kill",
+        "exit status 1",
+        "summary: (done in 903.07 seconds)       ",
+        "\u2714\ufe0f 00-no-commit-on-master (0.00 seconds)",
+        "\U0001f94a 01-red-green-replay (903.07 seconds)",
+    ]
+)
+_STALL_TAIL = (
+    "last lines of the hook output: suite-green stall kill | exit status 1 | "
+    "summary: (done in 903.07 seconds) | 00-no-commit-on-master (0.00 seconds) | "
+    "01-red-green-replay (903.07 seconds)"
+)
+
+
+def test_a_refusal_with_no_excerpt_carries_the_last_lines_of_the_hook_output(
+    tmp_path: Path,
+) -> None:
+    """bd-ib-fkd4ve bullet 3: the measured stall kill names a check and no error line."""
+    cause, stderr = _exhausted(tmp_path=tmp_path, body=_STALL_OUTPUT)
+
+    for text in (cause, stderr):
+        assert "no failing test id or error line was found in the hook output" in text
+        assert _STALL_TAIL in text
+    assert "first dropped line" not in cause
+    assert "lefthook" not in cause
+
+
+def test_a_found_excerpt_is_not_followed_by_the_hook_output_tail(tmp_path: Path) -> None:
+    """Control: the tail stands in for a missing excerpt and never dilutes a found one."""
+    body = f"{_ERROR_LINE}\nsuite-green stall kill\n{_targets_block(targets=('check-types',))}"
+
+    cause, _ = _exhausted(tmp_path=tmp_path, body=body)
+
+    assert cause.endswith(f"first error line: {_ERROR_LINE}")
+    assert "last lines of the hook output" not in cause
+    assert "suite-green stall kill" not in cause
+
+
+def test_a_hook_output_tail_line_quoting_a_credential_is_withheld_by_key_name(
+    tmp_path: Path,
+) -> None:
+    body = f"suite-green stall kill\nrepr printed {_AUTH_JSON_ESCAPED}"
+    repo = _clone(tmp_path=tmp_path, hook=_hook_script(body=body, status=1))
+
+    result = _route(repo=repo, extra_env={"CODEX_AUTH_JSON": _AUTH_JSON})
+
+    cause = _cause(repo=repo)
+    for text in (cause, result.stderr):
+        assert _SECRET not in text
+    assert (
+        "suite-green stall kill | [line withheld: it contained the value of CODEX_AUTH_JSON]"
+        in cause
+    )
+
+
+def test_an_overlong_hook_output_tail_line_is_cut_to_160_characters(tmp_path: Path) -> None:
+    long_line = "".join(f"{index % 10}" for index in range(300))
+
+    cause, _ = _exhausted(tmp_path=tmp_path, body=long_line)
+
+    assert f"last lines of the hook output: {long_line[:160]}..." in cause
+    assert long_line[:161] not in cause
+
+
+def test_a_commit_run_refusal_carries_the_tail_of_its_recorded_brief(tmp_path: Path) -> None:
+    repo = _clone(tmp_path=tmp_path, hook="#!/bin/sh\nexit 0\n")
+    brief = (
+        "failed\n"
+        "failed targets: 01-red-green-replay\n\n"
+        "Commit run abc ended FAILED with exit status 1; the repository commit hook ran, and "
+        "no commit was made. Its own error lines (the tail of its recorded output at "
+        f"/x/abc.output):\n\n{_STALL_OUTPUT}\n"
+    )
+    _ = (repo / ".git" / _LIVE).write_text(brief, encoding="utf-8")
+
+    result = _route(repo=repo)
+
+    assert result.returncode != 0, result.stderr
+    cause = _cause(repo=repo)
+    assert "failed targets: 01-red-green-replay" in cause
+    assert _STALL_TAIL in cause
+
+
+def test_a_refusal_with_no_recorded_output_says_there_is_no_line_to_quote(
+    tmp_path: Path,
+) -> None:
+    repo = _clone(tmp_path=tmp_path, hook="#!/bin/sh\nexit 1\n")
+
+    _ = _route(repo=repo)
+
+    cause = _cause(repo=repo)
+    assert "the hook output has no non-empty line to quote" in cause
+    assert "last lines of the hook output" not in cause
