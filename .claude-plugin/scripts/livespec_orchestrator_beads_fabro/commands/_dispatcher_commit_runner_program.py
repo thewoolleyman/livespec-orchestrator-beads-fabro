@@ -70,10 +70,9 @@ __all__: list[str] = [
 COMMIT_RUNNER_PROGRAM_FILENAME = "livespec-commit-runner.py"
 
 # The lefthook banner a hook run prints, `│ 🥊 lefthook v1.13.6  hook: pre-commit │`
-# as measured; the hook name varies, the `hook: ` prefix does not. One pattern
-# for the direct-commit reader and the sandbox runner, so the two routes cannot
-# disagree about whether a hook ran.
-HOOK_BANNER_PATTERN = r"\blefthook\b.*\bhook: "
+# as measured.  One pattern captures the hook name for the sandbox runner's
+# verdict while preserving the shared reader's answer to whether any hook ran.
+HOOK_BANNER_PATTERN = r"\blefthook\b.*\bhook: \S+"
 
 REPORT_RUN_ID_KEY = "run_id"
 REPORT_STATE_KEY = "state"
@@ -118,6 +117,16 @@ ATTACHED_VALUE_SHORT_OPTIONS = "uS"
 HOOK_BANNER = re.compile(__HOOK_BANNER__)
 # The aggregate's terminal passing verdict, which Git may follow with its own refusal.
 HOOK_PASSED = re.compile(r"^All [0-9]+ targets passed\.?$", re.MULTILINE)
+# A just recipe is the most specific name lefthook prints for a failed command.
+HOOK_REFUSAL_RECIPE = re.compile(
+    r"^error: Recipe [`']?([^`'\s]+)[`']? failed", re.MULTILINE
+)
+# Lefthook's closing summary marks a failed command with the boxing glove, `🥊 name (1.2 seconds)`,
+# and a passed one with a check mark; the banner's own glove is boxed and never starts a line.
+LEFTHOOK_FAILED_COMMAND = re.compile("^\U0001f94a (\\S+) \\(", re.MULTILINE)
+LEFTHOOK_SUMMARY_ENTRY = re.compile(r"^\S+ \S+ \([0-9.]+ seconds\)\s*$", re.MULTILINE)
+# A structured event line a check or hook printed, never a line Git printed.
+STRUCTURED_EVENT_LINE = re.compile(r"\{.*\}")
 # The two lines `cut-settle` prints for the host to read; one spelling, substituted.
 CUT_RUN_SENTINEL = "__CUT_RUN_SENTINEL__"
 CUT_HOOK_SENTINEL = "__CUT_HOOK_SENTINEL__"
@@ -398,13 +407,13 @@ def worker(run_id):
     terminal = {"state": "passed" if result.returncode == 0 else "failed"}
     terminal["exit_code"] = result.returncode
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
-    if terminal["hook_ran"] and HOOK_PASSED.search(text) is not None:
+    if terminal["hook_ran"] and hook_passed_output(text):
         terminal["hook_passed"] = True
         refusal = git_refusal_line(text) if result.returncode != 0 else None
         if refusal is not None:
             terminal["git_refusal_line"] = refusal
     if result.returncode != 0:
-        terminal["failed_targets"] = failed_targets(text)
+        terminal["failed_targets"] = targets_for_refusal(text)
     if result.returncode == 0:
         terminal["head"] = git_output("rev-parse", "HEAD")
     write_record(path, terminal)
@@ -427,7 +436,7 @@ def report_payload(run_id, path, record):
         if state == "failed":
             targets = record.get("failed_targets")
             payload["failed_targets"] = (
-                targets if isinstance(targets, list) else failed_targets(output)
+                targets if isinstance(targets, list) else targets_for_refusal(output)
             )
         payload["output_tail"] = output_tail(path)
     return payload, state
@@ -500,22 +509,57 @@ def failed_targets(text):
     return targets
 
 
-def git_refusal_line(text):
-    """The first nonblank line Git printed after the aggregate's passing verdict."""
-    passed = HOOK_PASSED.search(text)
+def targets_for_refusal(text):
+    """The aggregate list, or the later hook command that refused the commit."""
+    targets = failed_targets(text)
+    if targets:
+        return targets
+    target = hook_refusal_target(text)
+    return [target] if target is not None else []
+
+
+def last_passing_aggregate(text):
+    matches = list(HOOK_PASSED.finditer(text))
+    return matches[-1] if matches else None
+
+
+def hook_passed_output(text):
+    """True when the aggregate passed and no hook that began after it refused the commit."""
+    return last_passing_aggregate(text) is not None and hook_refusal_target(text) is None
+
+
+def hook_refusal_target(text):
+    """Name the check of a hook that began after the aggregate passed and then refused."""
+    passed = last_passing_aggregate(text)
     if passed is None:
         return None
-    for line in text[passed.end() :].splitlines():
+    later_hooks = list(HOOK_BANNER.finditer(text, passed.end()))
+    if not later_hooks:
+        return None
+    hook_output = text[later_hooks[-1].end() :]
+    recipe = HOOK_REFUSAL_RECIPE.search(hook_output)
+    if recipe is not None:
+        return recipe.group(1)
+    command = LEFTHOOK_FAILED_COMMAND.search(hook_output)
+    return command.group(1) if command is not None else None
+
+
+def git_refusal_line(text):
+    """The first line Git printed once every hook had finished its summary."""
+    passed = last_passing_aggregate(text)
+    if passed is None:
+        return None
+    entries = list(LEFTHOOK_SUMMARY_ENTRY.finditer(text, passed.end()))
+    start = entries[-1].end() if entries else passed.end()
+    for line in text[start:].splitlines():
         stripped = line.strip()
-        if stripped:
+        if stripped and STRUCTURED_EVENT_LINE.fullmatch(stripped) is None:
             return stripped
     return None
 
 
 def hook_passed(record, output):
-    return record.get("hook_passed") is True or (
-        record.get("hook_ran") is True and HOOK_PASSED.search(output) is not None
-    )
+    return record.get("hook_ran") is True and hook_passed_output(output)
 
 
 def recorded_git_refusal(record, output):
@@ -544,7 +588,7 @@ def brief_text(run_id, path, record, state, timeout_seconds):
             + " seconds expired, so it has no verdict yet and no commit is known to exist.\n"
         )
     output = full_output(path)
-    targets = failed_targets(output)
+    targets = targets_for_refusal(output)
     tail = "\n".join(output.splitlines()[-BRIEF_TAIL_LINES:])
     if hook_passed(record, output):
         refusal = recorded_git_refusal(record, output)
