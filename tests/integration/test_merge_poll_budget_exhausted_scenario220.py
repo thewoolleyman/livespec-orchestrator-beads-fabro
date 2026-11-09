@@ -272,8 +272,8 @@ def test_an_open_non_conflicting_pull_request_at_expiry_rests_the_item_for_resum
     assert (rested.status, rested.blocked_reason) == ("blocked", "needs-human")
     comments = read_work_item_comments(path=_store(), work_item_id=_ITEM_ID)
     assert [c.text.splitlines()[0] for c in comments] == [
-        "livespec-preserved-tree",
         _MARKER,
+        "livespec-preserved-tree",
     ]
     assert [r for r in journal.records if r.get("stage") == "needs-human-blocked"] != []
 
