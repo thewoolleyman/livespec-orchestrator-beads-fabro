@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Preserve live factory runs' checkouts to origin WITHOUT Fabro (bd-ib-m7lxgn workaround). See README.md.
-# READ-ONLY on every fleet host: kubectl get, crictl ps/inspect, sudo find, sudo cat over ssh.
+# READ-ONLY on every fleet host: kubectl get, crictl ps/inspect, sudo find, sudo cat over ssh. A container
+# worker node (homelab-worker.livespec.dev/class=worker) is read through `kubectl exec` into the sandbox
+# instead: find, cat and `git config --get` only (README rule 11).
 # Pushes from a local bare copy to refs/heads/preserve/run-<RUNID> on the run's own origin.
 #
 # usage: preserve_runs.sh [RUNID ...]     (no args = every Running pod in the factory namespace)
@@ -19,42 +21,58 @@ for p in json.load(sys.stdin)["items"]:
     if p["status"].get("phase")!="Running": continue
     l=p["metadata"].get("labels") or {}
     print(l.get("petri.run",""), p["metadata"]["name"], p["spec"].get("nodeName",""))')
+# Container worker nodes run plain containerd and take no ssh login (no k3s crictl, no fleet ssh user):
+# their sandboxes are read through the API server's exec, the route the cluster already authorizes
+# (legacy-coordinator-agent ruling 2026-11-09, livespec-dev-tooling-smzkpu). Every other node keeps ssh.
+workers=" $(sshn poweredge-xubuntu "sudo -n k3s kubectl get nodes -l homelab-worker.livespec.dev/class=worker -o jsonpath='{.items[*].metadata.name}'") "
 want=" $* "
 printf 'RUN\tNODE\tREPO\tHEAD\tREF\tVERIFIED\tSECONDS\tSOURCE\n'
 while read -r run pod node; do
   [ -n "$run" ] || continue
   if [ $# -gt 0 ] && [[ "$want" != *" $run "* ]]; then continue; fi
   t0=$(date +%s); out="$run\t$node"
-  cid=$(sshn "$node" 'sudo -n k3s crictl ps --name sandbox -o json' | POD="$pod" python3 -c '
+  if [[ "$workers" == *" $node "* ]]; then
+    # rd <command>: run one read-only command inside the pod's sandbox container, through the API server.
+    rd() { sshn poweredge-xubuntu "sudo -n k3s kubectl exec -n factory $pod -c sandbox -- sh -c $(printf '%q' "$1")"; }
+    # rd_files <list>: the listed files (relative to $G), concatenated in order. The list goes on stdin:
+    # as exec arguments it would ride in the exec request's URL, which a large object store outgrows.
+    rd_files() { tr '\n' '\0' < "$1" | ssh -o BatchMode=yes $CP poweredge-xubuntu \
+      "sudo -n k3s kubectl exec -i -n factory $pod -c sandbox -- sh -c $(printf '%q' "cd $G && xargs -0 -r cat")"; }
+    rd 'test -d /workspace/.git' 2>/dev/null || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
+    G=/workspace/.git
+  else
+    rd() { sshn "$node" "sudo -n $1"; }
+    rd_files() { (cd "$D" && sed "s#^#$G/#" "$1" | tr '\n' '\0' | xargs -0 -r printf '%q ' > "$D.args"); rd "cat $(cat "$D.args")"; }
+    cid=$(sshn "$node" 'sudo -n k3s crictl ps --name sandbox -o json' | POD="$pod" python3 -c '
 import json,sys,os
 for c in json.load(sys.stdin)["containers"]:
     if c["labels"].get("io.kubernetes.pod.name")==os.environ["POD"]: print(c["id"]); break')
-  [ -n "$cid" ] || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
-  pid=$(sshn "$node" "sudo -n k3s crictl inspect $cid" | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["pid"])')
-  G=/proc/$pid/root/workspace/.git
-  url=$(sshn "$node" "sudo -n git config --file $G/config --get remote.origin.url" 2>/dev/null)
+    [ -n "$cid" ] || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
+    pid=$(sshn "$node" "sudo -n k3s crictl inspect $cid" | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["pid"])')
+    G=/proc/$pid/root/workspace/.git
+  fi
+  url=$(rd "git config --file $G/config --get remote.origin.url" 2>/dev/null)
   # The Dispatcher's dispatch id, from the clone's livespec.factoryRunId marker (the same marker
   # preserve_dispatch.sh checks). The factory's own needs-human ending keys its ref by THIS id, and
   # pods carry no dispatch-id label, so the marker is the only source on the node.
-  did=$(sshn "$node" "sudo -n git config --file $G/config --get livespec.factoryRunId" 2>/dev/null)
+  did=$(rd "git config --file $G/config --get livespec.factoryRunId" 2>/dev/null)
   # Strip any credential the sandbox's remote carries; push with this host's own auth.
   repo=$(printf '%s' "$url" | grep -oE 'github\.com[:/][^/]+/[^/ ]+' | sed -E 's#^github\.com[:/]#https://github.com/#; s#\.git$##')
   D=$WORK/$run.git
   for _ in 1 2 3; do
-    head=$(sshn "$node" "sudo -n cat $G/HEAD")
+    head=$(rd "cat $G/HEAD")
     rm -rf "$D" "$D.push.err"; mkdir -p "$D/refs/tags" "$D/refs/remotes"
     printf '[core]\n\trepositoryformatversion = 0\n\tbare = true\n' > "$D/config"
     # One find (with sizes) and ONE bulk cat, split locally by size: a per-file ssh round trip
     # took >30 min for 16 parallel runs under CI load (2026-11-05 window). The run branch's REFLOG is
     # copied too: a fix or refresh round can reset the branch to plain master, and the reflog is then
     # the only record of the commits that carried the run's work (7fdesc, reuccp, 2026-11-09).
-    sshn "$node" "sudo -n find $G -type f -printf '%s %P\n'" \
+    rd "find $G -type f -printf '%s %P\\n'" \
       | grep -E " (objects/|refs/heads/|HEAD$|packed-refs$|logs/HEAD$|logs/refs/heads/fabro/run/$run$)" \
       | grep -v ' objects/info/' > "$D.sizes"
     cut -d' ' -f2- "$D.sizes" > "$D.list"
     fail=0
-    (cd "$D" && sed "s#^#$G/#" "$D.list" | tr '\n' '\0' | xargs -0 -r printf '%q ' > "$D.args")
-    sshn "$node" "sudo -n cat $(cat "$D.args")" | python3 -I -c '
+    rd_files "$D.list" | python3 -I -c '
 import os, sys
 # stdin = the listed files concatenated in order; split them back by the sizes file.
 dest, inp = sys.argv[1], sys.stdin.buffer

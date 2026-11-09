@@ -85,6 +85,59 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     assert "0 failed" in combined, combined
 
 
+def _run_wait_for_preflight(
+    *, launcher_exits_during_first_read: bool
+) -> subprocess.CompletedProcess[str]:
+    """Run the harness's real wait_for_preflight against a scripted preflight record."""
+    harness = _REPO_ROOT / "fleet-launch" / "test" / "run-tests.sh"
+    launcher = (
+        "sleep 30 & pid=$!" if launcher_exits_during_first_read else "true & pid=$!; sleep 0.3"
+    )
+    script = f"""
+set -u
+eval "$(sed -n '/^wait_for_preflight() {{/,/^}}/p' '{harness}')"
+HARNESS_POLL_S=0.01
+HARNESS_PREFLIGHT_HANG_GUARD_S=30
+marker=$(mktemp -u)
+preflight_count() {{
+    if [ "{int(launcher_exits_during_first_read)}" = 1 ] && [ -e "$marker" ]; then echo 1; return; fi
+    if [ "{int(launcher_exits_during_first_read)}" = 1 ]; then
+        : > "$marker"
+        kill "$pid"
+        sleep 0.3
+    fi
+    echo 0
+}}
+log=$(mktemp)
+echo 'launcher log line' > "$log"
+{launcher}
+wait_for_preflight the-case younger "$pid" "$log" the-item 1
+rc=$?
+if [ "$rc" -ne 0 ]; then echo "$PREFLIGHT_FAILURE_DETAIL"; fi
+kill "$pid" 2>/dev/null
+exit "$rc"
+"""
+    return subprocess.run(
+        ["bash", "-c", script], capture_output=True, check=False, text=True, timeout=60
+    )
+
+
+def test_scenario297_preflight_wait_accepts_a_launcher_that_preflighted_then_exited() -> None:
+    """A launcher that records its preflight and exits mid-poll did reach its preflight."""
+    reached_then_exited = _run_wait_for_preflight(launcher_exits_during_first_read=True)
+    assert reached_then_exited.returncode == 0, reached_then_exited.stdout
+
+    exited_without_preflight = _run_wait_for_preflight(launcher_exits_during_first_read=False)
+    assert exited_without_preflight.returncode != 0
+    for needle in (
+        "case=the-case",
+        "launcher=younger",
+        "did not reach preflight",
+        "launcher log line",
+    ):
+        assert needle in exited_without_preflight.stdout, exited_without_preflight.stdout
+
+
 def test_scenario297_timeout_reports_a_hung_harness_with_its_last_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

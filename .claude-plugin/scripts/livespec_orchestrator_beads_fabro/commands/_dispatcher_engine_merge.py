@@ -31,9 +31,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import (
     GH_TIMEOUT_SECONDS,
     view_pr,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
-    required_check_failure_outcome,
-    required_check_names,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_required_check_failure import (
+    RequiredCheckFailureContext,
+    RerunPollState,
+    journal_rerun_merged,
+    required_check_failure,
 )
 
 if TYPE_CHECKING:
@@ -63,6 +65,13 @@ def await_merge(
     # `_dispatcher_base_advance`'s own rule that an absent reading is not a
     # report in either direction.
     conflicting_reports = 0
+    rerun_state = RerunPollState(attempts_before_rerun={})
+    required_check_context = RequiredCheckFailureContext(
+        outcome_type=outcome_type,
+        plan=plan,
+        runner=runner,
+        journal=journal,
+    )
     for attempt in range(poll.attempts):
         reading = view_pr(
             plan=plan,
@@ -71,6 +80,7 @@ def await_merge(
         )
         view = reading.view if reading.error is None else None
         if view is not None and view.state == "MERGED":
+            journal_rerun_merged(context=required_check_context, rerun_state=rerun_state)
             return view
         if _is_integration_access_denied(error=reading.error):
             # Polling an OPEN PR must keep its rollup: terminal required-check
@@ -85,6 +95,7 @@ def await_merge(
             )
             merged_view = merged_reading.view
             if merged_view is not None and merged_view.state == "MERGED":
+                journal_rerun_merged(context=required_check_context, rerun_state=rerun_state)
                 return merged_view
         if view is not None and _reports_overtaken_arming(view=view):
             conflicting_reports += 1
@@ -122,12 +133,11 @@ def await_merge(
             )
             journal_stage(journal=journal, plan=plan, stage="pr-update-branch", result=update)
         elif (
-            failure := _required_check_failure(
-                outcome_type=outcome_type,
+            failure := required_check_failure(
+                context=required_check_context,
                 view=view,
-                plan=plan,
-                runner=runner,
-                journal=journal,
+                rerun_state=rerun_state,
+                may_keep_polling=attempt + 1 < poll.attempts,
             )
         ) is not None:
             return failure
@@ -220,41 +230,6 @@ def outcome_after_await(  # noqa: PLR0913 — kw-only disposition; each field is
             ),
         )
     return merged
-
-
-def _required_check_failure(
-    *,
-    outcome_type: type[DispatchOutcome],
-    view: PrView | None,
-    plan: DispatchPlan,
-    runner: CommandRunner,
-    journal: JournalWriter,
-) -> DispatchOutcome | None:
-    """The terminal outcome when a check the forge reports as required has failed for good.
-
-    The forge is asked only once something has already failed, so a green poll
-    spends no extra call. An unreadable answer is no answer: the poll continues.
-    """
-    if view is None or not view.terminal_check_failures:
-        return None
-    required = required_check_names(
-        plan=plan,
-        number=view.number,
-        runner=runner,
-        journal=journal,
-    )
-    if required is None:
-        return None
-    failed = [name for name in view.terminal_check_failures if name in required]
-    if not failed:
-        return None
-    return required_check_failure_outcome(
-        outcome_type=outcome_type,
-        plan=plan,
-        number=view.number,
-        merge_sha=view.merge_sha,
-        failed=failed,
-    )
 
 
 def _reports_overtaken_arming(*, view: PrView) -> bool:

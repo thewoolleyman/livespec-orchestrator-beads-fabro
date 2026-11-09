@@ -130,6 +130,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_status import (
     PrView,
+    TerminalCheckFailure,
     parse_pr_view,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -159,6 +160,7 @@ __all__: list[str] = [
     "InterruptedAttempt",
     "PrView",
     "SiblingClones",
+    "TerminalCheckFailure",
     "assess_codex_credential_freshness",
     "build_plan",
     "cc_otel_overlay_env",

@@ -285,7 +285,10 @@ def test_an_armed_open_pull_request_at_expiry_is_handed_off_and_the_item_stays_a
     kept = _rested()
     assert (kept.status, kept.assignee, kept.blocked_reason) == ("active", "fabro", None)
     comments = read_work_item_comments(path=_store(), work_item_id=_ITEM_ID)
-    assert [c.text.splitlines()[0] for c in comments] == [_HANDOFF_MARKER]
+    assert [c.text.splitlines()[0] for c in comments] == [
+        _HANDOFF_MARKER,
+        "livespec-preserved-tree",
+    ]
     assert "check-coverage" in comments[0].text
     rows = [r for r in journal.records if r.get("stage") == "merge-wait-handed-off"]
     assert [r["running_checks"] for r in rows] == [["check-coverage"]]
@@ -309,7 +312,10 @@ def test_an_open_pull_request_whose_arming_stands_no_longer_rests_the_item_for_r
     rested = _rested()
     assert (rested.status, rested.blocked_reason) == ("blocked", "needs-human")
     comments = read_work_item_comments(path=_store(), work_item_id=_ITEM_ID)
-    assert [c.text.splitlines()[0] for c in comments] == [_MARKER]
+    assert [c.text.splitlines()[0] for c in comments] == [
+        _MARKER,
+        "livespec-preserved-tree",
+    ]
     assert [r for r in journal.records if r.get("stage") == "needs-human-blocked"] != []
 
 

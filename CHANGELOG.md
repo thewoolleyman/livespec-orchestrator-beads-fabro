@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.310.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.2...v0.310.0) (2026-11-09)
+
+
+### Features
+
+* record the latest WIP capture of an ended run on the item's ledger ([d2767ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d2767ed530904c83cc1db0df9a4d452d2fc8144f))
+
+
+### Bug Fixes
+
+* bound the Definition-of-Done judgement subject's referenced headings ([a311c23](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a311c2391dbc0af241941845a0f5200cd4406eea))
+* route a fix turn that ends on an open Red back to fix for its Green ([b8a2467](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b8a24670f97d835e51197c2196e6197f81890c32))
+* **workflow:** carry the hook output's last lines in an exhausted refusal's needs-human cause (bd-ib-fkd4ve) ([35a9878](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35a987829d1479dca4ea09ab3fe0c429df5a85ba))
+
 ## [0.309.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.1...v0.309.2) (2026-11-09)
 
 

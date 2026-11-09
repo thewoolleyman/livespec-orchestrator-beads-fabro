@@ -322,9 +322,8 @@ def test_late_export_reply_does_not_change_the_wait_event_verdict(
     original_reply = _otel_receive.reply
 
     def delayed_reply(*, handler: HttpPostHandler, status: HTTPStatus) -> None:
-        if not reply_seen.is_set():
-            reply_seen.set()
-            assert release_reply.wait(timeout=10.0)
+        reply_seen.set()
+        assert release_reply.wait(timeout=10.0)
         original_reply(handler=handler, status=status)
 
     monkeypatch.setattr(_otel_receive, "reply", delayed_reply)
