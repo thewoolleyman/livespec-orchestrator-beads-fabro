@@ -284,6 +284,7 @@ def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -
     }
     assert set(_dispatcher_run_status.__all__) == {
         "PrView",
+        "TerminalCheckFailure",
         "parse_pr_view",
     }
     # The sibling-clone surface moved OUT of the overlay into the cohesive leaf
@@ -6628,7 +6629,7 @@ def test_render_goal_renders_labeled_comments_section(tmp_path: Path) -> None:
 
 def test_render_goal_omits_comments_section_when_none(tmp_path: Path) -> None:
     goal = render_goal(item=_item(), repo=tmp_path, branch="feat/t")
-    assert "Ledger comments" not in goal
+    assert "Ledger comments (operator riders appended after filing" not in goal
 
 
 def test_render_goal_carries_every_rider_and_omits_the_judgement_records(
@@ -6697,7 +6698,7 @@ def test_render_goal_omits_the_comments_section_when_only_records_remain(
         ),
     )
 
-    assert "Ledger comments" not in goal
+    assert "Ledger comments (operator riders appended after filing" not in goal
 
 
 # MiniJinja's three opening delimiters: expression `{{`, statement `{%`,

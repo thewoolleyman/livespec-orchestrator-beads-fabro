@@ -682,10 +682,19 @@ _CLOSED_MESSAGE = f"feat: thing\n\n{_RED_TRAILER}\n{_GREEN_TRAILER}\n"
 def _conflict_in_progress(*, repo: Path, head_message: str) -> None:
     """Leave `repo` mid-merge with `_PRODUCT_PATH` unmerged and HEAD on `head_message`."""
     _commit_product(repo=repo, message=head_message)
+    # Return to the base branch BY NAME, never through `switch -`: that resolves
+    # `@{-1}` from the HEAD reflog, and a git that writes no reflogs (the factory
+    # sandbox runs with core.logAllRefUpdates=false) refuses it with exit 128.
+    base = subprocess.run(
+        ["git", "-C", str(repo), "symbolic-ref", "--short", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
     _git(repo=repo, arguments=["switch", "--quiet", "-c", "side"])
     _write(repo=repo, relative=_PRODUCT_PATH, body="VALUE = 2\n")
     _git(repo=repo, arguments=["commit", "--quiet", "-am", "side change"])
-    _git(repo=repo, arguments=["switch", "--quiet", "-"])
+    _git(repo=repo, arguments=["switch", "--quiet", base])
     _write(repo=repo, relative=_PRODUCT_PATH, body="VALUE = 3\n")
     _git(repo=repo, arguments=["commit", "--quiet", "-am", head_message])
     merged = subprocess.run(

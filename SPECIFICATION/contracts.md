@@ -3405,6 +3405,36 @@ resolution the `canonical_branch` key documents (§"`compat` block");
 the dispatch path reuses that single resolution rather than carrying
 its own ref constant. (Implementation tracked as `bd-ib-hkzcfb`.)
 
+**A sandbox runs its tools from pinned clones and works in the latest clones.**
+A factory sandbox MUST hold two kinds of clone of other repositories, and it MUST
+NOT use one kind for the other's purpose.
+
+- *Run-from clones.* Every tool the sandbox EXECUTES that comes from a repository
+  other than the target (for example livespec core's checker, resolved through
+  `LIVESPEC_CORE_PLUGIN_ROOT`) MUST run from a run-from clone of that repository.
+  A run-from clone MUST be separate from every work clone. It MUST be checked out
+  at the release the governed tree under test declares for that repository (for
+  livespec core, `.livespec.jsonc` `compat.pinned`), which is the same release the
+  repository's CI runs for that tree. It MUST be shallow, and it MUST be read-only
+  to the run's agent and gate processes. Where the governed tree declares no
+  release for that repository, the run-from clone MUST be taken at that
+  repository's newest release tag, never at its default-branch tip. When the
+  janitor refreshes the run's tree, the Dispatcher MUST re-resolve each run-from
+  clone's release from the refreshed tree's declaration and MUST re-clone any
+  whose declared release changed, before the refreshed tree is checked. A tool
+  from a repository other than the target MUST NOT execute from a work clone; the
+  target repository's own tooling runs from the target's clone, which is the tree
+  under test.
+- *Work clones.* The target repository's clone and the sibling clones under
+  `/livespec-siblings`, which the run reads for cross-repository state and the
+  agent reads and edits, MUST be taken at the default branch's latest commit at
+  the moment they are cloned. They MUST be writable, and MUST carry enough history
+  for archaeology and debugging: non-shallow, or a depth the repository declares
+  sufficient. A cross-repository conformance read, such as livespec's
+  `wiring-completeness-cross-repo`, MUST read the work clones.
+
+Scenario 336 in `scenarios.md` exercises this paragraph.
+
 
 ### Definition-of-Done and Proof-of-Done stages
 
@@ -4118,7 +4148,21 @@ work order. A `fix` visit entered on a proof finding MUST end either with a
 tree change addressing the finding or through the structured needs-human
 ending stating why the finding is wrong; it MUST NOT end succeeded with
 an unchanged tree. A `fix` visit entered from a red janitor is unchanged
-and receives the janitor's failure output as before. The proof loops
+and receives the janitor's failure output as before. A janitor visit
+that its node timeout ended before its check aggregate reported a
+verdict is NOT a red janitor for that sentence: it reached no verdict,
+so it has no failure output to give `fix`. Such a visit MUST NOT enter
+`fix`. It MUST be followed by exactly one further janitor visit on the
+same head, with no agent turn between the two visits, and that further
+visit MUST NOT consume a fix-loop round. When the further visit is also
+ended by its node timeout before its check aggregate reported a verdict,
+the run MUST end at `needs_human` with its tree preserved, and the
+recorded cause MUST state that both janitor visits were ended by the
+node timeout with no check-suite verdict. A janitor visit whose check
+aggregate reported a failing verdict, including one whose verdict was
+recorded before a later kill, is a red janitor and still enters `fix`
+exactly as that sentence states. Scenario 138 in `scenarios.md`
+exercises this rule. The proof loops
 stay bounded by the two finding-count bounds above — the third
 `preferred_label=fix` from `proof_capture` and the third behaviour
 `not_reproduced` from `proof_verify` each route to `non_converged`.
@@ -9606,7 +9650,7 @@ whose current state the agent inspects before continuing.
 
 **A fresh ruling routes a released item's next dispatch fresh.** An operator or a delegated coordinator MAY rule that an item's next dispatch start fresh from the default branch, past every preserved tree the item holds, by running `dispatcher.py fresh-ruling --repo <path> --item <id> --reason <text>`. The command MUST write one ledger comment on the item that opens with the marker line `livespec-fresh-ruling` and names the invoker, the reason and the UTC instant, and MUST journal one `fresh-ruling` record carrying the same fields. The comment MUST pass the shared template-opener detector before it is written; when it does not, the command MUST refuse (exit `3`) and MUST write nothing. A fresh ruling is CURRENT on the same terms as a seed ruling: from the instant its comment is written until the item carries a `livespec-fresh-ruling-consumed` comment naming it, or until a later seed ruling or fresh ruling for the same item replaces it, and recovery routing MUST read it from the item's ledger comments and never from a host's journal alone. While an item carries a current fresh ruling, recovery routing MUST treat the item as released for recovery, and the pre-claim refusal of §"Across-dispatch required-result progress" MUST still be graded first. A non-fallback refusal keeps its precedence over a fresh ruling: the route MUST then be `held`, naming that refusal, and the ruling MUST stay current. Otherwise the route MUST be `fresh` ahead of a `resume` and ahead of the preference order this clause states, without seeding from any preserved tree. This holds even when preserved work is not confirmed absent, including for an item whose earlier-run identifiers name no run: a current fresh ruling overrides the hold that such an item would otherwise take for preserved work not confirmed absent, and only a non-fallback refusal or a needs-human listing that cannot be taken holds the item. No other preserved-work measurement holds a fresh-ruled item, because the route ranks no tree. Recovery routing MUST still list the item's needs-human refs, and the `recovery-route` record MUST name the ruling's instant and MUST carry the `passed_over_needs_human` field this clause requires, listing every needs-human ref that carries one of the item's earlier runs, because the route took none of them. A needs-human listing that cannot be taken is the existing unobservable-measurement hold, and the ruling MUST stay current. A fresh ruling MUST NOT delete or move any needs-human or preservation ref, and the stale publish-branch reclaim of §"Stale publish-branch reclaim before a re-dispatch" MUST run for the item as for every other `fresh` item, preserving the branch's head before it deletes the branch. Once the run of a dispatch routed fresh by a ruling exists, that dispatch MUST add one ledger comment on the item that opens with the marker line `livespec-fresh-ruling-consumed` and names the ruling's instant, the dispatch id and the run id, and MUST journal one `fresh-ruling-consumed` record carrying the same fields. A reconciliation pass that finds a run launched from a fresh ruling whose item carries no such comment MUST add it. A consumed fresh ruling MUST NOT govern any later dispatch. Scenario 327 in `scenarios.md` exercises this paragraph.
 
-**A needs-human tree is recognised by the run it carries, not only by its ref name.** A needs-human ref is any ref under `refs/heads/needs-human/`. A needs-human ref CARRIES a run when its tip commit's message holds a `Fabro-Run: <run id>` trailer or a `Factory-Run-Id: <id>` trailer naming one of the item's earlier-run identifiers: the run ids and dispatch ids recorded for the item's dispatches, together with the run id its pull request's records name, exactly the identifiers resume grading collects. When routing looks for a run's terminal tree, it MUST treat every needs-human ref that carries that run as the run's terminal tree, exactly as it treats `needs-human/<run id>`. When several needs-human refs carry the same run, routing MUST take the ref whose tip commit descends from the tip commit of every other ref carrying that run, where a commit descends from itself. When no tip descends from all the others, routing MUST take, among the refs whose tip commit no other carrying ref's tip descends from, the one whose tip commit is newest by committer time, and on an equal committer time the one whose full name sorts first in byte order. Only when two or more refs remain tied because their tips are the same commit MAY the ref's name decide: routing MUST then prefer a ref named under one of the item's earlier-run identifiers, and among equally named candidates the ref whose full name sorts first in byte order. Ancestry MUST be read from the same per-pass identification as the tip commit messages; an ancestry that cannot be read is the existing unobservable-measurement hold and MUST NOT be read as the absence of a descendant. Every carrying ref the route did not take MUST still be listed in `passed_over_needs_human` as this paragraph states. The identification MUST be taken once per routing pass, by one listing of the needs-human refs with their tip commit messages, and shared by every item the pass routes. An identification that cannot be taken is the existing unobservable-measurement hold and MUST NOT be read as absence. Every `recovery-route` record of a `seeded`, `fresh` or `resume` route MUST carry a `passed_over_needs_human` field listing each needs-human ref that carries one of the item's earlier runs and was not the ref the route took, with its commit. The field MUST be an empty list when there is none, and MUST NOT be omitted.
+**A needs-human tree is recognised by the run it carries, not only by its ref name.** A needs-human ref is any ref under `refs/heads/needs-human/`. A needs-human ref CARRIES NO WORK when its tip commit's tree is identical to the tree of the tip's merge base with the default branch. This read-side rule complements the write-side tree guard of §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Each committing step of a run preserves the run branch's tip to an ordered work-in-progress ref", and applies whatever wrote the ref: a ref written before that guard, a ref named other than `needs-human/<run-id>`, and a ref any other writer produced are all outside the guard. Such a ref is not preserved work and is not any run's terminal tree. Routing MUST NOT take it as a seed, and MUST NOT let it outrank any other ref, published head or capture under this clause or its run-age bound. The default branch's tip for this comparison MUST be read once per routing pass, together with the identification below, and shared by every item the pass routes. The tip trees and merge bases MUST be read from that same per-pass identification. A comparison that cannot be taken is the existing unobservable-measurement hold, and MUST NOT be read either as a change or as the absence of one. A needs-human ref CARRIES a run when its tip commit's message holds a `Fabro-Run: <run id>` trailer or a `Factory-Run-Id: <id>` trailer naming one of the item's earlier-run identifiers: the run ids and dispatch ids recorded for the item's dispatches, together with the run id its pull request's records name, exactly the identifiers resume grading collects. When routing looks for a run's terminal tree, it MUST treat every needs-human ref that carries that run as the run's terminal tree, exactly as it treats `needs-human/<run id>`. When several needs-human refs carry the same run, routing MUST take the ref whose tip commit descends from the tip commit of every other ref carrying that run, where a commit descends from itself. When no tip descends from all the others, routing MUST take, among the refs whose tip commit no other carrying ref's tip descends from, the one whose tip commit is newest by committer time, and on an equal committer time the one whose full name sorts first in byte order. Only when two or more refs remain tied because their tips are the same commit MAY the ref's name decide: routing MUST then prefer a ref named under one of the item's earlier-run identifiers, and among equally named candidates the ref whose full name sorts first in byte order. Ancestry MUST be read from the same per-pass identification as the tip commit messages; an ancestry that cannot be read is the existing unobservable-measurement hold and MUST NOT be read as the absence of a descendant. Every carrying ref the route did not take MUST still be listed in `passed_over_needs_human` as this paragraph states. The identification MUST be taken once per routing pass, by one listing of the needs-human refs with their tip commit messages, and shared by every item the pass routes. An identification that cannot be taken is the existing unobservable-measurement hold and MUST NOT be read as absence. Every `recovery-route` record of a `seeded`, `fresh` or `resume` route MUST carry a `passed_over_needs_human` field. It lists each needs-human ref that carries one of the item's earlier runs and was not the ref the route took, with its commit and the reason it was passed over: `no-change` for a ref that carries no work, and `not-taken` for any other. The field MUST be an empty list when there is none, and MUST NOT be omitted.
 
 A confirmed absence of preserved work permits a plain dispatch from the
 default branch, with that loss recorded. An unreadable reference is not
@@ -10006,7 +10050,7 @@ classify the failure as permanent rather than as transient infrastructure, and
 MUST carry that reclassification into the failure signature as well as the
 category, so a consumer keying on either sees the same verdict.
 
-Two classes of such cause are recognised today, and BOTH reclassify:
+Three classes of such cause are recognised today, and ALL THREE reclassify:
 
 - A **provider usage or spend ceiling**. This holds for EVERY model vendor, not
   only the one whose ceiling is currently scarce, and it is the class this
@@ -10014,11 +10058,20 @@ Two classes of such cause are recognised today, and BOTH reclassify:
 - A **remote-compaction 404** — the agent runtime's own conversation-compaction
   endpoint returning not-found. Retrying re-issues the same doomed request.
   Measured 2026-08-22: 2 of the 13 diagnosable causes across 53 failed runs.
+- A **sandbox the kernel killed for memory** — the run's sandbox container was
+  terminated by the kernel's out-of-memory killer, as the sandbox provider
+  reports the container's termination (on the Kubernetes provider, a container
+  termination reason of `OOMKilled`). Every later sandbox operation of that run
+  meets a container that no longer exists, so retrying it cannot succeed, and an
+  unchanged re-dispatch meets the same memory limit. Measured 2026-11-09 on
+  gmktec-xubuntu: two runs whose claude agent the memory-cgroup OOM killer took
+  at about 7.2 to 7.4 GB in a 7629 MiB sandbox failed their next checkpoint exec
+  with an API 500 that read as `transient_infra`.
 
 The TYPED provider-limit state described below is set by the FIRST class only. A
-remote-compaction 404 reclassifies the category and signature without setting it,
-which is correct: it is permanent, but it is not a spend ceiling and the
-admission gate MUST NOT treat it as one.
+remote-compaction 404 and a sandbox killed for memory reclassify the category and
+signature without setting it, which is correct: each is permanent, but neither is
+a spend ceiling and the admission gate MUST NOT treat either as one.
 
 **The surfaced cause is the permanent one, else the ROOT of the chain.** A Fabro
 cause chain is ordered outermost-first, so the element carrying the provider's
@@ -10073,8 +10126,19 @@ priority" → "Provider-limit release and re-dispatch" and does NOT rest at
 containment") whose surfaced implementer failure carries the typed state takes
 the same route.
 
+**A sandbox killed for memory is named.** When the Dispatcher derives a failed
+run's outcome, it MUST read the run's sandbox container termination from the
+sandbox provider before that sandbox is collected. When the provider reports an
+out-of-memory kill, the Dispatcher MUST carry the condition as typed
+resource-exhaustion state on the failure detail, naming the OOM kill, the run id
+and the container's memory limit, and the dispatch outcome and its journal record
+MUST name the same three. When the provider's report cannot be read on that pass,
+the outcome MUST say that the sandbox's termination was unobservable, and the
+failure MUST keep the category and signature it arrived with. Scenario 335 in
+`scenarios.md` exercises this paragraph.
+
 **CONTROL — an ordinary failure keeps its classification.** A failure whose cause
-chain carries NO permanent cause of either class above MUST retain the category
+chain carries NO permanent cause of any class above MUST retain the category
 and signature it arrived with. A rule that reclassified every failure as
 permanent would not be a discrimination rule; it would disable retries
 wholesale.

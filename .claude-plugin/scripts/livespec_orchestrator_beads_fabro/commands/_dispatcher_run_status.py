@@ -10,8 +10,17 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 
 __all__: list[str] = [
     "PrView",
+    "TerminalCheckFailure",
     "parse_pr_view",
 ]
+
+
+@dataclass(frozen=True, kw_only=True)
+class TerminalCheckFailure:
+    """One terminally failed status-check rollup entry and its forge URL."""
+
+    name: str
+    details_url: str | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -65,6 +74,7 @@ class PrView:
     head_repository: str | None = None
     terminal_check_failures: tuple[str, ...] = ()
     running_checks: tuple[str, ...] = ()
+    terminal_check_failure_details: tuple[TerminalCheckFailure, ...] = ()
 
     def matches_publication(self, *, branch: str, head: str, repository: str) -> bool:
         """Whether this is a live or merged publication of the checkpoint head."""
@@ -101,8 +111,11 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
     number_raw: object = parsed.get("number")
     if not isinstance(number_raw, int):
         return None
-    terminal_failures = tuple(
-        name
+    terminal_failure_details = tuple(
+        TerminalCheckFailure(
+            name=name,
+            details_url=_optional_string(value=cast("dict[str, Any]", item).get("detailsUrl")),
+        )
         for item in _status_check_rollup_items(rollup_raw=parsed.get("statusCheckRollup"))
         if isinstance(item, dict)
         for name in [_terminal_check_failure_name(item=cast("dict[str, Any]", item))]
@@ -130,7 +143,8 @@ def parse_pr_view(*, stdout: str) -> PrView | None:
         base=base_raw if isinstance(base_raw, str) and base_raw else None,
         head_ref_name=_optional_string(value=parsed.get("headRefName")),
         head_repository=_head_repository_of(parsed=parsed),
-        terminal_check_failures=terminal_failures,
+        terminal_check_failures=tuple(item.name for item in terminal_failure_details),
+        terminal_check_failure_details=terminal_failure_details,
         running_checks=running,
     )
 
