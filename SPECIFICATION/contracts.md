@@ -10845,7 +10845,11 @@ When the launching environment already carries `OTEL_RESOURCE_ATTRIBUTES`, the c
 
 The receiver allowlist MUST admit `livespec.caller` as a resource attribute, so that judge spend can be grouped by caller downstream. The attribute carries the caller identifier only; it MUST NOT carry the prompt, the subject under judgement or any environment value, per the curated-field rule above.
 
-Scenario 280 in `scenarios.md` exercises this subsection.
+**A host Claude judgement journals its spend, ending with its final usage.** A host judgement runs its candidate without session persistence, so the agent writes no transcript that a spend reader could consume. Each host model-judgement spawn whose resolved candidate's agent identity is `claude-acp` (a Claude candidate) MUST therefore write a spend journal: one JSON-lines file under `$HOME/.claude/spend-journal/`, named by a session id generated for the launch. Its first line MUST be a header carrying `session_id`, `name`, `cwd`, `started_at`, the first 2,000 characters of the prompt as `first_prompt`, and `"final_usage_line": true`. `name` MUST be `purpose:<caller>@<working directory name>`, with `<caller>` the spawn's `livespec.caller` value, or `host_judgement` when the spawn names none.
+
+The candidate's output is Claude's stream-json event stream: one JSON object per line, of which `assistant` events carry each response and a closing `result` event, when the process reaches it, carries the final usage. Each `assistant` event that carries a message id, a model and a `usage` object MUST be appended as one line, with a `ts` timestamp. When the candidate's stream emits a closing `result` event, the journal's last line MUST be a line of type `result`. It MUST carry that event's `usage` object unchanged, a `message_ids` array listing the message ids of the journal's `assistant` lines in order, and a `ts` timestamp, and it MUST NOT carry a `started_at` key. When the process ends without emitting a `result` event, including a candidate ended by the input bound of §"Dispatcher admission, WIP cap, and post-merge acceptance", the journal's last line MUST be its last `assistant` line. These rules MUST hold whether the launch reads the candidate's output as it streams or after the process exits. Writing the journal MUST NOT fail or alter the judgement.
+
+Scenario 280 in `scenarios.md` exercises the caller labelling of this subsection, and Scenario 332 exercises its spend journal.
 
 ### Launch obligations and consumed recovery
 

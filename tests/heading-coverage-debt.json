@@ -1454,5 +1454,12 @@
     "heading": "## What this spec is not",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 332 — A host Claude judgement's spend journal ends with the closing result event's final usage",
+    "work_item": "bd-ib-st2sby",
+    "first_seen": "2026-11-09"
   }
 ]
