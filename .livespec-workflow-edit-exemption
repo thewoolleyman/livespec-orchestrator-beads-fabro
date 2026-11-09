@@ -1,14 +1,14 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/fast-forward-release-branch.yml gains a
-# workflow_dispatch trigger with a required `tag` input, a job-level
-# `if: github.event_name == 'workflow_dispatch'`, and a step that checks out
-# the named tag. ADDITIVE ONLY: no workflow line is deleted or modified. The
-# `release` branch then advances only on an operator dispatch that starts a
-# release's canary, never on every published release (livespec-dev-tooling spec v155, option D). Authorized by
-# legacy-coordinator-agent ruling e8d70af3, 2026-11-09 ~01:4xZ, recorded on the
-# work item. It adds no job to any PR or push CI path.
-work_item=bd-ib-sghxlk
-reason=Stop every published release from rolling to every fleet clone through the unprotected release branch; release advances only when an operator dispatches a published tag, which starts that release's canary.
+# The change: .github/workflows/ci.yml and ci-root-uid.yml gains one step per pytest-running job (the four coverage shards, check-per-file-coverage, e2e-cli and acceptance in ci.yml; check-per-file-coverage in ci-root-uid.yml), each
+# placed after the job's pytest step with if: ${{ !cancelled() }} and calling
+# thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.189.0.
+# ADDITIVE ONLY: no workflow line is deleted or modified and no job is added.
+# The step uploads tmp/flake-retries/ when the livespec_flake_retry plugin
+# re-ran a test, and ships nothing otherwise (if-no-files-found: ignore), so CI
+# runtime grows by one artifact-upload step per job. Consumer leg of
+# livespec-dev-tooling-ljea46 under plan fleet-flaky-tests.
+work_item=bd-ib-j3rrad
+reason=Deliver each CI job's flake-retry records to the dev-host reader so every retried test files one root-fix item; the shared action owns the artifact contract.
 change=additive
 ci_runtime=no-significant-increase
