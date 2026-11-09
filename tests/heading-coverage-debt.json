@@ -1475,5 +1475,12 @@
     "heading": "## Scenario 336 — A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones",
     "work_item": "bd-ib-lupzxt",
     "first_seen": "2026-11-09"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 337 — A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed",
+    "work_item": "bd-ib-if5luo",
+    "first_seen": "2026-11-09"
   }
 ]

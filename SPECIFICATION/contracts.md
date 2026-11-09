@@ -5007,7 +5007,9 @@ carries no such janitor record, or carries one for a different pull request or
 merge SHA, the valve MUST refuse before running acceptance, name the missing or
 mismatched evidence, and leave the item's status unchanged.
 It MUST additionally refuse ANY item carrying the `rework:pending` label,
-whatever its status: such an item's dispatch COMPLETED its post-run
+whatever its status, except a handed-off rework (§"Rework-pending re-dispatch"
+→ "Marker lifecycle") whose own pull request merged, which §"Stranded claim
+release" hold 8 completes: such an item's dispatch COMPLETED its post-run
 disposition — the disposition's outcome was rework — and the remedy is the
 rework route of §"Rework-pending re-dispatch" (the next drain pass, or
 `dispatch --item`), which the refusal message MUST name. `--force` MUST NOT
@@ -5535,11 +5537,30 @@ machinery may.
   rework dispatch is **fix-forward**: it patches on top of the
   already-merged, live change; it MUST NOT revert the merged change
   (reverting belongs to `reject:regroom`).
+  A handed-off rework ("Marker lifecycle" below) MUST NOT be selected.
+  Its fix-forward is already published and awaiting merge, and
+  §"Stranded claim release" hold 8 completes it or rests it, so
+  selecting it would launch a second rework dispatch over a pull request
+  that is still pending. Neither does the operator override of
+  `dispatch --item` select it; that refusal MUST name the pending pull
+  request.
 - **Marker lifecycle.** Starting a rework dispatch MUST journal the
   rework admission before launching the run and MUST NOT clear the
   `rework:pending` label at launch: the label clears only at the rework
   dispatch's TERMINAL disposition (the completion path that moves the
   item to `acceptance`, an over-cap escalation, or a terminal close).
+  A rework dispatch whose run succeeded, and whose dispatch journaled a
+  `merge-wait-handed-off` row for that run (§"Stranded claim release"
+  hold 8), is a *handed-off rework*. Its terminal disposition is still
+  owed. When the forge later reports its pull request merged, the
+  completion that reconciliation performs under that hold IS the rework
+  dispatch's completion path. It MUST move the item to `acceptance` and
+  MUST clear `rework:pending` in the same transition. Every other item
+  carrying `rework:pending` is a *parked rework*: one whose rework
+  dispatch has not started, or whose newest rework dispatch ended
+  without journaling `merge-wait-handed-off`, including one that died
+  before publishing. A parked rework keeps the label and stays
+  re-selectable exactly as this bullet already states.
   The double-selection guard is the live dispatch lock, never the label:
   a marked item holding a live dispatch lock MUST NOT be re-selected. A
   rework dispatch that dies BEFORE publishing therefore leaves the item
@@ -5565,8 +5586,9 @@ machinery may.
   `wip_cap: 1` self-deadlock — where the parked item's own row saturates
   the count that must be under the cap — cannot arise.
 - **Operator override.** `dispatch --item` MUST accept an item carrying
-  `rework:pending` — driving its rework immediately, subject to the SAME
-  mechanical eligibility and capacity conditions as the drain path (per
+  `rework:pending`, except a handed-off rework ("Selection" above) —
+  driving its rework immediately, subject to the SAME mechanical
+  eligibility and capacity conditions as the drain path (per
   §"Dispatcher loop invocation surface", `--item` narrows the selection
   and never bypasses it) — and MUST continue to refuse every other
   non-`ready` item as a precondition error. The refusal for a bare
@@ -5590,7 +5612,10 @@ machinery may.
   stranded, abandoned, or leaked-claim finding from "`active` with no
   live dispatch lock" MUST treat `rework:pending` and the `merge-hold:`
   label (§"Dispatcher policy settings" → "The per-item merge hold") as
-  discriminators and MUST NOT report a marked or held item as stranded.
+  discriminators and MUST NOT report a parked rework ("Marker lifecycle"
+  above) or a held item as stranded. A handed-off rework MUST NOT be
+  reported as an abandoned or leaked claim either. It is surveyed and
+  recovered only through hold 8 of §"Stranded claim release".
   (Coordination:
   `bd-ib-zp3u7y` owns the stranded-dispatch population; the two markers
   partition the populations cleanly.)
@@ -8046,7 +8071,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
 
 - **The claim stamp names its owning host, and admission replaces it.** The run stamp the Dispatcher writes onto the item when it learns its run (the run id and the factory server target) MUST also name the *dispatching host*: the stable host identity of the machine whose Dispatcher process holds the claim. At admission, in the same ledger write that moves the item to `active` with assignee `fabro`, or in a write that precedes it, the Dispatcher MUST replace any earlier stamp with a *pending* stamp. The pending stamp names the new dispatch and its dispatching host and carries no run id. So a newly admitted dispatch that has not yet learned its run can never be read as the previous claim. The Dispatcher replaces the pending stamp with the run stamp when it learns the run.
 - **Only the owning host recovers a claim.** Ledger writers may run on any number of hosts and share nothing but the Beads server, so no reconciler can observe another host's processes. A reconciler MUST therefore act on a claim only when the claim's stamp names the reconciler's own host. A claim stamped by another host, or by none, MUST be held. This confines every writer of a given claim's recovery to the one host where the owning Dispatcher's liveness is observable.
-- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`, and every stale assignee as "Stale assignee clearance" below defines one. An item carrying `rework:pending` or a `merge-hold:` label MUST NOT be surveyed, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Stranded-state discrimination". For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
+- **Survey.** Every reconciliation surface named in §"A factory run never awaits a human" (the loop tick, the dispatch preamble, and the standalone `reconcile-runs` sweep) MUST also survey the ledger's `active` items assigned `fabro`, and every stale assignee as "Stale assignee clearance" below defines one. An item carrying a `merge-hold:` label MUST NOT be surveyed. An item carrying `rework:pending` MUST NOT be surveyed unless it is a handed-off rework, per §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Marker lifecycle" and "Stranded-state discrimination". Whether an item is a handed-off rework MUST be read from its dispatch journal; an unreadable journal is an unobservable measurement and MUST NOT be read as a parked rework or as a handed-off one. A handed-off rework MUST be surveyed and measured like any other claim. For each surveyed claim the Dispatcher MUST take these measurements, and an unobservable measurement MUST NOT be read as a negative answer:
   - *Attribution*: the run id, factory and dispatching host, read from the item's ledger run stamp.
   - *Run state*: that factory's answer for that run, asked by the factory's declared server target, or, for a recorded-target factory (§"Factory addresses resolved from a host registry"), by the server the registry resolves for its recorded name.
   - *Owner liveness*: whether a dispatch-scoped ownership lock for the item (§"Dispatcher loop invocation surface") is held by a live process in any checkout of the tenant's repository on this host. "No live owner" is established only when every such lock location was read and each is either absent or names a process that is not alive. An unreadable lock is not an absent lock.
@@ -8185,7 +8210,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   5. `run-live`: the run is non-terminal.
   6. `liveness-unobservable`: an ownership lock location could not be read.
   7. `dispatch-live`: a live process holds the item's ownership lock.
-  8. `run-succeeded`: the run is terminal and succeeded. The recovery, when the forge reports the item's pull request merged, is `reconcile-merged` if that command's own preconditions hold for the item, and otherwise no status move, the held entry naming the failing precondition; it is the terminal-claim recovery `move:<id>:ready` of §"Per-lane valid operator verb sets" when the forge was read and reports no merged pull request; and, when the forge cannot be read, no status move, the held entry naming the failed read. When the item's newest dispatch journaled a `merge-wait-handed-off` row for that run, the pass MUST NOT merely hold the claim. When the forge reports the pull request merged and the preconditions of `reconcile-merged` hold, the Dispatcher MUST perform `reconcile-merged` for the item in the same pass, with no `resolve-blocked` and no `resume`. When the forge reports a required check of the pull request in a terminal failure, the Dispatcher MUST record exactly the outcome the merge wait's terminal required-check failure records. It MUST judge only the attempt the merge wait would judge, so the results of an attempt the merge wait already re-ran are disregarded, and it MUST NOT request a second automatic re-run for a workflow run the merge wait already re-ran. When the forge reports the pull request closed without merging, or OPEN with auto-merge no longer armed, the Dispatcher MUST rest the item at `blocked` with `blocked_reason: needs-human` with the named cause `merge-poll-budget-exhausted`, exactly as the merge wait's own budget-exhausted rest does. When the forge reports the pull request OPEN with auto-merge armed and every required check passing or still running, the claim MUST stay held as `run-succeeded`, and its held entry MUST name `merge-wait-handed-off`. When the forge cannot be read, the claim stays held as this item already states.
+  8. `run-succeeded`: the run is terminal and succeeded. The recovery, when the forge reports the item's pull request merged, is `reconcile-merged` if that command's own preconditions hold for the item, and otherwise no status move, the held entry naming the failing precondition; it is the terminal-claim recovery `move:<id>:ready` of §"Per-lane valid operator verb sets" when the forge was read and reports no merged pull request; and, when the forge cannot be read, no status move, the held entry naming the failed read. When the item's newest dispatch journaled a `merge-wait-handed-off` row for that run, the pass MUST NOT merely hold the claim. When the forge reports the pull request merged and the preconditions of `reconcile-merged` hold, the Dispatcher MUST perform `reconcile-merged` for the item in the same pass, with no `resolve-blocked` and no `resume`. When the forge reports a required check of the pull request in a terminal failure, the Dispatcher MUST record exactly the outcome the merge wait's terminal required-check failure records. It MUST judge only the attempt the merge wait would judge, so the results of an attempt the merge wait already re-ran are disregarded, and it MUST NOT request a second automatic re-run for a workflow run the merge wait already re-ran. When the forge reports the pull request closed without merging, or OPEN with auto-merge no longer armed, the Dispatcher MUST rest the item at `blocked` with `blocked_reason: needs-human` with the named cause `merge-poll-budget-exhausted`, exactly as the merge wait's own budget-exhausted rest does. When the forge reports the pull request OPEN with auto-merge armed and every required check passing or still running, the claim MUST stay held as `run-succeeded`, and its held entry MUST name `merge-wait-handed-off`. When the forge cannot be read, the claim stays held as this item already states. For a handed-off rework, the `rework:pending` label MUST NOT by itself fail the preconditions of `reconcile-merged`. The merged pull request is the rework's own fix-forward, so the completion MUST move the item to `acceptance` and clear `rework:pending` ("Marker lifecycle"), and the acceptance pass grades the merged head as it grades any completed dispatch. Every other outcome of this hold applies to a handed-off rework unchanged. In particular, an OPEN pull request with auto-merge armed keeps the claim held as `run-succeeded`, naming `merge-wait-handed-off`, and the item still carries `rework:pending`.
   9. `forge-unobservable`: for an absent run, the forge could not be asked whether a merged pull request exists.
   10. `merged-pr`: for an absent run, the forge reports a merged pull request for the item. The recovery is `reconcile-merged`.
   11. `history-unavailable`: for an absent run, the preceding dispatch's outcome could not be established.
