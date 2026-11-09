@@ -48,6 +48,9 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
                                  --verdict <captured|verified|not_reproduced|
                                             human_attested>
                                  --record <path> [--invoker <id>]
+  dispatcher.py seed-ruling --item <id> --ref <ref> --commit <sha>
+                            --reason <text> [--repo <path>] [--invoker <id>]
+                            [--journal <path>]
   dispatcher.py file-canary --repo <path>
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
@@ -103,6 +106,12 @@ seam), and on any other verdict leaves the item's status, labels and
 `acceptance_failed_ai_passes` exactly as it found them. It launches no Fabro
 run, cuts no branch, and runs no janitor (see
 `_dispatcher_reconcile_regrade`).
+`seed-ruling` records an operator's ruled seed for a released item's next
+dispatch (Scenario 185). It reads origin once and, only when `--ref` stands at
+`--commit`, appends one `livespec-seed-ruling` ledger comment and one
+`seed-ruling` journal record; an absent or moved ref, or a body the shared
+template-opener detector flags, exits 3 and writes neither (see
+`_dispatcher_seed_ruling_command`).
 `probe` is the loop probe of contracts.md: the take-never-file health command
 that drives ONE designated, ALREADY-FILED work-item through the whole cycle
 with an assertion at each stage. It refuses
@@ -404,6 +413,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images_comma
     add_sandbox_images_arguments,
     run_sandbox_images_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_command import (
+    add_seed_ruling_arguments,
+    run_seed_ruling_cli,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
     add_claude_cred_status_arguments,
     add_codex_cred_refresh_arguments,
@@ -497,6 +510,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "reconcile-runs": run_reconcile_runs_command,
     "resume": run_resume_command,
     "sandbox-images": run_sandbox_images_command,
+    "seed-ruling": run_seed_ruling_cli,
     "spec-check": run_spec_check,
 }
 
@@ -527,6 +541,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
+    add_seed_ruling_arguments(parser=subparsers.add_parser("seed-ruling"))
     add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
@@ -535,12 +550,16 @@ def _build_parser() -> argparse.ArgumentParser:
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
-    add_dispatch_common(parser=(dispatch := subparsers.add_parser("dispatch")))
+    _add_dispatch_subcommands(add_parser=subparsers.add_parser)
+    return parser
+
+
+def _add_dispatch_subcommands(*, add_parser: Callable[[str], argparse.ArgumentParser]) -> None:
+    add_dispatch_common(parser=(dispatch := add_parser("dispatch")))
     _ = dispatch.add_argument("--item", dest="item", required=True)
-    add_resume_arguments(parser=subparsers.add_parser("resume"))
-    add_dispatch_common(parser=(loop := subparsers.add_parser("loop")))
+    add_resume_arguments(parser=add_parser("resume"))
+    add_dispatch_common(parser=(loop := add_parser("loop")))
     _ = loop.add_argument("--budget", dest="budget", type=int, required=True)
     _ = loop.add_argument("--parallel", dest="parallel", type=int, default=1)
     _ = loop.add_argument("--dry-run", dest="dry_run", action="store_true")
     _ = loop.add_argument("--item", dest="items", action="append", default=None)
-    return parser
