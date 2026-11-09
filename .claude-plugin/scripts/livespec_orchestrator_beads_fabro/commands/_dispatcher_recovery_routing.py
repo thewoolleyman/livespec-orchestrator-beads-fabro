@@ -94,7 +94,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_release import (
     stale_assignee_with_run,
 )
-from livespec_orchestrator_beads_fabro.commands._run_attribution import newest_journaled_run_id
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -362,7 +361,7 @@ def _fallback_route(
         work_item_id=item.id,
         earlier_run_ids=gather.earlier_run_ids,
         journal_records=journaled,
-        latest_run_id=newest_journaled_run_id(records=journaled, work_item_id=item.id),
+        publications=gather.publications,
     )
     if isinstance(preserved, PreservedWorkUnobservable):
         return _held_route(

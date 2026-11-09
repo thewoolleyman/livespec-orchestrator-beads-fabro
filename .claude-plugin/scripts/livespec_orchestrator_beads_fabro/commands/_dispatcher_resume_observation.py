@@ -94,7 +94,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
     read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
+    FACTORY_RECORD_VERDICTS,
     ResumeAnchor,
+    published_head,
     resume_anchor,
     resume_anchor_from_cancel,
 )
@@ -148,6 +150,17 @@ class ResumeGather:
     branch: str
     earlier_run_ids: tuple[str, ...]
     workflow_name: str | None
+    publications: tuple[tuple[str, str], ...] = ()
+
+
+def _publications_of(*, records: tuple[ProofRecord, ...]) -> tuple[tuple[str, str], ...]:
+    """Each head a factory record declares, paired with the run that published it."""
+    return tuple(
+        (head, one.run_id)
+        for one in records
+        if one.verdict in FACTORY_RECORD_VERDICTS
+        and (head := published_head(body=one.body)) is not None
+    )
 
 
 def gather_resume(
@@ -226,6 +239,7 @@ def gather_resume(
         branch=branch,
         earlier_run_ids=_earlier_run_ids(records=journaled, item=item, anchor=anchor, repo=repo),
         workflow_name=earlier_workflow_name(records=journaled, work_item_id=item.id),
+        publications=_publications_of(records=tuple(records or ())),
     )
 
 

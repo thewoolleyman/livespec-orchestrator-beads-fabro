@@ -94,7 +94,21 @@ def recovery_route_record(
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
+        "passed_over_needs_human": _passed_over(seed=seed),
     }
+
+
+def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
+    """Each needs-human ref that carried an earlier run and was not taken, with its commit.
+
+    An empty list and never an omitted key, for a route that took no needs-human
+    ref at all as for a seed that passed none over: the clause requires the field
+    on every `seeded`, `fresh` and `resume` row so a reader can tell "nothing was
+    passed over" from a record written by a build that never listed them.
+    """
+    if seed is None:
+        return []
+    return [{"ref": ref, "commit": commit} for ref, commit in seed.passed_over_needs_human]
 
 
 def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> str | None:
