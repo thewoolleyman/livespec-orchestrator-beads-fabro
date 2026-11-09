@@ -3011,5 +3011,13 @@
     "test": "TODO",
     "reason": "A harness-tier test is owed for this heading: the owning work-item bd-ib-j6rbdx adds check-fleet-launch cases in which an impl launcher stops its drive for a hold set before admission and keeps its ticket, leaves a drive alone once its item reads active, runs unchanged with no hold, and makes a stopped-after-admission non-run exit with one move-valve ledger comment.",
     "work_item": "bd-ib-j6rbdx"
+  },
+  {
+    "heading": "## Scenario 331 \u2014 The release branch advances only on an operator dispatch that starts a canary",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sghxlk dispatches fast-forward-release-branch.yml against this repository's real release branch and shows that a published release leaves release unmoved with the job skipped, an operator-dispatched descendant tag fast-forwards release, and a non-descendant or missing tag fails the run and leaves release unchanged. bd-ib-sghxlk owns it.",
+    "work_item": "bd-ib-sghxlk"
   }
 ]
