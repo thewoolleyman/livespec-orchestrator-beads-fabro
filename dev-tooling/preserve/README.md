@@ -106,7 +106,10 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
     `k3s kubectl exec -n factory <pod> -c sandbox` on poweredge-xubuntu, the route the cluster already authorizes.
     It runs only `test -d`, `git config --get`, `cat`, `find` and `xargs -0 cat` there, still with one `find` and
     one bulk `cat`. The file list goes to `xargs` on stdin, because as exec arguments it would ride in the exec
-    request's URL. Every other node keeps rule 1's ssh and crictl route. Which nodes are container workers is read
+    request's URL. Each exec carries at most `PRESERVE_EXEC_CHUNK_BYTES` (a whole number of MiB, default 4 MiB):
+    small files are batched, and a larger file is read in `dd` byte ranges. A single exec stream carrying a whole
+    31.8 MiB tree was reset by the API server on the first M4 factory run (2026-11-09). Every other node keeps rule
+    1's ssh and crictl route. Which nodes are container workers is read
     from the cluster on each pass, so a newly enrolled worker needs no change here.
 
 ## Shell gotcha
