@@ -23,6 +23,11 @@ hosts from each paying for every other host's claims. What each remaining claim
 is MEASURED on, and which of those readings are skipped, lives in
 `_dispatcher_stranded_claim_measure`.
 
+A `ready` ITEM STILL ASSIGNED `fabro` IS SURVEYED TOO, as a stale assignee rather
+than a dispatch claim. It goes through the same attribution grading and is then
+handed to `_dispatcher_stale_assignee_survey`, whose clearance writes no status
+and applies no terminal disposition.
+
 A MARKED CLAIM IS NOT SURVEYED, and an UNREADABLE marker is treated as marked.
 `rework:pending` and a `merge-hold:` label each describe an item that is
 `active` with no live lock BY DESIGN, which is the exact shape this survey
@@ -42,6 +47,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_survey import (
+    survey_stale_assignee,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     ACTION_ABSENT_RUN_REPEATED,
     ACTION_TERMINAL_COMPLETION,
@@ -98,6 +106,7 @@ __all__: list[str] = [
 ]
 
 _ACTIVE_STATUS = "active"
+_READY_STATUS = "ready"
 _FABRO_ASSIGNEE = "fabro"
 _MERGE_HOLD_UNHELD = "unheld"
 
@@ -157,7 +166,7 @@ def survey_stranded_claims(*, inputs: StrandedClaimInputs) -> StrandedClaimSurve
 
 
 def _surveyable(*, inputs: StrandedClaimInputs, item: WorkItem) -> bool:
-    if item.status != _ACTIVE_STATUS or item.assignee != _FABRO_ASSIGNEE:
+    if item.status not in (_ACTIVE_STATUS, _READY_STATUS) or item.assignee != _FABRO_ASSIGNEE:
         return False
     if item.rework_pending:
         return False
@@ -179,6 +188,15 @@ def _survey_one(
     )
     if isinstance(attributed, ClaimHold):
         return _held_claim(item=item, stamp=stamp, reason=attributed.reason)
+    if item.status == _READY_STATUS:
+        return survey_stale_assignee(
+            repo=inputs.repo,
+            journal=inputs.journal,
+            item=item,
+            attributed=attributed,
+            inventory=by_name[attributed.factory_name],
+            dry_run=inputs.dry_run,
+        )
     return _measure_and_act(
         inputs=inputs,
         item=item,
