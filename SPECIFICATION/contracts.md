@@ -450,10 +450,10 @@ ended the dispatch before any factory run was created, `drive`'s human summary
 MUST name the refusing stage and the outcome detail the Dispatcher reported for
 it, and MUST NOT reduce them to a statement that the Dispatcher did not report
 green. The `--json` payload is unchanged. For a refusal at stage
-`goal-minijinja-preflight` (§"Dispatcher policy settings" → "A
-template-poisoned item is superseded, never repaired in place"), the detail
-MUST name every offending goal source: each item field by name, and each ledger
-comment by its id and its creation instant.
+`goal-minijinja-preflight` (§"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field"),
+the detail MUST name every offending item field by name, with the 0-based
+character offset of the first delimiter in it, and MUST NOT quote the
+delimiter.
 
 **Human valve actions.** `drive` additionally accepts the fourteen human
 operator action ids (the two human-delegable gate commands, the
@@ -4451,9 +4451,16 @@ move the item to `ready`, journaled with its actor like any other approval.
 When it still reports a mechanical finding, `approve` MUST leave the item in
 `pending-approval`, MUST refuse with a result naming each mechanical finding,
 and MUST record those findings on the item as a ledger comment. Advisory
-findings MUST NOT block the release. `approve` on an effective-manual item is
-unchanged. This keeps `approve` the single journaled door from
-`pending-approval` toward `ready`; no second verb is added.
+findings MUST NOT block the release. On BOTH effective admission policies,
+`approve` MUST refuse an item whose title, description, acceptance criteria or
+notes carry a goal-template opening delimiter: it MUST leave the item in
+`pending-approval` and MUST return a result naming each such field. A ledger
+comment MUST NOT be a cause of this refusal, because the goal render
+neutralizes comments (§"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field"). For an
+effective-manual item that is the only check added; `approve` on such an item
+is otherwise unchanged. This keeps `approve` the single journaled door from
+`pending-approval` toward `ready`; no second verb is added. Scenario 334 in
+`scenarios.md` exercises the refusal.
 
 The maintainer's rationale, verbatim (source: repo
 `thewoolleyman/livespec`,
@@ -6911,8 +6918,16 @@ displayed, the filed item MUST carry one ledger comment naming each
 displayed candidate's id, so a later grooming pass can find the pair.
 The findings divide in two. A MECHANICAL finding — the section absent,
 a reference unresolved, a proof-mode declaration or `Reason:` line
-malformed — withholds `ready`: an item filed with one outstanding MUST
-NOT be routed to `ready` by intake. A test-existence or
+malformed, or a goal-template opening delimiter in the item's title,
+description, acceptance criteria or notes, as the shared template-opener
+detector reports it — withholds `ready`: an item filed with one outstanding
+MUST NOT be routed to `ready` by intake. The goal-template finding MUST name
+the field and the 0-based character offset of the first delimiter in it, and
+its remedy MUST name the field to edit. Like every mechanical finding, it MUST be displayed
+by `filing_display` and MUST be recorded on the item as a
+`definition-of-done finding (mechanical):` ledger comment, and that comment
+MUST itself pass the shared template-opener detector, so it MUST NOT quote
+the delimiter. Scenario 334 in `scenarios.md` exercises this kind. A test-existence or
 scenario-reference finding the wall recognises is ADVISORY: it MUST be
 displayed and MUST NOT withhold `ready`, because only the gate can judge
 it. The rendered goal is assembled from the dispatched item's own fields
@@ -7252,8 +7267,11 @@ spec-change-tier item held for its linked proposal's ratification
 touchpoints", touchpoint 1), or the factory-safety routing predicate routed a
 hand-picked dispatch's work item to the host (a non-null `factory_safety`, or a
 declared edit under `.github/workflows/` that no
-`workflow-scope-override:citation-only` label overrides). `skipped`-severity
-findings never flip the exit code.
+`workflow-scope-override:citation-only` label overrides), or the goal-template
+preflight refused a hand-picked dispatch (`--item`) at stage
+`goal-minijinja-preflight` because an item field carries a goal-template
+opening delimiter (§"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field").
+`skipped`-severity findings never flip the exit code.
 
 Every exit-`5` refusal MUST write exactly one line to stderr that begins with
 `REFUSED: `, names the work-item id, and states the refusal and its remedy.
@@ -7261,7 +7279,14 @@ The structured outcome MUST still carry the refusal's own status (for example
 `host-only-refused`). A refusal that a later retry of the same invocation could
 clear MUST NOT use exit code `5`. A drain that skips a host-only item without a
 hand-picked `--item` is not a refusal and MUST NOT change its own exit code on
-that account. Scenario 315 in `scenarios.md` exercises this rule.
+that account. Scenario 315 in `scenarios.md` exercises this rule. For a
+goal-template preflight refusal, the `REFUSED: ` line MUST name each offending
+field and the 0-based character offset of its first delimiter, its remedy MUST
+name the field to edit, and the line MUST NOT quote the delimiter, so a
+launcher that copies it into a ledger comment adds no opener. The exit-`5`
+cause applies to a hand-picked dispatch only; this rule does not change how a
+drain that meets the refusal computes its own exit code. Scenario 321 in
+`scenarios.md` exercises that case.
 
 ### Post-merge acceptance (`acceptance → done`)
 
@@ -8149,10 +8174,11 @@ and are ratified here.
   MUST be preflighted with the shared template-opener detector. An answer carrying
   a goal-template opening delimiter MUST be REFUSED: nothing is written — not the
   comment, not the journal line — and the item does NOT transition. Because a
-  ledger comment is append-only and the goal brief renders it verbatim, an opener
-  admitted here would poison every future goal render and cost the item its
-  dispatchability permanently; the writer that feeds the brief therefore refuses
-  exactly what would refuse the dispatch.
+  ledger comment is append-only and the goal render rewrites any opener a comment
+  carries to its bracket form (§"Dispatcher policy settings" → "A goal-template
+  opener is neutralized in a comment and refused in a field"), an opener admitted
+  here would reach every later run altered rather than as the operator wrote it;
+  refusing it keeps the answer the brief carries verbatim.
 - **Run account in the valve summary.** The `needs-attention` valve item for a
   `blocked / needs-human` item MUST carry the terminated run's account in its
   summary: the run id, the factory name and its server, that a `needs_human`
@@ -8187,24 +8213,38 @@ and are ratified here.
 Design record: the route shipped in `bd-ib-aqith2` (PR #2168) and `bd-ib-uuohty`
 (PR #2200); ratified here per `bd-ib-rh3iyd.7`. Scenarios 124 and 125 bind it.
 
-### A template-poisoned item is superseded, never repaired in place
+### A goal-template opener is neutralized in a comment and refused in a field
 
 **The dispatch-time goal-template preflight.** Before it renders an item's goal
-brief, the Dispatcher MUST run the shared template-opener detector over every
-goal source: the item's title, description, acceptance criteria, notes, the
-injected lessons, and every ledger comment the brief would carry. When any
-source carries a goal-template opening delimiter, the Dispatcher MUST refuse the
-dispatch at stage `goal-minijinja-preflight`, before any factory run is created,
-and its outcome detail MUST name each offending source. An opener in an item
-FIELD is recoverable by editing that field. An opener in a ledger COMMENT is
-permanent, because a ledger comment is append-only; that is the posture the
-human answer route's poison preflight protects, and this section does not
-relax it.
+brief, the Dispatcher MUST pass every ledger comment the brief would carry,
+every brief block composed from ledger comments, and the injected lessons
+through the goal-template opener rewrite, and MUST carry the rewritten text in
+the brief. The opener rewrite replaces each goal-template opening delimiter
+with its bracket form — `{{` becomes `[[`, `{%` becomes `[%` and `{#` becomes
+`[#` — and changes nothing else: it MUST NOT strip, truncate, bound or escape
+the text, so a source that carries no opener reaches the brief verbatim. It is
+not `comment_safe_external_text`, which also strips and bounds its input. The
+Dispatcher MUST then run the shared template-opener detector over the item's
+fields: its title, description, acceptance criteria and notes. When any field
+carries a goal-template opening delimiter, the Dispatcher MUST refuse the
+dispatch at stage `goal-minijinja-preflight`, before any factory run is created.
+Its outcome detail MUST name each offending field by name together with the
+0-based character offset of the first delimiter in it, and MUST NOT quote the
+delimiter, so the detail itself passes the shared template-opener detector. A
+ledger comment or a lesson MUST NOT be a cause of this refusal, so lessons
+injection stays fail-open (§"Dispatch-brief lessons injection"). An opener in
+an item field is recoverable by editing that field. The rewrite concerns the
+rendered goal only: it MUST NOT alter the ledger comment or the lessons file,
+and the human answer route's poison preflight, which refuses an answer
+carrying an opener before its comment is written, is unchanged. Scenario
+333 in `scenarios.md` exercises this paragraph.
 
-**The supersede verb.** An operator or a delegated coordinator MAY replace a
-comment-poisoned item by running
+**The supersede verb.** A comment-poisoned item dispatches, because the goal
+render neutralizes its comments. An operator or a delegated coordinator who
+wants a successor whose ledger is free of openers MAY still replace such an
+item by running
 `dispatcher.py supersede-contaminated --repo <path> --item <work-item-id> --reason <text>`.
-The command MUST:
+The verb is unchanged. The command MUST:
 
 1. Refuse with exit 3 and write nothing when the item is closed, when none of the
    item's ledger comments carries an opener, or when any item field carries one.
