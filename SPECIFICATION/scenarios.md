@@ -11608,6 +11608,17 @@ Feature: Sandbox retention and collection
     Then the stalled run stops progressing at once
     And the deletion of its record waits until 60 seconds after the first deletion started
     And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
+
+  Scenario: One periodic pass collects a closed item's runs whichever repository dispatched them
+    Given repository P, whose host timer starts the Dispatcher's periodic pass, and repository Q both dispatch to one factory
+    And an ended run E that repository Q dispatched, whose work-item is closed in repository Q's ledger
+    And an ended run F that repository Q dispatched, whose work-item rests at `blocked` in repository Q's ledger
+    And an ended run G whose work-item cannot be resolved in any dispatching repository's ledger
+    When the periodic pass started by repository P's timer runs while no run on that factory is running
+    Then run E's sandbox is deleted through the provider's delete operation
+    And run F's and run G's server run records and sandboxes still exist
+    And the pass journals run E's collection, naming the run id, the dispatching repository, the work-item id and the closed status it read
+    And the pass journals run G's refusal, naming the run id, the dispatching repository, the work-item id and that no status could be read
 ```
 
 ## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
