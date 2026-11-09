@@ -350,14 +350,12 @@ def _refuse_every_push(*, world: _World) -> None:
     hook.chmod(0o755)
 
 
-def _publish_draft_script(*, check_suite: str, conformance_hook_install: str = "") -> str:
+def _publish_draft_script(*, check_suite: str) -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
     script: str = graph.nodes["publish_draft"]["script"]
-    return (
-        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
-        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", conformance_hook_install)
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
     )
 
 
@@ -700,99 +698,6 @@ def _clean_refresh_world(*, root: Path) -> tuple[_World, str, str]:
     return world, janitor_head, advanced
 
 
-def test_a_clean_draft_refresh_reinstalls_the_refreshed_tree_s_conformance_hooks(
-    tmp_path: Path,
-) -> None:
-    """A hook installed from the dispatch base cannot publish a newer hook body.
-
-    The run begins before the default branch adds its canonical hook body, so its
-    first install writes hooks expecting the old body. After the clean rebase,
-    that pre-push hook rejects the new canonical body unless ``publish_draft``
-    invokes the resolved installer again. The other two hooks are checked as
-    well: janitor and later commit paths must receive the same refreshed body,
-    even though only pre-push participates in this publication attempt.
-    """
-    world = _world(root=tmp_path)
-    _ = _commit(
-        cwd=world.clone,
-        path="feature.txt",
-        text="this run's change\n",
-        subject="feat: change the run",
-    )
-    installer = tmp_path / "install-conformance-hooks"
-    trace = tmp_path / "conformance-hook-installs"
-    _ = installer.write_text(
-        "#!/bin/sh\n"
-        f"printf '%s\\n' install >> {shlex.quote(str(trace))}\n"
-        "expected=old\n"
-        "if test -f canonical-hook-body; then expected=$(cat canonical-hook-body); fi\n"
-        "for hook in pre-commit pre-push commit-msg; do\n"
-        "    printf '%s\\n' '#!/bin/sh' \\\n"
-        "        'actual=$(cat canonical-hook-body)' \\\n"
-        '        "test \\"\\$actual\\" = \\"$expected\\"" \\\n'
-        "        'status=$?' \\\n"
-        '        \'if test "$status" -ne 0; then printf "body_mismatch\\\\n" >&2; fi\' \\\n'
-        '        \'exit "$status"\' > ".git/hooks/$hook"\n'
-        '    chmod 755 ".git/hooks/$hook"\n'
-        "done\n",
-        encoding="utf-8",
-    )
-    installer.chmod(0o755)
-    _ = subprocess.run(
-        [str(installer)],
-        cwd=world.clone,
-        check=True,
-        capture_output=True,
-        text=True,
-        env=_fixture_env(),
-    )
-    advanced = _advance_default(
-        world=world,
-        path="canonical-hook-body",
-        text="new canonical hook body\n",
-    )
-    forge_bin = tmp_path / "forge-bin"
-    forge_bin.mkdir()
-    forge = forge_bin / "gh"
-    _ = forge.write_text("\n".join(_GH_DOUBLE_LINES), encoding="utf-8")
-    forge.chmod(0o755)
-    plugins = tmp_path / "plugins"
-    plugins.mkdir()
-    _ = (plugins / RECORD_FILE_PROGRAM_FILENAME).write_text(
-        record_file_program_source(), encoding="utf-8"
-    )
-
-    result = subprocess.run(
-        [
-            "bash",
-            "-c",
-            _publish_draft_script(
-                check_suite="true", conformance_hook_install=shlex.quote(str(installer))
-            ),
-        ],
-        cwd=world.clone,
-        capture_output=True,
-        text=True,
-        check=False,
-        env={
-            **_fixture_env(),
-            "PATH": f"{forge_bin}:/usr/local/bin:/usr/bin:/bin",
-            "HOME": str(world.clone.parent / "home"),
-            "LIVESPEC_PUBLISH_BRANCH": _BRANCH,
-            SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins),
-            "LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(world.clone.parent / "no-gh-refresh"),
-        },
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert world.remote_head(ref=_BRANCH) == world.head()
-    assert world.head() != advanced
-    assert trace.read_text(encoding="utf-8") == "install\ninstall\n"
-    for hook in ("pre-commit", "pre-push", "commit-msg"):
-        body = (world.clone / ".git" / "hooks" / hook).read_text(encoding="utf-8")
-        assert 'test "$actual" = "new canonical hook body"' in body
-
-
 def test_a_refreshed_head_the_gate_rejects_is_restored_and_repaired(tmp_path: Path) -> None:
     """A clean refresh whose gate refuses is repaired, not parked.
 
@@ -1063,14 +968,12 @@ def _node_attribute(*, node: str, attribute: str) -> str:
     return value
 
 
-def _pr_refresh_script(*, check_suite: str, conformance_hook_install: str = "") -> str:
+def _pr_refresh_script(*, check_suite: str) -> str:
     graph = parse_dot_graph(text=_graph_text())
     assert not isinstance(graph, str), graph
     script: str = graph.nodes["pr_refresh"]["script"]
-    return (
-        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
-        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", conformance_hook_install)
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
     )
 
 

@@ -270,10 +270,8 @@ def _node_script(*, node: str, check_suite: str) -> str:
     graph = parse_dot_graph(text=_GRAPH_PATH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     script: str = graph.nodes[node]["script"]
-    return (
-        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
-        .replace("{{ inputs.sandbox_check_suite }}", check_suite)
-        .replace("{{ inputs.conformance_hook_install }}", "")
+    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
+        "{{ inputs.sandbox_check_suite }}", check_suite
     )
 
 
