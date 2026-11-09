@@ -43,12 +43,14 @@ class _FakeSubprocess:
 
     returncode: int = 0
     runs: list[list[str]] = field(default_factory=list)
+    environments: list[dict[str, str] | None] = field(default_factory=list)
     popens: list[list[str]] = field(default_factory=list)
     DEVNULL: int = -3
     STDOUT: int = -2
 
     def run(self, command: list[str], **kwargs: Any) -> SimpleNamespace:
         self.runs.append(command)
+        self.environments.append(kwargs.get("env"))
         stdout = kwargs["stdout"]
         _ = stdout.write(
             "│ lefthook v1.13.6  hook: pre-commit │\nFailed targets (1):\n  - check-types\n"
@@ -516,6 +518,25 @@ def test_the_worker_records_the_commit_s_own_exit_status_and_head(tmp_path: Path
         "failed_targets": ["check-types"],
     }
     assert "check-types" in path.with_suffix(".output").read_text(encoding="utf-8")
+
+
+def test_the_worker_keeps_the_agent_stage_variable_out_of_the_commit_hook_s_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 326: the hook's test suite never inherits the guard's activation."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "review_fix")
+    monkeypatch.setenv("LIVESPEC_TEST_SENTINEL", "kept")
+    fake = _FakeSubprocess(returncode=0)
+    program = _program(tmp_path, fake)
+    _ = _record(tmp_path, _RUN_ID, {"state": "running", "command": ["git", "commit"]}, 1)
+
+    assert program["worker"](_RUN_ID) == 0
+
+    [environment] = fake.environments
+    assert environment is not None
+    assert "LIVESPEC_AGENT_STAGE" not in environment
+    assert environment["LIVESPEC_TEST_SENTINEL"] == "kept"
+    assert fake.runs == [["git", "commit"]]
 
 
 def test_a_commit_msg_refusal_after_a_passing_pre_commit_hook_names_its_recipe(
