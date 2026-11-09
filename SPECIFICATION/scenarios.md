@@ -8054,8 +8054,8 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     Then the fix prompt directs no run of the full check suite on that tree in the same turn
 
   Scenario: A hook run that did not grade the tree, or a later change, still requires a passing commit
-    Given a fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
-    When the fix turn is to complete successfully
+    Given a fix or review_fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
+    When the turn is to complete successfully
     Then the turn first commits its tree through the commit hook to a passing result
 
   Scenario: A refresh-repair round applies the same rule to the integrated tree
@@ -8063,6 +8063,31 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     And its commit on the integrated tree passed the commit hook's gate
     When the turn completes the repair successfully
     Then the fix prompt directs no run of the full check suite on that integrated tree in the same turn
+
+  Scenario: A review_fix turn whose hook passed ends its grading obligation for that tree
+    Given a review_fix turn that commits its change
+    And the commit hook's gate passed on the committed tree
+    When the review_fix turn completes successfully on that tree
+    Then the review_fix prompt directs no run of the full check suite on that tree in the same turn
+
+  Scenario: An open Red settled passed re-enters its stage for the Green
+    Given a fix or review_fix turn whose last commit carries TDD-Red trailers and no TDD-Green trailers
+    And its commit-settle node settles that commit passed
+    When the run leaves the commit-settle node
+    Then the run re-enters that same stage instead of janitor_admission
+    And the re-entered turn's brief names the open Red commit and directs completing its Green amend
+
+  Scenario: A completed Red-Green commit or an untrailered commit routes to janitor
+    Given a fix or review_fix turn whose last commit carries both TDD-Red and TDD-Green trailers, or no TDD trailers
+    And its commit-settle node settles that commit passed
+    When the run leaves the commit-settle node
+    Then the run routes to janitor_admission
+
+  Scenario: An open Red at the stage's visit limit ends at needs_human naming it
+    Given a fix or review_fix stage whose visit limit is reached
+    And the stage's last commit is still an open Red
+    When the run leaves the stage
+    Then the run ends at needs_human with a cause naming the open Red commit
 ```
 
 ## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
