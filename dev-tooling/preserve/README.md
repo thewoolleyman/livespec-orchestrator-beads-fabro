@@ -99,6 +99,16 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
     test by hand: `git diff --quiet $(git merge-base <ref> origin/master) <ref>` exiting 0 means NOT
     preserved.
 
+11. **A container worker node is read through `kubectl exec`, never ssh (livespec-dev-tooling-smzkpu).** A node
+    labelled `homelab-worker.livespec.dev/class=worker` runs plain containerd, so it has no `k3s crictl`, and it
+    takes no ssh login: creating one is credential creation, which stays the maintainer's (legacy-coordinator-agent
+    ruling, 2026-11-09). For such a node `preserve_runs.sh` reads the sandbox through
+    `k3s kubectl exec -n factory <pod> -c sandbox` on poweredge-xubuntu, the route the cluster already authorizes.
+    It runs only `test -d`, `git config --get`, `cat`, `find` and `xargs -0 cat` there, still with one `find` and
+    one bulk `cat`. The file list goes to `xargs` on stdin, because as exec arguments it would ride in the exec
+    request's URL. Every other node keeps rule 1's ssh and crictl route. Which nodes are container workers is read
+    from the cluster on each pass, so a newly enrolled worker needs no change here.
+
 ## Shell gotcha
 
 In zsh, `"$sha:refs/..."` applies the `:r` modifier to `$sha`. Always write `"${sha}:${ref}"`.
