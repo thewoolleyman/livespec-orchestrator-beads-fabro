@@ -30,11 +30,9 @@ _WAIT_MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_ci_p
 _EXIT_PRECONDITION_ERROR = 3
 _RED_CONCLUSIONS = (
     "failure",
-    "cancelled",
     "timed_out",
     "action_required",
     "stale",
-    "startup_failure",
 )
 _PENDING_STATUSES = ("queued", "in_progress", "waiting", "pending", "requested")
 _WAIVER_TOKEN = "dispatcher.step_waivers"
@@ -1110,13 +1108,22 @@ def test_an_unrecognized_aggregate_conclusion_refuses(tmp_path: Path) -> None:
     assert "neither green nor red" in outcome.refusal.detail
 
 
-def test_a_missing_aggregate_job_refuses_naming_the_resolved_job(tmp_path: Path) -> None:
+def test_a_missing_aggregate_job_with_no_other_verdict_defers_instead_of_refusing(
+    tmp_path: Path,
+) -> None:
     runner = _Runner(results=_results(jobs=_result(stdout=_jobs_payload(job_conclusion=None))))
+    wait = _wait_module().MasterCiWait(
+        now=lambda: 0.0,
+        sleep=lambda _seconds: None,
+        progress=io.StringIO(),
+        bound_seconds=0.0,
+    )
 
-    outcome = _outcome(repo=tmp_path, runner=runner)
+    outcome = _module().master_ci_preflight(repo=tmp_path, runner=runner, wait=wait)
 
     assert outcome.refusal is not None
-    assert "aggregate job `ci-green` is missing" in outcome.refusal.detail
+    assert outcome.record["reason"] == "master-ci-pending"
+    assert outcome.record["run_database_id"] == "303"
 
 
 def test_a_failed_aggregate_job_lookup_refuses(tmp_path: Path) -> None:
