@@ -91,23 +91,34 @@ def _asked(*, runner: _Runner, needle: str) -> bool:
     return any(needle in call for call in runner.calls)
 
 
-def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> None:
+def test_the_terminal_tree_wins_and_the_lower_sources_are_never_asked() -> None:
     """The needs-human ref carries the run's whole tree, so nothing below it is read.
 
-    The newest identifier's ref is taken even though an OLDER run also has one, and
-    the publish branch is carrying a different head at the same moment — so a
-    reading that preferred either would land on a well-formed wrong commit.
+    The descendant tip is taken even though an OLDER run also has a ref — so a
+    reading that preferred it would land on a well-formed wrong commit. The publish
+    branch IS asked, because a surviving head competes with the ref, but it names
+    nothing here and so the ref stands.
     """
+    older_ref = f"{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}"
     runner = _Runner(
         answers={
             f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=(
                     f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{_RUN}\n"
-                    f"{_EARLIER_HEAD}\t{NEEDS_HUMAN_REF_PREFIX}/{_OLDER_RUN}\n"
+                    f"{_EARLIER_HEAD}\t{older_ref}\n"
                 ),
                 stderr="",
-            )
+            ),
+            "show -s --format=%H %ct": CommandResult(
+                exit_code=0,
+                stdout=f"{_TERMINAL_COMMIT} 200\n{_EARLIER_HEAD} 100\n",
+                stderr="",
+            ),
+            f"is-ancestor {_EARLIER_HEAD} {_TERMINAL_COMMIT}": CommandResult(
+                exit_code=0, stdout="", stderr=""
+            ),
+            "is-ancestor": CommandResult(exit_code=1, stdout="", stderr=""),
         }
     )
 
@@ -116,8 +127,8 @@ def test_the_terminal_tree_wins_and_the_other_two_sources_are_never_asked() -> N
         remote=SEED_REMOTE,
         commit_sha=_TERMINAL_COMMIT,
         preservation_ref=f"{NEEDS_HUMAN_REF_PREFIX}/{_RUN}",
+        passed_over_needs_human=((older_ref, _EARLIER_HEAD),),
     )
-    assert not _asked(runner=runner, needle=_BRANCH_REF)
     assert not _asked(runner=runner, needle=_PRESERVED_PUBLISH_PREFIX)
 
 
@@ -165,8 +176,7 @@ def test_the_latest_runs_needs_human_ref_under_its_dispatch_id_beats_an_older_wi
     dispatch_id = "d9af2b5643ee40caa497060496f227ca"
     runner = _Runner(
         answers={
-            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/{_RUN} "
-            f"{NEEDS_HUMAN_REF_PREFIX}/{dispatch_id}": CommandResult(
+            f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
                 exit_code=0,
                 stdout=f"{_TERMINAL_COMMIT}\t{NEEDS_HUMAN_REF_PREFIX}/{dispatch_id}\n",
                 stderr="",

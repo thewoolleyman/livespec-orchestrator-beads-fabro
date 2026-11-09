@@ -33,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved i
     PreservedWorkUnobservable,
     verified_preserved_seed,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 
 _ITEM_ID = "bd-ib-na2xvm"
 _RUN = "01M4YJGC55V86C9V1X07QG3Y2H"
@@ -48,6 +49,8 @@ _PREFIX = f"refs/livespec/preserved-publish/{_ITEM_ID}"
 _REF = f"{_PREFIX}/{_PRESERVED_COMMIT}"
 _OLDER_REF = f"{_PREFIX}/{_OLDER_PRESERVED_COMMIT}"
 _BRANCH_REF = f"refs/heads/feat/{_ITEM_ID}"
+_TRAILER_NEEDS_HUMAN_REF = "refs/heads/needs-human/opaque-preservation-name"
+_TRAILER_NEEDS_HUMAN_COMMIT = "e" * 40
 
 
 @dataclass(kw_only=True)
@@ -122,7 +125,13 @@ def test_the_preservation_ref_outranks_the_published_head_and_names_the_base() -
             _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
         }
     )
-    seed = _seed(runner=runner, journal_records=(_row(),))
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(),
+            {"work_item_id": _ITEM_ID, "run_id": _RUN, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
     assert not isinstance(seed, PreservedWorkUnobservable)
     assert seed is not None
     assert seed.preservation_ref == _REF
@@ -132,9 +141,7 @@ def test_the_preservation_ref_outranks_the_published_head_and_names_the_base() -
     assert seed.commit_sha == _BASE
     assert seed.commit_sha != _PRESERVED_COMMIT
     assert seed.commit_sha != _PUBLISHED_HEAD
-    # The published head was never even asked for, which is what "preferred over"
-    # means operationally -- a round trip spent there is a question already settled.
-    assert not _asked(runner=runner, needle=_BRANCH_REF)
+    assert _asked(runner=runner, needle=_BRANCH_REF)
 
 
 def test_the_newest_published_tree_wins_over_an_earlier_one() -> None:
@@ -149,9 +156,82 @@ def test_the_newest_published_tree_wins_over_an_earlier_one() -> None:
             _row(),
         ),
     )
-    assert seed is not None and not isinstance(seed, PreservedWorkUnobservable)
+    assert isinstance(seed, RecoverySeed)
     assert seed.preservation_ref == _REF
     assert seed.commit_sha == _BASE
+
+
+def test_an_earlier_needs_human_ref_does_not_outrank_a_later_published_head() -> None:
+    """Run age beats the terminal-ref preference when the branch moved on.
+
+    The competing ref is durable and readable, so returning it is an apparently
+    healthy seed.  The dispatch journal is the independent ordering evidence:
+    its later publication proves the branch tree belongs to a later run.
+    """
+    runner = _Runner(
+        answers={
+            _REF: _ls_remote(ref=_REF, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(ref=_REF, base=_OLDER_BASE, run_id=_OLDER_RUN),
+            {
+                "stage": "watchdog-stall-cancel",
+                "work_item_id": _ITEM_ID,
+                "run_id": _RUN,
+                "published_head": _PUBLISHED_HEAD,
+            },
+        ),
+    )
+    assert seed is not None and not isinstance(seed, PreservedWorkUnobservable)
+    assert seed.commit_sha == _PUBLISHED_HEAD
+    assert seed.preservation_ref == f"{_PREFIX}/{_PUBLISHED_HEAD}"
+
+
+def test_a_competing_ref_with_an_unattributable_published_head_is_unobservable() -> None:
+    """Attribution uncertainty holds recovery rather than reclaiming the branch."""
+    runner = _Runner(
+        answers={
+            _REF: _ls_remote(ref=_REF, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(ref=_REF, base=_OLDER_BASE, run_id=_OLDER_RUN),
+            {"work_item_id": _ITEM_ID, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
+    assert isinstance(seed, PreservedWorkUnobservable)
+    assert "publishing-run-unobservable" in seed.detail
+
+
+def test_a_needs_human_ref_is_attributed_from_its_tip_trailer() -> None:
+    """A ref suffix is not the only durable record of its publishing run."""
+    runner = _Runner(
+        answers={
+            "refs/heads/needs-human/": _ls_remote(
+                ref=_TRAILER_NEEDS_HUMAN_REF,
+                commit=_TRAILER_NEEDS_HUMAN_COMMIT,
+            ),
+            f"show -s --format=%B {_TRAILER_NEEDS_HUMAN_COMMIT}": CommandResult(
+                exit_code=0,
+                stdout=f"preserved work\n\nFactory-Run-Id: {_RUN}\n",
+                stderr="",
+            ),
+        }
+    )
+
+    seed = _seed(runner=runner, journal_records=())
+
+    assert isinstance(seed, RecoverySeed)
+    assert seed.source_run_id == _RUN
+    assert seed.commit_sha == _TRAILER_NEEDS_HUMAN_COMMIT
+    assert seed.preservation_ref == _TRAILER_NEEDS_HUMAN_REF
 
 
 def test_a_ref_origin_no_longer_carries_falls_through_to_the_next_source() -> None:
