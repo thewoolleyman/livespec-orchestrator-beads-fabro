@@ -308,6 +308,7 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
 
     assert producers == {
         "fix_commit_settle",
+        "fix_open_red_route",
         "janitor_failure_route",
         "janitor_refresh_route",
         _CAPTURE,
@@ -320,7 +321,9 @@ def test_the_fix_budget_is_shared_across_every_loop_feeding_it() -> None:
     # budget IS the bound now rather than a backstop sitting above three separate
     # caps, and it is sized to exactly what those retired caps admitted (plan
     # `fabro-currency` P4), which is two apiece.
-    assert int(backstop.group("value")) >= 2 * len(producers - {"refresh_repair"})
+    assert int(backstop.group("value")) >= 2 * len(
+        producers - {"refresh_repair", "fix_open_red_route"}
+    )
 
 
 def test_the_fix_prompt_reads_the_pull_request_when_the_preamble_carries_none() -> None:

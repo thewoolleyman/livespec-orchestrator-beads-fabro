@@ -1249,7 +1249,10 @@ def test_a_repair_round_is_budgeted_apart_from_the_review_fix_rounds() -> None:
     }
 
     assert _REPAIR_NODE in producers
-    assert budgets["fix"] == 2 * len(producers - {_REPAIR_NODE, "janitor_failure_route"}) + 2
+    assert (
+        budgets["fix"]
+        == 2 * len(producers - {_REPAIR_NODE, "janitor_failure_route", "fix_open_red_route"}) + 2
+    )
     assert budgets["disposition"] == 3
     assert budgets["review_fix"] == 3
     assert {destination for destination, _ in edges[_REPAIR_NODE]}.isdisjoint(

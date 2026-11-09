@@ -150,7 +150,7 @@ def test_a_fix_head_change_keeps_the_next_janitor_failure_in_the_repair_loop(
     assert ("janitor_refresh_route", "fix", "") in edges
     assert ("fix", "fix_progress_route", "outcome=succeeded") in edges
     assert ("fix_progress_route", "fix_commit_settle", "") in edges
-    assert ("fix_commit_settle", "janitor_admission", "") in edges
+    assert ("fix_open_red_route", "janitor_admission", "") in edges
     assert ("janitor_failure_route", "non_converged", "outcome=failed") in edges
 
 
