@@ -37,6 +37,8 @@ FLEET_LAUNCH_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=fleet-launch/board-snapshot.sh
 . "$FLEET_LAUNCH_DIR/board-snapshot.sh"
 
+LAUNCHER_ARGS=("$@")
+SELF=$FLEET_LAUNCH_DIR/$(basename "${BASH_SOURCE[0]}")
 ITEM=${1:?usage: dispatch-dual.sh <item-id>}
 SEAT=$FLEET_LAUNCH_SEAT
 REPO=${REPO_OVERRIDE:-$FLEET_LAUNCH_ORCH_REPO}
@@ -54,6 +56,38 @@ deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
 ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0
 gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
 mkdir -p "$OUT"
+
+# A bash launcher keeps executing the script content it started with, so code added to this file
+# after a launcher started never reached it (bd-ib-5ycmsm). The wait loop therefore compares this
+# file on disk with the content the launcher started on and re-executes itself when they differ,
+# keeping its pid, its queue ticket and its give-up deadline. Replace the file atomically (write
+# beside it, then mv): an in-place edit corrupts a running bash.
+script_version() { sha256sum < "$1" 2>/dev/null | cut -c1-12; }
+START_VERSION=$(script_version "/proc/$$/fd/255")
+[ -n "$START_VERSION" ] || START_VERSION=$(script_version "$SELF")
+bad_version=""
+if [ "${FLEET_LAUNCH_REEXEC_PID:-}" = "$$" ]; then
+  [ -f "${FLEET_LAUNCH_REEXEC_TICKET:-}" ] && grep -q "pid=$$ " "$FLEET_LAUNCH_REEXEC_TICKET" && { ticket=$FLEET_LAUNCH_REEXEC_TICKET; ticket_number=${ticket##*/}; ticket_number=${ticket_number%%-*}; }
+  case ${FLEET_LAUNCH_REEXEC_DEADLINE:-} in ''|*[!0-9]*) ;; *) deadline=$FLEET_LAUNCH_REEXEC_DEADLINE ;; esac
+  echo "$(date -u +%FT%TZ) launcher re-executed on script version $START_VERSION: keeping ticket ${ticket##*/}"
+fi
+unset FLEET_LAUNCH_REEXEC_PID FLEET_LAUNCH_REEXEC_TICKET FLEET_LAUNCH_REEXEC_DEADLINE
+# script_changed: the script on disk differs from the running content and parses.
+script_changed() {
+  local now; now=$(script_version "$SELF")
+  [ -n "$now" ] && [ "$now" != "$START_VERSION" ] || return 1
+  bash -n "$SELF" 2>/dev/null && return 0
+  [ "$now" = "$bad_version" ] || echo "$(date -u +%FT%TZ) launcher script changed on disk ($now) but does not parse: keep running $START_VERSION"
+  bad_version=$now
+  return 1
+}
+# reexec_on_script_change: call only where this launcher holds no mutex and no in-flight marker.
+reexec_on_script_change() {
+  script_changed || return 0
+  echo "$(date -u +%FT%TZ) launcher script changed on disk ($START_VERSION -> $(script_version "$SELF")): re-exec, keeping ticket ${ticket##*/}"
+  export FLEET_LAUNCH_REEXEC_PID=$$ FLEET_LAUNCH_REEXEC_TICKET=$ticket FLEET_LAUNCH_REEXEC_DEADLINE=$deadline
+  exec bash "$SELF" "${LAUNCHER_ARGS[@]}"
+}
 
 drop_ticket() { [ -n "$ticket" ] && rm -f "$ticket"; ticket=""; }
 ensure_ticket() {
@@ -356,6 +390,7 @@ stopped_after_admission() {
 while :; do
   target=""; drive_stopped=0; drive_admitted=0
   while [ -z "$target" ]; do
+    reexec_on_script_change
     if repository_hold_applies dispatch; then
       ensure_ticket
       yield_ticket repository-hold
@@ -388,7 +423,9 @@ while :; do
         if take_mutex "$GMK_Q" "$GMK_LOCK"; then
           taken=$(date +%s)
           if bind_count mi-homelab && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
-            if repository_hold_applies dispatch; then
+            if script_changed; then
+              rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) launcher script changed on disk before launch: released the mutex and marker, keeping the ticket"; continue
+            elif repository_hold_applies dispatch; then
               rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
             else
               drop_ticket; target=mi-homelab; break
@@ -405,7 +442,9 @@ while :; do
       if take_mutex "$GMK_Q" "$GMK_LOCK"; then
         taken=$(date +%s)
         if bind_count petri && gmk_green; then
-          if repository_hold_applies dispatch; then
+          if script_changed; then
+            rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) launcher script changed on disk before launch: released the mutex and marker, keeping the ticket"; continue
+          elif repository_hold_applies dispatch; then
             rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
           else
             drop_ticket; target=petri; break

@@ -11608,6 +11608,17 @@ Feature: Sandbox retention and collection
     Then the stalled run stops progressing at once
     And the deletion of its record waits until 60 seconds after the first deletion started
     And the pass journals the deferred deletion with the run id, the factory, the caller and the earliest start instant
+
+  Scenario: One periodic pass collects a closed item's runs whichever repository dispatched them
+    Given repository P, whose host timer starts the Dispatcher's periodic pass, and repository Q both dispatch to one factory
+    And an ended run E that repository Q dispatched, whose work-item is closed in repository Q's ledger
+    And an ended run F that repository Q dispatched, whose work-item rests at `blocked` in repository Q's ledger
+    And an ended run G whose work-item cannot be resolved in any dispatching repository's ledger
+    When the periodic pass started by repository P's timer runs while no run on that factory is running
+    Then run E's sandbox is deleted through the provider's delete operation
+    And run F's and run G's server run records and sandboxes still exist
+    And the pass journals run E's collection, naming the run id, the dispatching repository, the work-item id and the closed status it read
+    And the pass journals run G's refusal, naming the run id, the dispatching repository, the work-item id and that no status could be read
 ```
 
 ## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node
@@ -13464,4 +13475,62 @@ Feature: An impl launcher honours a hold until its item is admitted
     Then the launcher makes a non-run exit with the cause stopped-after-admission
     And it re-takes no ticket
     And it appends one ledger comment to bd-x naming its ticket number and the operator move valve
+```
+
+## Scenario 331 — The release branch advances only on an operator dispatch that starts a canary
+
+Governing clause: `contracts.md` §"Self-contained plugin dispatch".
+
+```gherkin
+Feature: The release branch advances only on an operator dispatch that starts a canary
+
+  Scenario: a published release does not move the release branch
+    Given the `release` branch names the commit of release tag v1.0.0
+    When release v1.1.0 of this repository is published
+    Then the `fast-forward-release-branch.yml` run for that event finishes with its job skipped
+    And the `release` branch still names the commit of v1.0.0
+
+  Scenario: an operator dispatch advances the release branch to start a canary
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the `release` branch names the commit of v1.1.0 when the run ends
+
+  Scenario: a tag that does not descend from the release branch moves nothing
+    Given the `release` branch names the commit of release tag v1.1.0
+    When an operator dispatches the workflow with tag v1.0.0, whose commit is an ancestor of v1.1.0's
+    Then the run fails
+    And the `release` branch still names the commit of v1.1.0
+
+  Scenario: a tag that does not exist moves nothing
+    Given the `release` branch names the commit of release tag v1.1.0
+    When an operator dispatches the workflow with a tag this repository does not carry
+    Then the run fails naming the tag
+    And the `release` branch still names the commit of v1.1.0
+```
+
+## Scenario 332 — A host Claude judgement's spend journal ends with the closing result event's final usage
+
+```gherkin
+Feature: Host judgement spend journal final usage
+
+  Scenario: A judgement whose Claude stream emits a result event journals its final usage last
+    Given a host model judgement whose resolved candidate is the Claude agent, launched with caller drift_run
+    And its stream emits assistant events with message ids msg_a and msg_b, then a result event whose usage reports 1148 output tokens
+    When the judgement completes
+    Then a journal under $HOME/.claude/spend-journal/ has a header line carrying "final_usage_line": true and a name beginning purpose:drift_run@
+    And its assistant lines are those two events in order, each with a ts timestamp
+    And its last line has type result, carries that usage object unchanged and the message_ids array [msg_a, msg_b], and carries no started_at key
+
+  Scenario: A judgement whose Claude process ends without a result event keeps its last assistant line last
+    Given a host model judgement whose resolved candidate is the Claude agent
+    And its process is ended by the input bound after one assistant event and before any result event
+    When the judgement ends
+    Then the journal's last line is that assistant event
+
+  Scenario: A judgement read after its process exits writes the same final usage line
+    Given a host model judgement that reads its Claude candidate's output only after the process exits
+    And that output ends with a result event
+    When the judgement completes
+    Then its journal's last line has type result and carries that event's usage object unchanged
 ```

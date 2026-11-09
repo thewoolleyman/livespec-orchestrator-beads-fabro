@@ -103,6 +103,21 @@ router a red janitor passes through: its own response is a routing label. The
 failure to repair is the `janitor` response immediately before it, so read the
 janitor failure output there.
 
+## When the incoming stage is `fix_commit_settle`
+
+The previous fix turn's commit run settled FAILED, so the graph came back here
+instead of running janitor against an incomplete integration. The runner's
+brief for that commit run is in the file `livespec-fix-live-commit` inside the
+git directory (`git rev-parse --git-path livespec-fix-live-commit`): its first
+line is `failed`, and the rest names the commit run, the hook's failed targets
+and its own error lines. Read it with `cat`, fix what it names, and commit
+again through the sandbox commit runner.
+
+If the brief says the settle aborted an in-progress merge or rebase, the tree is
+back at the head that operation began from and the integration is NOT done:
+redo it, resolving each conflicted path on its merits, rather than assuming the
+earlier resolution survived.
+
 ## Which proof record is your work order
 
 When you were entered on a proof finding, take as your work order the record

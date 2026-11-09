@@ -3008,6 +3008,34 @@ clones the dispatch path makes are of the dispatch TARGET repo (the work
 site, cloned host-side and again inside the Fabro sandbox); the
 orchestrator's own source is never a dispatch-time prerequisite.
 
+**The release channel.** Fleet members and adopters resolve this plugin
+through the moving `release` branch: every consumer's marketplace
+registration names `ref: release`, and a session-start plugin refresh
+installs whatever commit `release` names. So the commit `release` names
+IS the build a clone can adopt. A *canary* of a release is the set of
+factory runs launched on that release's build from the clones an
+operator moved to it first: this repository's clone for orchestrator
+work, and a named other repository's clone for a non-orchestrator leg.
+Its *canary samples* are those runs' observed outcomes. The *roll step*
+is the operator step that, after the canary samples, adopts that
+release's build in every fleet clone. `release` MUST advance only when
+an operator dispatches
+`.github/workflows/fast-forward-release-branch.yml` with a `tag` input
+naming a published release tag of this repository. That dispatch starts
+the release's canary, at a time the operator chooses, and the canary's
+clones then adopt the build `release` names. The roll step MUST follow
+the canary samples. A `release: published` event MUST NOT advance
+`release`, and the workflow's job MUST NOT run for that event. The
+advance MUST be fast-forward-only: when the named tag's commit does not
+descend from the commit `release` names, the run MUST fail, and
+`release` MUST keep its commit. The dispatch command is
+`gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z`. While a
+fleet clone's session-start refresh still installs whatever `release`
+names, advancing `release` moves that clone as well, so before
+dispatching an operator MUST hold factory launches from every such clone
+outside the canary until the canary samples are judged. Scenario 331 in
+`scenarios.md` exercises this paragraph.
+
 The host-side Dispatcher MUST run on the packaged payload alone — the
 Python standard library plus the vendored runtime under
 `scripts/_vendor/` — with no dependency on an orchestrator working
@@ -8350,6 +8378,8 @@ While the run's work-item rests at `blocked` or `needs-human`, the Dispatcher MU
 
 Once the run's work-item is closed, the Dispatcher MUST delete that run's sandbox, subject to the deletion pacing below, through its provider's own delete operation, so that the driver record and the node workspace directory are both gone. The Dispatcher MUST NOT remove either one by any route other than that provider operation, because a workspace removed behind the provider leaves a driver record naming a directory that no longer exists. A deletion the provider refuses or cannot complete MUST be journaled with the run id and the provider's reason, and MUST be retried on a later pass; it MUST NOT reopen, block or otherwise transition the closed item.
 
+**Collection reaches every dispatching repository's runs.** The collection duty above binds whichever repository dispatched the run. The Dispatcher's periodic pass on a dispatching host MUST collect, on each factory it surveys, every ended run whose work-item is closed in the ledger of the repository that dispatched that run, for every repository whose runs that factory carries, and not only the runs that the pass's own repository dispatched. One periodic pass per dispatching host MUST suffice for every dispatching repository's runs to be collected; a repository's runs MUST NOT depend on a periodic pass of that repository's own. The pass MUST resolve each run's work-item through the run's own recorded work-item identity and the dispatching repository's own ledger. A run whose work-item cannot be resolved in any dispatching repository's ledger, or whose ledger cannot be read on that pass, MUST be left in place with its server run record and sandbox, and MUST NOT be treated as closed. A run that maps to no work-item, including the factory's clearance and availability-probe runs, MUST be left in place as before. Each collection and each refusal the pass makes MUST be journaled naming the run id, the dispatching repository, the work-item id and the item status the pass read, or that no status could be read. The deletion pacing, deferral, retry and idempotence rules of this subsection apply unchanged to every run this paragraph collects. Scenario 281 in `scenarios.md` exercises this paragraph.
+
 **Deletion pacing on a busy factory.** A factory's run deletions contend with its live runs for the factory's run store, so a deletion burst can fail the record writes of every run the factory is executing. Two committed per-factory settings in `dispatcher.factories.<name>` therefore govern every run deletion the Dispatcher issues against that factory. The Dispatcher MUST read both on every pass, so a changed value takes effect without a restart.
 
 - `defer_collection_while_active` (boolean, default `true` when absent). While it is `true` and the factory's run inventory taken by the pass shows at least one running run, the pass MUST NOT delete any closed item's ended-run sandbox on that factory; it MUST journal each sandbox it defers, naming the run id and the factory, and MUST leave it collectable. On the first pass at which the factory's run inventory shows no running run, the Dispatcher MUST delete every deferred sandbox that is still collectable under the rule above. While it is `false` and the minimum interval below is greater than 0, one pass that sees a running run on the factory MUST delete at most one ended-run sandbox there and leave the rest for later passes.
@@ -10815,7 +10845,11 @@ When the launching environment already carries `OTEL_RESOURCE_ATTRIBUTES`, the c
 
 The receiver allowlist MUST admit `livespec.caller` as a resource attribute, so that judge spend can be grouped by caller downstream. The attribute carries the caller identifier only; it MUST NOT carry the prompt, the subject under judgement or any environment value, per the curated-field rule above.
 
-Scenario 280 in `scenarios.md` exercises this subsection.
+**A host Claude judgement journals its spend, ending with its final usage.** A host judgement runs its candidate without session persistence, so the agent writes no transcript that a spend reader could consume. Each host model-judgement spawn whose resolved candidate's agent identity is `claude-acp` (a Claude candidate) MUST therefore write a spend journal: one JSON-lines file under `$HOME/.claude/spend-journal/`, named by a session id generated for the launch. Its first line MUST be a header carrying `session_id`, `name`, `cwd`, `started_at`, the first 2,000 characters of the prompt as `first_prompt`, and `"final_usage_line": true`. `name` MUST be `purpose:<caller>@<working directory name>`, with `<caller>` the spawn's `livespec.caller` value, or `host_judgement` when the spawn names none.
+
+The candidate's output is Claude's stream-json event stream: one JSON object per line, of which `assistant` events carry each response and a closing `result` event, when the process reaches it, carries the final usage. Each `assistant` event that carries a message id, a model and a `usage` object MUST be appended as one line, with a `ts` timestamp. When the candidate's stream emits a closing `result` event, the journal's last line MUST be a line of type `result`. It MUST carry that event's `usage` object unchanged, a `message_ids` array listing the message ids of the journal's `assistant` lines in order, and a `ts` timestamp, and it MUST NOT carry a `started_at` key. When the process ends without emitting a `result` event, including a candidate ended by the input bound of §"Dispatcher admission, WIP cap, and post-merge acceptance", the journal's last line MUST be its last `assistant` line. These rules MUST hold whether the launch reads the candidate's output as it streams or after the process exits. Writing the journal MUST NOT fail or alter the judgement.
+
+Scenario 280 in `scenarios.md` exercises the caller labelling of this subsection, and Scenario 332 exercises its spend journal.
 
 ### Launch obligations and consumed recovery
 

@@ -492,6 +492,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
+    "work_item": "bd-ib-fde4ie",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 209 — A provider refusal booked as a successful turn is released, not left for a human",
     "work_item": "bd-ib-wkfwtx",
     "first_seen": "2026-10-20"
@@ -1129,9 +1136,58 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
+    "work_item": "bd-ib-2eyiwy",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
+    "work_item": "bd-ib-s754le",
+    "first_seen": "2026-11-07"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
+    "work_item": "bd-ib-xz35zu",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
+    "work_item": "bd-ib-v75dlb",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 329 — A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
+    "work_item": "bd-ib-7owmkq",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 33 — auto_approve_ready governs admission, and a committed setting wins over a per-item label",
     "work_item": "bd-ib-pz7x",
     "first_seen": "2026-07-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 330 — A hold set while a launched drive waits before admission stops the drive",
+    "work_item": "bd-ib-j6rbdx",
+    "first_seen": "2026-11-08"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 331 — The release branch advances only on an operator dispatch that starts a canary",
+    "work_item": "bd-ib-sghxlk",
+    "first_seen": "2026-11-09"
   },
   {
     "spec_root": "SPECIFICATION",
@@ -1402,50 +1458,8 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
-    "work_item": "bd-ib-2eyiwy",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 326 — A resumed or seeded tree older than a harness guard passes its own commit hook, and an agent stage's own publication stays refused",
-    "work_item": "bd-ib-s754le",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 327 — A fresh ruling routes a released item fresh past its preserved trees",
-    "work_item": "bd-ib-xz35zu",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 199 — A fix turn grades each tree once, through its commit hook",
-    "work_item": "bd-ib-fde4ie",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 328 — A factory sandbox turn carries its Driver's PreToolUse guards, trusted from release-verified bytes",
-    "work_item": "bd-ib-v75dlb",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 329 — A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
-    "work_item": "bd-ib-7owmkq",
-    "first_seen": "2026-11-08"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 330 — A hold set while a launched drive waits before admission stops the drive",
-    "work_item": "bd-ib-j6rbdx",
-    "first_seen": "2026-11-08"
+    "heading": "## Scenario 332 — A host Claude judgement's spend journal ends with the closing result event's final usage",
+    "work_item": "bd-ib-st2sby",
+    "first_seen": "2026-11-09"
   }
 ]
