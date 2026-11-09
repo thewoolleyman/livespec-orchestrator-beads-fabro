@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.309.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.1...v0.309.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **workflow:** revert the fail-closed conformance hook reinstall (6f90584d4, 94924cb74, 3c8105661, a4dd76a43) ([36c7b82](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/36c7b82ef336f8443503f158224aed45b04bf3ac))
+
 ## [0.309.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.0...v0.309.1) (2026-11-09)
 
 
