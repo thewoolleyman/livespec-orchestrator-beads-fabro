@@ -74,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservatio
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
     dispose_terminal_routing,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture_receipt import (
+    record_wip_capture_receipt,
+)
 from livespec_orchestrator_beads_fabro.commands._ready_aging_order import ready_aging_order
 from livespec_orchestrator_beads_fabro.commands._sibling_status_lookup import (
     make_sibling_status_lookup,
@@ -338,4 +341,28 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         dispatch_context_size=dispatch_context_size,
         token_supplier=token_supplier,
     )
+    # LAST, so the forge read and ledger write sit behind every state change.
+    _record_wip_capture_receipt(args=args, repo=repo, item=item, outcome=outcome, journal=journal)
     return outcome
+
+
+def _record_wip_capture_receipt(
+    *,
+    args: argparse.Namespace,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    journal: JournalFile,
+) -> None:
+    """Leave the recovery pointer for every ending that did not merge its pull request."""
+    if outcome.merge_sha is not None or outcome.fabro_run_id is None:
+        return
+    target = getattr(args, "fabro_factory_target", None)
+    factory = getattr(target, "name", None)
+    record_wip_capture_receipt(
+        repo=repo,
+        work_item_id=item.id,
+        run_id=outcome.fabro_run_id,
+        factory=factory if isinstance(factory, str) and factory else "an unread factory",
+        journal=journal,
+    )
