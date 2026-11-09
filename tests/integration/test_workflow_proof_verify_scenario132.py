@@ -512,6 +512,7 @@ def test_the_fix_budget_admits_every_loop_that_now_feeds_it() -> None:
     }
 
     assert producers == {
+        "fix_commit_settle",
         "janitor_failure_route",
         "janitor_refresh_route",
         "proof_capture",

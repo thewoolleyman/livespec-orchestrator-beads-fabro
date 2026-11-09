@@ -520,7 +520,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         script="counter=$(git rev-parse --git-path livespec-janitor-admission-count); cause_path=$(git rev-parse --git-path livespec-stage-cause); count=$(cat \"$counter\" 2>/dev/null || echo 0); if ! test \"$count\" -ge 0 2>/dev/null; then message=\"LIVESPEC_JANITOR_VISIT_BOUND_UNREADABLE: janitor admission count $count is not a non-negative number, so the eight-visit janitor bound cannot be enforced; preserving the tree rather than replaying an earlier janitor result\"; printf 'stage: %s\\ncause: %s\\n' janitor_admission \"$message\" > \"$cause_path\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; if test \"$count\" -ge 8; then message=\"LIVESPEC_JANITOR_VISIT_BOUND_EXHAUSTED: janitor admission bound of 8 visits is exhausted before this fresh suite run; preserving the tree rather than replaying earlier janitor output\"; printf 'stage: %s\\ncause: %s\\n' janitor_admission \"$message\" > \"$cause_path\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; printf '%s\\n' $((count + 1)) > \"$counter\"; exit 0"
     ]
 
-    // max_visits=8 IS THE BOUND for every loop that enters this node, and since
+    // max_visits=10 IS THE BOUND for every loop that enters this node, and since
     // plan `fabro-currency` P4 (bd-ib-hti4zf) it is the ONLY one. FOUR loops
     // route here — the janitor's Red, a `proof_capture` finding, a
     // `proof_verify` non-reproduction and, since v134, a refresh-repair round —
@@ -532,7 +532,11 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // and no Red, no capture finding and no failed replay could reach this node
     // at all.
     //
-    // THE VALUE IS 6 + 2, AND THE TWO HALVES ARE SIZED BY DIFFERENT RULES. The 6
+    // THE VALUE IS 6 + 2 + 2, AND THE HALVES ARE SIZED BY DIFFERENT RULES. The final
+    // 2 is the failed-settle re-entry: `fix_commit_settle` returns here when the
+    // commit run the fix turn left settles failed, and it is counted as a producer
+    // with the same two entries apiece as the agent-finding producers rather than
+    // being taken out of them. The 6
     // is what the three retired guards admitted — two entries per agent-finding
     // producer — and the 2 is v134's "Refresh-repair accounting" grant: a run may
     // take at most two refresh-repair rounds across `publish_draft` and
@@ -568,7 +572,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         // requesting a fix. Preserve their exact source-labelled findings.
         fidelity="summary:high"
         timeout="1800s"
-        max_visits=8
+        max_visits=10
         prompt="@prompts/fix.md"
     ]
 
@@ -588,8 +592,8 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         label="Settle commit runs: wait out any commit run the fix turn left running"
         shape=parallelogram
         timeout="3900s"
-        max_visits=8
-        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --stage fix --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; exit 0"
+        max_visits=10
+        script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-fix-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; exit 0; fi; if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --stage fix --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; if grep -qx 'failed' \"$live\" 2>/dev/null; then echo 'LIVESPEC_FIX_COMMIT_RUN_FAILED: the settled fix commit run failed, so re-entering fix with its runner brief rather than running janitor against its incomplete integration' >&2; exit 1; fi; exit 0"
     ]
 
     // A successful fix is useful only when it advances the head that janitor
@@ -603,7 +607,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         label="Fix progress: record an unchanged failed janitor head"
         shape=parallelogram
         timeout="60s"
-        max_visits=8
+        max_visits=10
         script="state=$(git rev-parse --git-path livespec-publication) || exit $?; prior=\"$state/livespec-janitor-failed-head\"; marker=\"$state/livespec-fix-no-progress-head\"; repeat=\"$state/livespec-fix-no-progress-repeated-janitor-failure\"; rm -f \"$repeat\"; if test ! -s \"$prior\"; then rm -f \"$marker\"; exit 0; fi; before=$(cat \"$prior\"); head=$(git rev-parse HEAD) || exit $?; if test \"$head\" = \"$before\"; then printf '%s\\n' \"$head\" > \"$marker\"; echo \"LIVESPEC_FIX_NO_PROGRESS: fix completed without changing the janitor-failed head $head; one repeated janitor failure will take the existing non-converged exit\" >&2; else rm -f \"$marker\"; fi; exit 0"
     ]
 
@@ -2384,6 +2388,7 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     fix -> fix_progress_route [label="Succeeded", condition="outcome=succeeded"]
     fix -> fix_commit_settle
     fix_progress_route -> fix_commit_settle
+    fix_commit_settle -> fix [label="Settled commit run failed", condition="outcome=failed"]
     fix_commit_settle -> janitor_admission
     janitor_admission -> needs_human [label="Janitor visit bound exhausted", condition="outcome=failed"]
     janitor_admission -> janitor
