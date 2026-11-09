@@ -104,7 +104,7 @@ def _config() -> StoreConfig:
     )
 
 
-def _item(*, status: str) -> WorkItem:
+def _item(*, status: str, assignee: str | None = None) -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="task",
@@ -114,7 +114,7 @@ def _item(*, status: str) -> WorkItem:
         origin="freeform",
         gap_id=None,
         rank="a2",
-        assignee=None,
+        assignee=assignee,
         depends_on=(),
         captured_at="2026-10-25T00:00:00Z",
         resolution=None,
@@ -202,9 +202,10 @@ def _reconcile(
     monkeypatch: pytest.MonkeyPatch,
     status: str,
     after_probe: list[CommandResult],
+    assignee: str | None = None,
 ) -> tuple[int, Path]:
     repo = _repo(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item(status=status))
+    append_work_item(path=_config(), item=_item(status=status, assignee=assignee))
     runner = _Runner(queue=[_ok(stdout="origin/master"), *after_probe])
     monkeypatch.setattr(_RUNNER_SEAM, lambda: runner)
     monkeypatch.setattr(
@@ -268,6 +269,30 @@ def test_a_ready_item_with_a_merged_title_match_enters_acceptance(
     assert stored.status == "done"
     assert stored.audit is not None
     assert (stored.audit.pr_number, stored.audit.merge_sha) == (41, "title41")
+
+
+@pytest.mark.parametrize("assignee", ["fabro", None])
+def test_a_ready_stale_assignee_whose_pull_request_merged_enters_acceptance(
+    assignee: str | None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 210: a ready item, held or cleared as a stale assignee, closes out from ready.
+
+    Recovery routing holds its next dispatch for the merged pull request and names
+    this valve; with a green janitor the valve moves the item from `ready` to
+    `acceptance` whether the `fabro` assignee is still on it or has been cleared.
+    """
+    exit_code, repo = _reconcile(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        status="ready",
+        assignee=assignee,
+        after_probe=[_branch_pr_merged(number=3271, sha="7d1e5a0"), *_janitor_green()],
+    )
+
+    assert exit_code == 0
+    stored = _stored()
+    assert stored.status == "done"
+    assert "ledger-complete" in _stages(repo=repo)
 
 
 @pytest.mark.parametrize("status", ["pending-approval", "ready"])

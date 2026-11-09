@@ -37,30 +37,22 @@ from livespec_orchestrator_beads_fabro.commands._session_wait_routing import (
 from livespec_orchestrator_beads_fabro.commands._session_wait_types import PaneTarget
 
 _PEER_RECEIVE_BYTES = 65536
-# Far above any budget these tests request, so a peer that has not answered by
-# then has hung for the purposes of every assertion below.
+# Far above any budget these tests request: a hung peer is released by the
+# test ending, never by this guard.
 _NEVER_SECONDS = 3600.0
 
 
-_PEER_REPLY = (
-    json.dumps({"id": "livespec-session-wait", "result": {"agent": {"terminal_id": "t-peer"}}})
-    + "\n"
-).encode("utf-8")
-
-
-def _answer_after(
+def _hold_unanswered(
     *,
     connection: socket.socket,
     received: list[bytes],
     stop: threading.Event,
-    reply_after_seconds: float,
 ) -> None:
-    """Record one request, then reply only once the delay has passed."""
+    """Record one request, then leave it unanswered until the test ends."""
     with suppress(OSError):
         connection.settimeout(1.0)
         received.append(connection.recv(_PEER_RECEIVE_BYTES))
-        if not stop.wait(timeout=reply_after_seconds):
-            connection.sendall(_PEER_REPLY)
+        _ = stop.wait(timeout=_NEVER_SECONDS)
 
 
 def _serve(
@@ -69,7 +61,6 @@ def _serve(
     held: list[socket.socket],
     received: list[bytes],
     stop: threading.Event,
-    reply_after_seconds: float,
 ) -> None:
     while not stop.is_set():
         try:
@@ -78,28 +69,21 @@ def _serve(
             continue
         held.append(connection)
         threading.Thread(
-            target=_answer_after,
-            kwargs={
-                "connection": connection,
-                "received": received,
-                "stop": stop,
-                "reply_after_seconds": reply_after_seconds,
-            },
+            target=_hold_unanswered,
+            kwargs={"connection": connection, "received": received, "stop": stop},
             daemon=True,
         ).start()
 
 
 @contextmanager
-def _identity_peer(*, socket_path: Path, reply_after_seconds: float) -> Iterator[list[bytes]]:
-    """A unix socket that answers `agent.get` only after a fixed delay.
+def _hung_identity_peer(*, socket_path: Path) -> Iterator[list[bytes]]:
+    """A unix socket that reads `agent.get` and never answers it.
 
     Disclosed as a CONTROLLED PEER rather than presented as a server: a healthy
-    Herdr server cannot be asked to answer slowly or never, and what is under
-    test is how the CLI's budget treats a slow first identity observation. The
-    reply, when it comes, is a well-formed agent record carrying a terminal id,
-    so a freeze that receives it in time identifies the pane. Each connection
-    is held OPEN until it is answered — closing it would end the read with an
-    empty buffer, which is a reply rather than a hang.
+    Herdr server cannot be asked to hang, and what is under test is how the
+    CLI's budget treats a first identity observation that never arrives. Each
+    connection is held OPEN — closing it would end the read with an empty
+    buffer, which is a reply rather than a hang.
 
     Every request received is recorded and yielded, so a test can assert that
     only a read-only `agent.get` reached the target.
@@ -113,13 +97,7 @@ def _identity_peer(*, socket_path: Path, reply_after_seconds: float) -> Iterator
     listener.settimeout(0.05)
     worker = threading.Thread(
         target=_serve,
-        kwargs={
-            "listener": listener,
-            "held": held,
-            "received": received,
-            "stop": stop,
-            "reply_after_seconds": reply_after_seconds,
-        },
+        kwargs={"listener": listener, "held": held, "received": received, "stop": stop},
         daemon=True,
     )
     worker.start()
@@ -274,7 +252,7 @@ def test_a_hung_first_identity_observation_is_refused_inside_the_deadline(
     deadline_seconds = 0.3
     recorder = _recorded_freeze(monkeypatch=monkeypatch)
     with (
-        _identity_peer(socket_path=socket_path, reply_after_seconds=_NEVER_SECONDS) as received,
+        _hung_identity_peer(socket_path=socket_path) as received,
         pytest.raises(ValueError, match="not identifiable"),
     ):
         _ = session_wait.main(
