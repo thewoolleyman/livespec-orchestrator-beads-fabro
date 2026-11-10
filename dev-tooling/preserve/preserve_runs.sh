@@ -35,19 +35,40 @@ while read -r run pod node; do
     # rd <command>: run one read-only command inside the pod's sandbox container, through the API server.
     rd() { sshn poweredge-xubuntu "sudo -n k3s kubectl exec -n factory $pod -c sandbox -- sh -c $(printf '%q' "$1")"; }
     # rd_files <list>: the listed files (relative to $G), concatenated in order, read in
-    # BOUNDED chunks. One exec stream carrying the whole tree (31.8 MiB for the first M4 run,
-    # 2026-11-09 23:18Z) was reset mid-transfer by the API server every time, so each exec
-    # carries at most PRESERVE_EXEC_CHUNK_BYTES (a whole number of MiB, default 4): small files
-    # are batched, and a larger file is read in byte ranges with dd. The list goes on stdin:
-    # as exec arguments it would ride in the exec request's URL.
+    # BOUNDED, VERIFIED chunks. One exec stream carrying the whole tree (31.8 MiB for the first
+    # M4 run, 2026-11-09 23:18Z) was reset mid-transfer by the API server every time, and even
+    # 4 MiB streams were reset intermittently on the next M4 run (2026-11-10 03:11Z). So each
+    # exec carries at most PRESERVE_EXEC_CHUNK_BYTES (a whole number of MiB, default 4): small
+    # files are batched, a larger file is read in byte ranges with dd. Each chunk lands in a
+    # scratch file first, is checked against the byte count it must hold, and is retried (up
+    # to PRESERVE_EXEC_CHUNK_TRIES, default 4) before it is appended, so a reset costs one
+    # chunk, and a partial chunk never reaches the splitter. The batch's file list goes on
+    # stdin: as exec arguments it would ride in the exec request's URL.
     rd_files() {
-      local chunk=${PRESERVE_EXEC_CHUNK_BYTES:-4194304} mib=1048576 size rel off bsum=0
+      local chunk=${PRESERVE_EXEC_CHUNK_BYTES:-4194304} mib=1048576 size rel off len bsum=0
+      local tries=${PRESERVE_EXEC_CHUNK_TRIES:-4} part="$D.chunk"
       local -a batch=()
+      # take <expected bytes> <command...>: run the command into $part until it yields exactly
+      # the expected bytes, then emit them.
+      take() {
+        local want=$1 n=0 got
+        shift
+        while [ "$n" -lt "$tries" ]; do
+          n=$((n + 1))
+          if "$@" > "$part" && got=$(stat -c %s "$part") && [ "$got" -eq "$want" ]; then
+            cat "$part"
+            return 0
+          fi
+        done
+        return 1
+      }
+      read_batch() {
+        printf '%s\0' "${batch[@]}" | ssh -o BatchMode=yes $CP poweredge-xubuntu \
+          "sudo -n k3s kubectl exec -i -n factory $pod -c sandbox -- sh -c $(printf '%q' "cd $G && xargs -0 -r cat")"
+      }
       flush() {
         [ "${#batch[@]}" -gt 0 ] || return 0
-        printf '%s\0' "${batch[@]}" | ssh -o BatchMode=yes $CP poweredge-xubuntu \
-          "sudo -n k3s kubectl exec -i -n factory $pod -c sandbox -- sh -c $(printf '%q' "cd $G && xargs -0 -r cat")" \
-          || return 1
+        take "$bsum" read_batch || return 1
         batch=()
         bsum=0
       }
@@ -56,7 +77,8 @@ while read -r run pod node; do
           flush || return 1
           off=0
           while [ "$off" -lt "$size" ]; do
-            rd "dd if=$G/$rel bs=$mib skip=$((off / mib)) count=$((chunk / mib)) status=none" || return 1
+            len=$((size - off < chunk ? size - off : chunk))
+            take "$len" rd "dd if=$G/$rel bs=$mib skip=$((off / mib)) count=$((chunk / mib)) status=none" || return 1
             off=$((off + chunk))
           done
         else
@@ -66,6 +88,7 @@ while read -r run pod node; do
         fi
       done < "${1%.list}.sizes"
       flush
+      rm -f "$part"
     }
     rd 'test -d /workspace/.git' 2>/dev/null || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
     G=/workspace/.git

@@ -62,6 +62,13 @@ if [ "$1" = exec ]; then
   shift
   [ "$1" = sh ] && [ "$2" = -c ] || exit 97
   printf 'exec %s\\n' "$3" >> "$STUB_LOG"
+  case "$3" in *"dd if="*)
+    if [ -n "$STUB_RESET_ONCE" ] && [ ! -e "$STUB_RESET_ONCE" ]; then
+      : > "$STUB_RESET_ONCE"
+      sh -c "${3//\\/workspace/$SANDBOX_ROOT/workspace}" | head -c 1000
+      exit 1
+    fi ;;
+  esac
   exec sh -c "${3//\\/workspace/$SANDBOX_ROOT/workspace}"
 fi
 exit 99
@@ -258,3 +265,24 @@ def test_an_exact_chunk_multiple_and_an_empty_file_copy_without_extra_or_missing
     copied = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
     assert (copied / "packed-refs").read_bytes() == b""
     assert (copied / "objects" / "pack" / "filler.tmp").stat().st_size == 2 * 1024 * 1024
+
+
+def test_a_reset_chunk_is_retried_and_never_reaches_the_copy_partial(tmp_path: Path) -> None:
+    """One exec stream reset mid-chunk (partial bytes, non-zero exit) costs one retry, not the copy."""
+    env, origin, _ = _setup(tmp_path, worker_nodes=_WORKER)
+    workspace = tmp_path / "sandbox" / "workspace"
+    (workspace / "big.bin").write_bytes(os.urandom(5 * 1024 * 1024 // 2))
+    _git("add", "big.bin", cwd=workspace)
+    _git("commit", "-q", "-m", "big", cwd=workspace)
+    work_sha = _git("rev-parse", "HEAD", cwd=workspace)
+    env["PRESERVE_EXEC_CHUNK_BYTES"] = str(1024 * 1024)
+    env["STUB_RESET_ONCE"] = str(tmp_path / "reset-once")
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert (tmp_path / "reset-once").exists(), "the stub never reset a chunk"
+    [row] = [line.split("\t") for line in result.stdout.splitlines()[1:]]
+    assert row[5] == "VERIFIED", result.stdout + result.stderr
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    calls = Path(env["STUB_LOG"]).read_text(encoding="utf-8").splitlines()
+    ranged = [c for c in calls if c.startswith("exec dd ")]
+    assert len(ranged) == len(set(ranged)) + 1, "exactly one dd range was retried"
