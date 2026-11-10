@@ -266,6 +266,31 @@ digraph ImplementWorkItem {
         script="record=$(git rev-parse --git-path livespec-implement-completion); cause_path=$(git rev-parse --git-path livespec-stage-cause); response=$(cat); completion=$response; rm -f \"$cause_path\"; livespec_partial_progress() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause_path\"; printf '%s\\n' \"$1\" >&2; }; compact=$(printf %s \"$completion\" | tr -d ' \\t\\r\\n'); if ! printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":'; then completion=$(cat \"$record\" 2>/dev/null || true); compact=$(printf %s \"$completion\" | tr -d ' \\t\\r\\n'); fi; if test -z \"$compact\" || ! printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":'; then livespec_partial_progress 'LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn stated no completion field, so it never said whether the work-item Definition of Done is complete on the committed branch; an unstated completion is read as partial progress rather than as a success, so this run publishes and proves nothing'; printf '%s\\n' '{\"preferred_next_label\":\"incomplete\"}'; exit 0; fi; if printf %s \"$compact\" | grep -qF '\"definition_of_done_complete\":true'; then echo 'LIVESPEC_IMPLEMENT_COMPLETE: the implement turn completion field states the work-item Definition of Done is complete on the committed branch, so the implement stage succeeded and the run proceeds to implementation_diff' >&2; printf '%s\\n' '{\"preferred_next_label\":\"complete\"}'; exit 0; fi; livespec_partial_progress \"LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS: the implement turn completion field does not state the work-item Definition of Done complete on the committed branch, so the implement stage failed rather than publishing and proving partial progress. The recorded field was: $(printf %s \"$completion\" | head -c 500 | tr '\\n' ' ')\"; printf '%s\\n' '{\"preferred_next_label\":\"incomplete\"}'; exit 0"
     ]
 
+    // Workflow-edit backstop (work-item bd-ib-tgygh6). The pre-dispatch screen
+    // refuses an item that DECLARES a workflow edit (a workflows path in its
+    // scope text, or an `approval:workflow-edit` label), but an item can reach a
+    // workflow file without declaring it, and `publish_draft` refuses run-owned
+    // workflow files only after janitor and a fix loop have been spent. This node
+    // reads the run's working diff (the committed range against the merge base
+    // with the default branch, uncommitted edits and untracked files included)
+    // as soon as the implement turn states it is complete, and ends the run
+    // there when any path falls under `.github/workflows/`.
+    //
+    // THE VERDICT NAMES EVERY SUCH FILE and says the work-item routes to the
+    // attended host session. It is written where `needs_human` reads it first
+    // (`livespec-stage-cause` as an implement-stage cause, and
+    // `livespec-needs-human-reason`) and echoed on stderr under
+    // LIVESPEC_IMPLEMENT_WORKFLOW_EDIT_HOST_ROUTE. A base or diff that cannot be
+    // read FAILS CLOSED under LIVESPEC_IMPLEMENT_WORKFLOW_EDIT_UNPROVABLE rather
+    // than passing a diff nobody inspected. A diff with no workflow file falls
+    // through to `implementation_diff` exactly as before.
+    implement_workflow_guard [
+        label="Guard: an implement diff that reaches .github/workflows/ ends the run with a host-route verdict"
+        shape=parallelogram
+        timeout="600s"
+        script="cause=$(git rev-parse --git-path livespec-stage-cause); reason=$(git rev-parse --git-path livespec-needs-human-reason); fail() { printf 'stage: %s\\ncause: %s\\n' implement \"$1\" > \"$cause\"; printf '%s\\n' \"$1\" > \"$reason\"; echo \"$2: $1\" >&2; exit 1; }; unprovable() { fail \"the implement turn working diff could not be checked for files under .github/workflows/: $1\" LIVESPEC_IMPLEMENT_WORKFLOW_EDIT_UNPROVABLE; }; base=$(git merge-base origin/{{ inputs.default_branch }} HEAD 2>/dev/null) || unprovable 'no merge base with origin/{{ inputs.default_branch }}'; changed=$(git -c core.quotepath=off diff --no-renames --name-only \"$base\" 2>/dev/null) || unprovable 'git diff failed'; untracked=$(git -c core.quotepath=off ls-files --others --exclude-standard 2>/dev/null) || unprovable 'git ls-files failed'; files=$(printf '%s\\n%s\\n' \"$changed\" \"$untracked\" | grep -E '^[.]github/workflows/' | LC_ALL=C sort -u | paste -sd, - | sed 's/,/, /g'); if test -z \"$files\"; then exit 0; fi; fail \"the implement turn working diff includes file(s) under .github/workflows/: $files; a factory run never creates or updates workflow files, so this work-item routes to the attended host session (host-route verdict) and the run publishes nothing\" LIVESPEC_IMPLEMENT_WORKFLOW_EDIT_HOST_ROUTE"
+    ]
+
     // Explicit-failed-output classifier (bd-ib-uk3fop; Scenarios 131 and 204).
     // An ACP node exposes only its outcome to the graph, so a failed output
     // cannot distinguish an amendment from incomplete implementation work by
@@ -2363,8 +2388,14 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
     // real gate failure both fail closed at needs_human.
     implement_completion -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
     implement_completion -> implement_hook_route [label="Incomplete", condition="preferred_label=incomplete"]
-    implement_completion -> implementation_diff [label="Complete", condition="preferred_label=complete"]
+    implement_completion -> implement_workflow_guard [label="Complete", condition="preferred_label=complete"]
     implement_completion -> needs_human [label="unmatched completion outcome"]
+
+    // A complete implement turn reaches the workflow-edit backstop (bd-ib-tgygh6)
+    // before the diff breaker: a diff under `.github/workflows/` rests at
+    // needs_human with a host-route verdict, and any other diff falls through.
+    implement_workflow_guard -> needs_human [label="Workflow edit: host-route", condition="outcome=failed"]
+    implement_workflow_guard -> implementation_diff
 
     // Incomplete-turn routing (v208, widened v214). An incomplete turn
     // re-enters implement once with its latest failing gate; a turn whose

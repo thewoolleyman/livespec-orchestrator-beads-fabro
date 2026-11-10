@@ -909,6 +909,9 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         # breaker; a turn that stated its Definition of Done complete is the
         # only one that proceeds, which is what this green journey is.
         "implement_completion",
+        # The workflow-edit backstop (bd-ib-tgygh6) sits between the completion
+        # gate and the diff breaker.
+        "implement_workflow_guard",
         "implementation_diff",
         "janitor_admission",
         "janitor",

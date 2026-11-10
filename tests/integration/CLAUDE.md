@@ -1775,6 +1775,19 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   before the node must fail closed rather than pass. The prompt half and the
   edge shape are asserted beside it.
 
+- `test_implement_workflow_edit_guard.py` — binds work-item `bd-ib-tgygh6`'s
+  second assertion: a run whose working diff reaches `.github/workflows/` ends at
+  its implement stage with a host-route verdict naming EVERY such file, instead of
+  continuing to publication. The `implement_workflow_guard` node's own script is
+  extracted from the committed graph, unescaped and run by `sh` in a throwaway
+  repository, and the arms that matter execute: a committed edit, an uncommitted
+  edit, an untracked file, a deletion and an unresolvable base (which fails closed
+  under its own marker rather than passing a diff nobody read). The clean-diff case
+  carries a `.github/actions/` file beside a source file as the control, since a
+  guard matching `.github/` broadly would fail it. The edge shape is asserted
+  beside the script: the guard sits on the completion gate's complete edge and
+  keeps exactly one unconditional out-edge.
+
 - `test_failed_janitor_target_attribution_scenario167.py` — binds
   `SPECIFICATION/scenarios.md` "Scenario 167 — A failed janitor names the
   aggregate runner's failed targets" through the real post-merge janitor child
