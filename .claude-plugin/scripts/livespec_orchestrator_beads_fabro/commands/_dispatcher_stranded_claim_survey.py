@@ -33,6 +33,13 @@ A MARKED CLAIM IS NOT SURVEYED, and an UNREADABLE marker is treated as marked.
 `active` with no live lock BY DESIGN, which is the exact shape this survey
 reads as stranded. A hold reading that fails leaves the item out too: surveying
 it could release a deliberate operator window, and skipping it costs one pass.
+
+ONE MARKED CLAIM IS SURVEYED: a HANDED-OFF REWORK, a rework re-dispatch whose run
+succeeded and journaled `merge-wait-handed-off`. Its disposition is still owed and
+nothing else will perform it, so leaving it out stranded the item `active` under
+`rework:pending` for good once its pull request merged. Every other marked row is a
+PARKED rework and stays out. Which one a row is comes from the journal alone, and a
+journal or a stamp that cannot be read is a parked rework, never a handed-off one.
 """
 
 from __future__ import annotations
@@ -40,13 +47,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimStamp, claim_row_for
-from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
-    read_current_merge_hold,
-)
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimStamp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_survey import (
     survey_stale_assignee,
 )
@@ -79,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_measu
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_observe import (
     journal_records_or_none,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_population import (
+    claim_stamp,
+    surveyable,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_projection import (
     projected_claim,
 )
@@ -91,14 +98,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_recov
     ClaimRecoveryRequest,
     recover_claim,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
-from livespec_orchestrator_beads_fabro.errors import (
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-    WorkItemNotFoundError,
-)
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -108,18 +107,7 @@ __all__: list[str] = [
     "survey_stranded_claims",
 ]
 
-_ACTIVE_STATUS = "active"
 _READY_STATUS = "ready"
-_FABRO_ASSIGNEE = "fabro"
-_MERGE_HOLD_UNHELD = "unheld"
-
-_LEDGER_READ_ERRORS: tuple[type[Exception], ...] = (
-    WorkItemNotFoundError,
-    BeadsCommandError,
-    BeadsConnectionError,
-    BeadsMappingError,
-    BeadsTenantMissingError,
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -156,7 +144,7 @@ def survey_stranded_claims(*, inputs: StrandedClaimInputs) -> StrandedClaimSurve
     recovered: list[RecoveredClaim] = []
     held: list[HeldClaim] = []
     for item in inputs.items:
-        if not _surveyable(inputs=inputs, item=item):
+        if not surveyable(repo=inputs.repo, journal_path=inputs.journal.path, item=item):
             continue
         outcome = _survey_one(inputs=inputs, item=item, by_name=by_name)
         if isinstance(outcome, HeldClaim):
@@ -168,21 +156,13 @@ def survey_stranded_claims(*, inputs: StrandedClaimInputs) -> StrandedClaimSurve
     return StrandedClaimSurvey(recovered=tuple(recovered), held=tuple(held))
 
 
-def _surveyable(*, inputs: StrandedClaimInputs, item: WorkItem) -> bool:
-    if item.status not in (_ACTIVE_STATUS, _READY_STATUS) or item.assignee != _FABRO_ASSIGNEE:
-        return False
-    if item.rework_pending:
-        return False
-    return read_current_merge_hold(repo=inputs.repo, work_item_id=item.id) == _MERGE_HOLD_UNHELD
-
-
 def _survey_one(
     *,
     inputs: StrandedClaimInputs,
     item: WorkItem,
     by_name: dict[str, FactoryInventory],
 ) -> RecoveredClaim | HeldClaim:
-    stamp = _claim_stamp(repo=inputs.repo, work_item_id=item.id)
+    stamp = claim_stamp(repo=inputs.repo, work_item_id=item.id)
     named = None if stamp is None else stamp.factory_name
     attributed = attribute_claim(
         stamp=stamp,
@@ -272,20 +252,6 @@ def _measure_and_act(
         ),
         now_iso=inputs.now_iso,
     )
-
-
-def _claim_stamp(*, repo: Path, work_item_id: str) -> ClaimStamp | None:
-    """One item's claim stamp, with every read failure reported as none.
-
-    An unreadable row is reason 1's own wording — "the item carries no READABLE
-    run stamp" — so collapsing a ledger fault onto `None` reports the condition
-    the clause names rather than inventing a fifteenth.
-    """
-    row = attempt(
-        action=lambda: claim_row_for(path=store_config(repo=repo), work_item_id=work_item_id),
-        exceptions=_LEDGER_READ_ERRORS,
-    )
-    return None if isinstance(row, AttemptFailure) else row.stamp
 
 
 def _held_claim(
