@@ -1234,6 +1234,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 341 — proof_capture's git launcher refuses writes to the run's checkout and to network remotes, and lets a scratch repository push to a local bare repository under the temporary directory",
+    "work_item": "bd-ib-7e6uzu",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"

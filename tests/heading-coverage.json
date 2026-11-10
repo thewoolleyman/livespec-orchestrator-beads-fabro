@@ -3086,5 +3086,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-jjmywv adds cases in which dev-tooling/install-ci-fabro.sh installs the pinned fabro release's x86_64 or aarch64 musl asset after verifying that asset's published sha256 on every install route, and exits non-zero naming any other architecture while installing nothing. bd-ib-jjmywv owns it.",
     "work_item": "bd-ib-jjmywv"
+  },
+  {
+    "heading": "## Scenario 341 \u2014 proof_capture's git launcher refuses writes to the run's checkout and to network remotes, and lets a scratch repository push to a local bare repository under the temporary directory",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-7e6uzu adds cases in which the proof_capture git launcher admits a push from a scratch repository to a bare repository under the system temporary directory, by path and by remote name, and refuses, printing a LIVESPEC_PROOF_CAPTURE_READ_ONLY line, a push from the protected checkout or any route to it, to a network or scp-style remote, to a path outside the temporary directory, and with --receive-pack or --exec. bd-ib-7e6uzu owns it.",
+    "work_item": "bd-ib-7e6uzu"
   }
 ]
