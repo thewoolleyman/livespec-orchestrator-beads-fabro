@@ -1816,6 +1816,18 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   local report second. Arrival in Honeycomb itself is declared host-captured on
   the work item and is not asserted here.
 
+- `test_needs_attention_journal_hold_scenario324.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 324 and the "Journal-recorded holds"
+  clause of `SPECIFICATION/contracts.md`, through the real `build_attention`
+  composition over the in-memory tenant. Every case seeds the SAME otherwise-idle
+  repository (two ready, admission-eligible items) so the hold is the only
+  variable, which is what lets the idle-factory fact be read as evidence: a row
+  naming the held item's NEIGHBOUR shows the hold removed one item from the count,
+  and a row naming the held item itself (the branch-reclaim hold) shows that hold
+  removed none. The retired-hold case is the control for the first, and the
+  unreadable-journal case asserts the unobservable fact beside the ABSENT
+  idle-factory row rather than beside an empty one.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

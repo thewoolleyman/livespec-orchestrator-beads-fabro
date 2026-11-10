@@ -66,6 +66,10 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance imp
     ConformanceContext,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import drive_command
+from livespec_orchestrator_beads_fabro.commands._needs_attention_journal_hold import (
+    JournalHoldReading,
+    read_journal_holds,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_waits import (
     acp_chain_wait_active,
     provider_exhaustion_wait_active,
@@ -85,12 +89,19 @@ def idle_factory_items(
     project_root: Path,
     repo: str,
     items: list[WorkItem],
+    journal_holds: JournalHoldReading | None = None,
 ) -> list[AttentionItem]:
     """The single idle-factory row, or nothing when any trigger condition fails.
 
     The conditions are checked cheapest-refusal-first, but the order carries no
     meaning beyond that: all three must hold, so any one of them returning the
     empty list is the whole answer.
+
+    `journal_holds` is the snapshot's one reading of the dispatch journal; a
+    caller outside a snapshot takes its own. An item carrying a live
+    `recovery-held` is not admission-eligible, because routing never offers it
+    to the admission valve, and a journal that cannot be read clears the row,
+    because an unobserved hold set must not be read as an empty one.
     """
     if provider_exhaustion_wait_active(project_root=project_root):
         return []
@@ -98,7 +109,16 @@ def idle_factory_items(
         return []
     if counted_claims(project_root=project_root, items=items) != 0:
         return []
-    eligible = admission_eligible_ready_items(project_root=project_root, items=items)
+    holds = journal_holds or read_journal_holds(
+        journal_path=project_root / _DISPATCHER_JOURNAL_PATH, items=items
+    )
+    if not holds.observable:
+        return []
+    eligible = [
+        item
+        for item in admission_eligible_ready_items(project_root=project_root, items=items)
+        if item.id not in holds.live_recovery_held_ids
+    ]
     if not eligible:
         return []
     return [_idle_factory_item(project_root=project_root, repo=repo, eligible=eligible)]

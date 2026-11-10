@@ -48,11 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_envelope import
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     plans,
 )
-from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_factory import (
-    idle_factory_items,
-)
-from livespec_orchestrator_beads_fabro.commands._needs_attention_idle_slot import (
-    idle_slot_items,
+from livespec_orchestrator_beads_fabro.commands._needs_attention_journal_lanes import (
+    journal_hold_and_idle_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_merge_hold import (
     merge_hold_items,
@@ -236,20 +233,24 @@ def build_attention(
                 held_work_item_ids=held_work_item_ids,
             )
             + capacity_items(project_root=project_root, repo=repo_name, items=materialized)
-            # The mirror image of the capacity fact above: that one reports a
-            # factory too busy to take more, this one a factory taking nothing
-            # while dispatchable work waits. An idle queue is silent on every
-            # other lane here — nothing is stranded, held, or aging past a
-            # bound — so without this row it is visible only by being noticed.
-            + idle_factory_items(project_root=project_root, repo=repo_name, items=materialized)
-            # The CROSS-TENANT half of that pair, and the one the row above
-            # structurally cannot report: it is scoped to this repository's own
-            # ready set, so a priority epic in another tenant is invisible to it,
-            # and so is a stale edge — an item held only by blockers that landed
-            # and were never closed. Composes nothing unless this repository
-            # commits a `dispatcher.idle_slot_audit` object, so an unconfigured
-            # repository reads no tenant and no board.
-            + idle_slot_items(project_root=project_root, repo=repo_name)
+            # Three lanes from ONE reading of the dispatch journal. First the
+            # facts for holds that only the journal records, which every other
+            # lane here is blind to: such an item rests in `ready` with no claim
+            # and no blocked reason. Then the mirror image of the capacity fact
+            # above: that one reports a factory too busy to take more, the
+            # idle-factory fact a factory taking nothing while dispatchable work
+            # waits, so that a journal-held item must not count as dispatchable
+            # there. An idle queue is silent on every other lane — nothing is
+            # stranded, held, or aging past a bound. Last the CROSS-TENANT half
+            # of that pair, which the row before it structurally cannot report:
+            # it is scoped to this repository's own ready set, so a priority epic
+            # in another tenant is invisible to it, and so is a stale edge — an
+            # item held only by blockers that landed and were never closed.
+            # Composes nothing unless this repository commits a
+            # `dispatcher.idle_slot_audit` object.
+            + journal_hold_and_idle_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
             # The other half of that pair, and the one the idle-factory fact cannot
             # report: an item resting in `ready` that NO dispatch will ever take,
             # because the shared eligibility decision refuses it. Such a row is

@@ -2959,8 +2959,8 @@
     "heading": "## Scenario 324 \u2014 A hold recorded only in the dispatch journal reaches needs-attention",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-5xogp4 composes hygiene:journal-hold facts from this repository's dispatch journal, retires them on the closed retiring list or at seven days, and excludes an item carrying a live recovery-held from the idle-factory fact and the idle-slot audit.",
+    "test": "tests.integration.test_needs_attention_journal_hold_scenario324.test_a_recovery_held_item_reaches_needs_attention_and_is_not_reported_idle",
+    "reason": "Integration-tier acceptance for the hygiene:journal-hold:<subject> composer (livespec_orchestrator_beads_fabro.commands._needs_attention_journal_hold): facts are composed through the real build_attention pass over the real store/client seam against the in-memory FakeBeadsClient. The bound node id is the positive journey \u2014 one fact naming the recovery-held stage and every recorded reason, a shell handoff with no valve, and an idle-factory fact that names the held item's neighbour rather than the held item; sibling tests in the same module cover retirement by a later record, the branch-reclaim hold that still counts as eligible, the seven-day window and the unreadable journal. The remaining gherkin scenarios are covered at the unit tier in tests/livespec_orchestrator_beads_fabro/commands/test_needs_attention_journal_hold.py and test_dispatcher_idle_slot_journal_holds.py.",
     "work_item": "bd-ib-5xogp4"
   },
   {

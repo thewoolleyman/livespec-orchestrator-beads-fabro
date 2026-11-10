@@ -45,15 +45,27 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_command im
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_journal_hold import (
+    JournalHoldReading,
+)
 
 __all__: list[str] = [
     "idle_slot_items",
 ]
 
 
-def idle_slot_items(*, project_root: Path, repo: str) -> list[AttentionItem]:
-    """The single idle-slot row, or nothing when the finding would not print."""
-    result = idle_slot_audit(project_root=project_root)
+def idle_slot_items(
+    *,
+    project_root: Path,
+    repo: str,
+    journal_holds: JournalHoldReading | None = None,
+) -> list[AttentionItem]:
+    """The single idle-slot row, or nothing when the finding would not print.
+
+    `journal_holds` is the snapshot's one reading of the dispatch journal, which
+    the audit applies to this repository's own tenant only.
+    """
+    result = idle_slot_audit(project_root=project_root, journal_holds=journal_holds)
     finding = result.finding
     if finding is None:
         return []

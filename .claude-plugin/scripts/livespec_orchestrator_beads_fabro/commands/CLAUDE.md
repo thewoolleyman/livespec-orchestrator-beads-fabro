@@ -481,6 +481,30 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   advantage); `unaged_ready_order()` is that path for a caller holding no
   project root. `rebalance_ranks` deliberately composes NEITHER input — stored
   `rank` keys must not absorb a transient dwell.
+- `_needs_attention_journal_hold.py`, `_needs_attention_journal_hold_fold.py` and
+  `_needs_attention_journal_lanes.py` — the `hygiene:journal-hold:<subject>` lane
+  of `SPECIFICATION/contracts.md`'s "Journal-recorded holds" clause (`bd-ib-5xogp4`,
+  Scenario 324): eleven hold or deferral stages that only the dispatch journal
+  records, composed as one fact per subject, and the idle lanes they correct.
+  The dependency direction reads bottom-up: `_fold` (PURE: which record is a
+  subject's current hold) -> `_hold` (the one read of the journal, and the facts)
+  -> `_lanes` (the three lanes composed from that one reading). Four properties
+  an editor must not invert. An UNREADABLE journal is `observable=False`, never an
+  empty hold set: it composes the single `hygiene:journal-hold:unobservable` fact,
+  clears the idle-factory fact, and holds this repository's ready idle-slot
+  children, because "no holds found" read off a journal nobody could open is the
+  one answer that lets a held item read as idle (an ABSENT journal is the
+  opposite, a repository that never dispatched). A record is of every subject it
+  names, but a hold is filed under the FIRST of `work_item_id`, `run_id`,
+  `container_name`, `hold` it carries, so a retiring record naming an item and a
+  run reaches a hold filed under either. Three stages are excluded only by their
+  recorded reason (`run-live`, `already-released` and the like), and such a record
+  retires an earlier hold of its OWN stage and no other, so an excluded record
+  never hides a `recovery-held`. And `publish-branch-reclaim-held` is a fact but
+  not an exclusion: it refuses no dispatch, so the item still counts as eligible
+  for the idle-factory fact. The three lanes share one reading through
+  `journal_hold_and_idle_items`, which is also what kept `needs_attention.py`
+  under its file LLOC ceiling.
 - `_dispatcher_credential_wrapper.py` — the dispatch target's committed
   `credential_wrapper` declaration, as read. Split out of
   `_dispatcher_credentials` by cohesion once the proof-credential gate became

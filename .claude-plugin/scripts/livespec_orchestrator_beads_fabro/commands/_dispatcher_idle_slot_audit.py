@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_config imp
     resolve_idle_slot_audit,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_holds import (
+    journal_hold_reasons,
     tenant_hold_reasons,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_tenants import (
@@ -60,6 +61,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_tenants im
     TenantReading,
     entry_children,
     read_tenant,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_journal_hold import (
+    JournalHoldReading,
+    read_journal_holds,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_model_fallback import (
+    dispatch_journal_path_for,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -135,6 +143,7 @@ def idle_slot_audit(
     tenant_reader: TenantReader | None = None,
     board_reader: BoardLister | None = None,
     hold_reader: HoldReader | None = None,
+    journal_holds: JournalHoldReading | None = None,
 ) -> IdleSlotAuditResult:
     """Run the read-only audit over the committed priority sets and one board.
 
@@ -163,7 +172,17 @@ def idle_slot_audit(
     def _holds_once(*, repo: Path, items: list[WorkItem]) -> dict[str, str]:
         cache_key = repo.resolve()
         if cache_key not in hold_reads:
-            hold_reads[cache_key] = holds(repo=repo, items=items)
+            reasons = holds(repo=repo, items=items)
+            # The journal is THIS repository's own, so its holds apply to the tenant
+            # whose checkout is this repository and to no other; a hold the verdict
+            # already reports keeps its own, more specific, reason.
+            if cache_key == project_root.resolve():
+                reading = journal_holds or read_journal_holds(
+                    journal_path=dispatch_journal_path_for(project_root=project_root),
+                    items=items,
+                )
+                reasons = {**journal_hold_reasons(reading=reading, items=items), **reasons}
+            hold_reads[cache_key] = reasons
         return hold_reads[cache_key]
 
     readers = _Readers(

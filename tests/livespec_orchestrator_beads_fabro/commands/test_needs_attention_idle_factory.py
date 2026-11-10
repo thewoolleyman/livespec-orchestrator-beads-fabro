@@ -12,6 +12,7 @@ than subject in this file.
 import importlib
 import json
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -250,3 +251,86 @@ def test_a_repo_name_the_id_grammar_rejects_surfaces_loudly_rather_than_vanishin
 
     assert len(attention) == 1
     assert attention[0].id.startswith("hygiene:attention-invalid:")
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def test_an_item_with_a_live_recovery_held_does_not_count_as_admission_eligible(
+    tmp_path: Path,
+) -> None:
+    """Routing never offers that item to the admission valve, so it is not dispatchable."""
+    assert _MODULE_PATH.is_file()
+    _write_project(tmp_path)
+    _write_journal(
+        tmp_path,
+        records=[{"at": _now(), "stage": "recovery-held", "work_item_id": "bd-held"}],
+    )
+
+    only_held = _idle_factory_items(
+        project_root=tmp_path, repo="repo", items=[_item(id_="bd-held", rank="a1")]
+    )
+    beside_free = _idle_factory_items(
+        project_root=tmp_path,
+        repo="repo",
+        items=[_item(id_="bd-held", rank="a1"), _item(id_="bd-free", rank="a2")],
+    )
+
+    assert only_held == []
+    assert [item.handoff.action_id for item in beside_free] == ["impl:bd-free"]
+    assert "1 admission-eligible ready work-items" in beside_free[0].summary
+
+
+def test_a_routed_recovery_held_item_is_eligible_again(tmp_path: Path) -> None:
+    """A later recovery-route record retires the hold, so the control for the case above."""
+    assert _MODULE_PATH.is_file()
+    _write_project(tmp_path)
+    _write_journal(
+        tmp_path,
+        records=[
+            {"at": _now(), "stage": "recovery-held", "work_item_id": "bd-held"},
+            {"at": _now(), "stage": "recovery-route", "work_item_id": "bd-held"},
+        ],
+    )
+
+    attention = _idle_factory_items(
+        project_root=tmp_path, repo="repo", items=[_item(id_="bd-held")]
+    )
+
+    assert [item.handoff.action_id for item in attention] == ["impl:bd-held"]
+
+
+def test_an_item_whose_current_hold_is_a_branch_reclaim_hold_still_counts_as_eligible(
+    tmp_path: Path,
+) -> None:
+    """`publish-branch-reclaim-held` refuses no dispatch, so the idle row still names it."""
+    assert _MODULE_PATH.is_file()
+    _write_project(tmp_path)
+    _write_journal(
+        tmp_path,
+        records=[
+            {"at": _now(), "stage": "publish-branch-reclaim-held", "work_item_id": "bd-first"}
+        ],
+    )
+
+    attention = _idle_factory_items(
+        project_root=tmp_path, repo="repo", items=[_item(id_="bd-first")]
+    )
+
+    assert [item.handoff.action_id for item in attention] == ["impl:bd-first"]
+
+
+def test_an_unreadable_journal_clears_the_row_rather_than_reading_as_no_hold(
+    tmp_path: Path,
+) -> None:
+    """An unobserved hold set must not be read as an empty one."""
+    assert _MODULE_PATH.is_file()
+    _write_project(tmp_path)
+    (tmp_path / "tmp" / "fabro-dispatch-journal.jsonl").mkdir(parents=True)
+
+    attention = _idle_factory_items(
+        project_root=tmp_path, repo="repo", items=[_item(id_="bd-first")]
+    )
+
+    assert attention == []
