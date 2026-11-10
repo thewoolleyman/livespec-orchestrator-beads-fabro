@@ -78,7 +78,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -402,7 +403,7 @@ def run_from_clone_steps_block(
             "set -eu",
             f'root="{sandbox_plugins_root_expansion()}"',
             'mkdir -p "$root"',
-            payload_write_command(path_word=f'"$root/{RUN_FROM_PROGRAM_FILENAME}"'),
+            packed_payload_write_command(path_word=f'"$root/{RUN_FROM_PROGRAM_FILENAME}"'),
             f'exec python3 "$root/{RUN_FROM_PROGRAM_FILENAME}"',
         ]
     )
@@ -412,7 +413,7 @@ def run_from_clone_steps_block(
         f" governed tree pins, under {run_from_root} ---\n"
     )
     return header + render_prepare_step(
-        step=PrepareStep(script=script, env={PAYLOAD_ENV_VAR: program})
+        step=PrepareStep(script=script, env={PAYLOAD_ENV_VAR: pack_payload(text=program)})
     )
 
 

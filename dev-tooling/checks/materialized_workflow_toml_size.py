@@ -72,6 +72,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import ( 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (  # noqa: E402
     SIBLING_CLONES_ROOT_ENV_VAR,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones import (  # noqa: E402
+    RUN_FROM_REPOS,
+)
 
 __all__: list[str] = ["FILE_THRESHOLD_BYTES", "PACKAGE_THRESHOLD_BYTES", "clones_root", "main"]
 
@@ -85,8 +88,12 @@ _MANIFEST = Path("livespec") / ".livespec-fleet-manifest.jsonc"
 _BUNDLED = _REPO_ROOT / ".claude-plugin" / RESERVED_RELPATH
 _PROSE = _REPO_ROOT / "SPECIFICATION" / "contracts.md"
 # THIS repository's own scope has no manifest to read, so it renders a sibling set
-# of the fleet's current size, with names as long as its longest member's.
-_SELF_SCOPE_SIBLINGS = tuple(f"livespec-representative-member-{n:02d}" for n in range(10))
+# of the fleet's current size: every repository a run-from clone is taken of (so
+# that step is rendered and measured, as on a real dispatch), then names as long
+# as the longest member's.
+_SELF_SCOPE_SIBLINGS = RUN_FROM_REPOS + tuple(
+    f"livespec-representative-member-{n:02d}" for n in range(10 - len(RUN_FROM_REPOS))
+)
 # The paths a member's dispatch reads from its own tree.
 _MEMBER_PATHS = (".livespec.jsonc", ".fabro", "SPECIFICATION")
 _GITHUB_APP_ENV = {"GITHUB_APP_ID": "1234567", "GITHUB_PRIVATE_KEY": "k" * 50}
