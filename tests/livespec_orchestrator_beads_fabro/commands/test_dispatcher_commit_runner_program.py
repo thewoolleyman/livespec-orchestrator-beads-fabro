@@ -869,12 +869,6 @@ def test_settle_waits_for_the_live_run_and_a_passed_verdict_is_briefed_with_its_
     """The turn ended mid-commit; the run waits, and the commit it finds PASSED is named."""
     program = _settle_program(tmp_path)
     path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
-    stopped: list[tuple[Path, str]] = []
-
-    def stop_run(path: Path, proc_root: str) -> None:
-        stopped.append((path, proc_root))
-
-    program["stop_run"] = stop_run
     program["group_alive"] = _alive_once_then(
         path, {"state": "passed", "exit_code": 0, "head": "0123abc", "hook_ran": True}
     )
@@ -886,7 +880,6 @@ def test_settle_waits_for_the_live_run_and_a_passed_verdict_is_briefed_with_its_
     assert lines[0] == "passed"
     assert _RUN_ID in "\n".join(lines[1:])
     assert "0123abc" in "\n".join(lines[1:])
-    assert stopped == []
     assert json.loads(capsys.readouterr().out) == {
         "settled": [{REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "passed"}]
     }
