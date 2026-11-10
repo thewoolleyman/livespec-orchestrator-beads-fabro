@@ -138,10 +138,17 @@
   // Driver-shipped-hooks and Plugin-distribution contracts by section
   // rather than restating them — restating a sibling-owned contract here
   // is exactly what the no-cross-spec-reference rule exists to prevent.
+  // §"Self-contained plugin dispatch" cites livespec-dev-tooling's
+  // Orchestrator-build-adoption contract (its spec v155), which owns the
+  // `just adopt-orchestrator-build` operator step this plugin names as its
+  // currency remedy.
   "external_references": {
     "livespec": [
       "SPECIFICATION/contracts.md §\"Driver-shipped hooks\"",
       "SPECIFICATION/contracts.md §\"Plugin distribution\""
+    ],
+    "livespec-dev-tooling": [
+      "SPECIFICATION/contracts.md §\"Orchestrator build adoption\""
     ]
   },
   // Planning/work-item-resolution registry. These targets are the repo slugs
@@ -220,7 +227,7 @@
       // contract-version-compatibility invariant fires `warn` against
       // "master" pins; that is expected during bootstrap.
       "livespec": ">=0.1.0,<1.0.0",
-      "pinned": "v0.47.1"
+      "pinned": "v0.47.2"
     },
     // Per-repo beads tenant CONNECTION block. These keys are read by
     // commands/_config.py and overlaid by the LIVESPEC_BD_PATH /

@@ -13,12 +13,13 @@ naively on `, ` shreds one heading into three unresolvable fragments and reports
 three findings against a perfectly valid item. The refusal reads exactly like a
 real defect, so nothing downstream would catch it.
 
-The unobservable-tree test is the other one worth keeping. A repository whose
-spec tree cannot be read yields an EMPTY H2 set, and grading references against
-an empty set would refuse every implement-kind item in the fleet on an
-environment fault. Absence of evidence is not failure evidence: the reference
-check is skipped when it cannot observe the set, while the pure-parse checks
-(section present, reference line present) still fire.
+The reference check reads `origin/master` rather than the working tree
+(work-item bd-ib-ahtcng); `test_dispatcher_definition_of_done_origin_revision.py`
+and `test_dispatcher_definition_of_done_origin_spec.py` exercise that read against
+real repositories. The trees built here are plain directories, which the suite's
+hermetic stand-in (`_hermetic_origin_spec_headings`) answers from their own
+`SPECIFICATION/` working tree, so these cases isolate the finding logic from the
+git read.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
-    spec_h2_headings,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -84,34 +84,6 @@ def _description(*, references: str) -> str:
         "\n"
         f"References: {references}\n"
     )
-
-
-def test_the_h2_set_is_read_from_the_spec_tree_in_the_prefixed_form(
-    tmp_path: Path,
-) -> None:
-    headings = spec_h2_headings(repo=_spec_tree(tmp_path=tmp_path))
-
-    assert _PLAIN_HEADING in headings
-    assert _COMMA_HEADING in headings
-    assert "Effective acceptance criteria" not in headings
-    # A level-1 heading is NOT an H2 and must not enter the set.
-    assert "# Contracts" not in headings
-    assert "Contracts" not in headings
-
-
-def test_an_unreadable_spec_file_is_skipped_rather_than_failing_the_read(
-    tmp_path: Path,
-) -> None:
-    repo = _spec_tree(tmp_path=tmp_path)
-    (repo / "SPECIFICATION" / "unreadable.md").mkdir()
-
-    headings = spec_h2_headings(repo=repo)
-
-    assert _PLAIN_HEADING in headings
-
-
-def test_a_repository_with_no_spec_tree_yields_an_empty_set(tmp_path: Path) -> None:
-    assert spec_h2_headings(repo=tmp_path) == frozenset()
 
 
 def test_a_reference_to_a_heading_the_spec_tree_carries_produces_no_finding(
@@ -321,11 +293,10 @@ def test_a_human_attested_sub_heading_with_a_reason_line_is_no_finding(
     )
 
 
-def test_an_unobservable_spec_tree_skips_the_reference_check_and_keeps_the_parse_checks(
-    tmp_path: Path,
-) -> None:
-    # The expensive direction would be refusing every implement-kind item in the
-    # fleet because one host could not read its spec tree.
+def test_a_fixture_with_no_spec_tree_keeps_the_parse_checks(tmp_path: Path) -> None:
+    # The stand-in resolves every reference for a directory that never built a
+    # spec tree, so the parse checks (section present, reference line present)
+    # are the only findings left standing.
     item = _item(description=_description(references="## Scenario 999 — No such heading"))
 
     assert definition_of_done_findings(item=item, cwd=tmp_path) == ()

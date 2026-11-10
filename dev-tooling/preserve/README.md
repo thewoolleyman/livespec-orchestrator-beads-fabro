@@ -50,6 +50,11 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    `sudo find` and `sudo cat` over ssh (fleet_host_guard refuses `tar`).
    - The tree is copied with ONE `find -printf '%s %P'` and ONE bulk `cat`, then split locally by size.
    - A per-file ssh round trip starved at 16 runs in parallel.
+   - The container-worker route (rule 11) is the exception to the ONE bulk `cat`. It reads INSIDE the sandbox
+     container through `kubectl exec`, never on the host, and runs only `test -d`, `git config --get`, `find`,
+     `cat` and `dd` (byte ranges of one file) there. It bounds each exec to `PRESERVE_EXEC_CHUNK_BYTES`, because
+     one exec stream carrying a whole tree is reset by the API server. Nothing on any host is written by either
+     route.
 2. **Copy the run branch, never HEAD.** The script uses the tip of `refs/heads/fabro/run/<RUN>` when it
    exists. A late node (refresh_repair) can leave HEAD detached on master, and preserving HEAD then drops
    the run's work (rhivsm, 2026-11-05).
@@ -106,7 +111,10 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
     `k3s kubectl exec -n factory <pod> -c sandbox` on poweredge-xubuntu, the route the cluster already authorizes.
     It runs only `test -d`, `git config --get`, `cat`, `find` and `xargs -0 cat` there, still with one `find` and
     one bulk `cat`. The file list goes to `xargs` on stdin, because as exec arguments it would ride in the exec
-    request's URL. Every other node keeps rule 1's ssh and crictl route. Which nodes are container workers is read
+    request's URL. Each exec carries at most `PRESERVE_EXEC_CHUNK_BYTES` (a whole number of MiB, default 4 MiB):
+    small files are batched, and a larger file is read in `dd` byte ranges. A single exec stream carrying a whole
+    31.8 MiB tree was reset by the API server on the first M4 factory run (2026-11-09). Every other node keeps rule
+    1's ssh and crictl route. Which nodes are container workers is read
     from the cluster on each pass, so a newly enrolled worker needs no change here.
 
 ## Shell gotcha

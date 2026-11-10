@@ -40,9 +40,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     reusable_governing_heading_verdict,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
-    judgement_subject,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
@@ -91,7 +88,6 @@ _DEFINITION_OF_DONE_BEGIN_MARK = (
     "--- BEGIN ITEM DEFINITION OF DONE (the item's own section; ledger comments are outside it) ---"
 )
 _DEFINITION_OF_DONE_END_MARK = "--- END ITEM DEFINITION OF DONE ---"
-_SHARED_JUDGEMENT_SUBJECT_HEADING = "## Definition-of-Done judgement subject"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -163,7 +159,7 @@ def minijinja_findings_detail(
     )
 
 
-def render_goal(
+def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `repayment` are the two Dispatcher-authored sections handed in beside the item's own fields.
     *,
     item: WorkItem,
     repo: Path,
@@ -171,6 +167,7 @@ def render_goal(
     comments: tuple[WorkItemComment, ...] = (),
     lessons: str = "",
     interrupted: InterruptedAttempt | None = None,
+    repayment: str = "",
 ) -> str:
     """Render the per-item brief delivered to the phase graph.
 
@@ -182,6 +179,9 @@ def render_goal(
     is not a recovery launch has no placement to narrate — and that default is
     also why the call site's own keyword is bound by a test: an omission here
     renders the plain brief and says nothing about the section it dropped.
+
+    `repayment` is the marker-removal section an incident's normal repayment
+    dispatch carries (`_dispatcher_goal_repayment`), empty for every other item.
 
     THE GOVERNING-HEADING VERDICT IS READ OUT OF `comments`, not taken again.
     The `dod_gate` node's check 6 reads it instead of searching the scenario
@@ -248,7 +248,7 @@ def render_goal(
     # agent is already standing on: a brief that names it after the standing
     # guidance has the agent read the whole brief before learning that its
     # working tree is somebody else's unfinished work.
-    body = base + interrupted_attempt_section(attempt=interrupted)
+    body = base + interrupted_attempt_section(attempt=interrupted) + repayment
     if lessons:
         body += (
             "\nRatified lessons (human-merged via loop-reflection-gate/"
@@ -293,13 +293,13 @@ def render_goal(
     supplied = recorded_spec_identity(comments=bodies)
     if supplied is not None:
         verdict_block += "\n" + spec_identity_block(identity=supplied) + "\n"
-    shared_subject = (
-        f"\n{_SHARED_JUDGEMENT_SUBJECT_HEADING}\n"
-        + judgement_subject(item=item, cwd=repo, comments=bodies, governing=governing)
-        + "\n"
-    )
+    # THE JUDGEMENT SUBJECT IS NOT APPENDED HERE (bd-ib-tzvtgc). Fabro injects this
+    # goal into EVERY ACP node, and only `dod_gate` grades the subject, so
+    # appending it made each request of each node carry the item's referenced
+    # spec sections (bd-ib-qshcwc: 24,910 to 136,040 characters). The node reads
+    # the same subject from the file `_dispatcher_dod_gate_subject` materializes.
     if not riders:
-        return escape_minijinja_literal(text=body + verdict_block + shared_subject)
+        return escape_minijinja_literal(text=body + verdict_block)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
@@ -309,9 +309,7 @@ def render_goal(
     # renderer lost rather than one it deliberately omitted.
     for index, comment in enumerate(riders, start=1):
         lines.append(f"[{index}] {_comment_entry(comment=comment)}")
-    return escape_minijinja_literal(
-        text=body + "\n".join(lines) + "\n" + verdict_block + shared_subject
-    )
+    return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
 
 
 def _description_with_marked_definition_of_done(*, description: str) -> str:

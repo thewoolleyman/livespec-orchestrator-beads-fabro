@@ -20,6 +20,18 @@ cycles, unsupported states, unreadable links and the bounded history limit produ
 named refusals. Repeated identical genesis delivery is idempotent. The reader
 rechecks the open successor before returning a current-generation observation.
 
+A current read (`read-current`, `read-local-gates`, the incident head read) does not
+re-read the chain from genesis. The canonical writer records the token it just closed
+under the item's `incident_authority_head` metadata, and the reader starts its walk
+there and follows the tokens' own links to the open successor, so the records read
+are bounded by that hint's lag and not by the number of generations. The hint is a
+start point and never authority: a stale one only lengthens the forward walk, and an
+absent one (a chain not yet transitioned by this build), an open-token one or one
+naming another item's token reads the whole chain from the genesis root. Historical
+lookups, `read-history` and the writer's operation-reuse check always read the whole
+retained chain. The reply omits `operation_ids`, the set of operations a read walked,
+because that set depends on which of the two reads produced it.
+
 Genesis and transition markers are `livespec-incident-authority-v1` and
 `livespec-incident-transition-v1`, followed by a newline and canonical JSON with
 sorted keys, compact separators, and schema 1. Tokens carry the title
@@ -76,8 +88,13 @@ bootstrap a chain, authorize phase eligibility, update the item's lifecycle stat
 cancel factory work, or provision writer credentials. An absent chain remains
 `incident-authority-missing`, and a tenant outage remains unavailable.
 
-`record-local-gates` accepts the same exact current-identity query plus
-`--receipt-json`. This records evidence on that incident item without changing
+`record-local-gates` accepts the same exact current-identity query plus exactly
+one receipt source: `--receipt-json <receipt>` or `--receipt-stdin`, which reads
+the receipt from standard input. The stdin source exists because Linux caps one
+argv entry at 131072 bytes, so a receipt between 128 KiB and the authority's own
+1 MiB bound cannot travel as an argument; with `--receipt-stdin` the authority's
+bound is the only limit, and a larger receipt is refused
+`incident-receipt-invalid` with nothing recorded. This records evidence on that incident item without changing
 its authority generation or lifecycle state. A pre-PR snapshot may carry
 `pr_number: 0` only during repair and only with no landed commit/tree pairs.
 Other phases still require an identified PR. This permits pre-commit evidence

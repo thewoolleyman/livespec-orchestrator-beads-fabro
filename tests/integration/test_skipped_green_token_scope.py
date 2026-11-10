@@ -127,7 +127,24 @@ def _run_janitor(*, repo: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _run_pre_push(*, repo: Path, just_status: int = 0) -> subprocess.CompletedProcess[str]:
+def _write_library_token(*, repo: Path, extra: dict[str, object] | None = None) -> None:
+    """Write the token exactly as livespec-dev-tooling's ``green_token write`` does.
+
+    A delegated cluster gate pass records this shape through the shared library,
+    which knows nothing of this repository's ``skipped_targets`` list.
+    """
+    token: dict[str, object] = {
+        "tree_hash": _git(repo, "rev-parse", "HEAD^{tree}"),
+        "mode": "normal",
+        "scope": "full-suite",
+    }
+    token.update(extra or {})
+    _ = _token_path(repo=repo).write_text(json.dumps(token), encoding="utf-8")
+
+
+def _run_pre_push(
+    *, repo: Path, just_status: int = 0, dispatch_status: int = 0
+) -> subprocess.CompletedProcess[str]:
     """Run the shipped hook with a thin ``uv`` transport to the real adapter."""
     stub_root = repo.parent
     bin_dir = stub_root / "fake-bin"
@@ -140,6 +157,16 @@ def _run_pre_push(*, repo: Path, just_status: int = 0) -> subprocess.CompletedPr
         "if [[ \"$1 $2 $3\" == 'run bash dev-tooling/green-token-scope.sh' ]]; then\n"
         "    shift 2\n"
         '    exec bash "$@"\n'
+        "fi\n"
+        'if [[ "$1 $2 $3 $4 ${5:-}" == "run python -m livespec_dev_tooling.green_token world-reading" ]]; then\n'
+        "    shift 5\n"
+        '    for target in "$@"; do\n'
+        '        case " ${STUB_WORLD_READING} " in *" ${target} "*) printf \'%s\\n\' "${target}" ;; esac\n'
+        "    done\n"
+        "    exit 0\n"
+        "fi\n"
+        'if [[ "$1 $2 $3 $4" == "run python -m livespec_dev_tooling.parallel_check_dispatcher" ]]; then\n'
+        '    exit "${STUB_DISPATCH_STATUS}"\n'
         "fi\n"
         "exit 1\n",
         encoding="utf-8",
@@ -160,6 +187,8 @@ def _run_pre_push(*, repo: Path, just_status: int = 0) -> subprocess.CompletedPr
             "STUB_LOG": str(stub_root / "uv.log"),
             "STUB_JUST_LOG": str(stub_root / "just.log"),
             "STUB_JUST_STATUS": str(just_status),
+            "STUB_DISPATCH_STATUS": str(dispatch_status),
+            "STUB_WORLD_READING": f"{_MASTER_CI_TARGET} check-no-workflow-edits",
         }
     )
     return subprocess.run(
@@ -303,3 +332,88 @@ def test_pre_push_still_runs_the_forge_reading_member_on_a_matched_verdict(
     refused = _run_pre_push(repo=repo, just_status=1)
 
     assert refused.returncode == 1, refused.stdout + refused.stderr
+
+
+def _dispatched_members(*, repo: Path) -> list[str]:
+    """The targets the pre-push handed the parallel dispatcher, or [] when it ran none."""
+    log = repo.parent / "uv.log"
+    members: list[str] = []
+    for line in log.read_text(encoding="utf-8").splitlines():
+        if "parallel_check_dispatcher" in line:
+            members.extend(line.split(" -- ", maxsplit=1)[1].split())
+    return members
+
+
+def test_pre_push_honours_a_delegated_cluster_gate_pass_on_the_same_tree(*, tmp_path: Path) -> None:
+    """The library's token for the tree stands in for the tree-pure members."""
+    repo = _fixture_repo(tmp_path=tmp_path)
+    _write_library_token(repo=repo)
+
+    matched = _run_pre_push(repo=repo)
+
+    assert matched.returncode == 0, matched.stdout + matched.stderr
+    assert not (repo.parent / "just.log").exists(), matched.stdout + matched.stderr
+    assert "green token matched" in matched.stdout
+    assert _CODEX_PICKER_TARGET in matched.stdout
+    assert "gate_remote_delegate" not in (repo.parent / "uv.log").read_text(encoding="utf-8")
+
+
+def test_pre_push_runs_the_full_gate_when_a_delegated_pass_was_for_another_tree(
+    *, tmp_path: Path
+) -> None:
+    """A cluster pass vouches for the tree it judged and for no other."""
+    repo = _fixture_repo(tmp_path=tmp_path)
+    _write_library_token(repo=repo)
+    _ = (repo / "tracked.txt").write_text("refreshed tree\n", encoding="utf-8")
+    _git(repo, "add", "tracked.txt")
+    _git(repo, "commit", "--quiet", "-m", "fixture refresh")
+
+    result = _run_pre_push(repo=repo)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "green token matched" not in result.stdout
+    assert (repo.parent / "just.log").read_text(encoding="utf-8").splitlines() == [
+        "check-skipping check-codex-skill-picker"
+    ]
+
+
+def test_pre_push_still_runs_every_world_reading_member_after_a_delegated_pass(
+    *, tmp_path: Path
+) -> None:
+    """A verdict never covers a member that reads state outside the tree."""
+    repo = _fixture_repo(tmp_path=tmp_path)
+    _write_library_token(repo=repo)
+
+    passing = _run_pre_push(repo=repo)
+
+    assert passing.returncode == 0, passing.stdout + passing.stderr
+    assert _dispatched_members(repo=repo) == [_MASTER_CI_TARGET, "check-no-workflow-edits"]
+
+    refused = _run_pre_push(repo=repo, dispatch_status=1)
+
+    assert refused.returncode == 1, refused.stdout + refused.stderr
+
+
+def test_pre_commit_evidence_is_not_a_delegated_pre_push_verdict(*, tmp_path: Path) -> None:
+    """Pre-commit evidence names its own run and is not a pre-push gate pass."""
+    repo = _fixture_repo(tmp_path=tmp_path)
+    tree = _git(repo, "rev-parse", "HEAD^{tree}")
+    _write_library_token(
+        repo=repo,
+        extra={
+            "pre_commit_aggregate": {
+                "tree_hash": tree,
+                "run_id": "pre-commit-aggregate:fixture",
+                "output_checksum": "sha256:fixture",
+                "captured_at": "2026-11-10T00:00:00Z",
+            }
+        },
+    )
+
+    result = _run_pre_push(repo=repo)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "green token matched" not in result.stdout
+    assert (repo.parent / "just.log").read_text(encoding="utf-8").splitlines() == [
+        "check-skipping check-codex-skill-picker"
+    ]

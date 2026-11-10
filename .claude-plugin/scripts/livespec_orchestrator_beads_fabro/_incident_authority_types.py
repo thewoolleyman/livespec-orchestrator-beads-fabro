@@ -3,7 +3,7 @@
 # EXPEDITED_INCIDENT_RESPONSE flag: bd-ib-dzbwaq
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from livespec_orchestrator_beads_fabro._incident_carrier import IncidentCarrier
 
@@ -49,4 +49,6 @@ class IncidentReading:
     committed_token_id: str
     current_token_id: str
     is_current: bool
-    operation_ids: tuple[str, ...] = ()
+    # The operations the read walked: the whole chain for a full-chain read, only the
+    # segment after the item's head hint for a current one. Not part of identity.
+    operation_ids: tuple[str, ...] = field(default=(), compare=False)

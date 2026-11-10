@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_js
 
 __all__: list[str] = [
     "GENESIS_MARKER",
+    "HEAD_HINT_KEY",
     "TOKEN_TITLE",
     "TRANSITION_MARKER",
     "attempt_record",
@@ -33,6 +34,9 @@ __all__: list[str] = [
 
 GENESIS_MARKER = "livespec-incident-authority-v1\n"
 TRANSITION_MARKER = "livespec-incident-transition-v1\n"
+# Item metadata naming the latest closed token: where a current read starts its walk.
+# A start point only, never authority; the chain's own links decide the head.
+HEAD_HINT_KEY = "incident_authority_head"
 TOKEN_TITLE = "livespec incident authority epoch token"  # noqa: S105 - record title
 _PHASES = frozenset(
     (

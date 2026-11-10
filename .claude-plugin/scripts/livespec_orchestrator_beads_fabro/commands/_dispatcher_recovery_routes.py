@@ -91,6 +91,7 @@ class RecoverySeed:
     remote: str
     commit_sha: str
     preservation_ref: str
+    passed_over_needs_human: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)

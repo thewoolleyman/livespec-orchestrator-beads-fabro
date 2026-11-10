@@ -26,16 +26,17 @@ _EDIT_VERB = (
     r"edit(?:s|ing)?|modif(?:y|ies|ying)|update(?:s|d|ing)?|"
     r"rewrite(?:s|ing)?|touch(?:es|ing)?|chang(?:e|es|ing)"
 )
-_DECLARED_WORKFLOW_EDIT_PATTERN = "".join(
-    (
-        rf"\b(?:{_EDIT_VERB})\b[^\n]{{0,80}}{re.escape(_WORKFLOW_PREFIX)}",
-        rf"|{re.escape(_WORKFLOW_PREFIX)}[^\n]{{0,80}}\b(?:{_EDIT_VERB})\b",
-    )
-)
-_DECLARED_WORKFLOW_EDIT = re.compile(
-    _DECLARED_WORKFLOW_EDIT_PATTERN,
+_EDIT_VERB_MATCH = re.compile(rf"\b(?:{_EDIT_VERB})\b", re.IGNORECASE)
+_VERB_WINDOW = 80
+# A negator governs an edit verb only when it sits directly before it (an
+# auxiliary such as "does" or "will" precedes the negator, never follows it).
+_NEGATOR_BEFORE_VERB = re.compile(
+    r"(?:\b(?:not|never|without)|n't)\s+(?:(?:ever|also|then|actually)\s+)?$",
     re.IGNORECASE,
 )
+# The noun form: "no changes/edits/updates to <path>".
+_NOUN_NEGATOR_BEFORE_VERB = re.compile(r"\bno\s+$", re.IGNORECASE)
+_TO_AFTER_VERB = re.compile(r"\s+to\b", re.IGNORECASE)
 _NEGATED_WORKFLOW_SCOPE = re.compile(
     rf"\bno\s+files?\s+(?:under|in)\s+{re.escape(_WORKFLOW_PREFIX)}",
     re.IGNORECASE,
@@ -93,6 +94,38 @@ def _text_declares_workflow_edit(*, text: str) -> bool:
             continue
         if _NEGATED_WORKFLOW_SCOPE.search(line) is not None:
             continue
-        if _DECLARED_WORKFLOW_EDIT.search(line) is not None:
+        if _line_has_unnegated_workflow_edit(line=line):
             return True
     return False
+
+
+def _line_has_unnegated_workflow_edit(*, line: str) -> bool:
+    """Return True when any edit verb near the workflows path is not negated.
+
+    A false refusal is the safe failure and a false admission the unsafe one,
+    so every nearby edit verb must be governed by a negator for the line to
+    pass; anything ambiguous stays refused.
+    """
+    return any(
+        _verb_near_workflow_prefix(line=line, verb=verb)
+        and not _verb_is_negated(line=line, verb=verb)
+        for verb in _EDIT_VERB_MATCH.finditer(line)
+    )
+
+
+def _verb_near_workflow_prefix(*, line: str, verb: re.Match[str]) -> bool:
+    lowered = line.lower()
+    reach = _VERB_WINDOW + len(_WORKFLOW_PREFIX)
+    after = lowered[verb.end() : verb.end() + reach]
+    before = lowered[max(0, verb.start() - reach) : verb.start()]
+    return _WORKFLOW_PREFIX in after or _WORKFLOW_PREFIX in before
+
+
+def _verb_is_negated(*, line: str, verb: re.Match[str]) -> bool:
+    preceding = line[: verb.start()]
+    if _NEGATOR_BEFORE_VERB.search(preceding) is not None:
+        return True
+    return (
+        _NOUN_NEGATOR_BEFORE_VERB.search(preceding) is not None
+        and _TO_AFTER_VERB.match(line, verb.end()) is not None
+    )

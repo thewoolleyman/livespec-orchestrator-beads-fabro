@@ -17,7 +17,10 @@ from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     decode_attempt,
     decode_record,
 )
-from livespec_orchestrator_beads_fabro.effects import _incident_authority_reader as reader
+from livespec_orchestrator_beads_fabro.effects import _incident_authority_chain as chain_module
+from livespec_orchestrator_beads_fabro.effects import (
+    _incident_authority_transition as transition_module,
+)
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
@@ -244,7 +247,7 @@ def test_cycle_is_refused() -> None:
 
 def test_bounded_history_is_explicit_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
     client, _, _ = _chain()
-    monkeypatch.setattr(reader, "_MAX_TOKENS", 1)
+    monkeypatch.setattr(chain_module, "_MAX_TOKENS", 1)
     result = _read(client)
     assert (
         isinstance(result, AuthorityRefusal) and result.code == "incident-authority-history-limit"
@@ -544,6 +547,24 @@ def test_distinct_landed_commits_can_share_a_tree_without_losing_the_complete_se
     assert decoded is not None
     assert decoded.landed_trees == ("c" * 40, "c" * 40)
     assert decode_attempt(value=_attempt(original_paths=["."])) is None
+
+
+def test_writer_names_a_history_refusal_before_closing_another_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, _, _ = _chain()
+    before = _read(client)
+    assert isinstance(before, IncidentReading)
+    refusal = AuthorityRefusal(code="incident-authority-cycle", detail="token")
+    monkeypatch.setattr(transition_module, "read_history", lambda **_kwargs: refusal)
+    count = len(client.no_history_issue_ids())
+    result = commit_incident_transition(
+        client=client,
+        observed=before,
+        successor=replace(before.attempt, generation=2, operation_id="next"),
+    )
+    assert result == refusal
+    assert len(client.no_history_issue_ids()) == count
 
 
 def test_writer_refuses_historical_operation_reuse_before_closing_another_token() -> None:

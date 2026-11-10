@@ -62,11 +62,16 @@ class BranchPullRequest:
     request. The head-moved refusal reports that as the measurement it could not
     take rather than as a mismatch, because a comparison against an absent head
     would name a sha nobody published.
+
+    `merged_at` is the instant the forge merged it, or `None` for a pull request
+    that has not merged or a listing that named no instant. It is what lets
+    recovery routing order a merge against a later rework rejection.
     """
 
     number: int
     state: str
     head: str | None
+    merged_at: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -93,7 +98,7 @@ def branch_pull_request_argv(*, branch: str) -> list[str]:
         "--state",
         "all",
         "--json",
-        "number,state,headRefOid",
+        "number,state,headRefOid,mergedAt",
         "--limit",
         _LIST_LIMIT,
     ]
@@ -148,8 +153,10 @@ def _pull_request(*, entry_raw: object) -> BranchPullRequest | None:
     if not isinstance(number_raw, int) or not isinstance(state_raw, str) or not state_raw:
         return None
     head_raw: object = entry.get("headRefOid")
+    merged_at_raw: object = entry.get("mergedAt")
     return BranchPullRequest(
         number=number_raw,
         state=state_raw,
         head=head_raw if isinstance(head_raw, str) and head_raw else None,
+        merged_at=merged_at_raw if isinstance(merged_at_raw, str) and merged_at_raw else None,
     )

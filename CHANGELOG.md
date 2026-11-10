@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.312.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.0...v0.312.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **dev-tooling:** honour a delegated cluster gate pass at pre-push ([9026c6c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9026c6c670e41ab772b0b9df5e7e97328cf41bfd))
+* honour negated workflow-edit declarations in the host-only screen ([8ddba27](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ddba27f084a80e8651cce3c5f73e40aa819d8ca))
+
+## [0.312.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.1...v0.312.0) (2026-11-10)
+
+
+### Features
+
+* **incident:** take a local-gate receipt on stdin so it is bounded by the authority, not argv ([5b0474c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5b0474c1d0deedec0ca5a10116fa34a0f77b7ccd))
+
+
+### Bug Fixes
+
+* bound an incident authority read by a recorded head hint, not the generation count ([2f267b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2f267b709a676c20056b2eb7f527c3deedb853ee))
+* the incident transition writer records the head hint a bounded read starts from ([d090157](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d090157f3b53a5c41fab18d55f34461c3853aa36))
+* treat a master-CI run with no aggregate verdict as no verdict ([9965c14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9965c14aac4f5d478f7d8349cec50f472f481628))
+
+## [0.311.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.0...v0.311.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* reconcile-merged resolves a merge-held incident repayment's explicit merged PR on its reserved branch (bd-ib-iwksr3) ([b26c3dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b26c3dc2decf8ea355e247a7a17a39b45d9a5095))
+
+## [0.311.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.310.0...v0.311.0) (2026-11-09)
+
+
+### Features
+
+* dispatcher.py seed-ruling records, verifies and refuses an operator's ruled seed ([e096b7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e096b7aee335227b0518f478e9fcaad8cb04157e))
+
+
+### Bug Fixes
+
+* a forge 5xx is recognized by its status form, not by a digit run in a path or object id (bd-ib-3d2c5y) ([02d5bac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02d5bac18c57d1d6e364641766381cccfedfff6a))
+* a janitor-stage refresh repair republishes over the run's own published head ([fdccf17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fdccf17a6639a1ca06079440273e59f05d1e9a09))
+* brief an incident repayment dispatch to remove the incident marker ([ca79256](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca79256c5da60428b26c2fcac9873cad7cc10413))
+* classify a run whose sandbox was OOM-killed as permanent and name the kill (bd-ib-jnstxo) ([4c8c8f5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4c8c8f532425b3487877b3cac1cd9bc2d9f1a410))
+* count journaled failed-jobs reruns per pull request head across restarts ([35d0a17](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/35d0a1716bf19bdcd726b74196947e814c281069))
+* drop the seed-ruling reading half that belongs to the routing and consumption slices ([ed1c00c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ed1c00c4df353a288f51afe57f5ed6f54641f510))
+* **fleet-launch:** accept a launcher that preflighted and exited in Scenario 297 ([b4e52d7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b4e52d77308577aead288ab8a6a02332a3746686))
+* grade an unremoved incident marker at repayment acceptance ([4867224](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/486722447a674979a211d2082f3f39514854f0d8))
+* keep the agent-stage variable out of a commit hook's test suite (bd-ib-cavey4) ([5a2dae2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5a2dae24877bf74d1082036ec223ac3f4217d974))
+* name the publishing-run-unobservable measurement on the recovery hold ([711f298](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/711f298802048329d1da7173856f65ffd3813475))
+* read a recorded governing-heading verdict in the DoD preflight reading seam ([d31dd8b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d31dd8b9f7584cebf39772735c2fd1679c46d968))
+* recovery routing never seeds from an earlier run's ref over a newer run's published head ([8f96a72](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8f96a72f2c21f5a49136edab47c01a7ebad3c9b8))
+* take a recorded governing-heading verdict in the DoD preflight before judging ([79c7777](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/79c7777969cf057a8f26f19846f898ae4b48681f))
+
 ## [0.310.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.309.2...v0.310.0) (2026-11-09)
 
 

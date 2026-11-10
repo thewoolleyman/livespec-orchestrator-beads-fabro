@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any, cast
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
@@ -41,6 +43,7 @@ from livespec_orchestrator_beads_fabro.commands.incident_local_gate_lookup impor
 )
 from livespec_orchestrator_beads_fabro.commands.incident_local_gate_receipt import (
     LocalGateReceipt,
+    read_receipt_stream,
     record_local_gates,
 )
 from livespec_orchestrator_beads_fabro.effects import parse_json
@@ -62,6 +65,7 @@ from livespec_orchestrator_beads_fabro.io import write_stdout
 
 __all__: list[str] = ["main"]
 
+_RECORD_GATES = "record-local-gates"
 _Reply = (
     IncidentReading
     | AuthorityRefusal
@@ -77,7 +81,7 @@ _Reply = (
 # Each writing action and the payload arguments it alone requires.
 _ACTION_ARGUMENTS: dict[str, tuple[str, ...]] = {
     "commit-transition": ("successor_json",),
-    "record-local-gates": ("receipt_json",),
+    _RECORD_GATES: ("receipt_json",),
     "read-local-gates": ("receipt_id",),
     "publish-genesis": ("genesis_json",),
     "file-incident": ("filing_json",),
@@ -95,6 +99,14 @@ _TRANSITION_PENDING = "incident-genesis-claim-transition-pending"
 _IDENTITY_RULE = "--item, --attempt, --phase and --generation: required unless file-incident"
 
 
+def _check_receipt_source(*, parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    """A receipt has exactly one source, and only the action that records it takes one."""
+    if args.action == _RECORD_GATES and (args.receipt_json is not None) == args.receipt_stdin:
+        parser.error(f"{_RECORD_GATES} requires exactly one of --receipt-json or --receipt-stdin")
+    if args.receipt_stdin and args.action != _RECORD_GATES:
+        parser.error(f"--receipt-stdin is only valid for {_RECORD_GATES}")
+
+
 def _parse(*, argv: Sequence[str] | None) -> argparse.Namespace:
     """Each action-only payload argument belongs to exactly one action."""
     parser = argparse.ArgumentParser(prog="incident-authority")
@@ -102,6 +114,7 @@ def _parse(*, argv: Sequence[str] | None) -> argparse.Namespace:
     for field in _PAYLOAD_OWNERS:
         _ = parser.add_argument("--" + field.replace("_", "-"))
     _ = parser.add_argument("--admission-complete", action="store_true")
+    _ = parser.add_argument("--receipt-stdin", action="store_true")
     _ = parser.add_argument("--repo", required=True, type=Path)
     for name in ("repository", "operation", "owner"):
         _ = parser.add_argument(f"--{name}", required=True)
@@ -110,9 +123,12 @@ def _parse(*, argv: Sequence[str] | None) -> argparse.Namespace:
     _ = parser.add_argument("--generation", type=int)
     args = parser.parse_args(argv)
     for field, owners in _PAYLOAD_OWNERS.items():
+        if field == "receipt_json" and args.action == _RECORD_GATES:
+            continue
         if (args.action in owners) != (getattr(args, field) is not None):
             flag = "--" + field.replace("_", "-")
             parser.error(f"{flag} is required by, and only valid for, {', '.join(owners)}")
+    _check_receipt_source(parser=parser, args=args)
     if args.admission_complete and args.action != _ADVANCE:
         parser.error(f"--admission-complete is only valid for {_ADVANCE}")
     # A filing has no item identity yet; every other action names one exactly.
@@ -157,8 +173,13 @@ def main(*, argv: Sequence[str] | None = None) -> int:
                 detail=args.item,
             )
         )
-    if args.action == "record-local-gates" and isinstance(result, IncidentReading):
-        result = record_local_gates(client=client, observed=result, text=args.receipt_json)
+    if args.action == _RECORD_GATES and isinstance(result, IncidentReading):
+        text = (
+            read_receipt_stream(stream=sys.stdin.buffer)
+            if args.receipt_stdin
+            else args.receipt_json
+        )
+        result = record_local_gates(client=client, observed=result, text=text)
     if args.action == "read-local-gates" and isinstance(result, IncidentReading):
         result = read_local_gates(client=client, observed=result, receipt_id=args.receipt_id)
     if args.action in LIFECYCLE_PAYLOADS and isinstance(result, IncidentReading):
@@ -233,8 +254,24 @@ def _filing(*, args: argparse.Namespace) -> FilingReceipt | AuthorityRefusal:
     )
 
 
+def _without_walk_scope(*, value: object) -> object:
+    """Leave out the operations a reading happened to walk.
+
+    That set is the whole chain for a historical read and only the segment after the
+    item's head hint for a current one, so the same committed reading would otherwise
+    serialize differently when a retry recovers it.
+    """
+    if isinstance(value, dict):
+        return {
+            key: _without_walk_scope(value=item)
+            for key, item in cast("dict[str, object]", value).items()
+            if key != "operation_ids"
+        }
+    return value
+
+
 def _result_body(*, result: _Reply) -> dict[str, object]:
-    body = asdict(result)
+    body = cast("dict[str, Any]", _without_walk_scope(value=asdict(result)))
     if isinstance(result, IncidentReading | GenesisReceipt):
         body["attempt"] = attempt_record(attempt=result.attempt)
     if isinstance(result, RepaymentEntry | RecoveryEntry | IncidentCompletion):

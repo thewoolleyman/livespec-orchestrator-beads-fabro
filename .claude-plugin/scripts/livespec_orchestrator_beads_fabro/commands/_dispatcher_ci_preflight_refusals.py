@@ -39,6 +39,7 @@ __all__: list[str] = [
     "MasterCiOutcome",
     "MasterCiRefusal",
     "green_ancestor_outcome",
+    "no_verdict_ancestor_outcome",
     "pass_outcome",
     "pending_outcome",
     "red_outcome",
@@ -162,6 +163,41 @@ def green_ancestor_outcome(
             "head_sha": head_sha,
             "pending_run_database_id": pending_run_id,
             "pending_run_status": pending_status,
+        },
+    )
+
+
+def no_verdict_ancestor_outcome(
+    *,
+    pipeline: MasterCiPipeline,
+    branch: str,
+    run_id: str,
+    head_sha: str,
+    no_verdict_run_id: str,
+    no_verdict_reason: str,
+) -> MasterCiOutcome:
+    """The passing ancestor proof taken because the latest run carries no verdict.
+
+    A run with no verdict has neither failed nor passed, so it is walked past
+    exactly as a pending one is. The record names that run, why it carried no
+    verdict, and the green run and head commit the dispatch passed on, so the
+    pass is auditable without re-reading the forge.
+    """
+    detail = (
+        f"passed on concluded green ancestor run {run_id} at {head_sha} while newer "
+        f"`{branch}` run {no_verdict_run_id} carries no verdict: {no_verdict_reason}"
+    )
+    return MasterCiOutcome(
+        refusal=None,
+        record={
+            **_identity(pipeline=pipeline, branch=branch, run_id=run_id),
+            "terminal": False,
+            "status": "passed",
+            "reason": _REASON_GREEN,
+            "detail": detail,
+            "head_sha": head_sha,
+            "no_verdict_run_database_id": no_verdict_run_id,
+            "no_verdict_reason": no_verdict_reason,
         },
     )
 

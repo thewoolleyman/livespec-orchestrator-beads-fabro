@@ -48,6 +48,7 @@ __all__: list[str] = [
     "MEASUREMENT_FORGE_PULL_REQUEST_HEAD",
     "MEASUREMENT_FORGE_PULL_REQUEST_RECORDS",
     "MEASUREMENT_PRESERVED_WORK",
+    "MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE",
     "unobservable_measurements",
 ]
 
@@ -59,6 +60,7 @@ MEASUREMENT_FORGE_PULL_REQUEST_RECORDS = "forge-pull-request-records"
 MEASUREMENT_FORGE_PULL_REQUEST_HEAD = "forge-pull-request-head"
 MEASUREMENT_FACTORY_RUN_LIVENESS = "factory-run-liveness"
 MEASUREMENT_PRESERVED_WORK = "preserved-work"
+MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE = "publishing-run-unobservable"
 
 
 def unobservable_measurements(*, observation: ResumeObservation) -> tuple[RecoveryMeasurement, ...]:

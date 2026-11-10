@@ -3016,7 +3016,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sghxlk dispatches fast-forward-release-branch.yml against this repository's real release branch and shows that a published release leaves release unmoved with the job skipped, an operator-dispatched descendant tag fast-forwards release, and a non-descendant or missing tag fails the run and leaves release unchanged. bd-ib-sghxlk owns it.",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sghxlk dispatches fast-forward-release-branch.yml against this repository's real release branch and shows that a published release leaves release unmoved with the job skipped, that a named-build adopt moves one canary clone to a release tag while release and every other clone keep their commit, that the roll-step dispatch of a descendant tag whose canary passed fast-forwards release, that a failed canary leaves release on the last rolled build, and that a non-descendant or missing tag fails the run and leaves release unchanged. bd-ib-sghxlk owns it.",
     "work_item": "bd-ib-sghxlk"
   },
   {
@@ -3056,5 +3056,29 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-lupzxt prepares a factory sandbox and shows that livespec core's doctor checks run from a separate shallow, read-only run-from clone at the governed tree's compat.pinned release (not under /livespec-siblings), that a janitor refresh onto a tree pinning a different release re-clones it at that release, that a repository with no declared release runs from its newest release tag, and that the target and /livespec-siblings work clones are at their default branch's latest commit, writable and non-shallow. bd-ib-lupzxt owns it.",
     "work_item": "bd-ib-lupzxt"
+  },
+  {
+    "heading": "## Scenario 337 \u2014 A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-if5luo makes a reconcile-runs pass survey a handed-off rework (an active rework:pending item whose newest rework dispatch journaled merge-wait-handed-off), complete it to acceptance and clear rework:pending when the forge reports its pull request merged, hold it as run-succeeded naming merge-wait-handed-off while its pull request is open with auto-merge armed, and leave a parked rework (not started, or died before publishing) unsurveyed. bd-ib-if5luo owns it.",
+    "work_item": "bd-ib-if5luo"
+  },
+  {
+    "heading": "## Scenario 338 \u2014 The committed fleet launcher runs under the tenant wrapper, from the origin tip, with paced re-tickets and the configured routing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-4xqmqh adds check-fleet-launch harness cases in which every launch-time command of a target declaring a stub tenant credential_wrapper runs under that wrapper and not the default one, a diverged checkout launches nothing with a checkout-not-at-origin-tip terminal line while a behind checkout is fast-forwarded to origin's default branch and launches, consecutive early exits re-take the same ticket after the three configured delays holding no mutex or in-flight marker, a failed goal-minijinja-preflight stage re-takes no ticket and leaves one ledger comment carrying no goal-template opening delimiter, and the overrides file's lines reach the stub drive as --acp-node arguments with non-empty judge-model host values exported. bd-ib-4xqmqh owns it.",
+    "work_item": "bd-ib-4xqmqh"
+  },
+  {
+    "heading": "## Scenario 339 \u2014 A Definition of Done that permits a TODO coverage row against a shrink-only debt register is a mechanical filing finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-cm2k55 adds filing-seam cases in which a repository carrying a committed tests/heading-coverage-debt.json reports a (mechanical) finding quoting a Definition of Done bullet that names tests/heading-coverage.json and TODO, records it as a ledger comment, rests the item at pending-approval under auto admission, refuses approve until the bullet is edited, and reports no such finding where the register is absent. bd-ib-cm2k55 owns it.",
+    "work_item": "bd-ib-cm2k55"
   }
 ]

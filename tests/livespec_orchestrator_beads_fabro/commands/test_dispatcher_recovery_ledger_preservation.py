@@ -193,7 +193,7 @@ def test_a_ledger_run_id_finds_its_needs_human_tree_before_fresh_reclaim(
         records=_released(),
         answers={
             "gh pr list": CommandResult(exit_code=0, stdout="[]", stderr=""),
-            terminal_ref: CommandResult(
+            f"{NEEDS_HUMAN_REF_PREFIX}/*": CommandResult(
                 exit_code=0, stdout=f"{_TREE}\t{terminal_ref}\n", stderr=""
             ),
         },

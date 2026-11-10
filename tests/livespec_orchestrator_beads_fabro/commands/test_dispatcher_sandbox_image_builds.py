@@ -137,20 +137,80 @@ def test_only_the_shared_readiness_helper_spawns_the_dispatcher_argv_fixture() -
     assert holders == ["_dispatcher_sandbox_image_readiness.py"]
 
 
-def test_dispatcher_fixture_readiness_times_out_when_cmdline_is_unreadable(tmp_path: Path) -> None:
-    """An unreadable cmdline uses the fixture's bounded readiness deadline."""
+def _readiness_entry(*, tmp_path: Path) -> Path:
+    return tmp_path / "build" / "scripts" / "bin" / "dispatcher.py"
+
+
+def test_dispatcher_fixture_readiness_returns_once_cmdline_names_the_entry(tmp_path: Path) -> None:
+    """The sleep is skipped when the first poll already sees the payload argv."""
     process = _sleeper()
     try:
-        with pytest.raises(AssertionError, match="did not exec"):
+        entry = _readiness_entry(tmp_path=tmp_path)
+        cmdline = tmp_path / "proc" / str(process.pid) / "cmdline"
+        cmdline.parent.mkdir(parents=True)
+        _ = cmdline.write_bytes(f"tail\0-f\0{entry}\0".encode())
+        sleeps: list[float] = []
+
+        wait_for_dispatcher_exec(
+            process=process,
+            entry=entry,
+            proc=tmp_path / "proc",
+            monotonic=lambda: 0.0,
+            sleep=sleeps.append,
+        )
+    finally:
+        _stopped(processes=iter((process,)))
+
+    assert sleeps == []
+
+
+def test_dispatcher_fixture_readiness_sleeps_until_cmdline_names_the_entry(tmp_path: Path) -> None:
+    """An absent cmdline, then another argv, are each slept past until the entry appears."""
+    process = _sleeper()
+    try:
+        entry = _readiness_entry(tmp_path=tmp_path)
+        cmdline = tmp_path / "proc" / str(process.pid) / "cmdline"
+        argvs = iter((b"", b"tail\0-f\0", f"tail\0-f\0{entry}\0".encode()))
+        sleeps: list[float] = []
+
+        def _sleep(seconds: float) -> None:
+            sleeps.append(seconds)
+            cmdline.parent.mkdir(parents=True, exist_ok=True)
+            _ = cmdline.write_bytes(next(argvs))
+
+        wait_for_dispatcher_exec(
+            process=process,
+            entry=entry,
+            proc=tmp_path / "proc",
+            poll_seconds=0.5,
+            monotonic=lambda: 0.0,
+            sleep=_sleep,
+        )
+    finally:
+        _stopped(processes=iter((process,)))
+
+    assert sleeps == [0.5, 0.5, 0.5]
+
+
+def test_dispatcher_fixture_readiness_times_out_when_cmdline_is_unreadable(tmp_path: Path) -> None:
+    """An unreadable cmdline past the injected deadline raises an error naming the pid."""
+    process = _sleeper()
+    try:
+        ticks = iter((0.0, 31.0))
+        sleeps: list[float] = []
+        with pytest.raises(AssertionError, match=f"process {process.pid} did not exec"):
             wait_for_dispatcher_exec(
                 process=process,
-                entry=tmp_path / "build" / "scripts" / "bin" / "dispatcher.py",
+                entry=_readiness_entry(tmp_path=tmp_path),
                 proc=tmp_path / "proc",
-                timeout_seconds=0.001,
-                poll_seconds=0.0,
+                timeout_seconds=30.0,
+                monotonic=lambda: next(ticks),
+                sleep=sleeps.append,
             )
     finally:
         _stopped(processes=iter((process,)))
+
+    assert sleeps == []
 
 
 def test_a_build_manifest_version_is_the_builds_identity(tmp_path: Path) -> None:

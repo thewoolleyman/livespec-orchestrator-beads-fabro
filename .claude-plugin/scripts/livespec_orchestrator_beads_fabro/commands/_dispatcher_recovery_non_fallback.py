@@ -99,6 +99,10 @@ def _merged_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
     rather than re-deriving, which is what keeps the journal row and the refusal
     an operator reads one account of one measurement.
     """
-    if observation.pull_request_state != PR_STATE_MERGED:
+    if observation.pull_request_state != PR_STATE_MERGED or observation.rework_after_merge:
+        # A rejection to rework journaled AFTER the merge says the merged change
+        # was not enough, so "no unmerged publication left" is true and beside the
+        # point: the remedy it names would close out an unfinished rework. The
+        # refusal is then fallback-permitting, and the ladder routes the rework.
         return ()
     return pull_request_state_refusals(observation=observation)

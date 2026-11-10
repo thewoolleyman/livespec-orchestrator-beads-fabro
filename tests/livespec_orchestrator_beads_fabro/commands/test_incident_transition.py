@@ -125,10 +125,11 @@ def test_process_transition_commits_and_recovers_exact_retry_without_duplicate_e
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     client = _chain(monkeypatch=monkeypatch)
-    original = client.show_issue(issue_id="test-incident")
     assert command.main(argv=_argv(successor=_successor())) == 0
     first = json.loads(capsys.readouterr().out)
     standing = client.list_issues()
+    # The first commit records the item's head hint; a retry must change nothing after it.
+    original = client.show_issue(issue_id="test-incident")
     assert first["status"] == "verified"
     assert first["result"]["attempt"] == _successor()
     assert first["authorizes_current_effects"] is False

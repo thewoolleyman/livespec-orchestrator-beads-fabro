@@ -27,7 +27,6 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_self_update as selfup,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_preflight_verdict import AcpPreflightVerdict
-from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
 )
@@ -41,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     run_dispatch,
     run_fabro_factory_auth_login,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_repayment import (
+    repayment_goal_for,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -67,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
     DispatchLaunchContext,
     DispatchLifetime,
     DispatchRunContext,
+    dispatch_factory_name,
     dispatch_id_for_launch,
     run_dispatch_with_watchdog,
 )
@@ -118,12 +121,7 @@ def dispatch_one(
     configured primary, which is the contract's additive guarantee.
     """
     resolved_launch = launch or DispatchLaunchContext()
-    raw_factory_target = getattr(args, "fabro_factory_target", None)
-    dispatch_factory = (
-        raw_factory_target.name if isinstance(raw_factory_target, FactoryTarget) else None
-    )
-    if not isinstance(raw_factory_target, FactoryTarget):
-        args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
+    dispatch_factory = dispatch_factory_name(args=args)
     lock = live_dispatch_lock(repo=repo, work_item_id=item.id)
     if lock is None or lock.dispatch_id is None:
         dispatch_id = dispatch_id_for_launch(context=resolved_launch, mint_id=run_id)
@@ -277,6 +275,7 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             # is the namespace `recovery_launch_args` pinned the route onto — never a
             # wave-shared one, for the reason the clause forbids route state there.
             interrupted=interrupted_attempt_for(args=args),
+            repayment=repayment_goal_for(repo=repo, item_id=item.id),
         )
         _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(

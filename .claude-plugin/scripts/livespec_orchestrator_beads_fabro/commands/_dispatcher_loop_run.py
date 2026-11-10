@@ -10,6 +10,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from time import sleep as _real_sleep
 
+from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     dispatch_correlation,
 )
@@ -57,6 +58,7 @@ __all__: list[str] = [
     "DispatchLaunchContext",
     "DispatchLifetime",
     "DispatchRunContext",
+    "dispatch_factory_name",
     "dispatch_id_for_launch",
     "run_dispatch_with_watchdog",
 ]
@@ -87,6 +89,15 @@ def dispatch_id_for_launch(*, context: DispatchLaunchContext, mint_id: Callable[
         if context.prelaunch_profile is not None
         else mint_id()
     )
+
+
+def dispatch_factory_name(*, args: argparse.Namespace) -> str | None:
+    """The factory a launch named, or None; an unnamed launch is defaulted onto `default`."""
+    raw_factory_target = getattr(args, "fabro_factory_target", None)
+    if isinstance(raw_factory_target, FactoryTarget):
+        return raw_factory_target.name
+    args.fabro_factory_target = FactoryTarget(name="default", server=None, dev_token=None)
+    return None
 
 
 @dataclass(frozen=True, kw_only=True)

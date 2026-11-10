@@ -2776,19 +2776,26 @@ Feature: Dispatch admission surfaces plugin-currency staleness rather than block
     When the Dispatcher admits a ready work-item
     Then the dispatch is not refused on plugin-currency grounds
     And no blocking plugin-currency refusal is journaled
-    And a non-blocking dispatcher-currency-staleness fact surfaces that the provisioned build lags the latest release
+    And a non-blocking dispatcher-currency-staleness fact surfaces at low urgency that the provisioned build lags the latest release, naming `just adopt-orchestrator-build <clone> <build>` as its remedy
 
   Scenario: A deliberate release floor refuses a below-floor dispatch fail-closed
     Given a committed dispatcher.minimum_release floor
     And an executing release below that floor
     When the Dispatcher admits a ready work-item
     Then the dispatch is refused fail-closed with an actionable diagnostic naming the floor
+    And the diagnostic names `just adopt-orchestrator-build <clone> <build>` as its remedy and does not name `claude plugin update`
 
   Scenario: Unobservable currency is recorded as undetermined and does not refuse
     Given the executing build identity or the available release cannot be determined
     When the plugin-currency check runs at dispatch admission
     Then it records that currency could not be determined
     And it does not refuse the dispatch on currency grounds
+
+  Scenario: An executing build newer than the target's registered install is surfaced
+    Given a target repository whose registered install of this plugin is older than the executing build
+    When the Dispatcher admits a ready work-item for that target
+    Then it prints a non-blocking finding naming both builds
+    And the dispatch is not refused on that ground
 ```
 
 ## Scenario 96 — Each governed-repo integration point resolves from a committed declaration, with a fleet default only where one exists
@@ -7892,7 +7899,7 @@ Feature: The claim half of run reconciliation
     And host B lists the claim in held with the reason owner-elsewhere
 
   Scenario: Marked and held items are not surveyed
-    Given one active fabro item carries rework:pending and another carries a merge-hold: label
+    Given one active fabro item carries rework:pending as a parked rework and another carries a merge-hold: label
     And neither item's stamped run exists on its factory
     When a reconcile-runs pass runs
     Then neither item changes status
@@ -8054,8 +8061,8 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     Then the fix prompt directs no run of the full check suite on that tree in the same turn
 
   Scenario: A hook run that did not grade the tree, or a later change, still requires a passing commit
-    Given a fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
-    When the fix turn is to complete successfully
+    Given a fix or review_fix turn whose only commit took the hook's Red fast path, or whose tree changed after its last passing hook run
+    When the turn is to complete successfully
     Then the turn first commits its tree through the commit hook to a passing result
 
   Scenario: A refresh-repair round applies the same rule to the integrated tree
@@ -8063,6 +8070,31 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     And its commit on the integrated tree passed the commit hook's gate
     When the turn completes the repair successfully
     Then the fix prompt directs no run of the full check suite on that integrated tree in the same turn
+
+  Scenario: A review_fix turn whose hook passed ends its grading obligation for that tree
+    Given a review_fix turn that commits its change
+    And the commit hook's gate passed on the committed tree
+    When the review_fix turn completes successfully on that tree
+    Then the review_fix prompt directs no run of the full check suite on that tree in the same turn
+
+  Scenario: An open Red settled passed re-enters its stage for the Green
+    Given a fix or review_fix turn whose last commit carries TDD-Red trailers and no TDD-Green trailers
+    And its commit-settle node settles that commit passed
+    When the run leaves the commit-settle node
+    Then the run re-enters that same stage instead of janitor_admission
+    And the re-entered turn's brief names the open Red commit and directs completing its Green amend
+
+  Scenario: A completed Red-Green commit or an untrailered commit routes to janitor
+    Given a fix or review_fix turn whose last commit carries both TDD-Red and TDD-Green trailers, or no TDD trailers
+    And its commit-settle node settles that commit passed
+    When the run leaves the commit-settle node
+    Then the run routes to janitor_admission
+
+  Scenario: An open Red at the stage's visit limit ends at needs_human naming it
+    Given a fix or review_fix stage whose visit limit is reached
+    And the stage's last commit is still an open Red
+    When the run leaves the stage
+    Then the run ends at needs_human with a cause naming the open Red commit
 ```
 
 ## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
@@ -8707,6 +8739,24 @@ Feature: New behaviour gets new spec before it is built
     And a new spec revision changes the body of one of those clauses, or the selection against it returns a different set
     When the item reaches a dispatch path
     Then the tier decision is taken again against the new revision
+
+  Scenario: A proof-mode-only Definition of Done edit reuses the spec-change tier decision
+    Given an item whose spec-change tier record reads tier none against an unchanged specification revision
+    And the only edit to its Definition of Done since the record moves one bullet, word for word, under a `### Host-captured` sub-heading with a new `Reason:` line
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A reordered Definition of Done reuses the spec-change tier decision
+    Given an item whose spec-change tier record was taken against an unchanged specification revision
+    And the only edit to its Definition of Done since the record reorders its bullets
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused and no model is run
+
+  Scenario: A reworded Definition of Done bullet takes the spec-change tier decision again
+    Given an item whose spec-change tier record was taken against an unchanged specification revision
+    And one word of one Definition of Done bullet has changed since the record
+    When the item reaches a dispatch path
+    Then the tier decision is taken again
 
   Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
     Given a held spec-change-tier item whose linked proposal is ratified in a new revision
@@ -10095,6 +10145,39 @@ Feature: A Definition of Done passed before dispatch is graded in-run by the sam
     Given any host taking of the Definition-of-Done judgement
     When the taking ends, whether a candidate decided it or it did not run
     Then the dispatch journal carries one row for it naming its stage, the deciding or bound-ended candidates, and each one's total input tokens with its marking
+
+  Scenario: A comment that is not carried does not change the subject digest
+    Given an item whose most recent dispatch claim was at time T
+    And a rider appended before T that is neither standing nor stage-scoped
+    And a cache-eligible pre-dispatch verdict on subject digest D taken after T
+    When the pre-dispatch judgement is taken for the item's next dispatch with no rider appended after T
+    Then the subject digest is D
+    And the recorded verdict is reused without running a judge
+
+  Scenario: A rendered goal carries each rider it receives once
+    Given a ready item carrying one carried rider that names no stage and whose text is unique on the item
+    When the Dispatcher renders the implement stage's goal for a dispatch of the item
+    Then that rider's text occurs exactly once in the rendered goal
+    And the subject digest the dod_gate node grades equals the digest a host taking computes for the same item
+
+  Scenario: A pre-admission taking ended by the input bound lists the item without changing its routing
+    Given an item in backlog whose pre-admission taking is ended by the input bound on every candidate
+    When intake routes the item and needs-attention is read
+    Then the item is routed exactly as it would be without the judgement
+    And needs-attention lists it as unpreflightable with the subject's size in characters and its carried rider count
+
+  Scenario: A preflight ended by the input bound did not run and the item is listed as unpreflightable
+    Given a ready item whose judgement subject exceeds every candidate's input bound
+    When the repository preflight is run for the item
+    Then the preflight exits with its cannot-run code 2 and refuses nothing
+    And the did-not-run record names the input bound as the cause and states the subject's size in characters
+    And the did-not-run record states the number of carried riders the subject held
+    And needs-attention lists the item as unpreflightable with that size and its carried rider count
+
+  Scenario: The unpreflightable fact clears when a later taking runs a judge
+    Given an item listed as unpreflightable
+    When a later host taking of its judgement runs a judge
+    Then needs-attention no longer lists the item as unpreflightable
 ```
 
 ## Scenario 240 — A recorded Definition-of-Done verdict binds every host taking on identical digests, and opposite verdicts are journaled
@@ -11295,6 +11378,34 @@ Feature: Riders instruct only the stages they are written for
     When the Dispatcher renders the goal briefs for its run
     Then the implement and review_fix briefs carry that rider
     And the review, proof_capture and proof_verify briefs do not
+
+  Scenario: a rider appended before the item's last dispatch claim is left out of the next goal
+    Given a work item claimed for a dispatch at time T
+    And a rider that names no stage, appended before T, whose first line does not begin STANDING RIDER:
+    And a second rider that names no stage, appended after T
+    When the Dispatcher renders the implement brief for the item's next dispatch
+    Then the brief carries the second rider and not the first
+    And the operator-rider section states that it left out 1 rider, the first rider's creation time, and the command that lists the item's ledger comments
+    And the first rider is still on the item's ledger
+
+  Scenario: standing and stage-scoped riders are carried whatever their age
+    Given a work item claimed for a dispatch at time T
+    And a rider appended before T whose first line begins STANDING RIDER:
+    And a rider appended before T whose first line is FOR proof_capture ONLY:
+    When the Dispatcher renders the briefs for the item's next dispatch
+    Then the implement and review_fix briefs carry the standing rider
+    And the proof_capture brief carries the stage-scoped rider
+
+  Scenario: an item never claimed for a dispatch carries every rider
+    Given a work item that has never been claimed for a dispatch, carrying three riders that name no stage
+    When the Dispatcher renders the implement brief for its first dispatch
+    Then the brief carries all three riders and states no left-out count
+
+  Scenario: every stage's brief of one dispatch states the same left-out line
+    Given a work item with one rider that is not carried
+    When the Dispatcher renders every stage's brief for one dispatch of the item
+    Then each brief's left-out line is identical
+    And none of them counts a Definition-of-Done judgement record
 ```
 
 ## Scenario 269 — The lifecycle guard harness waits for a slow capture server and names a failed one
@@ -11362,6 +11473,7 @@ Feature: A session resolves its project's registered plugin build and is told wh
     When the plugin's session-start hook runs
     Then it prints a warning naming the registered install's version and the latest released version
     And the session start succeeds
+    And the warning names `just adopt-orchestrator-build <clone> <build>` as its remedy and does not name `claude plugin update`
 
   Scenario: An operation-prose snippet imports the package through the registered root
     Given an operation-prose step that has an agent import this plugin's package from a snippet
@@ -12466,6 +12578,25 @@ Feature: The committed fleet-launch launchers enforce the interim launcher's gat
     When the repository hold file for repository A is removed
     Then the repository A launcher takes its FIFO place back in the order of the ticket it kept
 
+  Scenario: A canary repository hold yields every launch except an exempt item
+    Given impl launchers for work items bd-s and bd-u of repository A holding the two oldest gmktec FIFO tickets, and an impl launcher for repository B behind them
+    And the canary repository hold file for repository A exists
+    And the canary exemption list names bd-s and not bd-u
+    When the launchers run
+    Then the bd-s launcher binds and launches into repository A
+    And the bd-u launcher keeps its ticket and launches nothing into repository A
+    And the repository B launcher binds and launches
+    When the canary repository hold file for repository A is removed
+    Then the bd-u launcher takes its FIFO place back in the order of the ticket it kept
+
+  Scenario: A yielding ticket does not block a launchable ticket behind it
+    Given the oldest gmktec FIFO ticket belongs to a live launcher and its file carries a line beginning held=
+    And the next ticket belongs to a live launcher and its file carries the line wip-wait=1
+    And the third ticket belongs to a launcher whose repository no hold or gate holds
+    When the third launcher computes its FIFO place
+    Then it skips both marked tickets, binds and launches
+    And both marked tickets keep their ticket numbers
+
   Scenario: A repository at its WIP cap yields the FIFO head without running the preflight
     Given an impl launcher whose target repository's counted-claims count, read through the capacity projection, equals its configured wip_cap
     When the launcher runs
@@ -12488,8 +12619,35 @@ Feature: The committed fleet-launch launchers enforce the interim launcher's gat
 
   Scenario: The gmktec factory hold file holds every gmktec launch
     Given the gmktec factory hold file at the path the launcher assigns exists
+    And the launcher's work item is neither listed in the freeze allowlist nor priority 1
     When a gmktec launcher reaches the head of the FIFO
     Then it launches nothing onto any gmktec factory instance until the hold file is removed
+
+  Scenario: An allowlisted item launches once through the gmktec hold
+    Given the gmktec factory hold file exists
+    And the freeze allowlist names work item bd-x
+    When a gmktec launcher for bd-x reaches the launch
+    Then it launches bd-x
+    And the freeze allowlist no longer names bd-x
+    When a second gmktec launcher for bd-x reaches the head of the FIFO
+    Then it launches nothing until the hold file is removed
+
+  Scenario: A priority-1 item launches through the gmktec hold
+    Given the gmktec factory hold file exists
+    And work item bd-p has priority 1 and is not in the freeze allowlist
+    When a gmktec launcher for bd-p reaches the launch
+    Then it launches bd-p
+    And the freeze allowlist is unchanged
+
+  Scenario: A held head does not block a released ticket behind it
+    Given the gmktec factory hold file exists
+    And the oldest gmktec FIFO ticket is for work item bd-h, which is neither allowlisted nor priority 1
+    And the next ticket is for work item bd-x, which the freeze allowlist names
+    When the launchers run
+    Then the bd-x launcher binds and launches
+    And the bd-h launcher keeps its ticket number and launches nothing
+    When the hold file is removed
+    Then the bd-h launcher takes its FIFO place back in the order of the ticket it kept
 
   Scenario: The gmktec target setting selects the candidate only below its cap
     Given the gmktec target setting names the candidate instance
@@ -13520,7 +13678,7 @@ Feature: An impl launcher honours a hold until its item is admitted
 Governing clause: `contracts.md` §"Self-contained plugin dispatch".
 
 ```gherkin
-Feature: The release branch advances only on an operator dispatch that starts a canary
+Feature: The release branch advances only at the roll step, after its canary passes
 
   Scenario: a published release does not move the release branch
     Given the `release` branch names the commit of release tag v1.0.0
@@ -13528,11 +13686,34 @@ Feature: The release branch advances only on an operator dispatch that starts a 
     Then the `fast-forward-release-branch.yml` run for that event finishes with its job skipped
     And the `release` branch still names the commit of v1.0.0
 
-  Scenario: an operator dispatch advances the release branch to start a canary
+  Scenario: a canary clone adopts a release tag while the release branch keeps its commit
+    Given the `release` branch names the commit of release tag v1.0.0
+    And fleet clones A and B each have this plugin installed at project scope at v1.0.0's commit
+    When an operator takes the named-build adopt naming clone A and tag v1.1.0
+    Then clone A's install record names v1.1.0's commit
+    And clone B's install record still names v1.0.0's commit
+    And the `release` branch still names the commit of v1.0.0
+    And a canary sample whose record names a clone A install-record gitCommitSha other than v1.1.0's commit is discarded, not judged
+
+  Scenario: a session start outside the canary installs no unjudged build
+    Given the `release` branch names the commit of release tag v1.0.0
+    And clone A is a canary clone of release v1.1.0, adopted by the named-build adopt
+    When a Claude Code session starts in fleet clone B and its session-start plugin refresh runs
+    Then clone B's install record names v1.0.0's commit
+
+  Scenario: the roll step advances the release branch after the canary passes
     Given the `release` branch names the commit of release tag v1.0.0
     And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0's canary samples were judged to pass
     When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
     Then the `release` branch names the commit of v1.1.0 when the run ends
+
+  Scenario: a failed canary leaves the release branch on the last rolled build
+    Given the `release` branch names the commit of release tag v1.0.0
+    And clone A is a canary clone of release v1.1.0
+    When release v1.1.0's canary samples are judged to fail
+    Then the `release` branch still names the commit of v1.0.0
+    And an operator returns clone A to v1.0.0's commit by naming that build
 
   Scenario: a tag that does not descend from the release branch moves nothing
     Given the `release` branch names the commit of release tag v1.1.0
@@ -13682,4 +13863,108 @@ Feature: A sandbox checks a tree with the tooling release that tree pins, and wo
     And each is writable by the run's agent
     And each is non-shallow or carries the depth its repository declares sufficient
     And livespec's wiring-completeness-cross-repo check reads the sibling clones under /livespec-siblings
+```
+
+## Scenario 337 — A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed
+
+```gherkin
+Feature: Reconciliation completes a handed-off rework
+  As the maintainer of a repository dispatched to the factory
+  I want a merged rework re-dispatch completed like any other merged dispatch
+  So that a fix-forward rework does not rest active under rework:pending forever
+
+  Scenario: A merged handed-off rework is completed and loses its marker
+    Given an active fabro item carrying rework:pending whose newest dispatch is a rework dispatch
+    And that dispatch's run succeeded and journaled merge-wait-handed-off for its pull request
+    And the forge reports that pull request merged
+    When a reconcile-runs pass runs on the owning host
+    Then the item moves to acceptance
+    And the item no longer carries rework:pending
+
+  Scenario: An open handed-off rework is held with a named reason
+    Given an active fabro item carrying rework:pending whose newest rework dispatch journaled merge-wait-handed-off
+    And the forge reports its pull request open with auto-merge armed and every required check passing or running
+    When a reconcile-runs pass runs on the owning host
+    Then the item stays active and still carries rework:pending
+    And held lists the item as run-succeeded naming merge-wait-handed-off
+
+  Scenario: A parked rework is not surveyed
+    Given an active fabro item carrying rework:pending whose rework dispatch has not started
+    And another active fabro item carrying rework:pending whose rework dispatch died before publishing
+    When a reconcile-runs pass runs
+    Then neither item changes status and both still carry rework:pending
+    And held lists neither item
+```
+
+## Scenario 338 — The committed fleet launcher runs under the tenant wrapper, from the origin tip, with paced re-tickets and the configured routing
+
+Governing clause: `contracts.md` §"Provisional fleet launch scripts".
+
+```gherkin
+Feature: The committed fleet launcher runs under the tenant wrapper, from the origin tip, with paced re-tickets and the configured routing
+  Background:
+    Given fleet-launch/config.sh values overridden to stub factory boards, a stub origin, stub wrappers and throwaway queue, lock, in-flight and state directories
+
+  Scenario: A non-family target runs under its own credential wrapper
+    Given a target repository whose .livespec.jsonc declares a stub tenant credential_wrapper
+    When an impl launcher for one of its items runs to launch
+    Then the ready-set check, the preflight, every ledger read and the drive each run under that tenant wrapper
+    And each runs under the tenant wrapper nested inside the default wrapper, with the family BEADS_DOLT_PASSWORD absent from the tenant wrapper's environment
+
+  Scenario: A launch is refused off the origin tip
+    Given a target checkout that has diverged from the stub origin's default branch
+    When an impl launcher for one of its items runs
+    Then it runs no preflight and launches nothing
+    And its terminal line names the item, its ticket number and the cause checkout-not-at-origin-tip
+
+  Scenario: A behind checkout is brought to the origin tip and launches
+    Given a target checkout one commit behind the stub origin's default branch, which is named main
+    When an impl launcher for one of its items runs
+    Then the checkout's HEAD is the fetched tip of origin's main before the preflight runs
+    And the launcher launches
+
+  Scenario: Early-exit re-tickets are paced
+    Given a stub drive that exits 1 before its run lists on every attempt
+    When the launcher handles three consecutive early exits
+    Then it re-takes the same ticket number after the first, second and third configured delays in that order
+    And it holds no mutex and no in-flight marker while it waits
+
+  Scenario: A failed goal-minijinja-preflight stage is not retried
+    Given a stub drive that exits 1 and reports the stage goal-minijinja-preflight with status failed
+    When the launcher handles the exit
+    Then it re-takes no ticket
+    And it leaves a goal-minijinja-preflight terminal line and one ledger comment that carries no goal-template opening delimiter
+
+  Scenario: Configured routing reaches every drive
+    Given an overrides file with two override lines and one comment line, and a non-empty DoD-judgement model host value
+    When the launcher starts a drive
+    Then the stub drive receives exactly two --acp-node arguments in file order
+    And LIVESPEC_DOD_JUDGEMENT_MODEL is set in its environment
+    When the overrides file is removed
+    Then the next drive receives no --acp-node argument
+```
+
+## Scenario 339 — A Definition of Done that permits a TODO coverage row against a shrink-only debt register is a mechanical filing finding
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Effective acceptance criteria".
+
+```gherkin
+Feature: An unsatisfiable coverage escape is caught at filing, not at the run's last gate
+  As an operator filing a coverage-repair work item
+  I want a TODO escape that the debt register will refuse reported where it was written
+  So that no factory run spends its budget taking an option no merge can accept
+
+  Scenario: the filing display reports the bullet and approve refuses until it is edited
+    Given a repository whose project root carries a committed tests/heading-coverage-debt.json
+    And a work item W filed through the capture filing seam whose Definition of Done section has a bullet naming tests/heading-coverage.json and allowing a row to be set to TODO, and which otherwise carries no mechanical finding
+    Then filing_display reports a (mechanical) finding that quotes that bullet and names tests/heading-coverage-debt.json as the shrink-only register
+    And W carries that finding as a definition-of-done finding (mechanical) ledger comment
+    And W rests at pending-approval even when its effective admission_policy is auto
+    And an approve of W leaves it at pending-approval with a result naming the finding
+    And once the bullet is edited to require an existing test for every row, an approve of W routes it onward as it would any other item
+
+  Scenario: no register, no finding
+    Given a repository whose project root carries no tests/heading-coverage-debt.json
+    When the same work item is filed there
+    Then filing_display reports no debt-register finding for that bullet
 ```

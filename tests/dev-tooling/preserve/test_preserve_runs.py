@@ -211,3 +211,50 @@ def test_a_non_worker_node_keeps_the_ssh_and_crictl_route(tmp_path: Path) -> Non
     assert [c for c in calls if c.startswith(f"{_WORKER} ") and "k3s crictl ps" in c]
     assert not [c for c in calls if c.startswith("exec ")]
     assert "NO_CONTAINER" in result.stdout
+
+
+def test_a_worker_copy_is_read_in_bounded_chunks(tmp_path: Path) -> None:
+    """A tree larger than the chunk budget is copied over several exec streams, intact.
+
+    One exec stream carrying the whole tree was reset by the API server on the first M4 run
+    (2026-11-09, 31.8 MiB); each exec now carries at most the chunk budget.
+    """
+    env, origin, _ = _setup(tmp_path, worker_nodes=_WORKER)
+    workspace = tmp_path / "sandbox" / "workspace"
+    (workspace / "big.bin").write_bytes(os.urandom(5 * 1024 * 1024 // 2))
+    _git("add", "big.bin", cwd=workspace)
+    _git("commit", "-q", "-m", "big", cwd=workspace)
+    work_sha = _git("rev-parse", "HEAD", cwd=workspace)
+    env["PRESERVE_EXEC_CHUNK_BYTES"] = str(1024 * 1024)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    [row] = [line.split("\t") for line in result.stdout.splitlines()[1:]]
+    assert row[5] == "VERIFIED", result.stdout + result.stderr
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    calls = Path(env["STUB_LOG"]).read_text(encoding="utf-8").splitlines()
+    ranged = [c for c in calls if c.startswith("exec dd ")]
+    assert len(ranged) >= 3, calls
+    assert all("bs=1048576" in c and "count=1" in c for c in ranged)
+
+
+def test_an_exact_chunk_multiple_and_an_empty_file_copy_without_extra_or_missing_ranges(
+    tmp_path: Path,
+) -> None:
+    """A file of exactly k chunks gets exactly k dd ranges; a zero-byte file gets none."""
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    git_dir = tmp_path / "sandbox" / "workspace" / ".git"
+    (git_dir / "packed-refs").write_bytes(b"")
+    (git_dir / "objects" / "pack" / "filler.tmp").write_bytes(os.urandom(2 * 1024 * 1024))
+    env["PRESERVE_EXEC_CHUNK_BYTES"] = str(1024 * 1024)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    [row] = [line.split("\t") for line in result.stdout.splitlines()[1:]]
+    assert row[5] == "VERIFIED", result.stdout + result.stderr
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    calls = Path(env["STUB_LOG"]).read_text(encoding="utf-8").splitlines()
+    filler = [c for c in calls if c.startswith("exec dd ") and "filler.tmp" in c]
+    assert len(filler) == 2, filler
+    assert not [c for c in calls if c.startswith("exec dd ") and "packed-refs" in c]
+    copied = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    assert (copied / "packed-refs").read_bytes() == b""
+    assert (copied / "objects" / "pack" / "filler.tmp").stat().st_size == 2 * 1024 * 1024

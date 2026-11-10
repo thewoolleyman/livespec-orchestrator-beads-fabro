@@ -216,3 +216,30 @@ def test_the_dispatch_paths_one_goal_render_passes_the_recovery_section() -> Non
     unnarrated. See this module's docstring for what this case does not claim.
     """
     assert "interrupted" in _render_goal_keywords()
+
+
+def test_the_dispatch_paths_one_goal_render_passes_the_incident_repayment_section() -> None:
+    """The repayment section reaches a real dispatch goal only through this keyword.
+
+    `render_goal`'s `repayment` defaults to the empty string, so deleting the
+    keyword leaves every other test green and renders the plain brief: the
+    marker-removal instruction would silently go dead fleet-wide. Bound to a call
+    of `repayment_goal_for` keyed on the dispatch's own repository and item, read
+    off the parsed source for the reason `_render_goal_keywords` is.
+    """
+    tree = ast.parse(_LOOP_PATH.read_text(encoding="utf-8"))
+    render_calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "render_goal"
+    ]
+    assert len(render_calls) == 1
+    bound = [kw.value for kw in render_calls[0].keywords if kw.arg == "repayment"]
+    assert len(bound) == 1
+    call = bound[0]
+    assert isinstance(call, ast.Call)
+    assert isinstance(call.func, ast.Name)
+    assert call.func.id == "repayment_goal_for"
+    assert {kw.arg for kw in call.keywords} == {"repo", "item_id"}
