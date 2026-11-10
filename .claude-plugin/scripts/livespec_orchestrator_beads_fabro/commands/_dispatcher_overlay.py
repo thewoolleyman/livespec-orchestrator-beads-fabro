@@ -86,10 +86,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_sandbox_imag
     resolve_sandbox_image,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
-    SIBLING_CLONES_ROOT_ENV_VAR,
     SiblingClones,
-    core_plugin_env_line,
-    sibling_clone_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     plugin_cache_gate_prepare_steps_block,
@@ -102,6 +99,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
     resume_checkout_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones import (
+    sandbox_clone_fragments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
@@ -304,14 +304,8 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     rewritten = substitute_input_tokens(text=rewritten, prepare_inputs=prepare_inputs)
     token_literal = json.dumps(token)
     github_token_literal = json.dumps(github_token)
-    sibling_steps = "" if siblings is None else sibling_clone_steps_block(siblings=siblings)
-    sibling_env_line = (
-        ""
-        if siblings is None
-        else f"{SIBLING_CLONES_ROOT_ENV_VAR} = {json.dumps(siblings.clones_root)}\n"
-    )
+    clones = sandbox_clone_fragments(siblings=siblings)
     currency_gate_env_line = f"{CURRENCY_GATE_ENV_VAR} = {json.dumps(CURRENCY_GATE_ENV_VALUE)}\n"
-    core_plugin_env = core_plugin_env_line(siblings=siblings)
     otel_env_lines = _otel_env_lines(otel_env=otel_env)
     tmux_steps = tmux_tmpdir_prepare_steps_block()
     tmux_env_line = tmux_tmpdir_env_lines()
@@ -392,7 +386,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + git_identity_steps
         + worktree_pack_steps
         + factory_provenance_steps
-        + sibling_steps
+        + clones.steps
         + tmux_steps
         + harness_settings_steps
         + gh_refresh_steps
@@ -419,8 +413,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + tmux_env_line
         + harness_shell_env
         + gh_refresh_env_lines
-        + sibling_env_line
-        + core_plugin_env
+        + clones.env_lines
         + currency_gate_env_line
         + otel_env_lines
         + codex_env_lines

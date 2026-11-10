@@ -1841,6 +1841,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   unreadable-journal case asserts the unobservable fact beside the ABSENT
   idle-factory row rather than beside an empty one.
 
+- `test_run_from_clones_scenario336.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 336 and the "A sandbox runs its tools from pinned clones and works in
+  the latest clones" paragraph of `contracts.md` (work-item `bd-ib-lupzxt`). The
+  Dispatcher-materialized program that takes each run-from clone is EXECUTED
+  in-process against local bare repositories standing in for the forge and a
+  project directory holding real JSONC, so the pinned release, the shallow clone,
+  the re-clone after a changed pin, the newest-release-tag fallback (numeric order,
+  pre-releases excluded) and the three failure arms are observed rather than
+  matched. Two limits are stated in the module itself: whether a write by the
+  run's agent is REFUSED depends on the capabilities the sandbox image grants uid
+  0 (measured: CAP_DAC_OVERRIDE present, CAP_LINUX_IMMUTABLE and CAP_SYS_ADMIN
+  absent), so the host-captured proof owns that assertion and this file asserts
+  only that the program strips write bits, asks for the immutable flag and reports
+  honestly which of its two markers is true. The graph case asserts all three nodes
+  that check a refreshed tree (`janitor`, `publish_draft`, `pr_refresh`) re-run the
+  program before the declared suite.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

@@ -34,14 +34,16 @@
 # materializes an UNCOMMITTED per-dispatch overlay of this file (mode
 # 600, deleted when the run returns) that (a) rewrites the `graph`
 # path below to an absolute path so it resolves from outside this
-# directory, (b) APPENDS one depth-1 sibling-clone
+# directory, (b) APPENDS one full-history sibling-clone
 # [[run.prepare.steps]] block per fleet member (from livespec master's
 # .livespec-fleet-manifest.jsonc, fetched host-side via `gh api`; the dispatch
 # target is excluded) so cross-repo checks resolve family siblings
 # under /livespec-siblings inside the sandbox — OUTSIDE the target
 # repository's clone on either engine layout, since the Petri-era engine
 # checks that clone out at the workspace root itself (work-items
-# livespec-impl-beads-8m2, bd-ib-3eleqo), and (c) APPENDS an
+# livespec-impl-beads-8m2, bd-ib-3eleqo), plus one shallow, read-only RUN-FROM
+# clone of livespec core under /livespec-run-from at the release the governed
+# tree pins (work-item bd-ib-lupzxt), and (c) APPENDS an
 # [environments.livespec-ci.env] table carrying the real
 # CLAUDE_CODE_OAUTH_TOKEN value read from the Dispatcher's process
 # environment and a GITHUB_TOKEN freshly minted from the GitHub App
