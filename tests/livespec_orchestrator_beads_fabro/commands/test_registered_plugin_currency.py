@@ -59,6 +59,8 @@ def test_warning_names_the_registered_and_latest_release_versions(tmp_path: Path
     assert warning is not None
     assert "1.2.3" in warning
     assert "1.2.4" in warning
+    assert "just adopt-orchestrator-build <clone> <build>" in warning
+    assert "claude plugin update" not in warning
 
 
 def test_current_or_unregistered_projects_do_not_warn(tmp_path: Path) -> None:

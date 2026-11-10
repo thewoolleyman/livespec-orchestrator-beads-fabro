@@ -70,8 +70,8 @@ def test_same_build_is_current(tmp_path: Path) -> None:
     assert verdict.undetermined_detail is None
 
 
-def test_newer_executing_build_is_current(tmp_path: Path) -> None:
-    """A primary-checkout root ahead of the registered cache build is not lagging."""
+def test_newer_executing_build_is_surfaced_naming_both_builds(tmp_path: Path) -> None:
+    """A primary-checkout root ahead of the registered cache build runs an unadopted build."""
     repo = tmp_path / "repo"
     repo.mkdir()
     executing = _build(root=tmp_path / "checkout", version="0.131.0", flattened=False)
@@ -83,8 +83,14 @@ def test_newer_executing_build_is_current(tmp_path: Path) -> None:
 
     verdict = registered_install_verdict(plugin_root=executing, repo=repo, install_record=record)
 
-    assert verdict.lag_detail is None
     assert verdict.undetermined_detail is None
+    assert verdict.lag_detail is not None
+    assert "0.131.0" in verdict.lag_detail
+    assert "0.130.1" in verdict.lag_detail
+    assert "newer" in verdict.lag_detail
+    assert "surfaced, not enforced" in verdict.lag_detail
+    assert "just adopt-orchestrator-build <clone> <build>" in verdict.lag_detail
+    assert "claude plugin update" not in verdict.lag_detail
 
 
 def test_missing_registry_is_undetermined_not_current(tmp_path: Path) -> None:
