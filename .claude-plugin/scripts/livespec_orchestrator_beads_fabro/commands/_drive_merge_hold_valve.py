@@ -48,7 +48,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_probe_cycle import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_status import PrView, parse_pr_view
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_arm_guard import (
     MergeHoldCommandRun,
-    arm_refusal_for_release,
+    arm_decision_for_release,
+)
+from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_head_proof import (
+    MessageOnlyHeadMove,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import HumanValveRunner
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
@@ -158,15 +161,20 @@ def _release(*, call: _MergeHoldCall, view: PrView | None) -> dict[str, Any]:
     # that may not is a different answer from one that cannot resolve a strategy
     # -- reporting the strategy fault on a pull request a live run is about to
     # rewrite would send an operator after the wrong thing.
-    refusal = arm_refusal_for_release(
+    decision = arm_decision_for_release(
         repo=call.repo,
         work_item_id=call.item.id,
         pr_number=view.number,
         pr_head=view.head,
         runner=call.runner,
     )
-    if refusal is not None:
-        return valve_refusal(aid=call.aid, wid=call.item.id, err=refusal.error, msg=refusal.message)
+    if decision.refusal is not None:
+        return valve_refusal(
+            aid=call.aid,
+            wid=call.item.id,
+            err=decision.refusal.error,
+            msg=decision.refusal.message,
+        )
     method = journaled_merge_method_flag(repo=call.repo, work_item_id=call.item.id)
     if method is None:
         return valve_refusal(
@@ -198,7 +206,10 @@ def _release(*, call: _MergeHoldCall, view: PrView | None) -> dict[str, Any]:
         )
     return _release_success(
         call=call,
-        note=f"auto-merge armed on pull request #{view.number} with {method}",
+        note=(
+            f"auto-merge armed on pull request #{view.number} with {method}"
+            f"{_message_only_note(move=decision.message_only_move)}"
+        ),
     )
 
 
@@ -218,6 +229,16 @@ def _valve_success(*, call: _MergeHoldCall, msg: str) -> dict[str, Any]:
         status=call.item.status,
         assignee=call.item.assignee,
         msg=f"{msg}; status unchanged.",
+    )
+
+
+def _message_only_note(*, move: MessageOnlyHeadMove | None) -> str:
+    """What the result adds when the armed head moved from the proved head only in its message."""
+    if move is None:
+        return ""
+    return (
+        f" (head {move.current_head} differs from the proved head {move.proved_head} only in "
+        f"its commit message; both carry tree {move.tree})"
     )
 
 
