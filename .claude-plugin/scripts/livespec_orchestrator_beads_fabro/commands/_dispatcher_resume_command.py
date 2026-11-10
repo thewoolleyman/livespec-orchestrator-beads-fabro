@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import cast
 
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
@@ -84,7 +83,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_tail import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger import (
     args_with_dispatch_factory_target,
-    explicit_dispatch_factory,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
     apply_factory_size_dispatch_entry,
@@ -108,6 +106,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCpuProfile,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_admission import (
+    ResumeAdmissionPorts,
+    ResumeAdmissionRequest,
+    admit_and_dispatch_resume,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import merged_proof_anchor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_args import resumed_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
@@ -122,11 +126,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_reporting import (
     resume_refusal_report,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import dispatch_preamble
-from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
-    screened_verdict_of,
-)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -144,12 +144,6 @@ _UNANCHORED_REFUSAL = (
     " Done record for this item, so there is nothing to resume from; dispatch it"
     " plainly instead"
 )
-
-# A resume NEVER rides the rework leg. The ladder refuses any item that is not
-# `ready`, and a `rework:pending` row is `active`, so the leg is unreachable --
-# but the valve's DEFAULT is "every marked row" in the tenant, which would let a
-# one-item resume re-dispatch unrelated marked work. An empty scope removes them.
-_NO_REWORK = ReworkPass(scope_ids=frozenset())
 
 
 def add_resume_arguments(*, parser: argparse.ArgumentParser) -> None:
@@ -214,8 +208,12 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
             runner=ShellCommandRunner(),
         ),
     )
-    anchor = gather.anchor
     pull_request = gather.observation.pull_request
+    anchor = (
+        merged_proof_anchor(head=gather.observation.pull_request_head)
+        if gather.observation.proof_only_resume is True
+        else gather.anchor
+    )
     refusals = resume_refusals(observation=gather.observation)
     if refusals or anchor is None or pull_request is None:
         _ = write_stderr(
@@ -243,7 +241,9 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
         action=lambda: journal.append(
             record=resume_journal_record(
                 work_item_id=item.id,
-                earlier_run_ids=gather.earlier_run_ids,
+                earlier_run_ids=(
+                    () if gather.observation.proof_only_resume is True else gather.earlier_run_ids
+                ),
                 pull_request=pull_request,
                 head=anchor.head,
                 resumed_at=anchor.resumed_at,
@@ -317,60 +317,19 @@ def _admit_and_dispatch_resume(
     journal: JournalFile,
     launch: DispatchLaunchContext,
 ) -> DispatchOutcome:
-    """Admit the one item through the ordinary valve and launch the resumed run.
-
-    `enforce_cap=True` because the clause lists the WIP cap among the rules a
-    resume is subject to, which is where it parts company with `dispatch --item`.
-    A capacity deferral therefore launches nothing, and the valve's own deferred
-    outcome is what the caller reports.
-
-    The FACTORY pin is applied as the plain dispatch applies it -- "resolve its
-    factory as `dispatch --item` does" -- while the workflow pin deliberately is
-    not: `_resumed_args` has already set the name the earlier run's dispatch
-    record carries, and the workflow-pinning helper would write it to the ledger.
-
-    Applying it "as `dispatch --item` does" now includes telling it WHICH ROUTE
-    this is, because the item's recorded factory is a resume-only layer of that
-    one precedence. This path states `resume=True` rather than deriving it: a
-    `resume --item` invocation IS the clause's first resume leg, and the resume
-    attributes `_resumed_args` set are not a usable discriminator — a `seeded`
-    route sets the same head on a dispatch the clause calls fresh.
-    """
-    profile = cast(PrelaunchCpuProfile, launch.prelaunch_profile)
-    admission = profile.phase(
-        name="admission",
-        action=lambda: admit_and_select(
+    """Preserve the command seam while delegating proof-only admission selection."""
+    return admit_and_dispatch_resume(
+        request=ResumeAdmissionRequest(
+            args=args,
             repo=repo,
             items=items,
-            candidates=[item],
+            item=item,
             journal=journal,
-            enforce_cap=True,
-            rework=_NO_REWORK,
-            # This invocation's `--factory`, which the valve cannot read for itself:
-            # a resume resolves its factory as `dispatch --item` does, so it passes
-            # the same top layer of that precedence to the pending claim stamp.
-            explicit_factory=explicit_dispatch_factory(args=args),
-            # The pre-dispatch session-headroom screen's reading, reused while fresh.
-            screened=screened_verdict_of(args=args),
-            # THIS path's route, stated rather than measured: every dispatch it
-            # admits is a resume by construction, and the clause makes the item's
-            # recorded factory a pin for exactly that route. Nothing here consults
-            # recovery routing — that is the OTHER resume leg — so without this the
-            # stamp would name the repository's default for every `resume --item`.
-            resume_ids=frozenset({item.id}),
+            launch=launch,
+        ),
+        ports=ResumeAdmissionPorts(
+            admit=admit_and_select,
+            dispatch=dispatch_one,
+            target_args=args_with_dispatch_factory_target,
         ),
     )
-    dispatched = [
-        dispatch_one(
-            args=args_with_dispatch_factory_target(
-                args=args, repo=repo, work_item_id=admitted.id, resume=True
-            ),
-            repo=repo,
-            item=admitted,
-            journal=journal,
-            verdict=admission.verdict,
-            launch=launch,
-        )
-        for admitted in admission.admitted
-    ]
-    return (admission.refused + admission.deferred + dispatched)[0]

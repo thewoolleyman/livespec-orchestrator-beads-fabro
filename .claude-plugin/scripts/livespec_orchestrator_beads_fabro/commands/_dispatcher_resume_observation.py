@@ -80,6 +80,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_comments,
     read_dispatch_labels,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -96,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
     FACTORY_RECORD_VERDICTS,
     ResumeAnchor,
+    merged_proof_anchor,
     published_head,
     resume_anchor,
     resume_anchor_from_cancel,
@@ -114,6 +116,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_forge import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resumes_anchored_on,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only import (
+    may_be_proof_only,
+    proof_only_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     ResumeObservation,
 )
@@ -128,6 +134,7 @@ __all__: list[str] = [
     "ResumeGather",
     "earlier_workflow_name",
     "gather_resume",
+    "proof_only_resume",
     "unproved_assertions",
 ]
 
@@ -178,6 +185,14 @@ def gather_resume(
     branch = publish_branch_for(work_item_id=item.id)
     forge = branch_pull_request(repo=repo, branch=branch, runner=runner)
     pull_request = forge.pull_request
+    pull_request_state = None if pull_request is None else pull_request.state
+    proof_only = proof_only_resume(
+        item=item,
+        pull_request_state=pull_request_state,
+        comments=read_dispatch_comments(repo=repo, item=item)
+        if may_be_proof_only(item=item, pull_request_state=pull_request_state)
+        else (),
+    )
     records = (
         read_pull_request_records(repo=repo, pr_number=pull_request.number, runner=runner)
         if pull_request is not None
@@ -203,10 +218,15 @@ def gather_resume(
         earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
-    anchor = (
+    ordinary_anchor = (
         resume_anchor(records=records or (), executing_node=factory.executing_node)
         if cancel is None
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+    )
+    anchor = (
+        merged_proof_anchor(head=None if pull_request is None else pull_request.head)
+        if proof_only
+        else ordinary_anchor
     )
     return ResumeGather(
         observation=ResumeObservation(
@@ -242,6 +262,7 @@ def gather_resume(
                 work_item_id=item.id,
                 merged_at=None if pull_request is None else pull_request.merged_at,
             ),
+            proof_only_resume=proof_only,
         ),
         anchor=anchor,
         branch=branch,
@@ -332,7 +353,7 @@ def _earlier_run_ids(
     can attribute", and a record published by a different stage of the same run may
     carry the dispatch id instead.
     """
-    named = [] if anchor is None else [anchor.run_id]
+    named = [] if anchor is None or anchor.run_id is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     run_id_named = bool(named)
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
