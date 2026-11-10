@@ -53,6 +53,9 @@ from typing import Any, cast
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
@@ -183,8 +186,10 @@ def release_adoption_items(
 
     An attention list is not a dashboard: a host whose adopters have all taken
     the release needs no item. The moment ONE adopter is behind, EVERY adopter
-    composes its own item — the ones that are behind at high urgency, and the
-    ones that are current at low urgency, named as current. That positive half
+    composes its own item — the ones that are behind, and the ones that are
+    current, named as current — all at low urgency, because a clone's session
+    reconcile holds its installed build and a clone behind the offered build is
+    the expected state between rolls. That positive half
     is what makes a broken reading visible: a lane that can only ever report
     "behind" is indistinguishable from a lane that has stopped reading.
 
@@ -263,7 +268,7 @@ def _resolution_item(
     return ConformanceContext(project_root=project_root, repo=repo).candidate(
         id=f"hygiene:{_FACT_TYPE}:{resolution.adopter}",
         kind="hygiene",
-        urgency="high" if resolution.behind else "low",
+        urgency="low",
         summary=(
             f"Adopter {resolution.adopter} resolves plugin build {resolution.version} "
             f"against release tip {tip_version}: {verdict}. Resolved from the install "
@@ -301,8 +306,11 @@ def _resolution_command(*, project_root: Path, resolution: AdopterResolution) ->
         f"inspect-release-adoption {resolution.adopter} in repository {project_root}. "
         f"That project resolves plugin build {resolution.version} from install path "
         f"{resolution.install_path}. Read the build's own plugin.json as the identity; "
-        "never infer it from the cache directory name. Refresh the adopter's install "
-        "when it is behind the release tip."
+        "never infer it from the cache directory name. When it is behind the release "
+        f"tip, adopt the tip with `{ORCHESTRATOR_BUILD_ADOPT_REMEDY}` in "
+        "livespec-dev-tooling and reload the session; a clone behind the offered build "
+        "is the expected state between rolls, so do not refresh, update or reinstall "
+        "the install directly."
     )
     return f"cd {shlex.quote(str(project_root))} && codex exec {shlex.quote(prompt)} < /dev/null"
 

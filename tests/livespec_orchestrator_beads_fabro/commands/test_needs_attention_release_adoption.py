@@ -192,7 +192,11 @@ def test_reports_an_adopter_whose_resolved_build_predates_the_release_tip(tmp_pa
     assert f"release tip {_TIP_VERSION}" in summary
     assert "BEHIND" in summary
     behind = [item for item in items if "BEHIND" in item.summary]
-    assert [item.urgency for item in behind] == ["high"]
+    assert [item.urgency for item in behind] == ["low"]
+    command = behind[0].handoff.command
+    assert "just adopt-orchestrator-build <clone> <build>" in command
+    assert "Refresh the adopter" not in command
+    assert "claude plugin update" not in command
 
 
 def test_every_composed_item_clears_the_runtime_id_validator(tmp_path: Path) -> None:
@@ -228,7 +232,7 @@ def test_recorded_results_are_verified_by_reading_the_persisted_envelope_back(
     assert "BEHIND" not in current["summary"]
     assert f"resolves plugin build {_STALE_VERSION}" in behind["summary"]
     assert "BEHIND" in behind["summary"]
-    assert behind["urgency"] == "high"
+    assert behind["urgency"] == "low"
     assert behind["source_ref"]["path"] == str(tmp_path / "projects" / "adopter-behind")
 
 
