@@ -150,11 +150,8 @@ def test_read_only_cache_build_predating_latest_release_warns_with_performable_r
     assert len(decision.warnings) == 1
     assert "b6e4012cafed" in decision.warnings[0].detail
     assert _RELEASE_SHA[:12] in decision.warnings[0].detail
-    assert (
-        "claude plugin update "
-        "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
-        in decision.warnings[0].detail
-    )
+    assert "just adopt-orchestrator-build <clone> <build>" in decision.warnings[0].detail
+    assert "claude plugin update" not in decision.warnings[0].detail
 
 
 def test_current_release_build_proceeds_when_master_is_ahead_and_warns_with_commit(

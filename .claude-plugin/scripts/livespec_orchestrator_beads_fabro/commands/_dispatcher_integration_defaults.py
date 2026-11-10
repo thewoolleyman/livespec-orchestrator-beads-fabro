@@ -62,6 +62,7 @@ __all__: list[str] = [
     "MASTER_CI_WORKFLOW_DEFAULT",
     "MERGE_MODES",
     "MERGE_MODE_DEFAULT",
+    "ORCHESTRATOR_BUILD_ADOPT_REMEDY",
     "ORIGIN_DEFAULT_FETCH_REFSPEC",
     "ORIGIN_DEFAULT_REMOTE_REF",
     "ORIGIN_DEFAULT_REVISION",
@@ -262,6 +263,12 @@ RELEASE_REPOSITORY_MASTER_REF = "refs/heads/master"
 ORIGIN_DEFAULT_REVISION = "origin/master"
 ORIGIN_DEFAULT_REMOTE_REF = "refs/remotes/origin/master"
 ORIGIN_DEFAULT_FETCH_REFSPEC = "+refs/heads/master:refs/remotes/origin/master"
+
+# The named-build adopt step livespec-dev-tooling owns, which every currency
+# surface names as its remedy. A fleet clone's session reconcile holds its
+# installed orchestrator build, so a raw plugin update would route around the
+# step; it lives here because it is spelled with the recipe runner's name.
+ORCHESTRATOR_BUILD_ADOPT_REMEDY = f"{FLEET_RECIPE_RUNNER} adopt-orchestrator-build <clone> <build>"
 
 # The explicit no-op VALUE a prepare-toolchain premise resolves to for a
 # repository that carries no such premise. Never an absent key -- see the module

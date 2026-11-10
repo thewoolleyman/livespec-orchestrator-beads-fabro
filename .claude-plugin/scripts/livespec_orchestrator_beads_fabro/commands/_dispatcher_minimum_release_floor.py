@@ -21,6 +21,9 @@ from returns.pipeline import is_successful
 from returns.result import Failure, Result, Success
 from returns.unsafe import unsafe_perform_io
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     executing_payload_root,
 )
@@ -42,9 +45,7 @@ __all__: list[str] = [
 ]
 
 _MINIMUM_RELEASE_KEY = "minimum_release"
-_UPDATE_REMEDY = (
-    "claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
-)
+_ADOPT_REMEDY = ORCHESTRATOR_BUILD_ADOPT_REMEDY
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -130,8 +131,9 @@ def minimum_release_verdict(
     return MinimumReleaseVerdict(
         refusal_detail=(
             f"ERROR: dispatcher plugin release {executing} is below the committed "
-            f"dispatcher.minimum_release floor {floor}. Run `{_UPDATE_REMEDY}` and "
-            f"restart before dispatching. The installation to update is {plugin_root}."
+            f"dispatcher.minimum_release floor {floor}. Run `{_ADOPT_REMEDY}` in "
+            "livespec-dev-tooling, then reload the session, before dispatching. "
+            f"The installation to adopt over is {plugin_root}."
         )
     )
 
