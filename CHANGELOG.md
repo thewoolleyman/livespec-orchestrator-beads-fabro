@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.312.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.1...v0.312.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* factory proof_verify and review record headers carry a clock-read UTC time ([e19b4a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e19b4a2c87f8e94bf2544506ce2738614cca67e7))
+* recovery routing seeds from the latest run's work-in-progress ref over an earlier run's ref ([1616340](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1616340c74b055c4b9f198cec0142b4558449a7b))
+* scope the proof_capture read-only git guard to the run's checkout ([bbc4df3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbc4df37b4c5922ac212acdef7e158ce2d8ebb4b))
+* settle sees a merge a fix turn left in flight when the engine moved HEAD ([1ba749f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ba749f1da38d887ab347fe24d6513321fac40fb))
+
 ## [0.312.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.0...v0.312.1) (2026-11-10)
 
 
