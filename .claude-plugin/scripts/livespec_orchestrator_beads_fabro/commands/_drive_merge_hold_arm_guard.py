@@ -64,12 +64,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import f
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_registry import (
     factory_registry_unobservable,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
-    read_pull_request_records,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
-    PROOF_HEAD_ANCHOR_VERDICTS,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_liveness import (
     ItemRunLiveness,
     live_run_ids_for_item,
@@ -77,7 +71,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_liven
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import published_head
+from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_head_proof import (
+    MessageOnlyHeadMove,
+    head_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_reject_valve import HumanValveRunner
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
@@ -85,8 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._run_attribution import journale
 __all__: list[str] = [
     "ARM_REFUSAL_LIVE_RUN",
     "ARM_REFUSAL_UNPROVED_HEAD",
+    "ArmDecision",
     "ArmRefusal",
     "MergeHoldCommandRun",
+    "arm_decision_for_release",
     "arm_refusal_for_release",
     "observe_item_run_liveness",
 ]
@@ -138,6 +137,14 @@ class ArmRefusal:
     message: str
 
 
+@dataclass(frozen=True, kw_only=True)
+class ArmDecision:
+    """The guard's answer: a refusal, or leave to arm (with the message-only move, if any)."""
+
+    refusal: ArmRefusal | None = None
+    message_only_move: MessageOnlyHeadMove | None = None
+
+
 def arm_refusal_for_release(
     *,
     repo: Path,
@@ -146,7 +153,25 @@ def arm_refusal_for_release(
     pr_head: str | None,
     runner: HumanValveRunner | None,
 ) -> ArmRefusal | None:
-    """Why this release may not arm pull request `pr_number`, or `None` when it may.
+    """Why this release may not arm pull request `pr_number`, or `None` when it may."""
+    return arm_decision_for_release(
+        repo=repo,
+        work_item_id=work_item_id,
+        pr_number=pr_number,
+        pr_head=pr_head,
+        runner=runner,
+    ).refusal
+
+
+def arm_decision_for_release(
+    *,
+    repo: Path,
+    work_item_id: str,
+    pr_number: int,
+    pr_head: str | None,
+    runner: HumanValveRunner | None,
+) -> ArmDecision:
+    """Whether this release may arm pull request `pr_number`, and why not when it may not.
 
     The liveness reading comes FIRST because it is the question whose answer can
     make the second one moot: a live run is about to move the head this guard
@@ -165,7 +190,7 @@ def arm_refusal_for_release(
         repo=repo, factory=factory, work_item_id=work_item_id, runner=command_runner
     )
     if not liveness.observed:
-        return ArmRefusal(
+        return _refused(
             error=ARM_REFUSAL_LIVE_RUN,
             message=(
                 f"set-merge-hold:off refused: the configured factory did not answer with a "
@@ -177,7 +202,7 @@ def arm_refusal_for_release(
             ),
         )
     if liveness.live_run_ids:
-        return ArmRefusal(
+        return _refused(
             error=ARM_REFUSAL_LIVE_RUN,
             message=(
                 f"set-merge-hold:off refused: {', '.join(liveness.live_run_ids)} is still "
@@ -187,13 +212,22 @@ def arm_refusal_for_release(
                 "has ended."
             ),
         )
-    return _head_refusal(
+    head = head_outcome(
         repo=repo,
         work_item_id=work_item_id,
         pr_number=pr_number,
         pr_head=pr_head,
         runner=command_runner,
     )
+    if head is None:
+        return ArmDecision()
+    if isinstance(head, MessageOnlyHeadMove):
+        return ArmDecision(message_only_move=head)
+    return ArmDecision(refusal=_unproved(pr_number=pr_number, detail=head.detail))
+
+
+def _refused(*, error: str, message: str) -> ArmDecision:
+    return ArmDecision(refusal=ArmRefusal(error=error, message=message))
 
 
 def observe_item_run_liveness(
@@ -213,73 +247,6 @@ def observe_item_run_liveness(
         work_item_id=work_item_id,
         runner=_ValveCommandRunner(runner=runner, cwd=repo),
     )
-
-
-def _head_refusal(
-    *,
-    repo: Path,
-    work_item_id: str,
-    pr_number: int,
-    pr_head: str | None,
-    runner: _ValveCommandRunner,
-) -> ArmRefusal | None:
-    """Why the pull request's CURRENT head is not one this release may arm.
-
-    Three absences share one refusal code and are worded apart, because the code
-    is what the caller routes on while the prose is the only thing that says which
-    reading was missing: the forge could not report the head, it carries no
-    anchoring record, or the anchoring record names no single head. A fourth arm
-    is the one positive negative -- a head that WAS read and differs.
-    """
-    if pr_head is None:
-        return _unproved(
-            pr_number=pr_number,
-            detail=(
-                "the forge did not report the pull request's current head, so whether it is "
-                "the head a verified or carried_forward record names could not be measured"
-            ),
-        )
-    records = read_pull_request_records(repo=repo, pr_number=pr_number, runner=runner)
-    if records is None:
-        return _unproved(
-            pr_number=pr_number,
-            detail=(
-                "the forge could not be asked for the Proof of Done records on it, so the "
-                "head the latest verified or carried_forward record names could not be read"
-            ),
-        )
-    anchors = [one for one in records if one.verdict in PROOF_HEAD_ANCHOR_VERDICTS]
-    if not anchors:
-        return _unproved(
-            pr_number=pr_number,
-            detail=(
-                "it carries no verified or carried_forward Proof of Done record, so no record "
-                f"names a head {work_item_id} may be merged at"
-            ),
-        )
-    # The LATEST anchor, by position, is the item's latest run's answer: a
-    # `carried_forward` record supersedes the verified record it carries, and a
-    # later run's record is appended after an earlier run's, so reading per
-    # verdict would let an older run's head win a chain of carry-forwards.
-    proved = published_head(body=anchors[-1].body)
-    if proved is None:
-        return _unproved(
-            pr_number=pr_number,
-            detail=(
-                f"its latest {anchors[-1].verdict} Proof of Done record names no single full "
-                "publish-branch head, so the tree it proved cannot be established"
-            ),
-        )
-    if proved != pr_head:
-        return _unproved(
-            pr_number=pr_number,
-            detail=(
-                f"it is at {pr_head} while its latest {anchors[-1].verdict} Proof of Done "
-                f"record names {proved}, so the head it carries is one no record of this "
-                "item's latest run proved"
-            ),
-        )
-    return None
 
 
 def _unproved(*, pr_number: int, detail: str) -> ArmRefusal:

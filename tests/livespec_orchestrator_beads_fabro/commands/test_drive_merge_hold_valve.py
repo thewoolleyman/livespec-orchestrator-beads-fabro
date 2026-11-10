@@ -28,6 +28,10 @@ _VALVE_MODULE = "livespec_orchestrator_beads_fabro.commands._drive_merge_hold_va
 # each guard case moves exactly one of them.
 _HEAD = "a" * 40
 _OTHER_HEAD = "b" * 40
+# The tree and parent the two heads share when the move between them is only a
+# reworded commit message.
+_TREE = "1" * 40
+_PARENT = "2" * 40
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -214,6 +218,27 @@ def _guard_answers(
     return [
         _Run(returncode=0, stdout=_ps_json() if ps is None else ps),
         _Run(returncode=0, stdout=_records_json() if records is None else records),
+    ]
+
+
+def _commit_json(*, tree: str = _TREE, parents: tuple[str, ...] = (_PARENT,)) -> str:
+    """A `gh api .../git/commits/<sha>` payload: the commit's tree and its parents."""
+    return json.dumps({"tree": {"sha": tree}, "parents": [{"sha": one} for one in parents]})
+
+
+def _commit_argv(*, sha: str) -> tuple[str, ...]:
+    return ("gh", "api", f"/repos/{{owner}}/{{repo}}/git/commits/{sha}")
+
+
+def _commit_answers(*, proved: str | None = None, current: str | None = None) -> list[_Run]:
+    """The two commit readings the head comparison takes: the proved head, then the current.
+
+    Taken only once the current head differs from the proved one; a head that
+    equals it needs neither reading.
+    """
+    return [
+        _Run(returncode=0, stdout=_commit_json() if proved is None else proved),
+        _Run(returncode=0, stdout=_commit_json() if current is None else current),
     ]
 
 
@@ -504,6 +529,7 @@ def test_release_refuses_a_head_no_proof_record_names(tmp_path: Path) -> None:
         results=[
             _Run(returncode=0, stdout=_pr_json(head=_OTHER_HEAD)),
             *_guard_answers(),
+            *_commit_answers(current=_commit_json(tree="3" * 40)),
         ]
     )
 
@@ -515,6 +541,70 @@ def test_release_refuses_a_head_no_proof_record_names(tmp_path: Path) -> None:
     assert result["domain_error"] == "unproved-head"
     assert _OTHER_HEAD in str(result["summary"])
     assert _HEAD in str(result["summary"])
+    assert not any(call[:3] == ("gh", "pr", "merge") for call in runner.calls)
+
+
+def test_release_arms_a_head_that_differs_from_the_proved_head_only_in_its_message(
+    tmp_path: Path,
+) -> None:
+    """A reworded commit keeps the proof: same parent, same tree, new head.
+
+    The measured case: a hand reword moved the head while the tree and the parent
+    stayed put, and the release refused for want of a record naming the new head.
+    The proof graded a tree, and the tree did not move.
+
+    The result names BOTH heads and the tree they share, because that is how an
+    operator reads back what the arming was justified by; and the arm itself is
+    the ordinary one, with the journaled merge method.
+    """
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="squash")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json(head=_OTHER_HEAD)),
+            *_guard_answers(),
+            *_commit_answers(),
+            _Run(returncode=0),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert result["status"] == "green"
+    assert not _held()
+    assert runner.calls[-3:-1] == [_commit_argv(sha=_HEAD), _commit_argv(sha=_OTHER_HEAD)]
+    assert runner.calls[-1] == ("gh", "pr", "merge", "7", "--squash", "--auto", "--delete-branch")
+    summary = str(result["summary"])
+    assert _HEAD in summary
+    assert _OTHER_HEAD in summary
+    assert _TREE in summary
+
+
+def test_release_leaves_the_pull_request_unarmed_when_a_commit_cannot_be_read(
+    tmp_path: Path,
+) -> None:
+    """A head whose commit cannot be read is not shown to differ only in its message."""
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="rebase")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json(head=_OTHER_HEAD)),
+            *_guard_answers(),
+            _Run(returncode=0, stdout=_commit_json()),
+            _Run(returncode=1, stderr="not found"),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert _held()
+    assert result["domain_error"] == "unproved-head"
     assert not any(call[:3] == ("gh", "pr", "merge") for call in runner.calls)
 
 
