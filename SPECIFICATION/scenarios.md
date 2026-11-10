@@ -7247,11 +7247,37 @@ Feature: Default-branch movement after pr_refresh is absorbed inside the run, an
     Then pr_refresh disarms the pull request's auto-merge request before it rebases or routes to refresh repair
     And the pull request is armed again only by pr, for a head named by a verified or carried_forward record of the resumed run
 
-  Scenario: A merge-hold release cannot arm a head that no proof record names
+  Scenario: A merge-hold release arms a head that differs from the proved head only in its commit message
     Given an item under a merge hold whose pull request head is H2
     And the latest verified or carried_forward record of the item's latest run names H1, not H2
+    And H1 and H2 each have exactly one parent, the same commit P, and the same tree T
     When the operator releases the hold
-    Then the release refuses, naming the head comparison that failed, and the pull request stays unarmed
+    Then auto-merge is armed on the pull request with the merge method journaled with the dispatch that opened it
+    And the release result names the proved head H1, the current head H2 and their shared tree T
+    And no verified or carried_forward record is written for H2
+
+  Scenario: A merge-hold release cannot arm a head whose tree differs from the proved head
+    Given an item under a merge hold whose pull request head is H2
+    And the latest verified or carried_forward record of the item's latest run names H1, not H2
+    And H2's tree differs from H1's tree
+    When the operator releases the hold
+    Then the release refuses, naming the tree comparison as the measurement that failed and reporting H1 and H2
+    And the pull request stays unarmed
+
+  Scenario: A merge-hold release cannot arm a head with the proved tree on a different parent
+    Given an item under a merge hold whose pull request head is H2
+    And the latest verified or carried_forward record of the item's latest run names H1, not H2
+    And H2 has the same tree as H1 but a different parent
+    When the operator releases the hold
+    Then the release refuses, naming the parent comparison as the measurement that failed and reporting H1 and H2
+    And the pull request stays unarmed
+
+  Scenario: A merge-hold release that cannot read a head's tree or parent refuses
+    Given an item under a merge hold whose pull request head is H2
+    And the latest verified or carried_forward record of the item's latest run names H1, not H2
+    And the tree or the parent of H1 or H2 cannot be read
+    When the operator releases the hold
+    Then the release refuses, naming the read that failed, and the pull request stays unarmed
   Scenario: A rejected refresh push that landed on origin is reported as a landed-but-errored write
     Given a run whose pr_refresh rebased its series onto the default branch as pushed head P and pushed it with a lease against leased head L
     And the forge rejects the push with the error text "fatal error in commit_refs"
@@ -13967,4 +13993,22 @@ Feature: An unsatisfiable coverage escape is caught at filing, not at the run's 
     Given a repository whose project root carries no tests/heading-coverage-debt.json
     When the same work item is filed there
     Then filing_display reports no debt-register finding for that bullet
+```
+
+## Scenario 340 — CI's factory-graph gate installs the pinned fabro asset for the runner's architecture
+
+```gherkin
+Feature: CI's factory-graph gate installs the pinned fabro asset for the runner's architecture
+
+  Scenario: An x86_64 or aarch64 runner gets its own verified asset
+    Given CI's factory-graph gate pins one upstream fabro release
+    And that release publishes a static Linux asset and its sha256 for the runner's architecture
+    When the gate's installer runs on an x86_64 or aarch64 runner
+    Then it installs that architecture's asset after verifying the published sha256
+
+  Scenario: Any other architecture is refused by name
+    Given CI's factory-graph gate pins one upstream fabro release
+    When the gate's installer runs on a runner whose architecture is neither x86_64 nor aarch64
+    Then it exits non-zero with a message naming that architecture
+    And no fabro binary is installed
 ```
