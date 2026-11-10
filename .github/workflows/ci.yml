@@ -32,9 +32,9 @@ name: CI
 # uv occasionally fails when the PyPI file CDN (files.pythonhosted.org)
 # drops a wheel download mid-stream ("broken pipe"). UV_HTTP_RETRIES
 # makes uv retry the fetch in-process instead of failing the job.
-# Combined with the ~/.cache/uv actions/cache step (keyed on uv.lock)
-# every uv-sync job uses below, an unchanged lock installs from cache
-# and never contacts PyPI at all.
+# There is no actions/cache step for uv: each job's container image
+# carries the uv cache, and the uid-1000 legs point UV_CACHE_DIR at the
+# node's warm uv seed when it is writable (bd-ib-rpit5z, below).
 #
 # mise reaches the SAME class of CDN (GitHub releases) for its tool binaries
 # and fails identically. mise's own default is `http_retries = 0` — one
