@@ -391,6 +391,7 @@ check:
         check-comment-line-anchors
         check-commit-pairs-source-and-test
         check-delegated-gate-check-suite
+        check-delegated-job-authority-skip
         check-file-lloc
         check-fleet-marketplace-relative-sources
         check-global-writes
@@ -1445,3 +1446,6 @@ check-codex-hook-reconcilable:
 
 check-delegated-gate-check-suite:
     uv run python -m livespec_dev_tooling.checks.delegated_gate_check_suite
+
+check-delegated-job-authority-skip:
+    uv run python -m livespec_dev_tooling.checks.delegated_job_authority_skip
