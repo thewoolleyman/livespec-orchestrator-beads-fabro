@@ -583,6 +583,40 @@ def test_release_arms_a_head_that_differs_from_the_proved_head_only_in_its_messa
     assert _TREE in summary
 
 
+def test_release_refuses_a_head_whose_tree_differs_naming_the_tree_comparison(
+    tmp_path: Path,
+) -> None:
+    """A head carrying another tree is code nothing graded, whatever its parent.
+
+    The refusal names the TREE comparison as the measurement that failed, because
+    the remedy follows from it: a different tree needs a proof of its own, where
+    a different parent with the same tree is a question about history. Both heads
+    ride the message so an operator can tell which side moved.
+    """
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="rebase")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json(head=_OTHER_HEAD)),
+            *_guard_answers(),
+            *_commit_answers(current=_commit_json(tree="3" * 40)),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert _held()
+    assert result["domain_error"] == "unproved-head"
+    summary = str(result["summary"])
+    assert "tree comparison" in summary
+    assert _HEAD in summary
+    assert _OTHER_HEAD in summary
+    assert not any(call[:3] == ("gh", "pr", "merge") for call in runner.calls)
+
+
 def test_release_leaves_the_pull_request_unarmed_when_a_commit_cannot_be_read(
     tmp_path: Path,
 ) -> None:

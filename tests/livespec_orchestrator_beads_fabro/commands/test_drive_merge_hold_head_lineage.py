@@ -17,7 +17,7 @@ from typing import cast
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_head_lineage import (
-    message_only_tree,
+    compare_heads,
 )
 
 _PROVED = "a" * 40
@@ -61,7 +61,7 @@ def _commit(*, tree: str = _TREE, parents: object = (_PARENT,)) -> CommandResult
 
 def _shared(*, proved: CommandResult, current: CommandResult, tmp_path: Path) -> str | None:
     forge = _Forge(answers={_PROVED: proved, _CURRENT: current})
-    return message_only_tree(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
+    return compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge).tree
 
 
 def test_two_commits_on_one_parent_with_one_tree_share_that_tree(tmp_path: Path) -> None:
@@ -71,7 +71,7 @@ def test_two_commits_on_one_parent_with_one_tree_share_that_tree(tmp_path: Path)
 def test_each_commit_is_read_through_the_forge_by_its_full_sha(tmp_path: Path) -> None:
     forge = _Forge(answers={_PROVED: _commit(), _CURRENT: _commit()})
 
-    _ = message_only_tree(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
+    _ = compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
 
     assert forge.argvs == [
         ["gh", "api", f"/repos/{{owner}}/{{repo}}/git/commits/{_PROVED}"],
@@ -81,6 +81,18 @@ def test_each_commit_is_read_through_the_forge_by_its_full_sha(tmp_path: Path) -
 
 def test_a_different_tree_is_not_a_message_only_move(tmp_path: Path) -> None:
     assert _shared(proved=_commit(), current=_commit(tree="3" * 40), tmp_path=tmp_path) is None
+
+
+def test_a_different_tree_names_the_tree_comparison_and_both_trees(tmp_path: Path) -> None:
+    forge = _Forge(answers={_PROVED: _commit(), _CURRENT: _commit(tree="3" * 40)})
+
+    comparison = compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
+
+    assert comparison.tree is None
+    assert comparison.failed is not None
+    assert "tree comparison" in comparison.failed
+    assert _TREE in comparison.failed
+    assert "3" * 40 in comparison.failed
 
 
 def test_a_different_parent_is_not_a_message_only_move(tmp_path: Path) -> None:
