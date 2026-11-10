@@ -155,6 +155,18 @@ release_lock() {
   if [ -n "$lock" ] && grep -q "pid=$$ " "$lock/holder" 2>/dev/null; then rm -f "$lock/holder"; rmdir "$lock" 2>/dev/null; fi
   lock=""
 }
+# installed_build and item_status are defined ahead of the exit path below, because a signal can end
+# the launcher at any point after its traps are set; a helper defined later reads as "command not found".
+installed_build() {
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([e["version"] for e in d["plugins"][sys.argv[2]] if e.get("projectPath")==sys.argv[3]][0])' \
+    "$FLEET_LAUNCH_PLUGIN_REGISTRY" "$FLEET_LAUNCH_PLUGIN_KEY" "$REPO" 2>/dev/null
+}
+item_status() {
+  local out
+  out=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" status "$plugin" "$REPO" "$ITEM" 2>/dev/null) || return 1
+  out=$(printf '%s\n' "$out" | sed -n 's/^LEDGER-STATUS //p' | tail -n 1)
+  [ -n "$out" ] && printf '%s' "$out"
+}
 # write_terminal <cause>: the one terminal line of a launcher that exits without a run.
 write_terminal() {
   echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=$1"
@@ -328,11 +340,6 @@ take_mutex() {
   return 1
 }
 
-installed_build() {
-  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([e["version"] for e in d["plugins"][sys.argv[2]] if e.get("projectPath")==sys.argv[3]][0])' \
-    "$FLEET_LAUNCH_PLUGIN_REGISTRY" "$FLEET_LAUNCH_PLUGIN_KEY" "$REPO" 2>/dev/null
-}
-
 echo "=== fleet-launch dispatch $ITEM at $(date -u +%FT%TZ)"
 ready_check() {
   local p pick
@@ -398,12 +405,6 @@ evaluated=0
 # drive exits. A hold set while the item still reads something other than active stops the drive.
 drive_admitted=0
 drive_stopped=0
-item_status() {
-  local out
-  out=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" status "$plugin" "$REPO" "$ITEM" 2>/dev/null) || return 1
-  out=$(printf '%s\n' "$out" | sed -n 's/^LEDGER-STATUS //p' | tail -n 1)
-  [ -n "$out" ] && printf '%s' "$out"
-}
 descendant_pids() {
   local child
   for child in $(pgrep -P "$1" 2>/dev/null); do descendant_pids "$child"; echo "$child"; done

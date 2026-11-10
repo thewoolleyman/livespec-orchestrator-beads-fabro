@@ -1757,6 +1757,33 @@ else
     wait "$term_pid" 2>/dev/null
 fi
 
+# A TERM that lands while the launcher retries a refused ready-set check, before the launcher has
+# reached the later parts of its script, must still leave the terminal line and the ledger comment:
+# the exit path may not depend on a helper defined below the point the signal interrupts.
+prepare_312_case terminal-term-ready-retry
+export FLEET_LAUNCH_POLL_S=0.2
+export FLEET_LAUNCH_READY_RETRY_POLLS=99
+export STUB_READY_REFUSALS=99
+export STUB_READY_REASON='open blockers: bd-ib-dep=active'
+PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+term_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'ready-set check refused' 10; then
+    stop_launcher "$term_pid"
+    wait "$term_pid"
+    term_rc=$?
+    check_term_exit 'impl launcher retrying a refused ready-set check' 100
+    if grep -qF 'command not found' "$STUB_RM_PROBE_LOG_SOURCE"; then
+        fail "the TERMed ready-set retry called a helper that was not yet defined ($(grep -m 1 -F 'command not found' "$STUB_RM_PROBE_LOG_SOURCE"))"
+    else
+        pass "a TERM during the ready-set retry calls no helper that is not yet defined"
+    fi
+else
+    fail "the impl launcher never logged a refused ready-set check"
+    stop_launcher "$term_pid"
+    wait "$term_pid" 2>/dev/null
+fi
+unset FLEET_LAUNCH_READY_RETRY_POLLS STUB_READY_REFUSALS STUB_READY_REASON
+
 prepare_312_case terminal-control-launch
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$CASE_LOG" 2>&1
 control_rc=$?
