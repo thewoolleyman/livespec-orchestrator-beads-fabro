@@ -229,7 +229,8 @@ def reopen_for_regression(
     incident holder's stamp replacing the factory's so the superseded run's
     terminal, proof or cleanup write answers `claim-changed`. A repeated
     delivery recovers the recorded generation and record and writes nothing;
-    one interrupted before its claim moved completes that move once.
+    one interrupted before its claim moved completes that move once, and of
+    concurrent retries only one moves it while the rest return the recorded result.
     """
     verified = _verified(client=client, attempt=attributed)
     if isinstance(verified, AuthorityRefusal):
@@ -268,10 +269,12 @@ def reopen_for_regression(
             root_token_id=current.committed_token_id,
             prior=prior_claim(record=record),
         ),
+        # Bound to the row this retry decided on: a rival that moved the claim first wins.
+        still_as_decided=lambda row: prior_claim(record=row) == prior_claim(record=record),
     )
-    if result.outcome != "applied":
-        return _refuse(code="incident-reopen-lifecycle-refused", detail=result.outcome)
-    return entry
+    if result.outcome == "applied" or held(client.show_issue(issue_id=successor.item_id)):
+        return entry
+    return _refuse(code="incident-reopen-lifecycle-refused", detail=result.outcome)
 
 
 def require_repayment_current(

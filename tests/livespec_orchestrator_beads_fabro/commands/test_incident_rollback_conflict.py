@@ -9,6 +9,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     IncidentAttempt,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro._incident_entry import INCIDENT_CLAIM_METADATA_KEY
 from livespec_orchestrator_beads_fabro._incident_recovery_plan import RecoveryPlan
 from livespec_orchestrator_beads_fabro.commands import _incident_rollback_conflict as conflicts
 from livespec_orchestrator_beads_fabro.incident_regression_recovery import RecoveryEntry
@@ -165,9 +166,21 @@ def test_rollback_conflict_propagates_transition_and_lifecycle_refusals(
     assert isinstance(wrong_phase, AuthorityRefusal)
     assert wrong_phase.code == "incident-rollback-conflict-not-eligible"
     monkeypatch.setattr(conflicts, "_claim", _claim_success)
+    reverting = _attempt(phase="reverting", generation=2)
+    # The current reverting generation holds the item claim, as a completed reopen leaves it.
+    client.update_issue(
+        issue_id="incident-1",
+        metadata={
+            INCIDENT_CLAIM_METADATA_KEY: {
+                "operation_id": reverting.operation_id,
+                "generation": reverting.generation,
+                "owner": reverting.owner,
+            }
+        },
+    )
     recorded = conflicts.record_rollback_conflict(
         client=client,
-        reading=_reading(attempt=_attempt(phase="reverting", generation=2)),
+        reading=_reading(attempt=reverting),
         conflict=conflicts.RollbackConflict(
             receipt="owned-conflict", release_condition="controller-release"
         ),
