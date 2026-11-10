@@ -12,11 +12,32 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
 INSTALLER = REPOSITORY_ROOT / "dev-tooling/install-ci-fabro.sh"
-PINNED_SHA256 = "27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
+ARCHITECTURES = {
+    "x86_64": (
+        "27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0",
+        "438318077",
+    ),
+    "aarch64": (
+        "1c3e7f25410f14d2407782b1effebc450138a65e3b5e844937c5edb6474c8731",
+        "438318044",
+    ),
+}
+
+
+def _pinned_sha256(*, environment: dict[str, str]) -> str:
+    return ARCHITECTURES[environment["FAKE_UNAME_M"]][0]
+
+
+def _asset_id(*, environment: dict[str, str]) -> str:
+    return ARCHITECTURES[environment["FAKE_UNAME_M"]][1]
+
+
+def _asset_name(*, environment: dict[str, str]) -> str:
+    return f"fabro-{environment['FAKE_UNAME_M']}-unknown-linux-musl.tar.gz"
 
 
 def _warm_asset(*, environment: dict[str, str]) -> Path:
-    return Path(environment["INSTALL_CI_FABRO_WARM_DIR"]) / PINNED_SHA256
+    return Path(environment["INSTALL_CI_FABRO_WARM_DIR"]) / _pinned_sha256(environment=environment)
 
 
 def _write_executable(*, path: Path, body: str) -> None:
@@ -24,12 +45,15 @@ def _write_executable(*, path: Path, body: str) -> None:
     path.chmod(0o755)
 
 
-@pytest.fixture
-def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path]:
+@pytest.fixture(params=list(ARCHITECTURES))
+def installer_environment(
+    *, request: pytest.FixtureRequest, tmp_path: Path
+) -> tuple[dict[str, str], Path, Path]:
     """Provide command stubs and a valid archive without network access."""
+    architecture: str = request.param
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    fixture_root = tmp_path / "fixture" / "fabro-x86_64-unknown-linux-musl"
+    fixture_root = tmp_path / "fixture" / f"fabro-{architecture}-unknown-linux-musl"
     fixture_root.mkdir(parents=True)
     _write_executable(
         path=fixture_root / "fabro",
@@ -49,9 +73,18 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
         #!/usr/bin/env bash
         input="$(cat)"
         path="${input##*  }"
+        [[ "${input%%  *}" == "$EXPECT_SHA256" ]] || exit 1
         if [[ "$(head -c 3 "$path")" == bad ]]; then
           exit 1
         fi
+        """,
+    )
+    _write_executable(
+        path=bin_dir / "uname",
+        body="""\
+        #!/usr/bin/env bash
+        [[ "$*" == -m ]] || exit 98
+        printf '%s\\n' "$FAKE_UNAME_M"
         """,
     )
     _write_executable(
@@ -90,6 +123,8 @@ def installer_environment(*, tmp_path: Path) -> tuple[dict[str, str], Path, Path
     environment = os.environ | {
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "INSTALL_CI_FABRO_WARM_DIR": str(tmp_path / "warm"),
+        "FAKE_UNAME_M": architecture,
+        "EXPECT_SHA256": ARCHITECTURES[architecture][0],
     }
     return environment, fixture_asset, tmp_path / "curl.log"
 
@@ -149,7 +184,10 @@ def test_uses_api_asset_when_warm_seed_is_unavailable(
 
     assert result.returncode == 0, result.stderr
     curl_arguments = curl_log.read_text()
-    assert "https://api.github.com/repos/fabro-sh/fabro/releases/assets/438318077" in curl_arguments
+    asset_id = _asset_id(environment=environment)
+    assert (
+        f"https://api.github.com/repos/fabro-sh/fabro/releases/assets/{asset_id}" in curl_arguments
+    )
     assert "Accept: application/octet-stream" in curl_arguments
     assert "Authorization: Bearer test-token" in curl_arguments
     assert "https://github.com/fabro-sh/fabro/releases/download/" not in curl_arguments
@@ -173,8 +211,15 @@ def test_falls_back_to_release_download_after_api_asset_failure(
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "fabro").is_file()
     curl_arguments = curl_log.read_text()
-    assert "https://api.github.com/repos/fabro-sh/fabro/releases/assets/438318077" in curl_arguments
-    assert "https://github.com/fabro-sh/fabro/releases/download/v0.254.0/" in curl_arguments
+    asset_id = _asset_id(environment=environment)
+    asset_name = _asset_name(environment=environment)
+    assert (
+        f"https://api.github.com/repos/fabro-sh/fabro/releases/assets/{asset_id}" in curl_arguments
+    )
+    assert (
+        f"https://github.com/fabro-sh/fabro/releases/download/v0.254.0/{asset_name}"
+        in curl_arguments
+    )
 
 
 def test_rejects_a_downloaded_asset_with_the_wrong_sha256(
@@ -205,3 +250,19 @@ def test_reports_each_failed_source_when_no_asset_can_be_fetched(
     assert "warm seed" in result.stderr
     assert "GitHub releases API asset route failed" in result.stderr
     assert "GitHub release download URL failed" in result.stderr
+
+
+def test_unsupported_architecture_exits_naming_it_and_installs_nothing(
+    *, installer_environment: tuple[dict[str, str], Path, Path], tmp_path: Path
+) -> None:
+    """An architecture without a pinned asset fails closed before any fetch."""
+    environment, _fixture_asset, curl_log = installer_environment
+    environment.update({"CURL_LOG": str(curl_log), "FAKE_UNAME_M": "riscv64"})
+    target = tmp_path / "fabro"
+
+    result = _run_installer(environment=environment, target=target)
+
+    assert result.returncode != 0
+    assert "riscv64" in result.stderr
+    assert not target.exists()
+    assert not curl_log.exists()
