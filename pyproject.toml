@@ -683,6 +683,8 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_sandbox_commit_runner_scenario179.py",
     "tests/integration/test_needs_human_node_timeout_cut_scenario192.py",
     "tests/integration/test_commit_settle_ends_git_operation_yzrguu.py",
+    "tests/integration/test_commit_runner_refuses_subjectless_commit_7cixf3.py",
+    "tests/integration/test_publish_draft_refuses_subjectless_commit_7cixf3.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
