@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.312.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.2...v0.312.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* a dispatch executing a newer build than the registered install surfaces a finding ([0e67adc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0e67adc89024fa373c86fcedab4e6ee7a4d34b8b))
+* re-enter review_fix for the Green of an open Red instead of routing to the janitor ([d8e41d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d8e41d3f80f782bb97df656348ed5cec44cc5851))
+* release-adoption attention items are low urgency and name the adopt step ([845dbdc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/845dbdc5e38954b039f51715dc02fbf77b388e8d))
+
 ## [0.312.2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.1...v0.312.2) (2026-11-10)
 
 
