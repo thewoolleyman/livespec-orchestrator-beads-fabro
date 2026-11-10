@@ -43,7 +43,9 @@ while read -r run pod node; do
     # scratch file first, is checked against the byte count it must hold, and is retried (up
     # to PRESERVE_EXEC_CHUNK_TRIES, default 4) before it is appended, so a reset costs one
     # chunk, and a partial chunk never reaches the splitter. The batch's file list goes on
-    # stdin: as exec arguments it would ride in the exec request's URL.
+    # stdin: as exec arguments it would ride in the exec request's URL. Run ONE preserve per
+    # pod at a time: two concurrent exec streams to the same pod reset each other (42 resets
+    # when two passes overlapped on 2026-11-10 03:17Z, none when run alone).
     rd_files() {
       local chunk=${PRESERVE_EXEC_CHUNK_BYTES:-4194304} mib=1048576 size rel off len bsum=0
       local tries=${PRESERVE_EXEC_CHUNK_TRIES:-4} part="$D.chunk"
@@ -88,8 +90,11 @@ while read -r run pod node; do
         fi
       done < "${1%.list}.sizes"
       flush
-      rm -f "$part"
     }
+    # rd_files wrapper: the scratch file is a sibling of $D, which rm -rf "$D" does not reach,
+    # so it is removed on every exit, and the copy's own status is returned unchanged.
+    eval "$(declare -f rd_files | sed '1s/rd_files/rd_files_chunks/')"
+    rd_files() { local rc=0; rd_files_chunks "$@" || rc=$?; rm -f "$D.chunk"; return "$rc"; }
     rd 'test -d /workspace/.git' 2>/dev/null || { printf "$out\t-\t-\t-\tNO_CONTAINER\t%s\t-\n" $(( $(date +%s)-t0 )); continue; }
     G=/workspace/.git
   else
