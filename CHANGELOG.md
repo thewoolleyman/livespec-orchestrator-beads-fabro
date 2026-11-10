@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.314.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.313.0...v0.314.0) (2026-11-10)
+
+
+### Features
+
+* bound the rider set a rendered goal and the judgement subject carry ([0396272](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0396272beb32cb984206cae512bd30fb4797b38d))
+* install the pinned fabro asset for the runner's architecture ([57bfd4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/57bfd4a2f8ffb7f1fc56dbbd02cd366df82856a3))
+
+
+### Bug Fixes
+
+* settle restores a merge the engine checkpoint consumed (bd-ib-2deww4) ([db2c17c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db2c17c8f4dd8f79d345fa6d48e10c88fb8b564e))
+* survey and complete a rework re-dispatch whose merge wait was handed off ([8fba75d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8fba75d7e5037e274e6ca1a0fc24e8525135d8ad))
+
 ## [0.313.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.3...v0.313.0) (2026-11-10)
 
 
