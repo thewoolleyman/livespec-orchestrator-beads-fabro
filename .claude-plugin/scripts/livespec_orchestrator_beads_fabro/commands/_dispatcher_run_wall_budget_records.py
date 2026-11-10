@@ -1,8 +1,8 @@
 """The journal records a whole-run wall budget writes, cancelled or held.
 
 `SPECIFICATION/contracts.md` section "Dispatcher progress watchdog" -> "The
-whole-run wall budget" requires exactly two records, and the pair is why this
-module exists rather than a single renderer:
+whole-run wall budget" requires three records, and the set is why this module
+exists rather than a single renderer:
 
 * `run-wall-budget-exceeded`, on a cancel, carrying "every field the cancel
   record above requires, under the same rules for the stage and for the pull
@@ -10,7 +10,13 @@ module exists rather than a single renderer:
   budget, the layer that supplied the budget, and the preserve-by-reference
   pointer";
 * `run-wall-budget-held`, when the export could not be read back, "naming the
-  run, the elapsed seconds, the budget and the failed measurement".
+  run, the elapsed seconds, the budget and the failed measurement";
+* `run-wall-budget-hold-escalated`, once per run at its third consecutive held
+  record when origin holds no verified preservation ref.
+
+A cancel released by a verified preservation ref carries that ref and its commit
+id "in place of the preserve-by-reference pointer and a statement that the
+export could not be read back".
 
 PURE, so every field is assertable without a factory and without a journal.
 
@@ -48,8 +54,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading im
 __all__: list[str] = [
     "RUN_WALL_BUDGET_EXCEEDED_STAGE",
     "RUN_WALL_BUDGET_HELD_STAGE",
+    "RUN_WALL_BUDGET_HOLD_ESCALATED_STAGE",
     "run_wall_budget_exceeded_record",
     "run_wall_budget_held_record",
+    "run_wall_budget_hold_escalated_record",
 ]
 
 # The journal stage a budget cancel appends. One literal, shared by this
@@ -63,6 +71,11 @@ RUN_WALL_BUDGET_EXCEEDED_STAGE = "run-wall-budget-exceeded"
 # says it deliberately was not.
 RUN_WALL_BUDGET_HELD_STAGE = "run-wall-budget-held"
 
+# The journal stage the third consecutive held poll appends, once per run. Its
+# own stage for the same reason: it says a person is now owed a decision, which
+# neither the cancel row nor the per-poll held row says.
+RUN_WALL_BUDGET_HOLD_ESCALATED_STAGE = "run-wall-budget-hold-escalated"
+
 
 def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record renderer; the run's identity, its publication and the budget decision are independent inputs.
     *,
@@ -75,7 +88,10 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
     elapsed_seconds: float,
     budget: RunWallBudget,
     start_source: str,
-    preserved_pointer: str,
+    preserved_pointer: str | None = None,
+    preserved_ref: str | None = None,
+    preserved_ref_commit: str | None = None,
+    export_failed_measurement: str | None = None,
 ) -> dict[str, object]:
     """Render the one record a budget cancel writes.
 
@@ -92,13 +108,29 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
     while a first-poll instant is this host's observation, late by up to one
     poll interval.
 
-    `preserved_pointer` is REQUIRED rather than optional, which is the record's
-    own half of the export-then-terminate precondition: this record is only
-    ever written after the pointer was written AND read back, so there is no
-    state in which a budget cancel has no pointer to name. A nullable field
-    here would make a cancel that skipped the export indistinguishable from one
-    whose pointer the renderer was never handed.
+    EXACTLY ONE OF THE TWO PRESERVATION ROUTES IS GIVEN, the pointer or the ref
+    with its commit id, which is the
+    record's own half of the export-then-terminate precondition: this record is
+    only ever written after the pointer was written AND read back, or after a
+    remote ref listing of origin showed a ref holding the run's committed tree.
+    There is no state in which a budget cancel names neither. A cancel released
+    by a verified preservation ref names "that ref and its commit id in place of
+    the preserve-by-reference pointer and a statement that the export could not
+    be read back", so the record carries NO `preserved_pointer` key at all in
+    that case -- an omitted pointer beside a named ref reads as the replacement
+    the clause describes, where a null would read as a pointer nobody wrote --
+    and `export_read_back` is the explicit false that statement is.
     """
+    preservation: dict[str, object] = (
+        {"preserved_pointer": preserved_pointer}
+        if preserved_ref is None
+        else {
+            "preserved_ref": preserved_ref,
+            "preserved_ref_commit": preserved_ref_commit,
+            "export_read_back": False,
+            "export_failed_measurement": export_failed_measurement,
+        }
+    )
     return {
         "stage": RUN_WALL_BUDGET_EXCEEDED_STAGE,
         **watchdog_cancel_fields(
@@ -113,7 +145,7 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
         "budget_seconds": budget.seconds,
         "budget_layer": budget.layer,
         "budget_start_source": start_source,
-        "preserved_pointer": preserved_pointer,
+        **preservation,
     }
 
 
@@ -152,4 +184,37 @@ def run_wall_budget_held_record(
         "budget_seconds": budget.seconds,
         "budget_layer": budget.layer,
         "failed_measurement": failed_measurement,
+    }
+
+
+def run_wall_budget_hold_escalated_record(
+    *,
+    work_item_id: str,
+    run_id: str,
+    factory: str,
+    elapsed_seconds: float,
+    budget: RunWallBudget,
+    failed_measurements: tuple[str, ...],
+) -> dict[str, object]:
+    """Render the one record the third consecutive held poll of a run writes.
+
+    It names every distinct failed measurement of the held polls, in the order
+    they first failed, because the remedies differ -- a ledger this host cannot
+    resolve, a write that was refused and a ref listing that could not be taken
+    are three different faults -- and an escalation naming only the last one
+    would send a person after the wrong repair. The explicit
+    `verified_preservation_ref: None` is the statement that none exists, and not
+    an omitted key, for the reason the held record's measurement is explicit: an
+    omission is what a record from a build predating the escalation looks like.
+    """
+    return {
+        "stage": RUN_WALL_BUDGET_HOLD_ESCALATED_STAGE,
+        "work_item_id": work_item_id,
+        "run_id": run_id,
+        "factory": factory,
+        "elapsed_seconds": elapsed_seconds,
+        "budget_seconds": budget.seconds,
+        "budget_layer": budget.layer,
+        "failed_measurements": list(failed_measurements),
+        "verified_preservation_ref": None,
     }

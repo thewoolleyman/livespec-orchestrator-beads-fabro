@@ -255,7 +255,9 @@ def test_an_unresolvable_ledger_names_itself_as_the_failed_measurement(
     failed = held[0]["failed_measurement"]
     assert isinstance(failed, str)
     assert "ledger" in failed
-    assert runner.calls == []
+    # No export was attempted; the ref listing is the one read that needs neither.
+    assert "dump" not in runner.calls
+    assert "rm" not in runner.calls
 
 
 def test_a_factory_declaring_no_server_names_itself_as_the_failed_measurement(
@@ -277,7 +279,9 @@ def test_a_factory_declaring_no_server_names_itself_as_the_failed_measurement(
     failed = held[0]["failed_measurement"]
     assert isinstance(failed, str)
     assert "server" in failed
-    assert runner.calls == []
+    # No export was attempted; the ref listing is the one read that needs neither.
+    assert "dump" not in runner.calls
+    assert "rm" not in runner.calls
 
 
 def test_the_held_row_carries_no_stage_pull_request_or_published_head(

@@ -5,8 +5,10 @@ whole-run wall budget": "When the budget is exceeded, the Dispatcher MUST first
 export the run's record under the export-then-terminate precondition ...
 writing and reading back the preserve-by-reference pointer. Only then MUST it
 cancel the run; cancelling the run is what releases its slot." And when the
-export cannot be read back it "MUST NOT cancel the run ... and MUST re-attempt
-the export on the next poll, cancelling only once a read-back succeeds."
+export cannot be read back it "MUST NOT cancel the run on that export alone",
+re-attempts the export and lists the refs on origin on every later poll, and
+"MUST cancel the run as soon as either a re-attempted export reads back or a
+verified preservation ref exists" (`_dispatcher_run_wall_budget_refs`).
 
 THE ORDER IS THE WHOLE POINT, and it is a property of this function rather than
 a rule a caller remembers: `fabro rm -f` is what makes the run's record
@@ -48,7 +50,7 @@ live in `_dispatcher_run_wall_budget_preserve`.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Final
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -59,12 +61,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
     LedgerComments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_hold import (
+    RunWallHoldState,
+    hold_run,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
     preserved_pointer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     run_wall_budget_exceeded_record,
-    run_wall_budget_held_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_refs import (
+    PreservationRefsUnobservable,
+    VerifiedPreservationRef,
+    committed_tip,
+    verified_preservation_ref,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RunWallStart,
@@ -80,6 +91,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading im
     last_publish_draft_publication,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe import (
+    WatchdogRunReading,
     watchdog_run_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
@@ -143,12 +155,20 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     start: RunWallStart | None,
     now_epoch: float,
     ledger: LedgerComments | None,
+    hold: RunWallHoldState | None = None,
 ) -> RunWallVerdictValue:
     """Export, cancel and journal a run past its budget; hold it when it cannot.
 
     A run WITHIN its budget costs nothing at all -- no probe, no ledger read,
     no journal row -- which is what keeps the budget off the per-poll critical
     path of every healthy dispatch.
+
+    The cancel has TWO releases and no others: the export reads back, or a remote
+    ref listing of origin shows a verified preservation ref of the run's committed
+    tree. A poll that has neither HOLDS, naming every measurement that failed --
+    a ref listing that could not be taken is one of them, and is never read as
+    "origin holds no ref". `hold` is the per-run count the third consecutive
+    held poll escalates on; a caller passing none can never escalate.
     """
     elapsed = slot_holding_seconds(start=start, now_epoch=now_epoch)
     if (
@@ -158,28 +178,58 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     ):
         return RunWallVerdict.WITHIN
     preserved = preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
-    if preserved.pointer is None:
-        journal.append(
-            record=run_wall_budget_held_record(
-                work_item_id=plan.work_item_id,
-                run_id=run_id,
-                elapsed_seconds=elapsed,
-                budget=plan.run_wall_budget,
-                failed_measurement=preserved.failed_measurement,
-            )
+    # The run's own record is read BEFORE anything can destroy it, on both
+    # routes to a cancel: `rm -f` is what makes it unavailable.
+    reading = watchdog_run_reading(port=port, run_id=run_id)
+
+    def cancel(
+        *, pointer: str | None, verified_ref: VerifiedPreservationRef | None
+    ) -> RunWallVerdictValue:
+        _cancel(
+            dispatch_id=dispatch_id,
+            plan=plan,
+            port=port,
+            journal=journal,
+            run_id=run_id,
+            elapsed_seconds=elapsed,
+            start=start,
+            reading=reading,
+            pointer=pointer,
+            verified_ref=verified_ref,
+            export_failure=preserved.failed_measurement,
         )
-        return RunWallVerdict.HELD
-    _cancel(
-        dispatch_id=dispatch_id,
+        return RunWallVerdict.CANCELLED
+
+    if preserved.pointer is not None:
+        return cancel(pointer=preserved.pointer, verified_ref=None)
+    located = verified_preservation_ref(
+        runner=runner,
+        repo=plan.repo,
+        work_item_id=plan.work_item_id,
+        run_id=run_id,
+        tip_commit=committed_tip(record=reading.record),
+    )
+    if isinstance(located, VerifiedPreservationRef):
+        return cancel(pointer=None, verified_ref=located)
+    hold_run(
+        state=RunWallHoldState() if hold is None else hold,
         plan=plan,
-        port=port,
         journal=journal,
+        ledger=ledger,
         run_id=run_id,
         elapsed_seconds=elapsed,
-        start=start,
-        pointer=preserved.pointer,
+        failed_measurement=_failed_measurement(
+            export=preserved.failed_measurement, located=located
+        ),
     )
-    return RunWallVerdict.CANCELLED
+    return RunWallVerdict.HELD
+
+
+def _failed_measurement(*, export: str, located: PreservationRefsUnobservable | None) -> str:
+    """The export's failure, with the ref listing's when it also could not be taken."""
+    if isinstance(located, PreservationRefsUnobservable):
+        return f"{export}; {located.detail}"
+    return export
 
 
 def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, the run and the two measured figures are independent inputs.
@@ -191,15 +241,17 @@ def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, t
     run_id: str,
     elapsed_seconds: float,
     start: RunWallStart,
-    pointer: str,
+    reading: WatchdogRunReading,
+    pointer: str | None,
+    verified_ref: VerifiedPreservationRef | None,
+    export_failure: str,
 ) -> None:
-    """Read the run's own record, destroy the run, then write the record.
+    """Destroy the run, then write the record of the reading taken BEFORE it.
 
-    The reading comes FIRST for the reason the stall cancel's does: `rm -f` is
-    what makes the record unavailable, and a reading taken afterwards succeeds
-    while describing nothing.
+    The reading is taken by the caller FIRST for the reason the stall cancel's
+    is: `rm -f` is what makes the record unavailable, and a reading taken
+    afterwards succeeds while describing nothing.
     """
-    reading = watchdog_run_reading(port=port, run_id=run_id)
     rm = port.rm(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS)
     journal.append(
         record={
@@ -217,6 +269,9 @@ def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, t
                 budget=plan.run_wall_budget,
                 start_source=start.source,
                 preserved_pointer=pointer,
+                preserved_ref=None if verified_ref is None else verified_ref.ref,
+                preserved_ref_commit=None if verified_ref is None else verified_ref.commit,
+                export_failed_measurement=export_failure,
             ),
             "rm_exit_code": rm.command.exit_code,
         }
@@ -233,6 +288,10 @@ class RunWallBudgetWatch:
     one reading failed and another succeeded, and a budget that moved would
     cancel at a different elapsed figure than its own record names.
 
+    `hold` is the run's count of consecutive held polls, kept here for the same
+    reason: a count the loop re-derived per poll could never reach the third
+    consecutive hold the escalation is owed at.
+
     `ledger` is resolved once, before any poll, because it is a property of the
     dispatching host rather than of the run — a per-poll resolution would put a
     configuration read on every poll of every dispatch. None is a host with no
@@ -245,6 +304,7 @@ class RunWallBudgetWatch:
 
     ledger: LedgerComments | None
     start: RunWallStart | None = None
+    hold: RunWallHoldState = field(default_factory=RunWallHoldState)
 
     def verdict(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the three seams, the run and the two clock readings are independent inputs.
         self,
@@ -286,4 +346,5 @@ class RunWallBudgetWatch:
             start=self.start,
             now_epoch=now_epoch,
             ledger=self.ledger,
+            hold=self.hold,
         )
