@@ -2,22 +2,18 @@
 
 `SPECIFICATION/contracts.md` section "Factory-configurable ACP fallback priority"
 → "Recovery from the failed run's preserved work" → "A ruled seed names the tree a
-released item's next dispatch starts from": "the pre-claim refusal of the
-Across-dispatch required-result progress section MUST still be graded first, as
-for every released item". The recovery paragraph states the consequence: "an item that
-refusal refuses MUST NOT be routed, MUST NOT be offered to the admission valve in
-that pass".
+released item's next dispatch starts from": a pre-claim refusal is still graded
+first, as for every released item, so an item it refuses MUST NOT be routed and
+MUST NOT be offered to the admission valve in that pass.
 
-WHAT THIS PROVES, AND WHAT IT DOES NOT. That refusal's mechanism (the committed
-`dispatcher.redispatch_no_progress_limit` and the count it reads) is not
-implemented in this repository, so no real instance of it can be driven. Every
-pre-claim refusal occupies ONE position — `pre_dispatch_wall_exit`, run by both
-dispatch commands after selection and before recovery routing — and the refusal
-the clause names will be one more row in that wall. These cases therefore stand a
-refusing wall in for it and prove the POSITION: with the wall refusing, the item
-is neither routed nor offered, the ruling on its ledger comments is never read,
-and the refusal is journaled before any of that could happen. The control is the
-same item with the wall silent, which does reach routing and does read the ledger.
+WHAT THIS PROVES. Every pre-claim refusal occupies ONE position —
+`pre_dispatch_wall_exit`, run by both dispatch commands after selection and before
+recovery routing. These cases drive that EXISTING wall, with a refusing wall
+standing in for whichever row refuses, and prove the POSITION: with the wall
+refusing, the item is neither routed nor offered, the ruling on its ledger comments
+is never read, and the refusal is journaled before any of that could happen. The
+control is the same item with the wall silent, which does reach routing and does
+read the ledger. No refusal mechanism is added or implied by these cases.
 """
 
 from __future__ import annotations
