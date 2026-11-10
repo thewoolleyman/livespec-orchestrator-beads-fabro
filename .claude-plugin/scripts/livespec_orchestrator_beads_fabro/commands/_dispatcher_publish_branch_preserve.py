@@ -54,6 +54,7 @@ __all__: list[str] = [
     "Reclaimed",
     "SurvivingPublishBranch",
     "create_ref_argv",
+    "delete_ref_argv",
     "preserve_and_clear",
     "preserved_publish_ref",
 ]
@@ -136,7 +137,7 @@ def preserve_and_clear(
     if failure is not None:
         return PreserveFailure(reason=HELD_PRESERVE_FAILED, detail=failure)
     deleted = runner.run(
-        argv=_delete_ref_argv(ref=f"refs/heads/{surviving.branch}"),
+        argv=delete_ref_argv(ref=f"refs/heads/{surviving.branch}"),
         cwd=repo,
         timeout_seconds=_FORGE_TIMEOUT_SECONDS,
     )
@@ -199,8 +200,13 @@ def _read_ref_argv(*, ref: str) -> list[str]:
     ]
 
 
-def _delete_ref_argv(*, ref: str) -> list[str]:
-    """Delete `ref` on the forge."""
+def delete_ref_argv(*, ref: str) -> list[str]:
+    """Delete `ref` on the forge.
+
+    PUBLIC because the preservation-ref deletion on a closed item deletes through
+    the same forge call, for the same reason `create_ref_argv` is public: a second
+    builder would be a second spelling of one forge call.
+    """
     return [
         "gh",
         "api",
