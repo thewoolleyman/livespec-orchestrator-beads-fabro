@@ -69,7 +69,18 @@ impl_count=0
 head_msg=$(git log -1 --format=%B 2>/dev/null || true)
 red_test_staged=$(git diff-tree --no-commit-id --name-only --diff-filter=AM -r HEAD -- tests/ \
     | grep -E '^tests/.*\.py$' || true)
-if [[ -n "$green_amend_staged" ]] \
+# A merge in progress is neither a Red nor a Green-amend: whatever HEAD's
+# trailers say, its staged tree is the merged tree. red_green_replay routes a
+# MERGE_HEAD commit to its suite-green leg, which reuses only the full
+# aggregate's same-tree evidence, and the Green-amend and Red-mode branches
+# below write none. So a merge staging `.py` skips them and reaches the
+# evidence-writing aggregate; a merge staging no `.py` stays on the doc-only path.
+merge_in_progress=false
+if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
+    merge_in_progress=true
+fi
+if [[ "$merge_in_progress" == false ]] \
+    && [[ -n "$green_amend_staged" ]] \
     && [[ -n "$red_test_staged" ]] \
     && grep -q 'TDD-Red-Test-File-Checksum:' <<<"$head_msg" \
     && ! grep -q 'TDD-Green-Verified-At:' <<<"$head_msg"; then
@@ -96,7 +107,7 @@ if [[ -z "$py_staged" ]]; then
     just check-pre-commit-doc-only
     exit $?
 fi
-if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
+if [[ "$merge_in_progress" == false ]] && [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
     echo ":: Red-mode shape detected: $test_staged"
     echo ":: skipping coverage gates and same-repo live TUI picker gate in pre-commit"
     # check-check-coverage-incremental belongs in this skip list even though it
@@ -115,7 +126,8 @@ if [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
         "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
     exit $?
 fi
-if [[ "$impl_count" -ge 1 ]] \
+if [[ "$merge_in_progress" == false ]] \
+    && [[ "$impl_count" -ge 1 ]] \
     && grep -q 'TDD-Red-Test-File-Checksum:' <<<"$head_msg" \
     && ! grep -q 'TDD-Green-Verified-At:' <<<"$head_msg"; then
     echo ":: Green-amend shape detected (impl staged; HEAD carries Red-only trailers)"
