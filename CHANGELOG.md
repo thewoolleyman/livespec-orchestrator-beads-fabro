@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.312.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.0...v0.312.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **dev-tooling:** honour a delegated cluster gate pass at pre-push ([9026c6c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9026c6c670e41ab772b0b9df5e7e97328cf41bfd))
+* honour negated workflow-edit declarations in the host-only screen ([8ddba27](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ddba27f084a80e8651cce3c5f73e40aa819d8ca))
+
 ## [0.312.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.1...v0.312.0) (2026-11-10)
 
 
