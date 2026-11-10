@@ -1241,6 +1241,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 340 — CI's factory-graph gate installs the pinned fabro asset for the runner's architecture",
+    "work_item": "bd-ib-jjmywv",
+    "first_seen": "2026-11-10"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"

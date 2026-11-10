@@ -232,6 +232,17 @@ allowed to pin.
   through the node's outcome and the `preferred_label` vocabulary already
   in use, so the graph remains loadable on the engine the factory moves
   onto.
+- **CI graph-gate binary.** CI's factory-graph gate is the
+  `check-fabro-graph-validity` check, which validates the repository's
+  committed Fabro workflow graphs during CI. It validates with the pinned
+  upstream `fabro-sh/fabro` release, not with the factory's carrier build,
+  and that binary is outside "the factory" as this section scopes it. The
+  gate's installer MUST install the pinned release's static Linux asset
+  whose architecture matches the CI runner's own (`x86_64` or `aarch64`).
+  It MUST verify the downloaded asset against the sha256 that release
+  publishes for that asset, pinned beside the version, before installing
+  it. On any other runner architecture it MUST exit non-zero with a message
+  naming that architecture and MUST NOT install a binary.
 
 ## Fabro factory host provisioning constraints
 
