@@ -62,10 +62,13 @@ For this plugin that channel is: release, then hold launches outside the
 canary, then `gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z`
 (which alone advances `release` and starts the canary; see
 `git-pr-and-release-mechanics.md`), then the canary's clones adopt it and the
-canary samples are judged, then the roll step adopts it fleet-wide
-(`ensure-plugins`, or `just adopt-orchestrator-build` and
-`just ensure-plugins-fleet` once livespec-dev-tooling-7upzav ships), then
-reload, and then normal dispatch.
+canary samples are judged, then the roll step adopts it fleet-wide, then
+reload, and then normal dispatch. The rollout path is release, adopt step,
+reload, dispatch. The adopt step is livespec-dev-tooling's
+`just adopt-orchestrator-build <clone> <build>` for one clone, or
+`just ensure-plugins-fleet <build>` for the fleet; never a raw
+`claude plugin update`, which routes around it. A clone behind the offered
+build is the expected state between rolls, not a defect.
 Never pin a build,
 re-route to another factory, or otherwise route around a breakage to keep your
 own work moving: a broken-window workaround normalizes the outage, hides it from
