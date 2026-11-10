@@ -267,6 +267,40 @@ def test_is_host_only_item_false_for_cite_only_workflow_mention() -> None:
     assert is_host_only_item(item=item) is False
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Does NOT touch `.github/workflows/`.",
+        "This item never edits .github/workflows/ci.yml.",
+        "This item doesn't modify .github/workflows/ci.yml.",
+        "The item does not change .github/workflows/ci.yml.",
+        "It makes no changes to .github/workflows/ci.yml.",
+        "It works without editing .github/workflows/ci.yml.",
+        "Does not touch .github/workflows/ and will not edit .github/workflows/ci.yml.",
+        "This item ships no files under .github/workflows/; it changes one Python module.",
+    ],
+)
+def test_is_host_only_item_false_for_negated_workflow_scope_declaration(line: str) -> None:
+    assert is_host_only_item(item=_item(description=line)) is False
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Edits .github/workflows/ci.yml.",
+        "Updates `.github/workflows/ci.yml` for the new gate.",
+        "Do not forget to update .github/workflows/ci.yml.",
+        "Does NOT touch .github/workflows/ci.yml; edits .github/workflows/release.yml.",
+        "Never edits .github/workflows/ci.yml but also updates .github/workflows/release.yml.",
+        ".github/workflows/ci.yml should not be updated twice, yet it changes.",
+    ],
+)
+def test_is_host_only_item_true_for_unnegated_workflow_edit(line: str) -> None:
+    item = _item(description=line)
+    assert is_host_only_item(item=item) is True
+    assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
+
+
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
