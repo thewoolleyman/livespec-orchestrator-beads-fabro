@@ -283,6 +283,21 @@ shipped figure with 49460 seconds of headroom and below the retired `"15m"`
 control. The freshness gate still demands 111600 seconds, because the window
 governs it and not the graph.
 
+THE IMPLEMENT WORKFLOW-EDIT GUARD (work-item bd-ib-tgygh6) ADDS ONE NODE, and the
+bound moves from 1350000 to 1400000. `implement_workflow_guard` sits on
+`implement_completion`'s Complete edge, ahead of `implementation_diff`, so the
+derivation bills it at that gate's visit count. It is one `git diff` plus a
+`git ls-files` and decides, running no suite, no push and no agent turn, so it is
+declared DOWNWARD at 600 s in `.livespec.jsonc` like `implement_completion`;
+inherited at the 1800-second default it would have cost 3600 seconds more. Even
+declared downward the node took the shipped allowance from 1347855 on the tree
+it was rebased onto to 1352940, past the old bound, which no node timeout can
+buy back because the remaining cost is the node's visits and not its budget.
+Re-measured against this tree: 1352940 shipped and 2094540 at the retired
+`"15m"`, so the 1400000 bound sits strictly between them with 47060 seconds of
+shipped headroom. The freshness gate still demands 111600 seconds, because the
+window governs it and not the graph.
+
 THE EXACT PINS WERE REPLACED BY INVARIANTS (work-item bd-ib-nvhqyq). Every move
 recorded above forced an edit to this module, including moves that changed no
 graph at all: raising `fix` from 3600 to 7200 in `dispatcher.node_timeouts`
@@ -331,7 +346,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_350_000
+_ALLOWANCE_BOUND_SECONDS = 1_400_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about

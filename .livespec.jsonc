@@ -958,6 +958,13 @@
       // turn's attempt count, and 600 s is already three orders of magnitude
       // above a file read.
       //
+      // `implement_workflow_guard` is declared downward for the same reason
+      // (bd-ib-tgygh6): it runs one `git diff` and one `git ls-files` over this
+      // clone and decides, sitting on `implement_completion`'s Complete edge, so
+      // the derivation bills it at that gate's visit count and the 1800 s default
+      // would add 3600 s to the Codex credential-lifetime floor
+      // tests/test_factory_checkpoint_declaration.py guards.
+      //
       // `recapture_route` is declared downward for the same reason (v175,
       // Scenario 137; work-item bd-ib-j56cur): it increments one counter file in
       // this clone's own `$GIT_DIR` and decides, running no suite, no push and no
@@ -999,6 +1006,7 @@
         "fix_commit_settle": 3900,
         "review_fix_commit_settle": 3900,
         "implement_completion": 600,
+        "implement_workflow_guard": 600,
         "commit_red": 7200,
         "commit_green": 7200,
         "dod_gate": 600,
