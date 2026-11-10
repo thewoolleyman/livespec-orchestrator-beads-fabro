@@ -147,6 +147,11 @@ class ResumeObservation:
     Both default to the posture that predates them: the run did not succeed and the
     item keeps no route of its own.
 
+    `rework_after_merge` is true when the pull request merged and a rework
+    rejection of the item was journaled AFTER that merge. The merged state then
+    no longer means the item's work is complete, so it stops being a non-fallback
+    refusal; it defaults to the posture that predates it, where a merge holds.
+
     `unanchoring_cancel_stage` is the stage of a `watchdog-stall-cancel` record
     that NAMES A HEAD and still could not anchor — the rework-stage case, whose
     head "would not carry the rework". It is carried for the refusal's sake and
@@ -174,6 +179,7 @@ class ResumeObservation:
     unanchoring_cancel_stage: str | None = None
     earlier_run_succeeded: bool = False
     own_route: str | None = None
+    rework_after_merge: bool = False
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:
