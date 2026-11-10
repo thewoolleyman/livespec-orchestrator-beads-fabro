@@ -442,6 +442,21 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   deliberately left NO re-export shim — AGENTS.md §"Refactoring for size" bans
   one, and a shim would have bought the overlay none of the room the split was
   for. Every caller imports from here.
+- `_dispatcher_rider_bound.py` — the BOUNDED RIDER SET a rendered goal and a
+  judgement subject carry (`bd-ib-l2poch`, Scenario 268, `contracts.md` "A goal
+  carries a bounded rider set"). One module answers "which comments are carried" for
+  both, because the node and every host taking must grade the same bytes. Four
+  properties an editor must not invert. The bound is the `ledger-admit` journal
+  row's instant, because the claim stamp on the item carries none, and the row now
+  names its `dispatch_id` so a dispatch skips the claim it just took: the claim a
+  dispatch takes MUST NOT move its own bound. An unreadable instant, either side,
+  CARRIES the rider — dropping a binding rider silently is the worse error. Receipts
+  are neither carried nor counted, and `carried_comment_bodies` keeps them in the
+  bodies handed to the judgement, which finds its recorded verdict among them and
+  drops them from the subject itself. And `judgement_comment_bodies`
+  (`_dispatcher_dod_judgement_comments`) is the host surfaces' reader while the
+  in-run `dod_gate` subject is bounded at `_dispatcher_loop_overlay`, so the digest
+  an uncarried rider cannot move is the same digest on both sides.
 - `_dispatcher_goal_recovery.py` — what a SEEDED dispatch's goal brief says about
   the tree its sandbox starts on (`bd-ib-kn7ktk`, Scenario 185): "The new sandbox
   MUST check out the recorded SHA, and the goal brief MUST name that commit as an
