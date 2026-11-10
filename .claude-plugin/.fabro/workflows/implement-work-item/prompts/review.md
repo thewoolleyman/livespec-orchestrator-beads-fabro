@@ -222,7 +222,15 @@ Its FIRST LINE must be exactly:
 
     Review findings — run <run-id> — <UTC timestamp>
 
-followed by your complete finding lines — every `[BLOCKING]` and
+where `<UTC timestamp>` is a CLOCK READING, never a time you estimated,
+rounded or composed yourself. Read the clock in the SAME command that writes
+the header, immediately before you post, so the time is no later than the
+instant the comment is created and within minutes of it:
+
+    stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'Review findings — run %s — %s\n' "<run-id>" "$stamp" > <file>
+
+and followed by your complete finding lines — every `[BLOCKING]` and
 `[ADVISORY]` line, with its classification tag, verbatim and in the order
 you listed them. Resolve `<run-id>` the way the capture record does, from
 this run's own id. Never edit an earlier review record and never delete one;
