@@ -25,9 +25,27 @@
 set -euo pipefail
 
 readonly version="v0.254.0"
-readonly asset="fabro-x86_64-unknown-linux-musl.tar.gz"
-readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
-readonly asset_id="438318077"
+
+# Each architecture pins its own musl asset, sha256 (the release's published
+# .sha256 asset), and release asset id. Any other `uname -m` fails closed.
+architecture="$(uname -m)"
+case "$architecture" in
+    x86_64)
+        readonly asset_dir="fabro-x86_64-unknown-linux-musl"
+        readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
+        readonly asset_id="438318077"
+        ;;
+    aarch64)
+        readonly asset_dir="fabro-aarch64-unknown-linux-musl"
+        readonly sha256="1c3e7f25410f14d2407782b1effebc450138a65e3b5e844937c5edb6474c8731"
+        readonly asset_id="438318044"
+        ;;
+    *)
+        printf 'install-ci-fabro: unsupported architecture %s (supported: x86_64, aarch64); nothing installed\n' "$architecture" >&2
+        exit 1
+        ;;
+esac
+readonly asset="${asset_dir}.tar.gz"
 readonly warm_dir="${INSTALL_CI_FABRO_WARM_DIR:-/__w/_warm/release-assets}"
 readonly warm_asset="${warm_dir}/${sha256}"
 readonly api_url="https://api.github.com/repos/fabro-sh/fabro/releases/assets/${asset_id}"
@@ -44,7 +62,7 @@ verify_asset() {
 if [[ -f "$warm_asset" ]]; then
     if verify_asset "$warm_asset"; then
         tar -xzf "$warm_asset" -C "$scratch"
-        install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+        install -m 0755 "${scratch}/${asset_dir}/fabro" "$target"
         "$target" --version
         exit 0
     fi
@@ -65,7 +83,7 @@ if curl --fail --silent --show-error --location --retry 5 --output "${scratch}/$
     fi
 
     tar -xzf "${scratch}/${asset}" -C "$scratch"
-    install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+    install -m 0755 "${scratch}/${asset_dir}/fabro" "$target"
     "$target" --version
     exit 0
 else
@@ -87,5 +105,5 @@ if ! verify_asset "${scratch}/${asset}"; then
 fi
 
 tar -xzf "${scratch}/${asset}" -C "$scratch"
-install -m 0755 "${scratch}/fabro-x86_64-unknown-linux-musl/fabro" "$target"
+install -m 0755 "${scratch}/${asset_dir}/fabro" "$target"
 "$target" --version
