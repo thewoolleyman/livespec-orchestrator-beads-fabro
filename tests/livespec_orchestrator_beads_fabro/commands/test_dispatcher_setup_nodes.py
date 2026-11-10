@@ -10,9 +10,7 @@ run, and the lifting of the steps out of a rendered overlay without losing one.
 
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Mapping
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
@@ -24,7 +22,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PrepareStep
 from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
-    SETUP_ENV_ATTRIBUTE,
     SETUP_FAILURE_NODE,
     SETUP_FAILURE_SCRIPT,
     is_setup_node,
@@ -168,13 +165,6 @@ def test_a_value_is_stored_so_the_engine_renders_it_back_verbatim() -> None:
     stored = graph.nodes["run_prepare_1"]["script"]
     assert stored == escape_minijinja_literal(text=script)
     assert _rendered(value=stored) == script
-
-
-def test_a_step_env_rides_the_node_as_one_json_attribute_and_a_bare_step_has_none() -> None:
-    env: Mapping[str, str] = {"LIVESPEC_PREPARE_PAYLOAD": 'x = {{ "{" }}\n"q"', "OTHER": "o"}
-    graph = _spliced(steps=[PrepareStep(script="a", env=env), PrepareStep(script="b")])
-    assert json.loads(_rendered(value=graph.nodes["run_prepare_1"][SETUP_ENV_ATTRIBUTE])) == env
-    assert SETUP_ENV_ATTRIBUTE not in graph.nodes["run_prepare_2"]
 
 
 def test_no_steps_leave_the_graph_text_untouched() -> None:

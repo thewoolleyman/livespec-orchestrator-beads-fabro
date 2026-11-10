@@ -14,11 +14,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     MAX_PACKABLE_CHUNK_BYTES,
     MAX_PAYLOAD_VALUE_BYTES,
     PAYLOAD_ENV_VAR,
     PrepareStep,
+    env_table_line,
     pack_payload,
     packed_payload_decode_command,
     packed_payload_write_command,
@@ -190,3 +192,16 @@ def test_a_chunk_of_the_packable_size_packs_under_the_value_cap() -> None:
     chunk = noise[:MAX_PACKABLE_CHUNK_BYTES]
 
     assert len(pack_payload(text=chunk).encode()) <= MAX_PAYLOAD_VALUE_BYTES
+
+
+def test_an_environment_table_line_round_trips_a_hostile_value_through_a_toml_parser() -> None:
+    """The hoisted form of a payload (work-item bd-ib-dpsiwz) is one assignment per variable."""
+    document = tomli.loads(env_table_line(name="LIVESPEC_SETUP_1__PAYLOAD", value=_HOSTILE))
+    assert document == {"LIVESPEC_SETUP_1__PAYLOAD": _HOSTILE}
+
+
+def test_an_environment_table_line_refuses_what_a_step_env_refuses() -> None:
+    with pytest.raises(ValueError, match="not an upper-case shell variable name"):
+        _ = env_table_line(name="lower", value="x")
+    with pytest.raises(ValueError, match="argument list too long"):
+        _ = env_table_line(name="OK_NAME", value="x" * (MAX_PAYLOAD_VALUE_BYTES + 1))

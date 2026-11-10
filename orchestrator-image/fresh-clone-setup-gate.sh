@@ -20,11 +20,14 @@
 #
 # WHAT IT DOES. Replays the dispatch workflow's own conformance setup steps
 # against a FRESH, UN-BOOTSTRAPPED clone of this repo. The steps are READ FROM
-# `workflow.toml` rather than duplicated here, so a new or reordered setup step
-# is picked up automatically instead of silently escaping the gate.
+# the workflow graph's `run_prepare_<N>` command nodes (`workflow.fabro`) rather
+# than duplicated here, so a new or reordered setup step is picked up
+# automatically instead of silently escaping the gate. They lived in
+# `workflow.toml` as prepare steps until work-item bd-ib-dpsiwz, because upstream
+# Fabro refuses the run-config prepare table from v0.396.0-nightly.0.
 #
 # HOW A STEP IS READ SINCE THE TYPED-WORKFLOW-INPUTS CARRIER (C5-payload, plan
-# bd-ib-vblnq2). The committed prepare steps no longer spell the conformance
+# bd-ib-vblnq2). The committed setup nodes no longer spell the conformance
 # commands: each reads an `inputs.<name>` token that the Dispatcher renders
 # from the governed repository's RESOLVED integration contract
 # (SPECIFICATION/contracts.md §"Repository integration contract"). This gate
@@ -53,7 +56,7 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$HERE/.." && pwd)"
-WORKFLOW="$REPO_ROOT/.claude-plugin/.fabro/workflows/implement-work-item/workflow.toml"
+WORKFLOW="$REPO_ROOT/.claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro"
 CONFIG="$REPO_ROOT/.livespec.jsonc"
 
 # The steps this gate replays: everything in the prepare graph that installs or
@@ -88,11 +91,11 @@ if [ -z "${PY:-}" ] || [ ! -x "$PY" ]; then
        the exact failure mode it exists to close."
 fi
 
-# Render the conformance steps exactly as a dispatch would: select each
-# `script = "..."` line that reads a conformance token, resolve this
+# Render the conformance steps exactly as a dispatch would: select the `script`
+# of each `run_prepare_<N>` node that reads a conformance token, resolve this
 # repository's contract, substitute every `inputs.<name>` token with the value
-# the Dispatcher's projection renders, and unescape the TOML basic-string
-# quoting so the bare shell command remains. One rendered command per line; a
+# the Dispatcher's projection renders, and unescape the DOT string quoting so
+# the bare shell command remains. One rendered command per line; a
 # token the projection does not render is a hard failure, never a literal.
 mapfile -t STEPS < <(
     "$PY" - "$WORKFLOW" "$CONFIG" "$_SELECT" "$REPO_ROOT" <<'PYRENDER'
@@ -117,18 +120,21 @@ resolved = resolve_repo_integration_contract(
 values = contract_prompt_variables(resolved=resolved)
 token = re.compile(r"\{\{\s*inputs\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 selector = re.compile(select)
-for line in Path(workflow).read_text(encoding="utf-8").splitlines():
-    if not line.startswith('script = "') or selector.search(line) is None:
+node = re.compile(r"(?ms)^[ \t]*run_prepare_[0-9]+[ \t]*\[(?P<body>.*?)^[ \t]*\]")
+script = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
+for found in node.finditer(Path(workflow).read_text(encoding="utf-8")):
+    attribute = script.search(found.group("body"))
+    if attribute is None or selector.search(attribute.group("value")) is None:
         continue
-    body = line[len('script = "') : -1].replace('\\"', '"')
+    body = re.sub(r"\\(.)", r"\1", attribute.group("value"))
     rendered = token.sub(lambda match: values[match.group("name")], body)
     sys.stdout.write(rendered + "\n")
 PYRENDER
 )
 
 if [ "${#STEPS[@]}" -lt "$_MIN_STEPS" ]; then
-    fail "found ${#STEPS[@]} conformance setup step(s) in workflow.toml, expected >= $_MIN_STEPS.
-       Either the \`script = \"...\"\` format changed, the steps stopped reading
+    fail "found ${#STEPS[@]} conformance setup step(s) in workflow.fabro, expected >= $_MIN_STEPS.
+       Either the \`run_prepare_<N>\` node format changed, the steps stopped reading
        their integration-contract tokens, or setup steps were removed.
        This gate must never silently degrade to a no-op — fix the selector or the workflow."
 fi
@@ -156,7 +162,7 @@ if [ -e "$CLONE/repo/dev-tooling/worktree-lib.sh" ]; then
        dev-tooling/worktree-lib.sh tracked when it should be gitignored?"
 fi
 
-echo ":: fresh-clone-setup-gate: replaying ${#STEPS[@]} conformance setup step(s) from workflow.toml"
+echo ":: fresh-clone-setup-gate: replaying ${#STEPS[@]} conformance setup step(s) from workflow.fabro"
 echo ":: fresh-clone-setup-gate: fresh un-bootstrapped clone at $CLONE/repo"
 
 for step in "${STEPS[@]}"; do
