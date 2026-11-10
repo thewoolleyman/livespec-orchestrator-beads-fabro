@@ -102,6 +102,8 @@ _INNERMOST_CAUSE = "script exited with status 1"
 # The shape the Petri-era engine IS measured writing for a failed step:
 # one `message` inside `outcome.status.failure`, with no chain beside it.
 _FAILURE_MESSAGE = "the agent process exited before the protocol completed"
+_REFRESH_FAILURE = "LIVESPEC_PR_REFRESH_ORIGIN_UNOBSERVABLE: origin could not be fetched"
+_REFRESH_REPAIR_ABSENT = "LIVESPEC_REFRESH_REPAIR_ABSENT: refresh repair brief was absent"
 
 # The terminal's own failed step, which can never be the cause: it is a
 # dead-end script that exits 1 by design on every run that reaches it.
@@ -339,6 +341,46 @@ def test_the_measured_petri_failure_message_is_named_as_the_cause(
     assert outcome.fabro_failure_cause == _FAILURE_MESSAGE
     assert f"innermost cause: {_FAILURE_MESSAGE}" in outcome.detail
     assert f"innermost cause: {_FAILURE_MESSAGE}" in needs_human_cause_body(outcome=outcome)
+
+
+def test_a_briefless_refresh_repair_reports_the_refresh_stages_own_cause(
+    tmp_path: Path,
+) -> None:
+    """The absent-brief classifier cannot displace the failed refresh cause."""
+    refresh_stage = "pr_refresh@1"
+    refresh_repair_stage = "refresh_repair@1"
+    inspect_payload = _petri_inspect()
+    record = inspect_payload[0]
+    assert isinstance(record, dict)
+    stages = record["stages"]
+    assert isinstance(stages, dict)
+    del stages[_ROUTING_STAGE]
+    stages[refresh_stage] = _stage(handler="script", state="failed")
+    stages[refresh_repair_stage] = _stage(handler="script", state="failed")
+
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=inspect_payload,
+        events_payload=[
+            _step_finished(
+                stream_seq=11,
+                node=refresh_stage,
+                status={"failure": {"message": _REFRESH_FAILURE}},
+            ),
+            _step_finished(
+                stream_seq=12,
+                node=refresh_repair_stage,
+                status={"failure": {"message": _REFRESH_REPAIR_ABSENT}},
+            ),
+        ],
+    )
+    record_body = needs_human_cause_body(outcome=outcome)
+
+    assert outcome.needs_human_stages == (refresh_stage,)
+    assert outcome.fabro_failure_cause == _REFRESH_FAILURE
+    assert f"failed stage: {refresh_stage}" in record_body
+    assert f"innermost cause: {_REFRESH_FAILURE}" in record_body
+    assert _REFRESH_REPAIR_ABSENT not in record_body
 
 
 def test_petri_conclusion_order_selects_fix_after_a_blob_output_predecessor(
