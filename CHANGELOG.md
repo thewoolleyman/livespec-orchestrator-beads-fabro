@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.315.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.315.0...v0.315.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* pack every plain-text dispatch prepare payload gzip+base64 so the collected workflow.toml stays under Fabro's per-file cap (bd-ib-p5e32s) ([77d27cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/77d27cffc42587502ae324e642fb5b1a258b3932))
+
 ## [0.315.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.314.0...v0.315.0) (2026-11-10)
 
 
