@@ -103,6 +103,8 @@ __all__: list[str] = [
     "PROOF_CAPTURE_GIT_BIN_PATH",
     "PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR",
     "PROOF_CAPTURE_HOOKS_PATH",
+    "PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR",
+    "PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH",
     "credential_use_deadline_epoch_capped",
     "guard_script_text",
     "guarded_acp_command",
@@ -149,6 +151,13 @@ CREDENTIAL_USE_UNPROTECTED_VALUE = "1"
 # this guard owns the PATH change so an ACP command cannot replace it with a
 # later Git configuration flag.
 PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR = "LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"
+
+# The read-only rule protects the run's checkout, not every repository a turn
+# touches. The launcher and the private hooks refuse a commit only when its
+# target shares a common git directory with this checkout; a scratch repository
+# a test fixture builds elsewhere keeps its own hooks and commits normally.
+PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR = "LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT"
+PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH = "/workspace"
 
 # The Dispatcher writes these assets beside its credential-use guard, outside
 # every target clone. Proof capture runs for every tenant, including repositories

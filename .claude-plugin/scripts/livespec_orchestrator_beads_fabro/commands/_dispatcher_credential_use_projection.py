@@ -245,7 +245,10 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclara
         label="livespec-credential-use-guard",
     )
     launcher = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-bin" / "git").read_text(encoding="utf-8")
-    hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-commit").read_text(
+    commit_hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-commit").read_text(
+        encoding="utf-8"
+    )
+    push_hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-push").read_text(
         encoding="utf-8"
     )
     install = (
@@ -254,8 +257,8 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclara
         f" {shlex.quote(PROOF_CAPTURE_HOOKS_PATH)}"
         f' && printf %s "${_GUARD_SCRIPT_ENV_VAR}" > {GUARD_SCRIPT_PATH}'
         f" && printf %s {shlex.quote(launcher)} > {PROOF_CAPTURE_GIT_BIN_PATH}/git"
-        f" && printf %s {shlex.quote(hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
-        f" && printf %s {shlex.quote(hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
+        f" && printf %s {shlex.quote(commit_hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
+        f" && printf %s {shlex.quote(push_hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
         f" && chmod 700 {GUARD_SCRIPT_PATH}"
         f" {PROOF_CAPTURE_GIT_BIN_PATH}/git"
         f" {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"

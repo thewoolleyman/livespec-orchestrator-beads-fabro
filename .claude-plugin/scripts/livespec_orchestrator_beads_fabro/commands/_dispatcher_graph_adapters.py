@@ -58,6 +58,8 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard import (
     PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR,
     PROOF_CAPTURE_HOOKS_PATH,
+    PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR,
+    PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH,
     guarded_adapter_string,
 )
 
@@ -108,7 +110,10 @@ _PROOF_CAPTURE_GIT_CONFIG = {
     "GIT_CONFIG_KEY_0": "core.hooksPath",
     "GIT_CONFIG_VALUE_0": PROOF_CAPTURE_HOOKS_PATH,
 }
-_PROOF_CAPTURE_GIT_LAUNCHER = {PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR: "1"}
+_PROOF_CAPTURE_GIT_LAUNCHER = {
+    PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR: "1",
+    PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR: PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH,
+}
 
 
 def _dot_escaped(*, value: str) -> str:
@@ -172,7 +177,9 @@ def _proof_capture_read_only_adapter(*, rendered: str) -> str:
     credential-use entry guard prepend a Git launcher that refuses `commit` and
     `push` before Git interprets that override. Re-tokenizing then re-quoting
     preserves every agent argument while letting these keys replace any ambient
-    Git configuration channel the adapter declared.
+    Git configuration channel the adapter declared. The protected-checkout key
+    names the one tree the rule covers, so a scratch repository elsewhere is
+    not refused.
     """
     tokens = shlex.split(rendered)
     environment: dict[str, str] = {}

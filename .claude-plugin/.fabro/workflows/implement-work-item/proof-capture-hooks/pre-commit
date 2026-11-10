@@ -1,5 +1,31 @@
 #!/bin/sh
-# The proof_capture node is read-only on the repository tree. This custom
-# hooks path runs instead of the repository's potentially long pre-commit gate.
-echo "LIVESPEC_PROOF_CAPTURE_READ_ONLY: proof_capture is read-only on the repository tree; git commit and git push are refused before repository hooks run. End this turn with preferred_label=fix when a code change is needed." >&2
-exit 1
+# The proof_capture node is read-only on the run's checkout. This custom hooks
+# path runs instead of the repository's potentially long pre-commit gate. Git
+# applies it to every repository, so a scratch repository outside the checkout
+# is handed back to its own pre-commit hook rather than refused.
+refuse() {
+    echo "LIVESPEC_PROOF_CAPTURE_READ_ONLY: proof_capture is read-only on the repository tree; git commit and git push are refused before repository hooks run. End this turn with preferred_label=fix when a code change is needed." >&2
+    exit 1
+}
+
+common_dir_of() {
+    resolved=$(/usr/bin/git "$@" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+    (cd "$resolved" 2>/dev/null && pwd -P) || true
+}
+
+checkout="${LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT:-}"
+[ -n "$checkout" ] || refuse
+protected=$(
+    unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_NAMESPACE
+    common_dir_of -C "$checkout"
+)
+target=$(common_dir_of)
+if [ -z "$protected" ] || [ -z "$target" ] || [ "$target" = "$protected" ]; then
+    refuse
+fi
+
+hooks=$(GIT_CONFIG_COUNT=0 /usr/bin/git rev-parse --git-path hooks 2>/dev/null) || exit 0
+if [ -x "$hooks/pre-commit" ]; then
+    exec "$hooks/pre-commit" "$@"
+fi
+exit 0
