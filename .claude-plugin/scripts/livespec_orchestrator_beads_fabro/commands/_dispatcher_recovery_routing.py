@@ -382,7 +382,9 @@ def _fallback_route(
             work_item_id=item.id,
             route=ROUTE_FRESH,
             loss=RecoveryLoss(
-                source_run_id=preserved.source_run_id, sources_asked=preserved.sources_asked
+                source_run_id=preserved.source_run_id,
+                sources_asked=preserved.sources_asked,
+                no_change_needs_human=preserved.no_change_needs_human,
             ),
             preserved_work=PRESERVED_WORK_ABSENT,
         )

@@ -69,6 +69,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing imp
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ITEM = "bd-ib-prec"
 _EARLIER = "01EARLIERRUN0000000000000A"
 _LATEST = "01LATESTRUN00000000000000B"
@@ -119,6 +121,8 @@ class _Origin:
 
     def answer(self, *, argv: list[str]) -> CommandResult:
         joined = " ".join(argv)
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         if argv[:3] == ["git", "ls-remote", "origin"]:
             lines = [
                 f"{commit}\t{ref}"

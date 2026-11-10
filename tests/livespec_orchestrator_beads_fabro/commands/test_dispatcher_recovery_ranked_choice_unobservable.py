@@ -17,6 +17,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved i
     verified_preserved_seed,
 )
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ITEM = "bd-ib-choice"
 _RUN = "01ONLYRUN000000000000000A"
 _FIRST = "a1" * 20
@@ -34,6 +36,8 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         if argv[:3] == ["git", "ls-remote", "origin"]:
             listing = (
                 f"{_FIRST}\trefs/heads/needs-human/{_RUN}\n"
