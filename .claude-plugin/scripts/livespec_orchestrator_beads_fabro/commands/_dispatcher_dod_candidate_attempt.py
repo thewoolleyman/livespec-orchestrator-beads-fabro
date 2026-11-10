@@ -10,11 +10,12 @@ surface that reports a taking renders it through this one module.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__: list[str] = [
     "CANDIDATE_FIELD",
     "ENDER_FIELD",
+    "OUTCOME_UNPARSEABLE_VERDICT",
     "OUTCOME_VERDICT",
     "CandidateAttempt",
     "candidate_record_lines",
@@ -27,6 +28,12 @@ __all__: list[str] = [
 # candidate outcome is the cause the chain moved past it with, so a record reads
 # `outcome=verdict` for the candidate that decided and a cause for each that did not.
 OUTCOME_VERDICT = "verdict"
+# The outcome of a candidate that exited cleanly with a reply the caller could not
+# read as a verdict, so the chain moved past it. The reply text is kept on the
+# attempt for exactly this outcome to be diagnosed from. The chain spells the same
+# string where it classifies a reply, because its module sits at the file ceiling;
+# the filing display's tests pin the two together.
+OUTCOME_UNPARSEABLE_VERDICT = "unparseable-verdict"
 # One record line per candidate the chain ran, in the order it ran them.
 CANDIDATE_FIELD = "candidate"
 # The record line naming the candidate whose failure ended the chain. Deliberately
@@ -42,12 +49,17 @@ class CandidateAttempt:
     The agent and model are what the candidate RESOLVED to, so a record naming
     `claude-acp` is proof an Anthropic request was made and one naming only
     `codex-acp` is proof none was.
+
+    `reply_text` is what the candidate answered, kept so a reply that did not
+    parse can be read afterwards. It is outside equality, the repr and `render`,
+    so no record, report or comparison of an attempt carries a model's reply.
     """
 
     agent: str
     model: str
     exit_code: int
     outcome: str
+    reply_text: str = field(default="", compare=False, repr=False)
 
     def render(self) -> str:
         """The attempt as one `key=value` line, free of anything a template reads."""

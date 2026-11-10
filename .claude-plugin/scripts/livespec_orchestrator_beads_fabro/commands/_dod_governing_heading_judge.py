@@ -65,6 +65,7 @@ item that has no reference line.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from livespec_runtime.spec_stated import ClauseEvidence
@@ -98,6 +99,9 @@ if TYPE_CHECKING:
 
     from livespec_runtime.spec_stated import ModelRunner
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+        CandidateChainResult,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -183,12 +187,19 @@ def unjudged_governing_heading(*, item: WorkItem, repo: Path) -> GoverningHeadin
     return None
 
 
-def host_governing_heading_reader(*, runner: CommandRunner) -> GoverningHeadingReader:
+def host_governing_heading_reader(
+    *,
+    runner: CommandRunner,
+    on_chain: Callable[[CandidateChainResult], None] | None = None,
+) -> GoverningHeadingReader:
     """A reader that puts the shared judgement to this host's headless judge.
 
     `runner` is required rather than defaulted, because the surfaces that take
     the judgement already hold one and a default here would be a second place
     this package decides how a subprocess is run.
+
+    `on_chain` is optional because only the surface that displays the judgement
+    needs the candidates; every other taking keeps them on standard error.
     """
 
     def read(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
@@ -199,6 +210,7 @@ def host_governing_heading_reader(*, runner: CommandRunner) -> GoverningHeadingR
                 project_root=repo,
                 runner=runner,
                 caller="dod_governing_heading",
+                on_chain=on_chain,
             ),
         )
 

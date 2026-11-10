@@ -191,6 +191,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
                 model=candidate_model(candidate=candidate),
                 exit_code=attempt.result.exit_code,
                 outcome=outcome,
+                reply_text=reply,
             )
         )
         if outcome == CAUSE_INPUT_LIMIT:

@@ -55,6 +55,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display_judgement import (
+    JUDGEMENT_UNAVAILABLE_REPORT,
+    JudgementObserver,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
     UNPUBLISHED_REPORT,
@@ -136,12 +140,24 @@ def filing_display(
     round the default falls: a surface that owes the verdict no longer depends
     on being handed one, and a caller that must not spend a judgement says so.
 
+    WHEN THE DEFAULT READER'S JUDGEMENT RAN, THE DISPLAY SAYS HOW IT WENT. One
+    line per `dod_gate` candidate it started follows the findings, naming the
+    candidate's agent, model and outcome, and a judgement none of them answered
+    renders `definition-of-done findings: judgement unavailable` where `none`
+    would have read as a clean judgement that never happened. A reply that did
+    not parse is kept in a file under `tmp/`, which the display names. A reader
+    the caller passes reports nothing here, because the display cannot see
+    candidates it did not run.
+
     The hygiene listing, which grades every item in the tenant and must not
     turn one listing into a model call per item, does not reach here: it holds
     the advisory directly, through `advisory_definition_of_done_findings`.
     """
+    observer = JudgementObserver()
     reader = (
-        host_governing_heading_reader(runner=ShellCommandRunner())
+        host_governing_heading_reader(
+            runner=ShellCommandRunner(), on_chain=lambda chain: observer.observe(chain=chain)
+        )
         if governing is None
         else governing
     )
@@ -149,7 +165,13 @@ def filing_display(
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    lines.extend(_finding_lines(item=item, cwd=cwd, governing=reader(item=item, repo=cwd)))
+    verdict = reader(item=item, repo=cwd)
+    lines.extend(
+        _finding_lines(
+            item=item, cwd=cwd, governing=verdict, judgement_unavailable=observer.unavailable
+        )
+    )
+    lines.extend(observer.report_lines(item_id=item.id, cwd=cwd))
     return "\n".join(lines)
 
 
@@ -206,12 +228,20 @@ def _capability_line(*, cwd: Path) -> str:
 
 
 def _finding_lines(
-    *, item: WorkItem, cwd: Path, governing: GoverningHeadingVerdict | None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    governing: GoverningHeadingVerdict | None,
+    judgement_unavailable: bool,
 ) -> list[str]:
     """Every finding the host-side wall can detect, labelled by kind.
 
     The mechanical ones lead, because they are the ones that withhold `ready`: a
     filer reading top to bottom meets the blocking repair before the advisory one.
+
+    A judgement no candidate answered is reported AFTER them, and in place of
+    `none` when they are absent: `none` says the judgement found nothing, which
+    is not what an unanswered one found.
     """
     lines = [
         f"{MECHANICAL_FINDING_PREFIX} {finding}"
@@ -221,6 +251,8 @@ def _finding_lines(
         f"{ADVISORY_FINDING_PREFIX} {finding}"
         for finding in advisory_definition_of_done_findings(item=item, cwd=cwd, governing=governing)
     )
+    if judgement_unavailable:
+        lines.append(JUDGEMENT_UNAVAILABLE_REPORT)
     if not lines:
         return [FINDINGS_NONE_REPORT]
     return lines
