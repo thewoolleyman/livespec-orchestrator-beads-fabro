@@ -32,6 +32,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ITEM_ID = "bd-ib-qgcpoc"
 _BRANCH_REF = f"refs/heads/feat/{_ITEM_ID}"
 _RUN = "01M509HNX5KGKSRV04VQEYVWH6"
@@ -69,6 +71,8 @@ class _Runner:
         for needle, result in self.answers.items():
             if needle in joined:
                 return result
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 

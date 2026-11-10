@@ -100,6 +100,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition im
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ = _admission
 
 _ITEM_ID = "bd-ib-kn7ktk"
@@ -150,6 +152,8 @@ class _Shell:
         for needle, result in _Shell.answers.items():
             if needle in joined:
                 return result
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 

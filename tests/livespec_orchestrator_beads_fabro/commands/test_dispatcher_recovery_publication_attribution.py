@@ -21,6 +21,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age imp
     published_head_relation,
 )
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _HEAD = "b" * 40
 _TERMINAL = "a" * 40
 
@@ -42,6 +44,8 @@ class _Origin:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.calls.append(argv)
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         wanted = argv[-1]
         listing = "".join(
             f"{commit}\t{ref}\n"

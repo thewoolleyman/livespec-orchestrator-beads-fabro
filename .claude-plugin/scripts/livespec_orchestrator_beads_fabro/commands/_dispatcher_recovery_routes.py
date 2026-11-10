@@ -92,6 +92,7 @@ class RecoverySeed:
     commit_sha: str
     preservation_ref: str
     passed_over_needs_human: tuple[tuple[str, str], ...] = ()
+    no_change_needs_human: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -108,6 +109,7 @@ class RecoveryLoss:
 
     source_run_id: str
     sources_asked: tuple[str, ...]
+    no_change_needs_human: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
