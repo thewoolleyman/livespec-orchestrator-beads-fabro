@@ -163,10 +163,22 @@ def _claim(
 def record_rollback_conflict(
     *, client: BeadsClient, reading: IncidentReading, conflict: RollbackConflict
 ) -> RecoveryEntry | AuthorityRefusal:
-    """Record the owned conflict and select its table-defined blocked state."""
+    """Record the owned conflict and select its table-defined blocked state.
+
+    A current `reverting` generation must hold the item claim before the chain
+    records the conflict: a reopen interrupted before its claim move would
+    otherwise leave the chain at rollback-conflict over an item that never
+    reads blocked. The refusal writes nothing; the caller completes the reopen
+    first. A superseded reading goes on to recover an exact retry or be stale.
+    """
     before = reading.attempt
     if before.phase != RECOVERY_PHASE:
         return _refuse(code="incident-rollback-conflict-not-eligible", detail=before.phase)
+    held = incident_claim_decided(
+        operation_id=before.operation_id, generation=before.generation, owner=before.owner
+    )
+    if reading.is_current and not held(client.show_issue(issue_id=before.item_id)):
+        return _refuse(code="incident-rollback-conflict-claim-not-held", detail=before.operation_id)
     operation_id = operation_digest(
         prefix="rollback-conflict",
         value={
