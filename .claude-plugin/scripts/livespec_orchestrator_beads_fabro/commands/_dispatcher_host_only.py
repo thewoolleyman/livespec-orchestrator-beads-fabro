@@ -22,6 +22,14 @@ __all__: list[str] = [
 
 _WORKFLOW_PREFIX = ".github/workflows/"
 WORKFLOW_SCOPE_OVERRIDE_LABEL = "workflow-scope-override:citation-only"
+# The approval labels that declare a workflow edit. They are exact labels, not
+# prefixes, and the citation-only override never lifts them: that override says
+# a workflows path in the TEXT is a citation, while one of these labels says the
+# item itself edits a workflow.
+_WORKFLOW_EDIT_APPROVAL_LABELS = (
+    "approval:workflow-edit",
+    "approval:workflow-edit-additive",
+)
 _EDIT_VERB = (
     r"edit(?:s|ing)?|modif(?:y|ies|ying)|update(?:s|d|ing)?|"
     r"rewrite(?:s|ing)?|touch(?:es|ing)?|chang(?:e|es|ing)"
@@ -47,6 +55,8 @@ def is_host_only_item(*, item: WorkItem, raw_labels: Sequence[str] = ()) -> bool
     """Return True when a work-item is intrinsically unsafe for the factory."""
     if item.factory_safety is not None:
         return True
+    if _matched_workflow_edit_labels(raw_labels=raw_labels):
+        return True
     if WORKFLOW_SCOPE_OVERRIDE_LABEL in raw_labels:
         return False
     return declares_workflow_scope_refusal(item=item, raw_labels=raw_labels)
@@ -61,8 +71,23 @@ def declares_workflow_scope_refusal(*, item: WorkItem, raw_labels: Sequence[str]
     return _declares_workflow_edit(item=item)
 
 
-def host_only_refusal_detail(*, item_id: str) -> str:
-    """Build the actionable refusal message for a factory-unsafe item."""
+def host_only_refusal_detail(*, item_id: str, raw_labels: Sequence[str] = ()) -> str:
+    """Build the actionable refusal message for a factory-unsafe item.
+
+    When a workflow-edit approval label caused the refusal, the message names
+    every label that matched and omits the citation-only remedy, which does not
+    lift a label.
+    """
+    matched = _matched_workflow_edit_labels(raw_labels=raw_labels)
+    if matched:
+        names = ", ".join(f"`{label}`" for label in matched)
+        return (
+            f"factory-safety refusal: work-item {item_id} carries the workflow-edit "
+            f"approval label {names}, so its change touches the GitHub Actions "
+            "workflows directory, a withheld sandbox capability. It MUST NOT be "
+            "dispatched to a fabro sandbox. host-route it through an attended host "
+            "session instead; the item remains open for that route."
+        )
     return (
         f"factory-safety refusal: work-item {item_id} carries non-null "
         "factory_safety or declares an edit under .github/workflows/, a "
@@ -74,6 +99,10 @@ def host_only_refusal_detail(*, item_id: str) -> str:
         "negation declaration stating that the item ships no files under "
         ".github/workflows/, before retrying factory dispatch."
     )
+
+
+def _matched_workflow_edit_labels(*, raw_labels: Sequence[str]) -> tuple[str, ...]:
+    return tuple(label for label in _WORKFLOW_EDIT_APPROVAL_LABELS if label in raw_labels)
 
 
 def _declares_workflow_edit(*, item: WorkItem) -> bool:
