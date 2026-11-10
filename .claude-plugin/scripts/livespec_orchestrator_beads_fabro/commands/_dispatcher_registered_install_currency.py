@@ -19,6 +19,11 @@ executing build lags what the operator DID adopt for this repository, which
 only a stale session can produce -- so its remedy is a restart, never a
 `claude plugin update` (bd-ib-97v4: an update cannot move a running session).
 
+The opposite difference is surfaced too. An executing build NEWER than the
+registered install -- a session bound to another project's newer install, or a
+primary checkout ahead of the cache -- runs a build the target clone has not
+adopted, so the finding names both builds and the adopt step as its remedy.
+
 Like every ambient currency finding it is SURFACED, never enforced (the
 ratified currency contract): the one blocking form remains the committed
 `dispatcher.minimum_release` floor. A registry that cannot be read, a
@@ -34,6 +39,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
     registered_plugin_root,
 )
@@ -49,10 +57,10 @@ __all__: list[str] = [
     "registered_install_verdict",
 ]
 
-# The journal stage for an executing build older than the repository's
-# registered install. Its own stage, distinct from the release-lag warning,
-# because the two name different remedies: this one is cleared by restarting
-# the session, the other by adopting a release.
+# The journal stage for an executing build that differs from the repository's
+# registered install, older or newer. Its own stage, distinct from the
+# release-lag warning, because the two name different remedies: an older build
+# is cleared by restarting the session, the other by the adopt step.
 REGISTERED_INSTALL_LAG_STAGE = "dispatcher-registered-install-lag"
 
 # The plugin whose registered install is looked up -- this one, wherever the
@@ -101,8 +109,21 @@ def registered_install_verdict(
                 f"registered build at {registered})"
             )
         )
-    if version_key(name=executing_version) >= version_key(name=registered_version):
+    if version_key(name=executing_version) == version_key(name=registered_version):
         return RegisteredInstallVerdict(lag_detail=None, undetermined_detail=None)
+    if version_key(name=executing_version) > version_key(name=registered_version):
+        return RegisteredInstallVerdict(
+            lag_detail=(
+                f"WARNING: this session executes dispatcher plugin build {executing_version} "
+                f"from {plugin_root}, which is newer than the build {registered_version} that "
+                f"{repo.name} resolves from {registered}: the target clone has not adopted the "
+                "build this dispatch runs. Dispatch proceeds because ambient staleness is "
+                f"surfaced, not enforced. Run `{ORCHESTRATOR_BUILD_ADOPT_REMEDY}` in "
+                "livespec-dev-tooling to adopt the executing build for that clone, then reload "
+                "the session."
+            ),
+            undetermined_detail=None,
+        )
     return RegisteredInstallVerdict(
         lag_detail=(
             f"WARNING: this session executes dispatcher plugin build {executing_version} "

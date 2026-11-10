@@ -6,6 +6,9 @@ import argparse
 from collections.abc import Sequence
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
     default_plugin_install_registry,
     registered_plugin_root,
@@ -39,7 +42,10 @@ def registered_plugin_currency_warning(
         or version_key(name=registered) >= version_key(name=latest)
     ):
         return None
-    return f"WARNING: registered build {registered} lags latest released version {latest}"
+    return (
+        f"WARNING: registered build {registered} lags latest released version {latest}. "
+        f"Run `{ORCHESTRATOR_BUILD_ADOPT_REMEDY}` in livespec-dev-tooling, then reload the session."
+    )
 
 
 def main(*, argv: Sequence[str] | None = None) -> int:
