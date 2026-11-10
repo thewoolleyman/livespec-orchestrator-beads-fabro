@@ -24,7 +24,7 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
-__all__: list[str] = ["HeadComparison", "compare_heads"]
+__all__: list[str] = ["HeadRefusal", "SharedTree", "compare_heads"]
 
 _COMMIT_ENDPOINT = "/repos/{owner}/{repo}/git/commits"
 _COMMIT_TIMEOUT_SECONDS = 60.0
@@ -37,58 +37,78 @@ class _Commit:
 
 
 @dataclass(frozen=True, kw_only=True)
-class HeadComparison:
-    """What comparing the proved head with the current head showed.
+class SharedTree:
+    """The comparison found the move message-only: both heads carry this tree."""
 
-    `tree` is set when the move is message-only. `failed` is set when a
-    measurement REFUSED the move and names it. Neither is set when the move is
-    not shown to be message-only and no measurement can be named.
-    """
+    tree: str
 
-    tree: str | None = None
-    failed: str | None = None
+
+@dataclass(frozen=True, kw_only=True)
+class HeadRefusal:
+    """The comparison refused the move, naming the measurement that failed."""
+
+    measurement: str
 
 
 def compare_heads(
     *, repo: Path, proved: str, current: str, runner: CommandRunner
-) -> HeadComparison:
-    """Compare `current` with `proved`, reading both commits through the forge."""
+) -> SharedTree | HeadRefusal:
+    """Compare `current` with `proved`, reading both commits through the forge.
+
+    The measurements are taken in the order the clause names them: the two reads,
+    then the TREE, then the PARENT. The tree comes first because it is the one
+    the proof graded; a head carrying another tree is refused as such whatever
+    its history, and the parent comparison is named only when the trees matched.
+    """
     proved_commit = _read_commit(repo=repo, sha=proved, runner=runner)
+    if isinstance(proved_commit, HeadRefusal):
+        return proved_commit
     current_commit = _read_commit(repo=repo, sha=current, runner=runner)
-    if proved_commit is None or current_commit is None:
-        return HeadComparison()
+    if isinstance(current_commit, HeadRefusal):
+        return current_commit
     if proved_commit.tree != current_commit.tree:
-        return HeadComparison(
-            failed=(
+        return HeadRefusal(
+            measurement=(
                 f"the tree comparison failed: {proved} carries tree {proved_commit.tree} "
                 f"but {current} carries tree {current_commit.tree}"
             )
         )
     if len(proved_commit.parents) != 1 or proved_commit.parents != current_commit.parents:
-        return HeadComparison()
-    return HeadComparison(tree=proved_commit.tree)
+        return HeadRefusal(
+            measurement=(
+                f"the parent comparison failed: {proved} has parents "
+                f"[{', '.join(proved_commit.parents)}] but {current} has parents "
+                f"[{', '.join(current_commit.parents)}], and a message-only move needs both "
+                "to have exactly one parent, the same commit"
+            )
+        )
+    return SharedTree(tree=proved_commit.tree)
 
 
-def _read_commit(*, repo: Path, sha: str, runner: CommandRunner) -> _Commit | None:
+def _read_commit(*, repo: Path, sha: str, runner: CommandRunner) -> _Commit | HeadRefusal:
     answered = runner.run(
         argv=["gh", "api", f"{_COMMIT_ENDPOINT}/{sha}"],
         cwd=repo,
         timeout_seconds=_COMMIT_TIMEOUT_SECONDS,
     )
     if answered.exit_code != 0:
-        return None
+        return _unread(sha=sha, why=f"the forge answered with exit {answered.exit_code}")
     parsed = parse_json(text=answered.stdout)
     if isinstance(parsed, JsonParseFailure) or not isinstance(parsed, dict):
-        return None
+        return _unread(sha=sha, why="the forge's answer is not a commit object")
     payload = cast("dict[str, object]", parsed)
     tree = _sha_of(node=payload.get("tree"))
     raw_parents = payload.get("parents")
     if tree is None or not isinstance(raw_parents, list):
-        return None
+        return _unread(sha=sha, why="the commit object carries no readable tree or parents")
     parents = tuple(_sha_of(node=one) for one in cast("list[object]", raw_parents))
     if any(one is None for one in parents):
-        return None
+        return _unread(sha=sha, why="a parent of the commit object carries no readable sha")
     return _Commit(tree=tree, parents=cast("tuple[str, ...]", parents))
+
+
+def _unread(*, sha: str, why: str) -> HeadRefusal:
+    return HeadRefusal(measurement=f"the read of commit {sha} through the forge failed: {why}")
 
 
 def _sha_of(*, node: object) -> str | None:
