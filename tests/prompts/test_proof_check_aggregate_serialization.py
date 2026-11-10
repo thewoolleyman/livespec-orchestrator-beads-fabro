@@ -29,6 +29,10 @@ _CAPTURE_NEEDLES = (
     "A trailing `&` inside one tool call breaks this rule.",
     "Parallel tool calls that start check aggregates also break this rule.",
 )
+_VERIFY_NEEDLES = (
+    "Replay a record's steps with at most ONE repository check aggregate running at a time.",
+    "Do this even when the record's steps start several aggregates at once.",
+)
 
 
 def _proof_stage_prompts() -> dict[str, Path]:
@@ -59,3 +63,11 @@ def test_the_capture_prompt_serializes_repository_check_aggregates() -> None:
 
     for needle in _CAPTURE_NEEDLES:
         assert needle in text, f"proof-capture.md omits {needle!r}"
+
+
+def test_the_verify_prompt_serializes_recorded_check_aggregates() -> None:
+    """An unsafe captured schedule never authorizes an unsafe replay schedule."""
+    text = _proof_stage_prompts()["proof_verify"].read_text(encoding="utf-8")
+
+    for needle in _VERIFY_NEEDLES:
+        assert needle in text, f"proof-verify.md omits {needle!r}"
