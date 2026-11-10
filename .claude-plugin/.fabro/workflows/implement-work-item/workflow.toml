@@ -11,13 +11,13 @@
 # Fabro detects the GitHub origin from the cwd and clones FRESH inside
 # the docker sandbox — local working-tree state never enters the run.
 # The sandbox clone is the secondary-worktree EQUIVALENT under the
-# family discipline: the prepare steps below provision it exactly like
+# family discipline: the setup nodes of workflow.fabro provision it exactly like
 # `just bootstrap` EXCEPT that the commit-refuse wrapper's refuse branch
 # is DECLARED EXEMPT here so the Red-Green-Replay hook-manager gates run on
 # every in-sandbox commit. The sandbox is a fresh FULL clone, so under
 # the structural commit-refuse mechanism (livespec-zs22.7.3: refuse when
 # git-dir == git-common-dir) it reads structurally as a primary checkout
-# and its refuse branch WOULD fire. The prepare step sets
+# and its refuse branch WOULD fire. A setup node sets
 # `git config livespec.sandboxExempt true` — an explicit, declared marker
 # the hook body reads to skip the refuse branch (per livespec core
 # non-functional-requirements §"Conformance Pattern" concern #1
@@ -34,8 +34,8 @@
 # materializes an UNCOMMITTED per-dispatch overlay of this file (mode
 # 600, deleted when the run returns) that (a) rewrites the `graph`
 # path below to an absolute path so it resolves from outside this
-# directory, (b) APPENDS one depth-1 sibling-clone
-# [[run.prepare.steps]] block per fleet member (from livespec master's
+# directory, (b) APPENDS one depth-1 sibling-clone setup node
+# per fleet member to the setup chain (from livespec master's
 # .livespec-fleet-manifest.jsonc, fetched host-side via `gh api`; the dispatch
 # target is excluded) so cross-repo checks resolve family siblings
 # under /livespec-siblings inside the sandbox — OUTSIDE the target
@@ -329,7 +329,7 @@ merge_hold = false
 # `check-no-fleet-toolchain-literals` gate bans appears here, because that
 # gate scans this file. Three kinds of default follow from that. The
 # toolchain and conformance inputs default to the ratified explicit NO-OP
-# (the empty string: the prepare step it templates runs nothing).
+# (the empty string: the setup node it templates runs nothing).
 # `sandbox_check_suite`, the one input a run cannot do without, defaults to a
 # command that FAILS LOUDLY naming the input, so a bare `fabro run` of this
 # file can never pass its janitor gate vacuously. The three non-toolchain
@@ -341,7 +341,7 @@ merge_hold = false
 # renders every input this table declares.
 #
 # Command-shaped values arrive as ONE shell word-list (`shlex.join` of the
-# contract's argv), which is why every prepare step that reads one re-tokenizes
+# contract's argv), which is why every setup node that reads one re-tokenizes
 # it with `set --` rather than quoting it.
 sandbox_check_suite = "sh -c 'echo LIVESPEC_INPUT_NOT_RENDERED: sandbox_check_suite was not supplied by the Dispatcher >&2; exit 1'"
 prepare_toolchain_mise = ""
@@ -487,164 +487,24 @@ exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
 [run.pull_request]
 enabled = false
 
-# --- Prepare steps: provision the clone as the secondary-worktree
-# --- equivalent (Architecture C "RGR steeling", minus primaryPath).
+# --- Sandbox setup is NOT declared here.
 #
-# EVERY TOOLCHAIN AND CONFORMANCE PREMISE BELOW IS A PROJECTION, NOT A
-# LITERAL. The command each step runs arrives as an `inputs.<name>` value the
+# Upstream Fabro refuses the run-config prepare table from v0.396.0-nightly.0, so
+# the steps that provision the clone as the secondary-worktree equivalent
+# (Architecture C "RGR steeling", minus primaryPath) are the `run_prepare_<N>`
+# command nodes of workflow.fabro, between `start` and `dod_gate`, in the order
+# they ran as prepare steps (work-item bd-ib-dpsiwz). The Dispatcher appends the
+# steps it materializes (sibling clones, credentials, helper programs, the resume
+# checkout) to that chain as further `run_prepare_<N>` nodes of the per-dispatch
+# graph, and a failed step routes to the terminal `setup_failed` node.
+#
+# EVERY TOOLCHAIN AND CONFORMANCE PREMISE IN THAT CHAIN IS A PROJECTION, NOT A
+# LITERAL. The command each node runs arrives as an `inputs.<name>` value the
 # Dispatcher rendered from the governed repository's resolved integration
 # contract (SPECIFICATION/contracts.md §"Repository integration contract"; the
 # fleet-member values live in this repo's `.livespec.jsonc` and the plugin's
 # fleet-defaults module, never here). A premise the repository does not carry
-# resolves to the ratified explicit NO-OP — the empty word-list — and the step
+# resolves to the ratified explicit NO-OP — the empty word-list — and the node
 # then runs nothing, by construction rather than by a silent skip
-# (contracts.md §"Factory-sandbox toolchain disposition").
-#
-# THE `set --` IDIOM. A command-shaped input crosses the sandbox boundary as
-# one shell word-list (`shlex.join` of the contract's argv). `set -- <list>`
-# has the shell re-tokenize it back into the exact argv, `test $# -eq 0`
-# makes the empty no-op a clean exit rather than a syntax error, and `"$@"`
-# runs the argv with its quoting intact. No step quotes the token itself,
-# because the value may legitimately carry quotes of its own.
-
-[[run.prepare.steps]]
-# Fabro's sandbox clone is hardcoded shallow (GIT_CLONE_DEPTH=10, no
-# config knob in v0.254.0); the RGR range checks and the check suite diff
-# the default branch..HEAD, which needs the default-branch merge-base present.
-#
-# CONDITIONAL ON THE CLONE ACTUALLY BEING SHALLOW (work-item bd-ib-ukht2p).
-# `git fetch --unshallow` is an ERROR on a complete repository — `fatal:
-# --unshallow on a complete repository does not make sense`, exit 128 — and
-# the clone depth is a CEILING, not a guarantee: a depth-10 clone of a
-# governed repository with ten or fewer commits is already COMPLETE. The
-# unconditional form therefore killed PREPARATION for any such repository,
-# before a single model stage ran, with no PR and nothing to triage but the
-# fatal line. Measured twice on the private fixture
-# thewoolleyman/livespec-tdd-proof (7 genuine setup commits): hp run
-# 01M4VXN5BGZQJQTT57WSXFEEBD at 2026-10-14T01:48:26Z under released 0.196.1,
-# and hp run 01M5EM5NZYSM, which died in 2 seconds.
-#
-# `git rev-parse --is-shallow-repository` is the inspection, so the step asks
-# whether THIS clone is shallow and deepens it only then. Note what is NOT the
-# fix: the live acceptance fixture used to pad twelve commits onto its seed
-# history purely to keep the clone shallow, which evaded the assumption instead
-# of repairing it and left the complete-clone path unexercised.
-#
-# THE POSTURE STAYS FAIL-CLOSED. `set -e` plus an assignment — whose exit
-# status is its command substitution's — means a failed INSPECTION ends
-# preparation non-zero carrying git's own message, and a failed FETCH does the
-# same; neither is swallowed by a successful fallback. Only the one condition
-# that was never an error, a clone that is already complete, now proceeds.
-# Executed under `sh`, so the shape must stay POSIX: no `[[`, no `local`.
-#
-# Ordering is unchanged and the steps around it were re-checked at 86f4e9830b2f:
-# the Dispatcher's separate default-branch refspec fetch does not depend on this
-# fetch happening, and the overlay still places its own steps after this one with
-# the resume checkout last, so nothing is unshallowed out from under.
-script = "set -e; shallow=\"$(git rev-parse --is-shallow-repository)\"; if test \"$shallow\" = true; then git fetch --unshallow --quiet; fi"
-
-[[run.prepare.steps]]
-# Toolchain premise #1 — the version-manager install (the version-manager
-# arm of `dispatcher.prepare_toolchain`). This repository declares it in
-# `.livespec.jsonc`, where the rationale for its anonymous, credential-scrubbed
-# form lives beside the command (work-item bd-ib-bic7hb); an adopter without a
-# version manager declares nothing and the step is the ratified no-op.
-script = "set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Toolchain premise #2 — the PYTHON DEPENDENCY SYNC that populates the
-# sandbox's project environment (the `python_sync` arm of
-# `dispatcher.prepare_toolchain`); no-op for a repository that declares none.
-#
-# THIS WAS A BARE CONSTANT UNTIL bd-ib-xti6q, and the constant is what the
-# factory-sandbox-toolchain-disposition clause forbids: the two premises
-# bracketing it already ran nothing for a repository declaring nothing, while
-# this one assumed a `pyproject.toml` outright. Measured 2026-10-24 01:19Z on
-# run 01M5NQVKAENN, a dispatch of a JavaScript repository carrying
-# `package.json` and no `pyproject.toml`: the step exited 2 with `error: No
-# pyproject.toml found in current directory or any parent directory`, category
-# `deterministic`, BEFORE any agent turn — so every dispatch of every such
-# adopter without a target-local workflow failed identically and
-# re-dispatching could not help.
-#
-# POSITION IS LOAD-BEARING and is unchanged: it stays AFTER the
-# version-manager install, because this fleet's sync tool is one of the tools
-# that install resolves, and BEFORE the hook-manager install and the
-# conformance gate below, because both of those run through the project
-# environment this step populates.
-script = "set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Toolchain premise #3 — the hook-manager install (the hook-manager arm of
-# `dispatcher.prepare_toolchain`); no-op for an adopter without one.
-script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Scenario 204 records the implement turn's own failing declared-suite output.
-# The prompt invokes this runner; the incomplete-turn route only reads its file.
-script = "set -eu; root=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}\"; mkdir -p \"$root\"; runner=\"$root/livespec-implement-check-suite\"; cat > \"$runner\" <<'RUNNER'\n#!/bin/sh\nset -u\nverdict=$(git rev-parse --git-path livespec-implement-check-suite-verdict)\ntemporary=${verdict}.tmp.$$\nset +e\nset -- {{ inputs.sandbox_check_suite }}\nif test \"$#\" -eq 1; then eval \"set -- $1\"; fi\n\"$@\" > \"$temporary\" 2>&1\nstatus=$?\nset -e\ncat \"$temporary\"\nif test \"$status\" -ne 0; then mv \"$temporary\" \"$verdict\"; else rm -f \"$temporary\"; fi\nexit \"$status\"\nRUNNER\nchmod 755 \"$runner\""
-
-[[run.prepare.steps]]
-# Dispatch-time baseline conformance gate — the MECHANISM (Conformance
-# Pattern concern #1 Worktree-discipline): install the canonical STRUCTURAL
-# commit-refuse hook at pre-commit, pre-push AND commit-msg. Field
-# `dispatcher.conformance.hook_install`: `internal_livespec_dev_tooling`
-# renders the shared dev-tooling installer module (whose FAMILY-UNIFORM
-# canonical body ships in that wheel, so every dispatched sandbox installs
-# the identical body the same way; the Python-dependency-sync premise above
-# put the package in the sandbox's project environment, which is why a
-# repository declaring the internal mode must declare that premise too),
-# `shell_argv` runs the adopter's own
-# installer, and `no_op` skips the step. The structural body's hook-manager
-# delegation fires the Red-Green-Replay gates on every in-sandbox commit (the
-# refuse branch is skipped by the exemption marker set in the next step).
-script = "set -- {{ inputs.conformance_hook_install }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Declare the sandbox EXEMPT from the commit-refuse refuse branch
-# (livespec-zs22.7.3, Conformance Pattern concern #1 Worktree-discipline,
-# Exemption slot). The sandbox is a fresh FULL clone — structurally a
-# primary checkout — so the structural commit-refuse hook would refuse
-# its in-sandbox Red-Green-Replay commits. This explicit, declared marker
-# (read by the hook body via `git config --get <marker>`) skips the refuse
-# branch so commits proceed; the hook-manager delegation in the hook body
-# still fires the RGR gates. The marker NAME is the resolved
-# `dispatcher.sandbox_exempt_marker` field (contracts.md §"Dispatch-time
-# baseline conformance gate"), projected here rather than spelled. Set
-# UNCONDITIONALLY. It is NOT a harmless no-op for every hook shape: a body
-# that never reads the marker (the legacy livespec.primaryPath-based body)
-# ignores it, but an adopter-authored WRITE-time structural hook without the
-# exemption slot fails CLOSED — it denies the sandbox's in-clone writes even
-# with the marker set (proven live on homelab runs 01M107EF8QMRF66RGH9T393CQV
-# and 01M186Y59CEBP2CNZ9ESSR3DHA, 2026-08-30; agents then improvised worktrees
-# and fabro's --allow-empty checkpoints minted empty commits). Honoring the
-# marker is therefore a ratified adopter-hook obligation (v094; contracts.md
-# §"Dispatch-time baseline conformance gate"), exercised by the C6 honor and
-# non-honoring fixture tests; a prepare-time writability probe that would
-# refuse such a hook loudly is the pending propose-change recorded as plan
-# bd-ib-vblnq2 deferral D5. Local config only — never leaves the ephemeral
-# sandbox (pushes carry refs, not config).
-script = "git config {{ inputs.sandbox_exempt_marker }} true"
-
-[[run.prepare.steps]]
-# Dispatch-time baseline conformance gate — Verifier #1 (Conformance
-# Pattern concern #1 Worktree-discipline). After the Mechanism is installed
-# and the sandbox is declared exempt above, assert the hook is ACTUALLY
-# present at the primary's shared .git/hooks. Field
-# `dispatcher.conformance.verify_commit_refuse_hook`: the internal mode
-# renders the SHARED livespec-dev-tooling Verifier (reused, not
-# re-implemented — the same Verifier the commit-time and fleet-time tiers
-# run). A non-zero exit aborts the run before any work is driven — the gate
-# makes every dispatched sandbox conformant by construction. Codified in
-# SPECIFICATION/contracts.md §"Dispatch-time baseline conformance gate".
-script = "set -- {{ inputs.conformance_verify_commit_refuse_hook }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Dispatch-time baseline conformance gate — Verifier #2 (Conformance
-# Pattern concern #2 cross-harness plugin-resolution), field
-# `dispatcher.conformance.verify_plugin_resolution`. In the internal mode
-# this is the shared Verifier's declaration-integrity (mock) mode: it reads
-# the dispatched repo's optional .livespec.jsonc `harnesses` declaration and
-# fail-closes on a malformed one. A non-zero exit aborts the run.
-# Enforcement-in-depth: one Verifier layered across the tiers.
-script = "set -- {{ inputs.conformance_verify_plugin_resolution }}; test $# -eq 0 || \"$@\""
+# (contracts.md §"Factory-sandbox toolchain disposition"). The engine renders
+# `inputs.*` in node attributes, which the removed prepare table never had.

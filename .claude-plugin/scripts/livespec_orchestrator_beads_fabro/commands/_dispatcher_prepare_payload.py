@@ -47,6 +47,7 @@ __all__: list[str] = [
     "MAX_PAYLOAD_VALUE_BYTES",
     "PAYLOAD_ENV_VAR",
     "PrepareStep",
+    "env_table_line",
     "payload_guard_command",
     "payload_write_command",
     "render_prepare_step",
@@ -88,23 +89,36 @@ def _toml_string(*, value: str) -> str:
     return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
 
 
+def _env_entry(*, name: str, value: str) -> str:
+    """One `NAME = "value"` TOML assignment, refusing a name or payload the kernel would reject."""
+    if _ENV_NAME.match(name) is None:
+        msg = f"prepare-step env name {name!r} is not an upper-case shell variable name"
+        raise ValueError(msg)
+    size = len(value.encode())
+    if size > MAX_PAYLOAD_VALUE_BYTES:
+        msg = (
+            f"prepare-step env value {name} is {size} bytes, over the "
+            f"{MAX_PAYLOAD_VALUE_BYTES}-byte limit; it would fail execve "
+            "with 'argument list too long' and destroy the run"
+        )
+        raise ValueError(msg)
+    return f"{name} = {_toml_string(value=value)}"
+
+
+def env_table_line(*, name: str, value: str) -> str:
+    """One assignment line for a TOML environment table, newline included.
+
+    The line a setup step's payload takes when it is hoisted into the run's
+    environment table (`_dispatcher_setup_nodes`), with the same name and size
+    refusals the per-step `env` table carries.
+    """
+    return _env_entry(name=name, value=value) + "\n"
+
+
 def render_prepare_step(*, step: PrepareStep) -> str:
     """Render one step as TOML text, refusing a payload the kernel would reject."""
     lines = ["[[run.prepare.steps]]", f"script = {_toml_string(value=step.script)}"]
     if step.env:
-        entries: list[str] = []
-        for name in sorted(step.env):
-            if _ENV_NAME.match(name) is None:
-                msg = f"prepare-step env name {name!r} is not an upper-case shell variable name"
-                raise ValueError(msg)
-            size = len(step.env[name].encode())
-            if size > MAX_PAYLOAD_VALUE_BYTES:
-                msg = (
-                    f"prepare-step env value {name} is {size} bytes, over the "
-                    f"{MAX_PAYLOAD_VALUE_BYTES}-byte limit; it would fail execve "
-                    "with 'argument list too long' and destroy the run"
-                )
-                raise ValueError(msg)
-            entries.append(f"{name} = {_toml_string(value=step.env[name])}")
+        entries = [_env_entry(name=name, value=step.env[name]) for name in sorted(step.env)]
         lines.append("env = { " + ", ".join(entries) + " }")
     return "\n".join(lines) + "\n"

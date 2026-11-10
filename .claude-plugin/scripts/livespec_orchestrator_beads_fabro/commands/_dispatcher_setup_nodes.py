@@ -31,26 +31,27 @@ failed step off the engine's own checkpoint commit and exits non-zero. The
 unconditional edge stays: the engine rejects a node whose EVERY outgoing edge is
 conditional (`all_conditional_edges`).
 
-A STEP'S `env` RIDES THE NODE. A payload step keeps its bytes in its own `env` and
-only a short script in its `script`, because the engine's compact fidelity re-sends
-every completed command stage's full script to every later agent request and sends
-no `env` (`_dispatcher_prepare_payload`). The node form keeps that split: the env
-becomes one JSON-object attribute, `SETUP_ENV_ATTRIBUTE`. The attribute NAME is the
-one assumption in this module that only a live engine can settle -- a step whose
-payload did not arrive fails its own `${VAR:?}` guard and names itself, so a wrong
-name is loud and not silent -- and it is a single constant so the correction is one
-line.
+A STEP'S PAYLOAD RIDES THE RUN'S ENVIRONMENT TABLE, NOT THE NODE. A payload step keeps
+its bytes in its own `env` and only a short script in its `script`, because the
+engine's compact fidelity re-sends every completed command stage's full script to
+every later agent request and sends no `env` (`_dispatcher_prepare_payload`). A
+command node has no such table of its own that the engine is known to read, so
+`hoist_step_env` moves each step's variables into the run's environment table
+(`append_env_lines`) under a name unique to the step, and renames them in the step's
+script to match. That table is how the overlay already delivers every other value a
+command node reads, and it is the TOML's, so it costs the workflow graph nothing:
+the engine refuses a workflow file over 524,288 bytes, and the payloads are most of
+what the overlay weighs.
 
-BOTH VALUES ARE TEMPLATE-ESCAPED. Every string attribute of a node is rendered
-through MiniJinja before the node runs, and `run.prepare` was left verbatim, so a
-step carrying a `{{`, `{%` or `{#` (a Python dict literal, a shell `${#var}`) would
+A SCRIPT IS TEMPLATE-ESCAPED. Every string attribute of a node is rendered through
+MiniJinja before the node runs, and `run.prepare` was left verbatim, so a step
+carrying a `{{`, `{%` or `{#` (a Python dict literal, a shell `${#var}`) would
 otherwise be read as template syntax. The committed graph's own scripts avoid the
 openers by hand; these come from the Dispatcher and cannot.
 """
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Mapping, Sequence
 from itertools import pairwise
@@ -65,18 +66,23 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PrepareStep
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PrepareStep,
+    env_table_line,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     default_node_timeouts,
 )
 
 __all__: list[str] = [
-    "SETUP_ENV_ATTRIBUTE",
     "SETUP_FAILURE_NODE",
     "SETUP_FAILURE_SCRIPT",
     "SETUP_NODE_PREFIX",
+    "HoistedSteps",
     "SplitOverlay",
+    "append_env_lines",
+    "hoist_step_env",
     "is_setup_node",
     "setup_chain_tail",
     "setup_node_names",
@@ -86,7 +92,6 @@ __all__: list[str] = [
 
 SETUP_NODE_PREFIX = "run_prepare_"
 SETUP_FAILURE_NODE = "setup_failed"
-SETUP_ENV_ATTRIBUTE = "env"
 
 # The step the failed node's checkpoint names. The engine commits one
 # `fabro(<run>): <node> (<status>)` checkpoint per stage, failed ones included, and
@@ -105,6 +110,8 @@ _SETUP_NODE_RE = re.compile(r"^run_prepare_(?P<index>[0-9]+)$")
 _STEP_HEADER = "[[run.prepare.steps]]"
 _STEP_KEY_LINE_RE = re.compile(r"^(?:script|env)[ \t]*=")
 _START_NODE = "start"
+_ENV_TABLE_HEADER_RE = re.compile(r"(?m)^\[environments\.(?P<id>[^\]\n]+)\.env\][ \t]*$")
+_TABLE_HEADER_RE = re.compile(r"(?m)^[ \t]*\[")
 _FAILURE_ATTRIBUTES = '[label="Setup step failed", condition="outcome=failed"]'
 
 
@@ -215,6 +222,79 @@ def _without_prepare(*, document: Mapping[str, Any]) -> dict[str, Any]:
     return reduced
 
 
+class HoistedSteps:
+    """Setup steps with their payload variables lifted into uniquely named environment entries."""
+
+    __slots__ = ("env", "steps")
+
+    def __init__(self, *, steps: tuple[PrepareStep, ...], env: dict[str, str]) -> None:
+        self.steps = steps
+        self.env = env
+
+
+def hoist_step_env(*, steps: Sequence[PrepareStep]) -> HoistedSteps:
+    """Move every step's `env` into one flat mapping, renaming the variables to stay unique.
+
+    Several steps reuse one variable name (`LIVESPEC_PREPARE_PAYLOAD` is the payload
+    of a dozen of them), which a step-local table allowed and a run-wide one does
+    not. Each variable becomes `LIVESPEC_SETUP_<position>__<name>` -- the step's
+    1-based position in `steps` -- and the step's script is rewritten to read the
+    new name. The match is on whole names only, so `LIVESPEC_PREPARE_PAYLOAD` never
+    rewrites the front of `LIVESPEC_PREPARE_PAYLOAD_0`.
+    """
+    hoisted: list[PrepareStep] = []
+    env: dict[str, str] = {}
+    for position, step in enumerate(steps, start=1):
+        renamed = {name: f"LIVESPEC_SETUP_{position}__{name}" for name in step.env}
+        for name, value in step.env.items():
+            env[renamed[name]] = value
+        hoisted.append(PrepareStep(script=_with_names(script=step.script, renamed=renamed)))
+    return HoistedSteps(steps=tuple(hoisted), env=env)
+
+
+def _with_names(*, script: str, renamed: Mapping[str, str]) -> str:
+    """`script` with each whole variable name in `renamed` replaced by its new name."""
+    if not renamed:
+        return script
+    alternatives = "|".join(re.escape(name) for name in sorted(renamed, key=len, reverse=True))
+    return re.sub(
+        rf"(?<![A-Z0-9_])(?:{alternatives})(?![A-Z0-9_])",
+        lambda found: renamed[found.group(0)],
+        script,
+    )
+
+
+def append_env_lines(*, overlay_text: str, env: Mapping[str, str]) -> str | None:
+    """`overlay_text` with `env` appended to its run environment table, or `None` when it cannot be.
+
+    The table is the overlay's LAST one (`render_run_config_overlay` ends with it),
+    so the lines are appended to the end of the text and the result is parsed back:
+    every name must read back under that table with the value handed in. An overlay
+    with no environment table, one the table is not last in, or a value or name the
+    renderer refuses answers `None`, because a payload that never reached the table
+    would fail its own `${VAR:?}` guard minutes into the run instead of here.
+    """
+    if not env:
+        return overlay_text
+    headers = list(_ENV_TABLE_HEADER_RE.finditer(overlay_text))
+    if not headers or _TABLE_HEADER_RE.search(overlay_text, headers[-1].end()) is not None:
+        return None
+    try:
+        lines = "".join(env_table_line(name=name, value=value) for name, value in env.items())
+    except ValueError:
+        return None
+    appended = overlay_text if overlay_text.endswith("\n") else overlay_text + "\n"
+    appended += lines
+    try:
+        document: dict[str, Any] = tomli.loads(appended)
+    except tomli.TOMLDecodeError:
+        return None
+    table: Mapping[str, Any] = (
+        document.get("environments", {}).get(headers[-1].group("id"), {}).get("env", {})
+    )
+    return appended if all(table.get(name) == value for name, value in env.items()) else None
+
+
 def splice_setup_nodes(
     *,
     graph_text: str,
@@ -225,13 +305,14 @@ def splice_setup_nodes(
 
     The new nodes hang off the chain's TAIL: the unconditional edge leaving it is
     rewritten to enter the first new node, and the last new node takes over that
-    edge's old destination. A tail with no such edge, or a result that does not
+    edge's old destination. A tail with no such edge, a step still carrying an `env`
+    (a node has nowhere to put one; see `hoist_step_env`), or a result that does not
     re-parse to exactly the nodes intended, answers `None`.
     """
     if not steps:
         return graph_text
     graph = parse_dot_graph(text=graph_text)
-    if isinstance(graph, str):
+    if isinstance(graph, str) or any(step.env for step in steps):
         return None
     tail = setup_chain_tail(graph=graph)
     edge = re.search(
@@ -288,15 +369,12 @@ def _quoted(*, value: str) -> str:
 
 def _node_block(*, name: str, step: PrepareStep, seconds: int, indent: str) -> str:
     """One setup node's declaration; `timeout` precedes the long values, as the renderer expects."""
-    payload = _quoted(value=json.dumps(dict(step.env), sort_keys=True))
-    env = f"{indent}    {SETUP_ENV_ATTRIBUTE}={payload}\n" if step.env else ""
     index = name.removeprefix(SETUP_NODE_PREFIX)
     return (
         f"{indent}{name} [\n"
         f'{indent}    label="Setup step {index}"\n'
         f"{indent}    shape=parallelogram\n"
         f'{indent}    timeout="{seconds}s"\n'
-        f"{env}"
         f"{indent}    script={_quoted(value=step.script)}\n"
         f"{indent}]"
     )

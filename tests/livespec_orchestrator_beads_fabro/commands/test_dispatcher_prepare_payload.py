@@ -12,10 +12,12 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     MAX_PAYLOAD_VALUE_BYTES,
     PAYLOAD_ENV_VAR,
     PrepareStep,
+    env_table_line,
     payload_guard_command,
     payload_write_command,
     render_prepare_step,
@@ -116,3 +118,16 @@ def test_a_value_is_measured_in_bytes_not_characters() -> None:
 def test_an_env_name_that_is_not_a_shell_variable_is_refused() -> None:
     with pytest.raises(ValueError, match="not an upper-case shell variable name"):
         _ = render_prepare_step(step=PrepareStep(script="true", env={"bad name": "v"}))
+
+
+def test_an_environment_table_line_round_trips_a_hostile_value_through_a_toml_parser() -> None:
+    """The hoisted form of a payload (work-item bd-ib-dpsiwz) is one assignment per variable."""
+    document = tomli.loads(env_table_line(name="LIVESPEC_SETUP_1__PAYLOAD", value=_HOSTILE))
+    assert document == {"LIVESPEC_SETUP_1__PAYLOAD": _HOSTILE}
+
+
+def test_an_environment_table_line_refuses_what_a_step_env_refuses() -> None:
+    with pytest.raises(ValueError, match="not an upper-case shell variable name"):
+        _ = env_table_line(name="lower", value="x")
+    with pytest.raises(ValueError, match="argument list too long"):
+        _ = env_table_line(name="OK_NAME", value="x" * (MAX_PAYLOAD_VALUE_BYTES + 1))
