@@ -152,6 +152,9 @@ _FIX_NO_PROGRESS_ROUTE_ADDED = {"fix_progress_route", "janitor_failure_route"}
 # fallthrough and closes the cycle back to `fix` for an open Red's Green, whose
 # members are all already attributed to the loops above.
 _FIX_OPEN_RED_ROUTE_ADDED = {"fix_open_red_route"}
+# The review_fix twin (work-item bd-ib-czhqoq) sits on `review_fix_commit_settle`'s
+# fallthrough and closes the cycle back to `review_fix` for an open Red's Green.
+_REVIEW_FIX_OPEN_RED_ROUTE_ADDED = {"review_fix_open_red_route"}
 # This command node sits before `disposition`, preserving its three-visit
 # review-fix budget while converting a fourth request into a named terminal
 # route instead of the engine's unroutable entry abort.
@@ -767,6 +770,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _JANITOR_REFRESH_ROUTE_ADDED
         | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _FIX_OPEN_RED_ROUTE_ADDED
+        | _REVIEW_FIX_OPEN_RED_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )
@@ -798,6 +802,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _JANITOR_REFRESH_ROUTE_ADDED
         | _FIX_NO_PROGRESS_ROUTE_ADDED
         | _FIX_OPEN_RED_ROUTE_ADDED
+        | _REVIEW_FIX_OPEN_RED_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
     )

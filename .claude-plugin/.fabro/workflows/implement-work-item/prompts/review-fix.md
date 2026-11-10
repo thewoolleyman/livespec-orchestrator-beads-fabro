@@ -46,6 +46,25 @@ Before every Green commit or Green amend, run every test file the change touches
 
 A change to a stage prompt file or `_dispatcher_overlay.py` must update the test that pins it in the same commit.
 
+## When the previous review-fix turn left an open Red commit
+
+A review-fix turn that ends with its last commit carrying `TDD-Red-*` trailers
+and no `TDD-Green-*` trailers has left an OPEN Red: the commit hook accepted the
+correctly failing test on its fast path, so no tree has yet been graded. The
+graph re-enters this node for it instead of sending the run to the janitor.
+When this file exists, you were re-entered for exactly that:
+
+    cat "$(git rev-parse --git-path livespec-review-fix-open-red-brief)"
+
+The brief names the open Red commit. Do NOT author a new Red commit and do not
+rewrite the test: write the minimum implementation that makes that Red's test
+pass, run the test file, and complete its Green amend through the commit runner
+(`git commit --amend --no-edit`, so the Red trailer block survives). The
+test-file bytes must stay identical across the pair. A turn that ends with the
+Red still open spends one of this node's three visits and the run ends at
+`needs_human` when they are used. If the file does not exist, this visit was
+entered on an accepted review finding; carry on below.
+
 ## What to do
 
 1. Read the disposition record from the prior stage context, including any
