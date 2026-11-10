@@ -81,6 +81,17 @@ conflict or the gate failure:
    janitor, then `publish_draft`, then `proof_capture`, so publication is
    re-earned on the repaired head rather than claimed here.
 
+**A `subjectless-commits:` line in the brief is a different finding.** It names
+commits between `origin/{{ inputs.default_branch }}` and `HEAD` whose first message
+line is a trailer line (`Factory-Run-Id: ...`) or empty, so `publish_draft` refused to
+publish them: under rebase-merge such a commit would land on the default branch with
+no readable subject. There is no conflict to resolve. Reword each named commit so its
+first line is a conventional subject (`fix: ...` or `feat: ...`) with its trailers kept
+below it, by rebasing this run's own commits onto `origin/{{ inputs.default_branch }}`
+and rewording the named ones, and commit every step through the sandbox commit runner
+as above. Leave the rewritten branch for the `publish_draft` visit the graph re-enters,
+which owns any republication.
+
 Hooks run normally in this turn, exactly as everywhere else. Never pass
 `--no-verify`, never use bare force, and rewrite no ref at all — not even
 this run's own publish branch. The `publish_draft` visit the graph re-enters
