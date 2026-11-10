@@ -47,7 +47,11 @@ REPO_HOLD_FILE="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$REPO_NAME"
 OUT=$FLEET_LAUNCH_STATE_DIR
 WRAP=${WRAPPER:-$FLEET_LAUNCH_DEFAULT_WRAPPER}
 GMK=$FLEET_LAUNCH_GMK_SERVER
+GMK_CANDIDATE=$FLEET_LAUNCH_GMK_CANDIDATE_SERVER
 HL=$FLEET_LAUNCH_HL_SERVER
+# The gmktec factory hold file: while it exists no launch goes onto a gmktec factory instance. The path
+# is assigned here, in the launcher, from its host value in config.sh, and checked before every launch.
+GMK_HOLD_FILE=$FLEET_LAUNCH_HOLD_FILE
 FABRO=$FLEET_LAUNCH_FABRO
 INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
@@ -55,6 +59,7 @@ GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
 ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0
 gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
+candidate_rows=""; candidate_live=U
 mkdir -p "$OUT"
 
 # A bash launcher keeps executing the script content it started with, so code added to this file
@@ -98,8 +103,13 @@ ensure_ticket() {
   echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
   echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
 }
+# yield_ticket <cause>: mark the ticket as yielding, with exactly one held= line naming the rule it yields
+# under. A ticket that already names that cause is left alone; one naming another cause is re-marked.
 yield_ticket() {
-  [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
+  [ -n "$ticket" ] && [ -f "$ticket" ] || return 0
+  grep -qx "held=$1" "$ticket" && return 0
+  sed -i '/^held=/d' "$ticket"
+  echo "held=$1" >> "$ticket"
 }
 restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
 repository_hold_applies() {
@@ -135,9 +145,9 @@ launch_hold_applies() {
     HOLD_SOURCE=repository; HOLD_DESC="repository hold ($REPO_HOLD_FILE): $(repository_hold_details)"
     return 0
   fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
+  if [ -e "$GMK_HOLD_FILE" ]; then
     HOLD_SOURCE=gmktec
-    HOLD_DESC="gmktec hold ($FLEET_LAUNCH_HOLD_FILE): $(tr '\n' ' ' < "$FLEET_LAUNCH_HOLD_FILE" 2>/dev/null | cut -c1-300 | sed 's/ *$//')"
+    HOLD_DESC="gmktec hold ($GMK_HOLD_FILE): $(tr '\n' ' ' < "$GMK_HOLD_FILE" 2>/dev/null | cut -c1-300 | sed 's/ *$//')"
     return 0
   fi
   return 1
@@ -220,9 +230,21 @@ read_boards() {
   gmk_rows=$("$reader" "$FABRO" "$GMK")
   hl_rows=$("$reader" "$FABRO" "$HL")
   gmk_live=$(rows_count "$gmk_rows"); hl_live=$(rows_count "$hl_rows")
-  if [ "$gmk_live" = U ] || [ "$hl_live" = U ]; then markers=U; fleet=U; return; fi
-  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
-  if [ "$markers" = U ]; then fleet=U; else fleet=$(( gmk_live + hl_live + markers )); fi
+  # The candidate board is read only while the gmktec target selects the candidate, so an unreachable
+  # candidate server never blocks a launch onto the default instance. Its runs then count against the
+  # shared fleet cap, as the committed run config says they do.
+  candidate_rows=""; candidate_live=0
+  if [ "$(gmk_target)" = candidate ]; then
+    candidate_rows=$("$reader" "$FABRO" "$GMK_CANDIDATE"); candidate_live=$(rows_count "$candidate_rows")
+  fi
+  if [ "$gmk_live" = U ] || [ "$hl_live" = U ] || [ "$candidate_live" = U ]; then markers=U; fleet=U; return; fi
+  markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n%s\n' "$gmk_rows" "$candidate_rows" "$hl_rows")")
+  if [ "$markers" = U ]; then fleet=U; else fleet=$(( gmk_live + candidate_live + hl_live + markers )); fi
+}
+# gmk_target: the instance a gmktec launch goes to, read on every gate pass from the gmktec target
+# setting. Anything other than the word `candidate`, and an absent file, selects the default instance.
+gmk_target() {
+  [ -r "$FLEET_LAUNCH_GMK_TARGET_FILE" ] && [ "$(tr -d '[:space:]' < "$FLEET_LAUNCH_GMK_TARGET_FILE" 2>/dev/null)" = candidate ] && echo candidate || echo petri
 }
 gt() { awk "BEGIN{exit !($1 > $2)}"; }
 mpstat_idle() { ssh -o BatchMode=yes -o ConnectTimeout=15 "$1" 'mpstat 5 2' 2>/dev/null | awk '/^Average/ {print $NF}'; }
@@ -288,6 +310,95 @@ installed_build() {
     "$FLEET_LAUNCH_PLUGIN_REGISTRY" "$FLEET_LAUNCH_PLUGIN_KEY" "$REPO" 2>/dev/null
 }
 
+# terminal_line <cause> [detail]: the one line a non-run exit writes to the sequence log, naming the
+# work item, the ticket number it held and the cause. It is written before any ledger read or write.
+terminal_line() {
+  echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=$1${2:+ $2}"
+}
+# comment_dropped_ticket <cause> [detail]: the one ledger comment a non-run exit owes an item that
+# still reads ready, naming the dropped ticket number and the cause.
+comment_dropped_ticket() {
+  local body build_dir
+  body="Fleet launcher $SEAT dropped its ticket ${ticket_number:-none} for $ITEM without a run: cause $1${2:+ ($2)}. The ticket was lost, not re-taken, and this exit was not a run ending."
+  build_dir="$FLEET_LAUNCH_PLUGIN_CACHE/$(installed_build)"
+  (cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" comment "$build_dir" "$REPO" "$ITEM" "$body") >/dev/null 2>&1 \
+    || echo "$(date -u +%FT%TZ) ledger comment for $ITEM failed: the dropped-ticket note for cause $1 was not recorded"
+}
+
+# drive_goal_template_refused <drive-json-file>: succeeds when the drive's JSON output reports the
+# dispatch stage goal-minijinja-preflight with status failed, wherever the outcome row sits in it.
+drive_goal_template_refused() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import json
+import sys
+
+
+def refused(node):
+    if isinstance(node, dict):
+        if node.get("stage") == "goal-minijinja-preflight" and node.get("status") == "failed":
+            return True
+        return any(refused(value) for value in node.values())
+    if isinstance(node, list):
+        return any(refused(value) for value in node)
+    return False
+
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as handle:
+        document = json.load(handle)
+except (OSError, ValueError):
+    sys.exit(1)
+sys.exit(0 if refused(document) else 1)
+PY
+}
+
+# wip_green: the repository WIP gate. It succeeds while the target repository's counted-claims count,
+# read through the Dispatcher's capacity projection, is below its configured wip_cap, or one above it
+# for an item the breakage-exception list names. This is an early yield, not an admission decision: the
+# Dispatcher still applies its own WIP cap to every drive, so a count that cannot be read never holds.
+wip_green() {
+  local report counted cap effective build_dir
+  build_dir="$FLEET_LAUNCH_PLUGIN_CACHE/$(installed_build)"
+  report=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ready-set-check.py" "$build_dir" "$REPO" "$ITEM" capacity 2>/dev/null) || {
+    echo "$(date -u +%FT%TZ) repository WIP count unreadable: not holding, the Dispatcher's own cap still applies"; return 0
+  }
+  counted=$(printf '%s' "$report" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["counted_claims"]))' 2>/dev/null) || counted=""
+  cap=$(printf '%s' "$report" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["wip_cap"]))' 2>/dev/null) || cap=""
+  if [ -z "$counted" ] || [ -z "$cap" ]; then
+    echo "$(date -u +%FT%TZ) repository WIP count unreadable: not holding, the Dispatcher's own cap still applies"; return 0
+  fi
+  effective=$cap
+  if grep -qxF -- "$ITEM" "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE" 2>/dev/null; then effective=$(( cap + 1 )); fi
+  [ "$counted" -lt "$effective" ] && return 0
+  echo "$(date -u +%FT%TZ) repository WIP at cap: counted=$counted cap=$cap effective=$effective item=$ITEM: yield FIFO head"
+  return 1
+}
+
+# refresh_checkout: bring the target checkout to the fetched tip of origin's default branch. The branch
+# is the one the remote's HEAD names, read with `git ls-remote --symref`, never assumed to be master.
+# One refresh at a time per checkout. Prints the failing step and returns non-zero when it fails.
+refresh_checkout() {
+  local lock_file="$OUT/checkout-refresh-$REPO_NAME.lock"
+  (
+    flock -w 300 9 || { echo lock; exit 1; }
+    branch=$(git -C "$REPO" ls-remote --symref origin HEAD 2>/dev/null | sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD$|\1|p' | head -n 1)
+    [ -n "$branch" ] || { echo default-branch; exit 1; }
+    git -C "$REPO" fetch -q origin "$branch" 2>/dev/null || { echo fetch; exit 1; }
+    git -C "$REPO" merge --ff-only -q FETCH_HEAD 2>/dev/null || { echo fast-forward; exit 1; }
+    [ "$(git -C "$REPO" rev-parse HEAD 2>/dev/null)" = "$(git -C "$REPO" rev-parse FETCH_HEAD 2>/dev/null)" ] || { echo not-at-tip; exit 1; }
+  ) 9>"$lock_file"
+}
+# checkout_at_origin_tip: refresh the checkout, or make a non-run exit that launches nothing and
+# holds no factory slot (the exit trap removes any marker and the ticket).
+checkout_at_origin_tip() {
+  local step
+  step=$(refresh_checkout) && return 0
+  terminal_line checkout-not-at-origin-tip "step=${step:-unknown}"
+  echo "$(date -u +%FT%TZ) checkout of $REPO is not at the origin tip (step ${step:-unknown}): no launch"
+  comment_dropped_ticket checkout-not-at-origin-tip "step ${step:-unknown}"
+  exit 75
+}
+
 echo "=== fleet-launch dispatch $ITEM at $(date -u +%FT%TZ)"
 ready_check() {
   local p pick
@@ -313,6 +424,8 @@ queue_preflight_done=0
 launch_preflight() {
   local now prc pf="$OUT/$ITEM-preflight-launch.txt"; now=$(date +%s)
   [ $(( now - pf_ok_at )) -lt "$FLEET_LAUNCH_PREFLIGHT_REUSE_S" ] && return 0
+  # The preflight reads the checkout, so the checkout is brought to the origin tip first.
+  checkout_at_origin_tip
   (cd "$REPO" && "$WRAP" -- "$FLEET_LAUNCH_ORCH_REPO/dev-tooling/dod-preflight.sh" "$ITEM") > "$pf" 2>&1; prc=$?
   if [ $prc = 0 ]; then pf_ok_at=$now; echo "$(date -u +%FT%TZ) launch-time preflight PASS"; return 0; fi
   if [ $prc = 1 ]; then echo "$(date -u +%FT%TZ) launch-time preflight FAILED: $(tail -1 "$pf" | cut -c1-300): no slot, no launch"; exit 4; fi
@@ -398,6 +511,14 @@ while :; do
       sleep "$FLEET_LAUNCH_POLL_S"
       continue
     fi
+    # The repository WIP gate runs before anything that costs a model call: a launcher whose repository
+    # is at its cap keeps its ticket, yields the FIFO head and runs no preflight until the count drops.
+    if ! wip_green; then
+      ensure_ticket
+      yield_ticket repository-wip
+      sleep "$FLEET_LAUNCH_POLL_S"
+      continue
+    fi
     restore_ticket
     if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
       ahead=$(oldest_live_ticket "$GMK_Q")
@@ -415,7 +536,7 @@ while :; do
     evaluated=1
     gmk_idle=
     if ! fleet_green; then echo "$(date -u +%FT%TZ) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
-    if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
+    if [ -e "$GMK_HOLD_FILE" ]; then echo "$(date -u +%FT%TZ) hold file present ($GMK_HOLD_FILE): wait"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
     launch_preflight
     if [ -n "${ONLY_HL:-}" ]; then
       if [ "$hl_live" != U ] && [ "$hl_live" -lt "$FLEET_LAUNCH_HL_CAP" ]; then
@@ -427,6 +548,8 @@ while :; do
               rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) launcher script changed on disk before launch: released the mutex and marker, keeping the ticket"; continue
             elif repository_hold_applies dispatch; then
               rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+            elif [ -e "$GMK_HOLD_FILE" ]; then
+              rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) hold file present at the launch point ($GMK_HOLD_FILE): released the mutex and marker, keeping the ticket"
             else
               drop_ticket; target=mi-homelab; break
             fi
@@ -435,6 +558,30 @@ while :; do
           echo "$(date -u +%FT%TZ) under the gmktec mutex: mi-homelab no longer green (hl=$hl_live fleet=$fleet): release"; release_lock
         fi
       else echo "$(date -u +%FT%TZ) mi-homelab not green: live=$hl_live cap=$FLEET_LAUNCH_HL_CAP"; fi
+      sleep "$FLEET_LAUNCH_POLL_S"; continue
+    fi
+    if [ "$(gmk_target)" = candidate ]; then
+      # The gmktec target setting selects the candidate instance: launch onto it only while its live run
+      # count is below the candidate cap. An absent cap reads as 0 and an unreadable count holds.
+      if [ "$candidate_live" != U ] && [ "$candidate_live" -lt "${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0}" ]; then
+        echo "$(date -u +%FT%TZ) gmktec candidate green (live=$candidate_live cap=${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0} fleet=$fleet): queue for the gmktec mutex"
+        if take_mutex "$GMK_Q" "$GMK_LOCK"; then
+          taken=$(date +%s)
+          if bind_count candidate && [ "$candidate_live" -lt "${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0}" ]; then
+            if script_changed; then
+              rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) launcher script changed on disk before launch: released the mutex and marker, keeping the ticket"; continue
+            elif repository_hold_applies dispatch; then
+              rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+            elif [ -e "$GMK_HOLD_FILE" ]; then
+              rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) hold file present at the launch point ($GMK_HOLD_FILE): released the mutex and marker, keeping the ticket"
+            else
+              drop_ticket; target=candidate; break
+            fi
+          fi
+          [ -n "$marker" ] && { rm -f "$marker"; marker=""; }
+          echo "$(date -u +%FT%TZ) under the gmktec mutex: candidate no longer green (live=$candidate_live fleet=$fleet): release"; release_lock
+        fi
+      else echo "$(date -u +%FT%TZ) gmktec candidate not green: live=$candidate_live cap=${FLEET_LAUNCH_GMK_CANDIDATE_CAP:-0}"; fi
       sleep "$FLEET_LAUNCH_POLL_S"; continue
     fi
     if { [ -z "${CAPTURE_NULL:-}" ] || [ "${CAPTURE_EXPECT:-}" = petri ]; } && gmk_green; then
@@ -446,6 +593,8 @@ while :; do
             rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) launcher script changed on disk before launch: released the mutex and marker, keeping the ticket"; continue
           elif repository_hold_applies dispatch; then
             rm -f "$marker"; marker=""; yield_ticket repository-hold; log_repository_hold; release_lock
+          elif [ -e "$GMK_HOLD_FILE" ]; then
+            rm -f "$marker"; marker=""; release_lock; echo "$(date -u +%FT%TZ) hold file present at the launch point ($GMK_HOLD_FILE): released the mutex and marker, keeping the ticket"
           else
             drop_ticket; target=petri; break
           fi
@@ -466,6 +615,10 @@ while :; do
     FABRO_DEV_TOKEN__petri=$(ssh -o BatchMode=yes "$FLEET_LAUNCH_GMK_SSH" cat "$FLEET_LAUNCH_GMK_SERVER_ENV" | sed -n 's/^FABRO_DEV_TOKEN=//p' | tail -n 1)
     export FABRO_DEV_TOKEN__petri
     tserver=$GMK
+  elif [ "$target" = candidate ]; then
+    FABRO_DEV_TOKEN__candidate=$(ssh -o BatchMode=yes "$FLEET_LAUNCH_GMK_SSH" cat "$FLEET_LAUNCH_GMK_CANDIDATE_SERVER_ENV" | sed -n 's/^FABRO_DEV_TOKEN=//p' | tail -n 1)
+    export FABRO_DEV_TOKEN__candidate
+    tserver=$GMK_CANDIDATE
   else
     tserver=$HL
   fi
@@ -475,7 +628,7 @@ while :; do
   else
     export LIVESPEC_FABRO_FACTORY=$target
   fi
-  git -C "$REPO" fetch -q origin && git -C "$REPO" merge --ff-only -q origin/master
+  checkout_at_origin_tip
   build=$(installed_build)
   plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$build"
   build_version=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$plugin/plugin.json" 2>/dev/null)
@@ -525,4 +678,34 @@ echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?}
 wait "$drive_pid"; rc=$?
 echo "$(date -u +%FT%TZ) drive rc=$rc"
 echo "$(date -u +%FT%TZ) drive rc=$rc" >> "$OUT/$ITEM-r267.verdict"
+early_exit_state="$FLEET_LAUNCH_RETICKET_STATE_DIR/$ITEM.early-exits"
+if [ -n "$run_row" ]; then
+  # A launched run listed: the consecutive early-exit count for this item starts over.
+  rm -f "$early_exit_state"
+elif [ "$rc" -ne 0 ]; then
+  # drive_goal_template_refused: the drive reported the goal template preflight stage failed. That stage
+  # fails the same way on every retry until the item's record is repaired, so it is never re-ticketed.
+  if drive_goal_template_refused "$OUT/$ITEM-r267.json"; then
+    terminal_line goal-minijinja-preflight "drive-exit=$rc"
+    comment_dropped_ticket goal-minijinja-preflight "the item record carries a goal-template opening delimiter; repair the record and re-ticket"
+    exit "$rc"
+  fi
+  # A permanent pre-dispatch refusal (exit 5) is not an early exit either.
+  if [ "$rc" -eq 5 ]; then
+    terminal_line refused "drive-exit=$rc"
+    comment_dropped_ticket refused "the drive refused the item with exit code 5"
+    exit "$rc"
+  fi
+  # Any other non-zero exit before the run lists re-takes a ticket at the same ticket number, after a
+  # delay set by how many consecutive early exits this item has had. The mutex and the in-flight marker
+  # are already released, and no ticket is held while the launcher waits.
+  mkdir -p "$FLEET_LAUNCH_RETICKET_STATE_DIR"
+  early_exits=$(tr -dc 0-9 < "$early_exit_state" 2>/dev/null); early_exits=$(( ${early_exits:-0} + 1 ))
+  printf '%s\n' "$early_exits" > "$early_exit_state"
+  case $early_exits in 1) delay=$FLEET_LAUNCH_RETICKET_DELAY_1_S ;; 2) delay=$FLEET_LAUNCH_RETICKET_DELAY_2_S ;; *) delay=$FLEET_LAUNCH_RETICKET_DELAY_3_S ;; esac
+  terminal_line drive-exit-early "drive-exit=$rc early-exits=$early_exits re-ticket-after=${delay}s"
+  echo "$(date -u +%FT%TZ) drive exited before listing (rc=$rc, consecutive early exits $early_exits): re-ticket item=$ITEM at ticket ${ticket_number:-none} after ${delay}s"
+  sleep "$delay" & wait $!
+  exec env TICKET_NS="${ticket_number:-}" bash "$SELF" "${LAUNCHER_ARGS[@]}"
+fi
 exit "$rc"

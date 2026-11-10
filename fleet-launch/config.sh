@@ -21,14 +21,25 @@
 # A repository hold is hold-repo-<target-checkout-basename> in this directory.
 # It scopes a red repository to its own launches without stopping other tenants.
 : "${FLEET_LAUNCH_REPO_HOLD_DIR:=$FLEET_LAUNCH_STATE_DIR}"
+# The committed breakage-exception list: one work-item id per line. The repository WIP gate treats the
+# cap as one above the repository's wip_cap for a listed item, and for no other.
+: "${FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE:=$FLEET_LAUNCH_ORCH_REPO/fleet-launch/breakage-exception}"
+# The gmktec target setting: a one-word file. `candidate` sends a gmktec launch to the candidate
+# instance; an absent file, or any other word, selects the default instance.
+: "${FLEET_LAUNCH_GMK_TARGET_FILE:=$FLEET_LAUNCH_STATE_DIR/gmk-target}"
+# Where an item's consecutive early-exit count survives a launcher restart.
+: "${FLEET_LAUNCH_RETICKET_STATE_DIR:=$FLEET_LAUNCH_STATE_DIR/reticket-state}"
 
 # Factory servers. hp-xubuntu and vps are retired as factories and are never read.
 : "${FLEET_LAUNCH_GMK_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32276}"
+: "${FLEET_LAUNCH_GMK_CANDIDATE_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32278}"
 : "${FLEET_LAUNCH_HL_SERVER:=https://gmktec-xubuntu.perch-rudd.ts.net:32277}"
 : "${FLEET_LAUNCH_GMK_SSH:=cwoolley@gmktec-xubuntu}"
 : "${FLEET_LAUNCH_GMK_SERVER_ENV:=/home/cwoolley/.fabro/storage/server.env}"
+: "${FLEET_LAUNCH_GMK_CANDIDATE_SERVER_ENV:=$FLEET_LAUNCH_GMK_SERVER_ENV}"
 # Per-factory ceilings, from the gitops host_vars for gmktec-xubuntu.
 : "${FLEET_LAUNCH_GMK_CAP:=8}"
+: "${FLEET_LAUNCH_GMK_CANDIDATE_CAP:=2}"
 : "${FLEET_LAUNCH_HL_CAP:=2}"
 # Minimum gmktec idle CPU percentage before a launch.
 : "${FLEET_LAUNCH_GMK_MIN_IDLE:=25}"
@@ -73,6 +84,11 @@
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
+# Seconds a launcher waits before it re-takes its ticket after its drive exited before the run listed:
+# after the first, the second, and the third and each later consecutive early exit of one item.
+: "${FLEET_LAUNCH_RETICKET_DELAY_1_S:=0}"
+: "${FLEET_LAUNCH_RETICKET_DELAY_2_S:=300}"
+: "${FLEET_LAUNCH_RETICKET_DELAY_3_S:=600}"
 # The two fixed poll intervals below are waits on an observed state (a free
 # mutex, a listed run); the hermetic harness shortens them so each of its cases
 # advances on that state instead of sitting out a production-sized interval.
