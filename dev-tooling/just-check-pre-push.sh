@@ -67,6 +67,31 @@ mapfile -t skipped_targets < <(bash dev-tooling/green-token-scope.sh scope)
 
 if uv run bash dev-tooling/green-token-scope.sh check "${skipped_targets[@]}" 2>&1; then
     echo ":: pre-push: green token matched - tree byte-identical to last green check with excluded targets: ${skipped_targets[*]:-none}; skipping full aggregate (CI is authoritative)"
+    # A token a DELEGATED cluster gate pass wrote vouches only for the tree-pure
+    # members. Every member that reads state outside the tree (the work-items
+    # ledger, the forge's settings, master CI) runs here on the pushing host, and a
+    # failure refuses the push. The library's own purity declarations name them, and
+    # an answer that cannot be obtained refuses rather than skips.
+    if uv run bash dev-tooling/green-token-scope.sh delegated "${skipped_targets[@]}"; then
+        echo ":: pre-push: the verdict is a delegated cluster gate pass; running the members that read state outside the tree"
+        aggregate_text="$(bash dev-tooling/aggregate-targets.sh)" || exit 1
+        owed_targets=()
+        while IFS= read -r member; do
+            [ -n "${member}" ] || continue
+            omitted=false
+            for skipped_target in "${skipped_targets[@]}"; do
+                [ "${skipped_target}" = "${member}" ] && omitted=true
+            done
+            [ "${omitted}" = true ] || owed_targets+=("${member}")
+        done <<<"${aggregate_text}"
+        world_reading_text="$(uv run python -m livespec_dev_tooling.green_token world-reading "${owed_targets[@]}")" || exit 1
+        world_reading=()
+        while IFS= read -r member; do
+            [ -n "${member}" ] && world_reading+=("${member}")
+        done <<<"${world_reading_text}"
+        [ "${#world_reading[@]}" -gt 0 ] || exit 0
+        exec uv run python -m livespec_dev_tooling.parallel_check_dispatcher --skip "" -- "${world_reading[@]}"
+    fi
     # check-master-ci-green reads forge state outside the tree, which a tree
     # verdict cannot vouch for; it runs here unless this host omits it by design.
     master_ci_omitted=false
