@@ -107,10 +107,8 @@ def test_ambient_release_lag_never_refuses_and_surfaces_the_remedy(
     assert _BUILD_ID in lag.detail
     assert _RELEASE_SHA[:12] in lag.detail
     assert "ambient staleness is surfaced, not enforced" in lag.detail
-    assert (
-        "claude plugin update "
-        "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro" in lag.detail
-    )
+    assert "just adopt-orchestrator-build <clone> <build>" in lag.detail
+    assert "claude plugin update" not in lag.detail
 
 
 def test_release_below_a_committed_floor_refuses_fail_closed_naming_the_floor(
@@ -130,6 +128,8 @@ def test_release_below_a_committed_floor_refuses_fail_closed_naming_the_floor(
     assert decision.refusal.stage == gate.MINIMUM_RELEASE_REFUSED_STAGE
     assert "dispatcher.minimum_release floor 0.98.0" in decision.refusal.detail
     assert "0.97.1" in decision.refusal.detail
+    assert "just adopt-orchestrator-build <clone> <build>" in decision.refusal.detail
+    assert "claude plugin update" not in decision.refusal.detail
     assert decision.warnings == ()
 
 
