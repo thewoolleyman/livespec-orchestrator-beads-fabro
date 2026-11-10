@@ -220,8 +220,19 @@ def test_a_closed_items_ended_run_is_removed_through_its_factory_without_force(
     )
 
     assert (summary.reconciled, summary.errors) == ((), ())
+    matching = "/repos/{owner}/{repo}/git/matching-refs/livespec"
     assert [call[1:] for call in runner.calls] == [
         ["ps", "-a", "--json", "--server", _HP],
+        # The run's preservation refs are listed on origin BEFORE the run is removed.
+        ["api", "--paginate", f"{matching}/wip/bd-ib-1/01DONE/", "--jq", ".[].ref"],
+        ["api", "--paginate", f"{matching}/preserved-publish/bd-ib-1/", "--jq", ".[].ref"],
+        [
+            "api",
+            "--paginate",
+            "/repos/{owner}/{repo}/git/matching-refs/heads/needs-human/01DONE",
+            "--jq",
+            ".[].ref",
+        ],
         ["rm", "01DONE", "--server", _HP],
         ["ps", "-a", "--json", "--server", _VPS],
     ]

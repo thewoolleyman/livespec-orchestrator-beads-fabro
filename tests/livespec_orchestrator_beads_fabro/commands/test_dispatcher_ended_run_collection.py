@@ -10,6 +10,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ended_run_collection
     collect_closed_ended_runs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_preservation_ref_deletion import (
+    JOURNAL_STAGE_DELETION_FAILED,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
     journaled_runs,
@@ -40,6 +43,41 @@ class _Runner:
 
 
 @dataclass(kw_only=True)
+class _Forge:
+    """The forge's reference interface: lists refs by prefix, records deletions."""
+
+    refs: tuple[str, ...] = ()
+    refuse_delete: frozenset[str] = frozenset()
+    calls: list[list[str]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: Mapping[str, str | None] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        _ = (cwd, timeout_seconds, env, stdin)
+        self.calls.append(argv)
+        if "DELETE" in argv:
+            ref = "refs/" + argv[-1].removeprefix("/repos/{owner}/{repo}/git/refs/")
+            if ref in self.refuse_delete:
+                return CommandResult(exit_code=1, stdout="", stderr="HTTP 422")
+            return CommandResult(exit_code=0, stdout="", stderr="")
+        prefix = "refs/" + argv[3].removeprefix("/repos/{owner}/{repo}/git/matching-refs/")
+        listed = [ref for ref in self.refs if ref.startswith(prefix)]
+        return CommandResult(exit_code=0, stdout="\n".join(listed) + "\n", stderr="")
+
+    @property
+    def deleted(self) -> list[str]:
+        return [
+            "refs/" + call[-1].split("/git/refs/", 1)[1] for call in self.calls if "DELETE" in call
+        ]
+
+
+@dataclass(kw_only=True)
 class _Journal:
     records: list[dict[str, object]] = field(default_factory=list)
 
@@ -51,6 +89,7 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
     tmp_path: Path,
 ) -> None:
     runner = _Runner()
+    forge = _Forge()
     journal = _Journal()
 
     collect_closed_ended_runs(
@@ -65,6 +104,8 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
             stamps=(("01CLOSED", "bd-ib-closed"), ("01BLOCKED", "bd-ib-blocked")),
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
         journal=journal,
         dry_run=False,
     )
@@ -87,6 +128,7 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
 
 def test_dry_run_leaves_an_ended_closed_run_and_its_journal_unchanged(tmp_path: Path) -> None:
     runner = _Runner()
+    forge = _Forge()
     journal = _Journal()
 
     collect_closed_ended_runs(
@@ -96,6 +138,8 @@ def test_dry_run_leaves_an_ended_closed_run_and_its_journal_unchanged(tmp_path: 
             stamps=(("01CLOSED", "bd-ib-closed"),),
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
         journal=journal,
         dry_run=True,
     )
@@ -105,6 +149,7 @@ def test_dry_run_leaves_an_ended_closed_run_and_its_journal_unchanged(tmp_path: 
 
 def test_failed_provider_delete_is_journaled_for_the_next_collection_pass(tmp_path: Path) -> None:
     runner = _Runner(exit_code=1)
+    forge = _Forge()
     journal = _Journal()
 
     collect_closed_ended_runs(
@@ -114,6 +159,8 @@ def test_failed_provider_delete_is_journaled_for_the_next_collection_pass(tmp_pa
             stamps=(("01CLOSED", "bd-ib-closed"),),
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
         journal=journal,
         dry_run=False,
     )
@@ -127,6 +174,7 @@ def test_journal_carries_the_bounded_rm_response_for_diagnosis_and_retry(tmp_pat
         stdout="Preserved: sandbox_preserved\n" + "x" * 5000,
         stderr="lease lease-1: prune failed",
     )
+    forge = _Forge()
     journal = _Journal()
 
     collect_closed_ended_runs(
@@ -136,6 +184,8 @@ def test_journal_carries_the_bounded_rm_response_for_diagnosis_and_retry(tmp_pat
             stamps=(("01CLOSED", "bd-ib-closed"),),
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
         journal=journal,
         dry_run=False,
     )
@@ -150,6 +200,7 @@ def test_journal_carries_the_bounded_rm_response_for_diagnosis_and_retry(tmp_pat
 
 def test_targeted_pass_collects_only_its_own_items_closed_runs(tmp_path: Path) -> None:
     runner = _Runner()
+    forge = _Forge()
     journal = _Journal()
 
     collect_closed_ended_runs(
@@ -163,6 +214,8 @@ def test_targeted_pass_collects_only_its_own_items_closed_runs(tmp_path: Path) -
             only_work_item_id="bd-ib-mine",
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
         journal=journal,
         dry_run=False,
     )
@@ -210,3 +263,89 @@ def _run(*, run_id: str, status_kind: str) -> FabroRunSummary:
         goal=None,
         total_usd_micros=None,
     )
+
+
+def test_collecting_a_closed_items_run_deletes_its_refs_and_not_an_open_items(
+    tmp_path: Path,
+) -> None:
+    runner = _Runner()
+    forge = _Forge(
+        refs=(
+            "refs/livespec/wip/bd-ib-closed/01CLOSED/1",
+            "refs/livespec/wip/bd-ib-closed/01OLDER/1",
+            "refs/livespec/preserved-publish/bd-ib-closed/abc123",
+            "refs/heads/needs-human/01CLOSED",
+            "refs/livespec/wip/bd-ib-blocked/01BLOCKED/1",
+            "refs/livespec/preserved-publish/bd-ib-blocked/def456",
+            "refs/heads/needs-human/01BLOCKED",
+        )
+    )
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(
+                _run(run_id="01CLOSED", status_kind="failed"),
+                _run(run_id="01BLOCKED", status_kind="failed"),
+            ),
+            statuses={"bd-ib-closed": "done", "bd-ib-blocked": "blocked"},
+            stamps=(("01CLOSED", "bd-ib-closed"), ("01BLOCKED", "bd-ib-blocked")),
+        ),
+        port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
+        journal=_Journal(),
+        dry_run=False,
+    )
+
+    assert forge.deleted == [
+        "refs/livespec/wip/bd-ib-closed/01CLOSED/1",
+        "refs/livespec/preserved-publish/bd-ib-closed/abc123",
+        "refs/heads/needs-human/01CLOSED",
+    ]
+    assert runner.calls == [["fabro", "rm", "01CLOSED", "--server", "https://factory.test"]]
+
+
+def test_dry_run_deletes_no_preservation_ref(tmp_path: Path) -> None:
+    forge = _Forge(refs=("refs/heads/needs-human/01CLOSED",))
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(_run(run_id="01CLOSED", status_kind="failed"),),
+            statuses={"bd-ib-closed": "closed"},
+            stamps=(("01CLOSED", "bd-ib-closed"),),
+        ),
+        port=_port(tmp_path=tmp_path, runner=_Runner()),
+        runner=forge,
+        repo=tmp_path,
+        journal=_Journal(),
+        dry_run=True,
+    )
+
+    assert forge.calls == []
+
+
+def test_a_refused_ref_deletion_is_journaled_and_leaves_the_run_for_the_next_pass(
+    tmp_path: Path,
+) -> None:
+    refused = "refs/heads/needs-human/01CLOSED"
+    runner = _Runner()
+    forge = _Forge(refs=(refused,), refuse_delete=frozenset({refused}))
+    journal = _Journal()
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(_run(run_id="01CLOSED", status_kind="failed"),),
+            statuses={"bd-ib-closed": "done"},
+            stamps=(("01CLOSED", "bd-ib-closed"),),
+        ),
+        port=_port(tmp_path=tmp_path, runner=runner),
+        runner=forge,
+        repo=tmp_path,
+        journal=journal,
+        dry_run=False,
+    )
+
+    assert runner.calls == []
+    assert [(record["stage"], record["ref"]) for record in journal.records] == [
+        (JOURNAL_STAGE_DELETION_FAILED, refused)
+    ]
