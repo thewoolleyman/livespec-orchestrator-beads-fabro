@@ -766,7 +766,12 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
             if state != RUNNING or time.monotonic() >= deadline:
                 break
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
-        if state == NO_VERDICT:
+        if state == RUNNING:
+            stop_run(path, "/proc")
+            record = {"state": NO_VERDICT, "stopped": True}
+            write_record(path, record)
+            state = NO_VERDICT
+        elif state == NO_VERDICT:
             # Recorded, so a later settle does not brief this dead run a second time.
             write_record(path, {"state": NO_VERDICT})
         outcomes.append((path, record, state))
