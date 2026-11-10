@@ -175,12 +175,14 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     reaches a log, journal, or argv; the overlay file is deleted when
     the run returns.
 
-    The overlay ALSO provisions the sandbox sibling clones: one depth-1
-    prepare-step clone per fleet member (minus the dispatch target,
+    The overlay ALSO provisions the sandbox sibling clones: one full-history
+    prepare-step work clone per fleet member (minus the dispatch target,
     keyed by the `--repo` basename) plus the non-secret
     `LIVESPEC_SIBLING_CLONES_ROOT` env key, so cross-repo checks under
     `just check` resolve family siblings inside the sandbox the same
-    way livespec CI provisions them.
+    way livespec CI provisions them. It provisions the RUN-FROM clone of
+    livespec core beside them, a shallow read-only clone at the release the
+    governed tree pins that `LIVESPEC_CORE_PLUGIN_ROOT` points into.
 
     It projects the in-sandbox Claude-Code OTel env (29f.3): the
     `cc_otel_overlay_env` dict carrying the correlation triple

@@ -304,6 +304,8 @@ def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -
     }
     assert set(_dispatcher_overlay_siblings.__all__) == {
         "CORE_PLUGIN_ROOT_ENV_VAR",
+        "RUN_FROM_CLONES_ROOT",
+        "RUN_FROM_CLONES_ROOT_ENV_VAR",
         "SIBLING_CLONES_ROOT_ENV_VAR",
         "SiblingClones",
         "core_plugin_env_line",
@@ -2225,7 +2227,7 @@ def _expected_clone_script(repo_name: str) -> str:
         " >/dev/null 2>&1 ||"
         f" {{ echo '{prefix}repository not reachable (nonexistent or no access)'"
         " >&2; exit 0; };"
-        f" GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 {url}"
+        f" GIT_TERMINAL_PROMPT=0 git clone --quiet {url}"
         f" /livespec-siblings/{repo_name} ||"
         f" {{ echo '{prefix}clone failed after a successful reachability probe"
         " (transient)' >&2; exit 0; }"
@@ -2249,10 +2251,10 @@ _TMUX_TMPDIR_PREPARE_STEP_LINE = (
 )
 
 # The console's `check-doctor-static` resolves livespec CORE inside the Fabro
-# sandbox via this projected env key, valued at the in-sandbox core-sibling
-# clone path (`<clones_root>/livespec/.claude-plugin`).
+# sandbox via this projected env key, valued at the in-sandbox core run-from
+# clone path (`/livespec-run-from/livespec/.claude-plugin`).
 _CORE_PLUGIN_ROOT_ENV_LINE = (
-    'LIVESPEC_CORE_PLUGIN_ROOT = "/livespec-siblings/livespec/.claude-plugin"'
+    'LIVESPEC_CORE_PLUGIN_ROOT = "/livespec-run-from/livespec/.claude-plugin"'
 )
 
 
@@ -2324,8 +2326,9 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     # proof grade, the generated-record-file resolution of bd-ib-ze7xxj and
     # bd-ib-davaxq's record-file merger), the repository-hook limit observer
     # (bd-ib-xi63mq), the Red and Green command programs, the detached commit
-    # runner (bd-ib-atyefi), and the review-turn guard (bd-ib-azxvoo).
-    assert rendered.count("[[run.prepare.steps]]") == 20
+    # runner (bd-ib-atyefi), the review-turn guard (bd-ib-azxvoo), and the
+    # run-from clone program of livespec core (bd-ib-lupzxt).
+    assert rendered.count("[[run.prepare.steps]]") == 21
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2375,7 +2378,7 @@ def test_render_run_config_overlay_sibling_clone_steps_are_valid_bash(
     clone_scripts = [
         json.loads(line.removeprefix("script = "))
         for line in script_lines
-        if "clone --quiet --depth 1" in line
+        if "git clone --quiet https://" in line
     ]
     assert len(clone_scripts) == len(_SIBLINGS.repos)
     for script in clone_scripts:
@@ -2433,7 +2436,7 @@ def test_render_run_config_overlay_sibling_clone_steps_tolerate_bad_members(
         assert script.count("exit 1") == 1
         # NON-BREAKING: the healthy path still runs the identical clone.
         assert (
-            "git clone --quiet --depth 1 https://github.com/thewoolleyman/"
+            "git clone --quiet https://github.com/thewoolleyman/"
             f"{repo_name}.git /livespec-siblings/{repo_name}" in script
         )
 
@@ -2466,15 +2469,16 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
 
 def test_render_run_config_overlay_projects_core_plugin_root(tmp_path: Path) -> None:
     """The overlay MUST project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox
-    core-sibling clone path.
+    core run-from clone path.
 
     The sandbox is spawned with a fail-closed env allowlist
     (fabro-server/src/spawn_env.rs) and carries no installed-plugin registry,
     so a fleet repo whose janitor resolves the livespec CORE plugin (the
     console's `check-doctor-static`) has no way to find core unless the overlay
     projects LIVESPEC_CORE_PLUGIN_ROOT — the SAME container-level env-table
-    mechanism that carries GH_TOKEN. The value is derived from the siblings
-    clones root (`<clones_root>/livespec/.claude-plugin`), and the key lands
+    mechanism that carries GH_TOKEN. The value names the RUN-FROM clone root
+    (`/livespec-run-from/livespec/.claude-plugin`), never a work clone under the
+    siblings root, and the key lands
     INSIDE [environments.<id>.env] alongside the credential so it reaches every
     node's `just check` subprocesses.
     """
@@ -6176,8 +6180,8 @@ def test_dispatch_proceeds_with_empty_siblings_when_fleet_manifest_is_unfetchabl
     out = capsys.readouterr().out
     assert "sibling-clone provisioning refused" not in out
     # The materialized overlay carries an EMPTY sibling set — no per-member
-    # depth-1 clone steps were appended.
-    assert "git clone --quiet --depth 1" not in fake.overlay_texts[0]
+    # clone steps were appended.
+    assert "git clone --quiet https://" not in fake.overlay_texts[0]
 
 
 def test_dispatch_fails_fast_when_fleet_manifest_is_malformed(

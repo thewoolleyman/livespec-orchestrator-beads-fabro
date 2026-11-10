@@ -219,15 +219,19 @@ before EVERY command, so the ~76-minute merge-poll and any >1-hour
 operation re-mint transparently instead of dying on a once-at-start
 export. Token values are never logged, echoed, or journaled.
 
-Sandbox sibling clones: the same overlay appends one depth-1
-prepare-step clone per fleet member (from livespec master's
+Sandbox sibling clones: the same overlay appends one full-history
+prepare-step work clone per fleet member (from livespec master's
 .livespec-fleet-manifest.jsonc, fetched host-side via `gh api` at run-config
 generation; the dispatch target is excluded) and projects the
 non-secret LIVESPEC_SIBLING_CLONES_ROOT=/livespec-siblings into the
 sandbox env table, so cross-repo checks under `just check` resolve
 family siblings inside the sandbox — mirroring livespec CI. An
 unreachable or malformed manifest fails the dispatch fast at the
-`run-config-overlay` stage.
+`run-config-overlay` stage. Tools the sandbox EXECUTES from another
+repository (livespec core's checker, through LIVESPEC_CORE_PLUGIN_ROOT) run
+from a separate shallow, read-only run-from clone under /livespec-run-from at
+the release the governed tree pins, which the janitor and the publication
+stages re-resolve after a refresh.
 
 Connection + consent model: the Ledger connection resolves from the
 TARGET repo's `.livespec.jsonc` (cwd-style `--repo` addressing) plus
