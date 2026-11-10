@@ -13,23 +13,20 @@ which is the shape the clause specifies for all three surfaces that can report
 one — the wall's refusal text, the node's needs-human question, and the capture
 and groom displays.
 
-WHY AN UNREADABLE SPEC TREE SKIPS THE REFERENCE CHECK RATHER THAN REFUSING.
-Every other fail-direction decision in this wall's neighbourhood chooses the
-ARMED side, and `_dispatcher_criteria_wall_variant` explains why. This one is
-deliberately the other way, and the asymmetry is the point: an unresolvable
-workflow variant refuses ONE item that also happens to lack criteria, while an
-unreadable spec tree would refuse EVERY implement-kind item in the repository —
-a whole-factory outage produced by an environment fault, whose refusal text
-would name a heading that is perfectly valid. An empty H2 set is not evidence
-that a reference is wrong; it is the absence of evidence either way, and the
-clause's own evidence rule forbids manufacturing a verdict from that. The
-pure-parse checks are unaffected, so a genuinely malformed item is still refused
-on the checks that CAN be observed.
+WHICH REVISION THE REFERENCE CHECK READS (work-item bd-ib-ahtcng). References
+resolve against the target repository's `origin/master`, never the primary
+checkout's working tree, which lags after any merge burst and so refused headings
+that a merged revise had already added. The filing display and the dispatch-time
+wall both reach the check through `definition_of_done_findings`, so they judge one
+revision. When that revision cannot be read the item is REFUSED with a finding
+naming it: falling back to the primary checkout would be exactly the stale read
+this module no longer makes. `_dispatcher_definition_of_done_origin_spec` records
+why that reverses this module's earlier choice to skip the check on an unreadable
+tree. The pure-parse checks are unaffected.
 """
 
 from __future__ import annotations
 
-import re
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -40,7 +37,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     declared_proof_mode,
     definition_of_done,
 )
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    ORIGIN_REVISION,
+    OriginSpecUnreadable,
+    origin_spec_h2_headings,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,18 +50,8 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "definition_of_done_findings",
-    "spec_h2_headings",
 ]
 
-# The governed spec tree's directory name, as the repository layout fixes it and
-# as `_needs_attention_detection_staleness` already reads it.
-_SPEC_DIRNAME = "SPECIFICATION"
-# Only the tree's OWN top-level files. `history/` and `proposed_changes/` are
-# deliberately out: a reference must name a heading of the CURRENT ratified spec,
-# and admitting a historical snapshot's headings would let a reference resolve
-# against a clause that has since been replaced.
-_SPEC_FILE_GLOB = "*.md"
-_H2 = re.compile(r"^##\s+(.+?)\s*$")
 # What each opt-out mode's `Reason:` line owes, in the clause's own words. Keyed
 # by MODE rather than by sub-heading title so the title-to-mode mapping stays the
 # parser's one table: a second mapping here is how the wall would come to report
@@ -77,33 +68,6 @@ _REASON_SUBJECTS = {
 }
 
 
-def spec_h2_headings(*, repo: Path) -> frozenset[str]:
-    """The H2 headings of the governed spec tree's own top-level files.
-
-    Each heading enters the set as its verbatim `## <title>` line. A reference
-    must carry that marker as well as the heading text, so the filing-time wall
-    agrees with the Definition-of-Done rubric before an item can consume a
-    dispatch slot.
-
-    An empty set means the tree could not be read (absent directory, unreadable
-    file), NOT that the tree carries no heading — see this module's docstring for
-    what the caller must do with that distinction.
-    """
-    spec_root = repo / _SPEC_DIRNAME
-    if not spec_root.is_dir():
-        return frozenset()
-    headings: set[str] = set()
-    for path in sorted(spec_root.glob(_SPEC_FILE_GLOB)):
-        read = attempt(action=lambda p=path: p.read_text(encoding="utf-8"), exceptions=(OSError,))
-        if isinstance(read, AttemptFailure):
-            continue
-        for raw in read.splitlines():
-            match = _H2.match(raw)
-            if match is not None:
-                headings.add(f"## {match.group(1)}")
-    return frozenset(headings)
-
-
 def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]:
     """Every mechanical Definition-of-Done finding for one item, or an empty tuple.
 
@@ -118,10 +82,7 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
     findings: list[str] = []
     if not section.references:
         findings.append(_absent_reference_line_finding(item=item))
-    findings.extend(
-        _unresolved_reference_finding(item=item, reference=reference)
-        for reference in _unresolved_references(section_references=section.references, cwd=cwd)
-    )
+    findings.extend(_reference_findings(item=item, references=section.references, cwd=cwd))
     findings.extend(
         _malformed_proof_mode_finding(item=item, sub_heading=sub_heading)
         for sub_heading in section.malformed_proof_modes
@@ -130,12 +91,32 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
     return tuple(findings)
 
 
-def _unresolved_references(*, section_references: tuple[str, ...], cwd: Path) -> tuple[str, ...]:
-    """The references that name no heading the spec tree carries, in order."""
-    headings = spec_h2_headings(repo=cwd)
-    if not headings:
+def _reference_findings(
+    *, item: WorkItem, references: tuple[str, ...], cwd: Path
+) -> tuple[str, ...]:
+    """One finding per reference `origin/master` carries no heading for, in order.
+
+    An unreadable remote revision yields the ONE finding naming it, because no
+    reference can be judged and the primary checkout is not an authority.
+    """
+    if not references:
         return ()
-    return tuple(reference for reference in section_references if reference not in headings)
+    headings = origin_spec_h2_headings(repo=cwd)
+    if isinstance(headings, OriginSpecUnreadable):
+        return (_unreadable_origin_finding(item=item, unreadable=headings),)
+    return tuple(
+        _unresolved_reference_finding(item=item, reference=reference)
+        for reference in references
+        if reference not in headings
+    )
+
+
+def _unreadable_origin_finding(*, item: WorkItem, unreadable: OriginSpecUnreadable) -> str:
+    return (
+        f"work-item {item.id}: the Definition of Done references cannot be checked because"
+        f" the remote revision {ORIGIN_REVISION} of the governed spec tree is unreadable"
+        f" ({unreadable.detail}); restore access to the repository's origin and retry"
+    )
 
 
 def _absent_section_finding(*, item: WorkItem) -> str:

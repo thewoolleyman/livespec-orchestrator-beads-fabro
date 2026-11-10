@@ -143,7 +143,11 @@ def _origin_backed_repo(*, tmp_path: Path) -> Path:
         '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
         encoding="utf-8",
     )
-    _git(repo=repo, argv=["add", ".livespec.jsonc"])
+    (repo / "SPECIFICATION").mkdir()
+    _ = (repo / "SPECIFICATION" / "contracts.md").write_text(
+        "# Contracts\n\n## Effective acceptance criteria\n\nSome prose.\n", encoding="utf-8"
+    )
+    _git(repo=repo, argv=["add", ".livespec.jsonc", "SPECIFICATION"])
     _git(repo=repo, argv=["commit", "-m", "initial"])
     _git(repo=repo, argv=["push", "origin", "HEAD:master"])
     _git(repo=repo, argv=["fetch", "origin"])
