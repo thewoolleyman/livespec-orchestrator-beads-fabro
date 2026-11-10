@@ -92,7 +92,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
     PAYLOAD_ENV_VAR,
     PrepareStep,
     pack_payload,
-    packed_payload_decode_command,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
@@ -350,7 +350,10 @@ def harness_settings_prepare_steps_block() -> str:
         "fi\n"
         f'settings="$toplevel/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"\n'
         'mkdir -p "$(dirname "$settings")"\n'
-        f'{packed_payload_decode_command()} | python3 - "$settings"'
+        'merge="$(mktemp)"\n'
+        f'{packed_payload_write_command(path_word=chr(34) + "$merge" + chr(34))}\n'
+        'python3 "$merge" "$settings"\n'
+        'rm -f "$merge"'
     )
     step = PrepareStep(
         script=script, env={PAYLOAD_ENV_VAR: pack_payload(text=harness_settings_merge_program())}

@@ -22,7 +22,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
     PrepareStep,
     env_table_line,
     pack_payload,
-    packed_payload_decode_command,
     packed_payload_write_command,
     payload_guard_command,
     payload_write_command,
@@ -178,7 +177,10 @@ def test_a_value_that_does_not_decode_fails_the_step(tmp_path: Path) -> None:
 
 def test_an_undelivered_packed_payload_fails_naming_its_variable(tmp_path: Path) -> None:
     completed = _run(
-        step=PrepareStep(script=packed_payload_decode_command(var="LIVESPEC_X")), cwd=tmp_path
+        step=PrepareStep(
+            script=packed_payload_write_command(path_word="out.txt", var="LIVESPEC_X")
+        ),
+        cwd=tmp_path,
     )
 
     assert completed.returncode != 0
