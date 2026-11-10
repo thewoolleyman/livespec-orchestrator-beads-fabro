@@ -68,10 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import run_stage
 from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
     incident_acceptance_for,
     incident_holds,
+    incident_proof_pointer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
@@ -81,7 +81,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     DispatchPlan,
     PrView,
-    janitor_venue_contains_merge_argv,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged_pr import (
     resolve_merged_pr,
@@ -91,6 +90,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade_cl
     refused_regrade_outcome,
     regrade_claim,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade_containment import (
+    UNMERGED_REFUSAL,
+    merge_containment_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     DEFAULT_ACCEPTANCE_POLICY,
     effective_acceptance_policy,
@@ -99,25 +102,11 @@ from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
-    "MERGE_CONTAINMENT_STAGE",
     "REGRADE_STAGE",
     "run_regrade",
 ]
 
 REGRADE_STAGE = "regrade"
-MERGE_CONTAINMENT_STAGE = "regrade-merge-containment"
-_CONTAINMENT_TIMEOUT_SECONDS = 30.0
-_UNMERGED_REFUSAL = (
-    "ERROR: reconcile-merged --regrade refused: no merged PR resolves for work-item "
-    "{item_id}, so there is no merged diff to re-grade against. The arm keys on the "
-    "merge itself; drive the fix-forward rework re-dispatch instead.\n"
-)
-_UNCONTAINED_REFUSAL = (
-    "ERROR: reconcile-merged --regrade refused: the merge commit {merge_sha} of PR "
-    "#{pr_number} for work-item {item_id} is not an ancestor of {tip}, so this "
-    "repository cannot show the work landed on the default branch. Fetch {tip} and "
-    "retry, or drive the fix-forward rework re-dispatch instead.\n"
-)
 
 
 def run_regrade(
@@ -143,9 +132,9 @@ def run_regrade(
         _ = write_stderr(text=merged)
         return EXIT_PRECONDITION_ERROR
     if merged is None:
-        _ = write_stderr(text=_UNMERGED_REFUSAL.format(item_id=item.id))
+        _ = write_stderr(text=UNMERGED_REFUSAL.format(item_id=item.id))
         return EXIT_PRECONDITION_ERROR
-    containment = _merge_containment_refusal(
+    containment = merge_containment_refusal(
         plan=plan, item=item, merged=merged, runner=runner, journal=journal
     )
     if containment is not None:
@@ -154,49 +143,6 @@ def run_regrade(
     return _grade_and_dispose(
         repo=repo, item=item, merged=merged, runner=runner, journal=journal, claim=claim
     )
-
-
-def _merge_containment_refusal(
-    *,
-    plan: DispatchPlan,
-    item: WorkItem,
-    merged: PrView,
-    runner: CommandRunner,
-    journal: JournalFile,
-) -> str | None:
-    """Refuse unless the resolved merge commit is an ancestor of the default branch.
-
-    The tip is `origin/<default branch>` read off the plan's ONE resolved
-    contract, exactly as the janitor venue resolves its own, so the arm and the
-    dispatch path cannot come to name two different branches. A commit is its
-    own ancestor, so a tip that IS the merge answers yes.
-
-    This is the half of the evidence an operator cannot assert: a forge that
-    reports a merged pull request says the pull request merged, while the
-    ancestry says THIS repository can see the work on the branch it is about to
-    close the item against.
-    """
-    tip = f"origin/{plan.integration.contract.default_branch}"
-    merge_sha = merged.merge_sha
-    if merge_sha is None:  # pragma: no cover - resolve_merged_pr yields only sha-bearing views
-        return _UNMERGED_REFUSAL.format(item_id=item.id)
-    contains = run_stage(
-        runner=runner,
-        journal=journal,
-        plan=plan,
-        stage=MERGE_CONTAINMENT_STAGE,
-        command=(
-            janitor_venue_contains_merge_argv(plan=plan, tip=tip, merge_sha=merge_sha),
-            plan.repo,
-            _CONTAINMENT_TIMEOUT_SECONDS,
-            None,
-        ),
-    )
-    if contains.exit_code != 0:
-        return _UNCONTAINED_REFUSAL.format(
-            merge_sha=merge_sha, pr_number=merged.number, item_id=item.id, tip=tip
-        )
-    return None
 
 
 def _grade_and_dispose(
@@ -257,6 +203,17 @@ def _grade_and_dispose(
     # a named constant here reads to the lint rule set as a hardcoded secret.
     if result.verdict != "PASS":
         return _leave_regraded_item(item=item, outcome=outcome, verdict=result.verdict)
+    # The pointer is made to name the pull request this pass graded, which the plain
+    # pass does on every disposition: `accept` reads the pull request OFF the pointer,
+    # so one left on a superseded pull request refuses a valid replay on the graded one.
+    incident_proof_pointer(
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        proof=result.proof,
+        journal=journal,
+        incident=incident,
+    )
     # A PASS on an incident that still owes final normal proof parks rather than closes.
     if incident_holds(incident=incident, journal=journal, route="regrade") or (
         result.proof is not None
