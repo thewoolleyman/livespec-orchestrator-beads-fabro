@@ -5,7 +5,12 @@ projection needed before the Dispatcher can materialize the worker overlay.
 These tests pin that brittle shell contract without running Docker.
 """
 
+import re
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    definition_of_done,
+)
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _REPO_ROOT / "orchestrator-image" / "acceptance-live-golden-master.sh"
@@ -68,3 +73,41 @@ def test_live_golden_master_keeps_codex_projection_credential_only() -> None:
     assert '-v "$HOME/.codex' not in text
     assert ":/root/.codex" not in text
     assert "-e CODEX" not in text
+
+
+_SKELETON_SPEC = _REPO_ROOT / "orchestrator-image" / "e2e-skeleton" / "SPECIFICATION"
+_SEED_OPENER = "_seed_desc=\"$(cat <<'SEED_DESC'\n"
+_SEED_CLOSER = "\nSEED_DESC\n"
+
+
+def _seed_description() -> str:
+    """The throwaway work item's description, verbatim from the harness heredoc."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+    return text.split(_SEED_OPENER, maxsplit=1)[1].split(_SEED_CLOSER, maxsplit=1)[0]
+
+
+def _skeleton_h2_headings() -> frozenset[str]:
+    """Each H2 of the skeleton spec's top-level files as its verbatim `## <title>` line."""
+    return frozenset(
+        f"## {match.group(1)}"
+        for path in sorted(_SKELETON_SPEC.glob("*.md"))
+        for match in re.finditer(
+            r"^##\s+(.+?)\s*$", path.read_text(encoding="utf-8"), flags=re.MULTILINE
+        )
+    )
+
+
+def test_live_golden_master_seed_references_a_resolvable_skeleton_h2() -> None:
+    """The seed's Definition of Done reference resolves against the skeleton spec.
+
+    The dispatcher refuses an item whose `References:` line is not the verbatim
+    `## <title>` line of an H2 in the governed spec tree. The harness seeds its
+    throwaway item from a heredoc while the spec is a separate fixture, so this
+    runs the heredoc's own reference line through the dispatcher's parser against
+    the fixture's headings, which keeps the two from drifting apart.
+    """
+    section = definition_of_done(description=_seed_description())
+
+    assert section.present
+    assert section.references
+    assert all(reference in _skeleton_h2_headings() for reference in section.references)
