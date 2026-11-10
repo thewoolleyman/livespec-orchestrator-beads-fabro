@@ -56,6 +56,12 @@ from typing import TYPE_CHECKING, Literal
 
 from livespec_runtime.spec_stated import ItemClass, SpecStatedVerdict, StatedKind
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    REFERENCES_PREFIX,
+    definition_of_done,
+    definition_of_done_source,
+)
+
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -171,12 +177,17 @@ def asked_for_behaviour(*, item: WorkItem) -> str:
     asks what it ASKS FOR, and a closure reason is an account of what happened
     rather than part of the request. Rendering it would make a closed item's
     post-hoc narrative part of the behaviour a proposal has to cover.
+
+    The description's Definition of Done section is rendered WITHOUT its
+    proof-mode partition (`_without_proof_mode_partition`): proof mode says HOW
+    an assertion is proved and not WHAT the item asks for, so a move between the
+    factory-captured list and a sub-heading must not change the judge's input.
     """
     return "\n\n".join(
         [
             f"Work item {item.id}",
             f"Title: {_recorded(value=item.title)}",
-            f"Description: {_recorded(value=item.description)}",
+            f"Description: {_recorded(value=_without_proof_mode_partition(text=item.description))}",
             f"Acceptance criteria: {_recorded(value=item.acceptance_criteria)}",
         ]
     )
@@ -275,6 +286,29 @@ def proposal_topic_for(*, item: WorkItem) -> str:
     """
     words = _TOPIC_WORD.findall(item.title.casefold())[:_TOPIC_WORD_CAP]
     return "-".join(words) if words else _TOPIC_FALLBACK
+
+
+def _without_proof_mode_partition(*, text: str) -> str:
+    """A description with its Definition of Done section stripped of its partition.
+
+    The section keeps its heading, its `References:` line and any stray line the
+    grammar does not admit, and carries each bullet ONCE in sorted order, with no
+    proof-mode sub-heading, no `Reason:` line and no bullet position. Sorting is
+    what makes a reorder invisible; the bullet text is the parse's own, so a
+    changed word still changes the statement. Everything outside the section is
+    kept verbatim, and a description with no section is returned as it came.
+    """
+    section = definition_of_done_source(description=text)
+    if not section:
+        return text
+    parsed = definition_of_done(description=text)
+    body = [
+        *([f"{REFERENCES_PREFIX} {', '.join(parsed.references)}"] if parsed.references else []),
+        *parsed.stray_lines,
+        *(f"- {bullet}" for bullet in sorted(one.text for one in parsed.assertions)),
+    ]
+    heading = section.splitlines()[0]
+    return text.replace(section, "\n\n".join([heading, *body]), 1)
 
 
 def _recorded(*, value: str | None) -> str:
