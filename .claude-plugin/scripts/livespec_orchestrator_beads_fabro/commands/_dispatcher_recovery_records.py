@@ -53,6 +53,10 @@ __all__: list[str] = [
 RECOVERY_ROUTE_STAGE = "recovery-route"
 RECOVERY_HELD_STAGE = "recovery-held"
 
+# Why a listed needs-human ref was passed over. `no-change` is the clause's other
+# reason, for a ref that carries no work; this build lists no such ref.
+_PASSED_OVER_NOT_TAKEN = "not-taken"
+
 # What the route row says about preserved work, for the two routes that measured
 # it. `absent` is the LOSS the clause requires recording; `verified` is the seed's
 # own precondition. Every other route leaves the field null, because it never
@@ -101,6 +105,9 @@ def recovery_route_record(
 def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
     """Each needs-human ref that carried an earlier run and was not taken, with its commit.
 
+    Every entry carries the reason `not-taken`: this listing holds the refs the
+    choice passed over, and a ref that carries no change never reaches it.
+
     An empty list and never an omitted key, for a route that took no needs-human
     ref at all as for a seed that passed none over: the clause requires the field
     on every `seeded`, `fresh` and `resume` row so a reader can tell "nothing was
@@ -108,7 +115,10 @@ def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
     """
     if seed is None:
         return []
-    return [{"ref": ref, "commit": commit} for ref, commit in seed.passed_over_needs_human]
+    return [
+        {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
+        for ref, commit in seed.passed_over_needs_human
+    ]
 
 
 def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> str | None:

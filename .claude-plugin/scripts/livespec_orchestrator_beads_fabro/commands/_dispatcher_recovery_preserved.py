@@ -8,17 +8,29 @@ preserves)... then its observed published head or the corresponding
 preserved-publish ref... The seed record MUST name the source run, remote,
 immutable commit SHA, and preservation reference."
 
-FOUR SOURCES, ASKED IN THAT ORDER, AND EACH ONE STOPS THE SEARCH. The order is
-not a tidy ranking: the needs-human ref carries the run's TERMINAL tree, which is
-everything the dying run had, while the publish-branch tip carries only what it
-had published — so taking the second when the first exists discards work that was
-preserved precisely so it would not be lost. The preserved-publish ref of an
-EARLIER head ranks below the observed head for the mirror reason, and it is asked
-last so the common case pays one round trip rather than four.
+SOURCES, ASKED IN THIS ORDER, AND EACH ONE STOPS THE SEARCH. The order is not a
+tidy ranking: it is the clause's, and `test_dispatcher_recovery_seed_precedence`
+holds every pair of it in one table.
 
-THE SECOND SOURCE IS THE CHECKPOINT-FAILED RUN'S PUBLISHED TREE, and its rank is
-the ratified one: "A tree that nothing else carries is published to a
-preservation ref" says that ref "counts as the failed run's successfully
+1. A needs-human ref, or a checkpoint-failed preservation ref, of the LATEST run:
+   it carries the run's TERMINAL tree, which is everything the dying run had.
+2. The latest run's highest-numbered work-in-progress ref: the run's latest
+   settled capture, which "MUST be preferred over the observed published head and
+   over every preservation ref of an earlier run of the item".
+3. A needs-human ref or preservation ref of an EARLIER run, which outranks the
+   observed published head only when its run is the head's run or a later one.
+4. The observed published head.
+5. The preserved-publish ref of an EARLIER head, asked last so the common case
+   pays one round trip rather than four.
+
+THE REFS ARE PARTITIONED BY THE RUN THEY CARRY, NOT TAKEN AS ONE POOL. Listing
+every earlier run's ref and taking the newest before the capture was asked is the
+regression this ordering repairs: the older tree it chose is a plausible, well-formed
+seed that restores older work than the latest run's capture holds.
+
+THE CHECKPOINT-FAILED RUN'S PUBLISHED TREE shares the first rank with the
+needs-human ref, and its rank is the ratified one: "A tree that nothing else
+carries is published to a preservation ref" says that ref "counts as the failed run's successfully
 preserved terminal tree, so it MUST be preferred over the run's observed
 published head and over any preserved-publish ref of an earlier head". It sits
 below the needs-human ref only because the two cannot both exist — a run whose
@@ -57,10 +69,10 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs import (
+    NeedsHumanRef,
     NeedsHumanRefsUnobservable,
     NeedsHumanScope,
-    newest_needs_human_ref,
-    refs_by_name,
+    carrying_needs_human_refs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint import (
     newest_preserved_tree_row,
@@ -72,8 +84,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_published_h
     PublishedHeadUnobservable,
     earlier_head_seed,
     leading_identifier,
-    newer_published_head_seed,
     published_head_seed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_ranked_ref import (
+    RankedRefUnobservable,
+    Ranking,
+    listing,
+    ranked_ref,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import foreign_run_ids
@@ -178,9 +195,9 @@ def verified_preserved_seed(
     than inside the helpers that read them: a second expression of such a
     condition — one deciding whether to ask and one deciding whether to report
     having asked — is free to drift, and the direction it drifts in is a loss
-    record naming a round trip nobody took. The terminal ref's precondition moved
-    up out of `_needs_human_seed`, and the published tree's row lookup moved up
-    out of `_preserved_tree_seed`, for that one reason.
+    record naming a round trip nobody took. The terminal ref's precondition and the
+    published tree's row lookup both sit up here, rather than inside the helpers
+    that read them, for that one reason.
 
     `journal_records` has NO DEFAULT, for the reason `_dispatcher_sandbox_image_
     source` gives about its own record: a default is how a caller that HAD a
@@ -199,94 +216,152 @@ def verified_preserved_seed(
                 "left exactly as it stands"
             )
         )
-    asked: list[str] = [PRESERVED_SOURCE_TERMINAL_TREE]
-    preserved, tree_asked = _terminal_or_tree_seed(
+    dispatch_id = dispatch_id_for(records=journal_records, work_item_id=work_item_id)
+    run_ids = tuple(dict.fromkeys((*earlier_run_ids, *filter(None, (dispatch_id,)))))
+    latest_ids = tuple(dict.fromkeys(filter(None, (latest, dispatch_id))))
+    carrying = carrying_needs_human_refs(
         runner=runner,
         repo=repo,
+        scope=NeedsHumanScope(
+            run_ids=run_ids,
+            foreign_run_ids=foreign_run_ids(
+                records=journal_records, work_item_id=work_item_id, own=run_ids
+            ),
+        ),
+        ref_prefix=NEEDS_HUMAN_REF_PREFIX,
+        remote=SEED_REMOTE,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    if isinstance(carrying, NeedsHumanRefsUnobservable):
+        return PreservedWorkUnobservable(
+            detail=(
+                f"{carrying.detail}, so no seed was taken and the publish branch is left"
+                " exactly as it stands"
+            )
+        )
+    # The published tree is named by this item's OWN journal, so with no row
+    # naming one there is no ref that source could stand at and the round trip
+    # would ask origin about nothing.
+    tree_row = newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
+    ranking = Ranking(
+        runner=runner,
+        repo=repo,
+        remote=SEED_REMOTE,
+        ref_prefix=NEEDS_HUMAN_REF_PREFIX,
         work_item_id=work_item_id,
-        earlier_run_ids=earlier_run_ids,
         journal_records=journal_records,
         publications=publications,
+        carrying=carrying,
     )
-    if tree_asked:
-        asked.append(PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE)
-    if preserved is not None:
-        return preserved
+    found = _seed_in_order(
+        ranking=ranking,
+        tree_row=tree_row,
+        latest=latest,
+        latest_ids=latest_ids,
+        run_ids=run_ids,
+        earlier_run_ids=earlier_run_ids,
+    )
+    if found is not None:
+        return found
+    return PreservedWorkAbsent(
+        source_run_id=leading_identifier(identifiers=earlier_run_ids),
+        sources_asked=(
+            PRESERVED_SOURCE_TERMINAL_TREE,
+            *((PRESERVED_SOURCE_CHECKPOINT_FAILED_PUBLISHED_TREE,) if tree_row else ()),
+            PRESERVED_SOURCE_PUBLISHED_HEAD,
+            PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF,
+        ),
+    )
+
+
+def _seed_in_order(
+    *,
+    ranking: Ranking,
+    tree_row: tuple[str, str, str] | None,
+    latest: str,
+    latest_ids: tuple[str, ...],
+    run_ids: tuple[str, ...],
+    earlier_run_ids: tuple[str, ...],
+) -> RecoverySeed | PreservedWorkUnobservable | None:
+    """The first source in the clause's order that answers, or `None` when none does.
+
+    The order IS the clause's: a ref published at the latest run's own ending, then
+    that run's latest capture, then an earlier run's ref (bounded by run age
+    against the head), then the head itself, then a preserved head an earlier
+    reclaim left. A ref belongs to the latest run by the run it carries (and a
+    tree row by the run it names), never by being the newest ref listed: reading
+    every earlier run's ref first is how an older tree came to outrank the
+    capture.
+    """
+    latest_tree = tree_row if tree_row is not None and tree_row[2] in latest_ids else None
+    earlier_tree = tree_row if tree_row is not None and tree_row[2] not in latest_ids else None
+    ranked = _ranked(
+        ranking=ranking,
+        refs=[one for one in ranking.carrying if one.run_id in latest_ids],
+        tree=latest_tree,
+        run_ids=latest_ids,
+    )
+    if ranked is not None:
+        return ranked
     wip = verified_latest_wip_seed(
-        runner=runner, repo=repo, work_item_id=work_item_id, run_id=latest or None
+        runner=ranking.runner,
+        repo=ranking.repo,
+        work_item_id=ranking.work_item_id,
+        run_id=latest or None,
     )
     if wip is not None:
         return (
             PreservedWorkUnobservable(detail=wip.detail)
             if isinstance(wip, WipRefUnobservable)
-            else wip
+            else listing(seed=wip, carrying=ranking.carrying)
         )
-    asked.append(PRESERVED_SOURCE_PUBLISHED_HEAD)
-    published = _as_preserved(
+    ranked = _ranked(
+        ranking=ranking,
+        refs=[one for one in ranking.carrying if one.run_id not in latest_ids],
+        tree=earlier_tree,
+        run_ids=run_ids,
+    )
+    if ranked is not None:
+        return ranked
+    heads = _as_preserved(
         seed=published_head_seed(
-            runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
+            runner=ranking.runner,
+            repo=ranking.repo,
+            work_item_id=ranking.work_item_id,
+            earlier_run_ids=earlier_run_ids,
         )
-    )
-    if published is not None:
-        return published
-    asked.append(PRESERVED_SOURCE_EARLIER_PRESERVED_PUBLISH_REF)
-    earlier = _as_preserved(
+    ) or _as_preserved(
         seed=earlier_head_seed(
-            runner=runner, repo=repo, work_item_id=work_item_id, earlier_run_ids=earlier_run_ids
+            runner=ranking.runner,
+            repo=ranking.repo,
+            work_item_id=ranking.work_item_id,
+            earlier_run_ids=earlier_run_ids,
         )
     )
-    if earlier is not None:
-        return earlier
-    return PreservedWorkAbsent(
-        source_run_id=leading_identifier(identifiers=earlier_run_ids), sources_asked=tuple(asked)
-    )
+    return None if heads is None else _listed(seed=heads, carrying=ranking.carrying)
 
 
-def _terminal_or_tree_seed(
+def _ranked(
     *,
-    runner: CommandRunner,
-    repo: Path,
-    work_item_id: str,
-    earlier_run_ids: tuple[str, ...],
-    journal_records: tuple[dict[str, object], ...],
-    publications: tuple[tuple[str, str], ...],
-) -> tuple[RecoverySeed | PreservedWorkUnobservable | None, bool]:
-    """The preserved ref (needs-human, else checkpoint-failed tree) after the head comparison.
+    ranking: Ranking,
+    refs: list[NeedsHumanRef],
+    tree: tuple[str, str, str] | None,
+    run_ids: tuple[str, ...],
+) -> RecoverySeed | PreservedWorkUnobservable | None:
+    """One rank's ref in this module's unobservable type; see `ranked_ref`."""
+    found = ranked_ref(ranking=ranking, refs=refs, tree=tree, run_ids=run_ids)
+    if isinstance(found, RankedRefUnobservable):
+        return PreservedWorkUnobservable(detail=found.detail, measurement=found.measurement)
+    return found
 
-    The second element says whether the checkpoint-failed tree source was asked.
-    A surviving published head by a later run outranks the ref; see
-    `newer_published_head_seed`.
-    """
-    dispatch_id = dispatch_id_for(records=journal_records, work_item_id=work_item_id)
-    run_ids = tuple(dict.fromkeys((*earlier_run_ids, *filter(None, (dispatch_id,)))))
-    preserved = _needs_human_seed(
-        runner=runner,
-        repo=repo,
-        earlier_run_ids=run_ids,
-        foreign_run_ids=foreign_run_ids(
-            records=journal_records, work_item_id=work_item_id, own=run_ids
-        ),
-    )
-    # The published tree is named by this item's OWN journal, so with no row
-    # naming one there is no ref that source could stand at and the round trip
-    # would ask origin about nothing.
-    published_tree = newest_preserved_tree_row(records=journal_records, work_item_id=work_item_id)
-    tree_asked = preserved is None and published_tree is not None
-    if preserved is None and published_tree is not None:
-        preserved = _preserved_tree_seed(runner=runner, repo=repo, named=published_tree)
-    if preserved is None or isinstance(preserved, PreservedWorkUnobservable):
-        return preserved, tree_asked
-    newer_head = _as_preserved(
-        seed=newer_published_head_seed(
-            runner=runner,
-            repo=repo,
-            work_item_id=work_item_id,
-            terminal=preserved,
-            records=journal_records,
-            publications=publications,
-        )
-    )
-    return (preserved if newer_head is None else newer_head), tree_asked
+
+def _listed(
+    *, seed: RecoverySeed | PreservedWorkUnobservable, carrying: list[NeedsHumanRef]
+) -> RecoverySeed | PreservedWorkUnobservable:
+    """The seed with its passed-over needs-human refs listed; an unobservable passes through."""
+    if isinstance(seed, PreservedWorkUnobservable):
+        return seed
+    return listing(seed=seed, carrying=carrying)
 
 
 def _as_preserved(
@@ -296,109 +371,3 @@ def _as_preserved(
     if isinstance(seed, PublishedHeadUnobservable):
         return PreservedWorkUnobservable(detail=seed.detail, measurement=seed.measurement)
     return seed
-
-
-def _needs_human_seed(
-    *,
-    runner: CommandRunner,
-    repo: Path,
-    earlier_run_ids: tuple[str, ...],
-    foreign_run_ids: frozenset[str],
-) -> RecoverySeed | PreservedWorkUnobservable | None:
-    """The terminal tree a needs-human ending preserved: the descendant, else the newest.
-
-    ONE `ls-remote` lists the namespace once, then a ref suffix or its tip
-    trailers establishes which refs carry one of the identifiers. The choice among
-    them is made by ancestry and committer time, never by the order the
-    identifiers arrive in, which is oldest-first for an anchorless item.
-
-    Called only for a non-empty identifier list, which its caller establishes for
-    the reason that function's docstring gives.
-    """
-    found = newest_needs_human_ref(
-        runner=runner,
-        repo=repo,
-        scope=NeedsHumanScope(run_ids=earlier_run_ids, foreign_run_ids=foreign_run_ids),
-        ref_prefix=NEEDS_HUMAN_REF_PREFIX,
-        remote=SEED_REMOTE,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    if isinstance(found, NeedsHumanRefsUnobservable):
-        return PreservedWorkUnobservable(
-            detail=(
-                f"{found.detail}, so no seed was taken and the publish branch is left"
-                " exactly as it stands"
-            )
-        )
-    if found is None:
-        return None
-    return RecoverySeed(
-        source_run_id=found.run_id,
-        remote=SEED_REMOTE,
-        commit_sha=found.commit_sha,
-        preservation_ref=found.ref,
-        passed_over_needs_human=found.passed_over,
-    )
-
-
-def _preserved_tree_seed(
-    *,
-    runner: CommandRunner,
-    repo: Path,
-    named: tuple[str, str, str],
-) -> RecoverySeed | PreservedWorkUnobservable | None:
-    """The tree a checkpoint-failed run published, which nothing else carries.
-
-    SECOND IN THE ORDER, AND THAT IS THE CLAUSE'S OWN WORDING: this ref "counts
-    as the failed run's successfully preserved terminal tree, so it MUST be
-    preferred over the run's observed published head and over any
-    preserved-publish ref of an earlier head". It is asked after the needs-human
-    ref only because the two are mutually exclusive in practice — a run whose
-    checkpoint failed never reached the `needs_human` node, which is the whole
-    incident this source exists for — so the order between them decides nothing
-    and the cheaper-to-refuse source goes first.
-
-    THE SEED NAMES THE BASE COMMIT AND NOT THE PUBLISHED ONE, which is the one
-    thing about this source that must not be "simplified". The published commit
-    ran no hook, passed no check suite and carries no Red/Green trailers, so it
-    is a recovery artifact rather than a commit to land: the clause requires the
-    seed to "record the run's base commit as the seed's immutable commit SHA and
-    this ref as its preservation reference, so that checking out the recorded SHA
-    and taking the published tree onto it as uncommitted work are one act", and
-    to "NOT carry the hookless commit itself". Seeding the published commit would
-    put an unchecked commit into a run's history and then into its pull request.
-
-    WHY THE JOURNAL ROW RATHER THAN A REF SCAN. The reclaim's preserved-publish
-    refs share this namespace, and nothing in a ref NAME distinguishes the two:
-    both end in a forty-character object id. The dispatch's own
-    `preserved-tree` row is what knows which ref is a published TREE and, with
-    it, the base that tree was taken against — a fact no ref listing carries at
-    all. Origin is still ASKED whether the ref stands, so the seed remains a
-    commit origin itself named rather than one this journal remembered.
-
-    `named` is that row already resolved — the ref, its base commit and its run —
-    rather than the journal to resolve it from, and the lookup sits in the caller
-    for the reason that function's docstring gives about its asked-source list.
-    """
-    ref, base, run_id = named
-    result = runner.run(
-        argv=["git", "ls-remote", SEED_REMOTE, ref],
-        cwd=repo,
-        timeout_seconds=_GIT_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return PreservedWorkUnobservable(
-            detail=(
-                f"git ls-remote {SEED_REMOTE} {ref} exited {result.exit_code}; whether the"
-                " tree this item's checkpoint-failed run published still stands could not"
-                " be established, so no seed was taken and absence is not confirmed"
-            )
-        )
-    if ref not in refs_by_name(stdout=result.stdout):
-        return None
-    return RecoverySeed(
-        source_run_id=run_id,
-        remote=SEED_REMOTE,
-        commit_sha=base,
-        preservation_ref=ref,
-    )
