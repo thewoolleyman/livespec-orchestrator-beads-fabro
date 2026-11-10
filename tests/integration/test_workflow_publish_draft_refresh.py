@@ -147,6 +147,17 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         '&& test -f "$GH_CREATE_REFUSED"; then\n'
         '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LATE_LANDED_PR" && exit 0; done\n'
         "fi\n"
+        'if test "$1 $2" = "pr list" && test "${LIVESPEC_OPEN_PR_AFTER_CREATE:-}" != "" '
+        '&& test -f "$GH_CREATE_REFUSED"; then\n'
+        '  if test "$LIVESPEC_OPEN_PR_HEAD" = current; then head=$(git rev-parse HEAD); else head="$LIVESPEC_OPEN_PR_HEAD"; fi\n'
+        '  printf \'%s\\t%s\\n\' "$LIVESPEC_OPEN_PR_AFTER_CREATE" "$head"\n'
+        "  exit 0\n"
+        "fi\n"
+        'if test "$1 $2" = "pr create" && test "${LIVESPEC_CREATE_FAILURE:-}" != ""; then\n'
+        '  : > "$GH_CREATE_REFUSED"\n'
+        "  printf '%s\\n' \"$LIVESPEC_CREATE_FAILURE\" >&2\n"
+        "  exit 1\n"
+        "fi\n"
         'if test "$1 $2" = "pr create" && test "${LIVESPEC_LATE_LANDED_PR:-}" != ""; then\n'
         '  : > "$GH_CREATE_REFUSED"\n'
         '  echo "pull request create failed: No commits between master and $LIVESPEC_PUBLISH_BRANCH" >&2\n'
@@ -157,6 +168,12 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    sleep = bin_dir / "sleep"
+    sleep.write_text(
+        "#!/bin/sh\n" 'printf \'%s\\n\' "$1" >> "$GH_REREAD_DELAYS"\n',
+        encoding="utf-8",
+    )
+    sleep.chmod(sleep.stat().st_mode | stat.S_IXUSR)
     if push_refusal is not None:
         real_git = shutil.which("git")
         assert real_git is not None
@@ -197,6 +214,9 @@ def _publish(
     dispatch_pull_requests: str | None = None,
     check_suite: str = "true",
     push_refusal: str | None = None,
+    create_failure: str | None = None,
+    open_pr_after_create: str | None = None,
+    open_pr_head: str | None = None,
 ) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
@@ -227,6 +247,10 @@ def _publish(
             "LIVESPEC_LATE_LANDED_PR": late_landed_pr or "",
             "LIVESPEC_DISPATCH_PULL_REQUESTS": dispatch_pull_requests or "",
             "GH_CREATE_REFUSED": str(tmp_path / "create-refused"),
+            "GH_REREAD_DELAYS": str(tmp_path / "create-reread-delays"),
+            "LIVESPEC_CREATE_FAILURE": create_failure or "",
+            "LIVESPEC_OPEN_PR_AFTER_CREATE": open_pr_after_create or "",
+            "LIVESPEC_OPEN_PR_HEAD": open_pr_head or "",
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
@@ -464,6 +488,28 @@ def test_a_refused_draft_creation_with_nothing_landed_still_fails_closed(
     assert published.result.returncode != 0
     assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
     assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+
+
+def test_an_http_5xx_draft_creation_adopts_the_open_pull_request_at_the_pushed_head(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: a create response can fail after the forge opens the draft."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        create_failure="HTTP 502 Bad Gateway",
+        open_pr_after_create="88",
+        open_pr_head="current",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert (
+        f"LIVESPEC_PUBLISH_DRAFT_PUBLISHED: publish_branch={_PUBLISH_BRANCH} "
+        "head=" in published.result.stderr
+    )
+    assert "pull_request=#88" in published.result.stderr
 
 
 @pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
