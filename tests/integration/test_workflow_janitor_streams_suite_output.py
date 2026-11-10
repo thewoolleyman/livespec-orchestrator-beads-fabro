@@ -14,10 +14,11 @@ node; it stays the owner of that clause.
 
 from __future__ import annotations
 
+import functools
 import os
 import signal
 import subprocess
-import time
+import threading
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
@@ -99,26 +100,32 @@ def test_a_line_the_suite_printed_is_in_the_stage_output_when_the_stage_is_kille
     *, tmp_path: Path
 ) -> None:
     suite = _suite(tmp_path=tmp_path, body=f"printf '%s\\n' {_SUITE_LINE}\nsleep 60")
-    stage_output = tmp_path / "stage-output"
-    with stage_output.open("wb") as sink:
-        process = subprocess.Popen(
-            ["bash", "-c", _janitor_script(check_suite=str(suite))],
-            cwd=tmp_path,
-            env=_environment(tmp_path=tmp_path),
-            stdout=sink,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        deadline = time.monotonic() + _WAIT_SECONDS
-        while (
-            _SUITE_LINE not in stage_output.read_text(encoding="utf-8")
-            and time.monotonic() < deadline
-        ):
-            time.sleep(0.1)
-        os.killpg(process.pid, signal.SIGKILL)
-        _ = process.wait()
+    process = subprocess.Popen(
+        ["bash", "-c", _janitor_script(check_suite=str(suite))],
+        cwd=tmp_path,
+        env=_environment(tmp_path=tmp_path),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        start_new_session=True,
+    )
+    # The read below blocks on the janitor's own stdout, so which lines run never
+    # depends on timing. The timer is only a liveness ceiling: a janitor that holds
+    # the suite's output until the suite returns would block here for the suite's
+    # 60 seconds, so the ceiling kills the group, the read returns empty, and the
+    # assertion fails.
+    ceiling = threading.Timer(
+        _WAIT_SECONDS, functools.partial(os.killpg, process.pid, signal.SIGKILL)
+    )
+    ceiling.start()
+    assert process.stdout is not None
+    first_line = process.stdout.readline()
+    ceiling.cancel()
+    os.killpg(process.pid, signal.SIGKILL)
+    _ = process.wait()
+    process.stdout.close()
 
-    assert _SUITE_LINE in stage_output.read_text(encoding="utf-8")
+    assert _SUITE_LINE in first_line
 
 
 def test_a_zero_exit_stage_output_carries_each_suite_line_once(*, tmp_path: Path) -> None:
