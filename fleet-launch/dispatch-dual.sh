@@ -146,8 +146,9 @@ launch_hold_applies() {
   return 1
 }
 give_up() {
-  echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
-  exit_cause="no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up"
+  give_up_line="no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
+  echo "$give_up_line"
+  exit_cause="${give_up_line%% item=*}"
   exit 75
 }
 release_lock() {
