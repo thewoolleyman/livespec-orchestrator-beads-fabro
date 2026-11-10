@@ -399,6 +399,82 @@ def test_settle_never_moves_a_head_that_no_longer_descends_from_the_starting_com
     )
 
 
+def _merge_restore_attempt(
+    tmp_path: Path, *, rev_list: str, message: str | None = None
+) -> tuple[list[tuple[str, ...]], Path]:
+    """Run a restoring settle for a merge commit run; return its head moves and the git dir."""
+    program = _program(tmp_path)
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {
+            "state": "running",
+            "start_head": "0123abc",
+            "operation": "merge",
+            "command": ["git", "commit"],
+        },
+        4242,
+    )
+    if message is not None:
+        _ = (tmp_path / "MERGE_MSG").write_text(message, encoding="utf-8")
+    moves: list[tuple[str, ...]] = []
+
+    def git_output(*argv: str) -> str:
+        if argv[:1] in (("reset",), ("update-ref",)):
+            moves.append(argv)
+            return ""
+        return {
+            ("rev-parse", "--git-path", "livespec-commit-runs"): str(tmp_path / "runs"),
+            ("rev-parse", "HEAD"): "checkpoint-head",
+            ("rev-list", "--parents", "--reverse", "0123abc..HEAD"): rev_list,
+        }[argv]
+
+    program["git_output"] = git_output
+    program["group_alive"] = _gone
+    program["commit_in_flight"] = lambda run_path: run_path == path
+    program["is_ancestor"] = lambda commit: commit == "0123abc"
+
+    assert program["settle"](0, str(tmp_path / "brief"), restore_head_before_wait=True) == 0
+    return moves, tmp_path
+
+
+def test_settle_reopens_a_merge_the_engine_checkpoint_committed_as_two_parents(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: the starting head returns with MERGE_HEAD naming the merged-in commit."""
+    moves, git_directory = _merge_restore_attempt(
+        tmp_path, rev_list="later 0123abc other\ncheckpoint 0123abc side other"
+    )
+
+    assert moves == [("update-ref", "HEAD", "0123abc")]
+    assert (git_directory / "MERGE_HEAD").read_text(encoding="utf-8") == "other\n"
+    assert (git_directory / "MERGE_MSG").read_text(encoding="utf-8") == "Merge commit 'other'\n"
+
+
+def test_settle_keeps_the_merge_message_a_checkpoint_left_when_it_reopens_the_merge(
+    tmp_path: Path,
+) -> None:
+    """Scenario 179: an existing MERGE_MSG is the commit message, so it is never overwritten."""
+    _, git_directory = _merge_restore_attempt(
+        tmp_path, rev_list="checkpoint 0123abc other", message="Merge from side\n"
+    )
+
+    assert (git_directory / "MERGE_MSG").read_text(encoding="utf-8") == "Merge from side\n"
+
+
+@pytest.mark.parametrize(
+    "rev_list", ["", "checkpoint 0123abc", "checkpoint elsewhere other", "later cp a b c"]
+)
+def test_settle_soft_resets_a_merge_run_when_no_checkpoint_merge_sits_on_the_starting_head(
+    tmp_path: Path, rev_list: str
+) -> None:
+    """Scenario 179: without a two-parent commit on the starting head there is nothing to reopen."""
+    moves, git_directory = _merge_restore_attempt(tmp_path, rev_list=rev_list)
+
+    assert moves == [("reset", "--soft", "0123abc")]
+    assert not (git_directory / "MERGE_HEAD").exists()
+
+
 def test_a_commit_is_in_flight_only_while_a_live_git_commit_process_is_in_its_session(
     tmp_path: Path,
 ) -> None:
