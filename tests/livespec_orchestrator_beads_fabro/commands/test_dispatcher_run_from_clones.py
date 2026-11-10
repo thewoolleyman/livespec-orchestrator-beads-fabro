@@ -26,7 +26,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones impo
     sandbox_clone_fragments,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import steps_in, unpacked
 
 
 def _siblings(*, repos: tuple[str, ...]) -> SiblingClones:
@@ -78,7 +78,7 @@ def test_the_prepare_step_writes_the_program_by_payload_and_runs_it() -> None:
     assert RUN_FROM_PROGRAM_FILENAME in step.script
     assert step.script.splitlines()[-1].startswith("exec python3 ")
     assert "git clone" not in step.script
-    assert RUN_FROM_CLONES_ROOT in next(iter(step.env.values()))
+    assert RUN_FROM_CLONES_ROOT in unpacked(value=next(iter(step.env.values())))
 
 
 def test_nothing_planned_renders_nothing() -> None:
