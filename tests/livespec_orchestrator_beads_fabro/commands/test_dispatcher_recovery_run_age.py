@@ -27,7 +27,7 @@ class _Runner:
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
-        if "refs/heads/needs-human/*" in argv:
+        if "refs/heads/needs-human/*" in argv or "refs/livespec/wip/item/newer/*" in argv:
             return CommandResult(exit_code=0, stdout="", stderr="")
         if "refs/livespec/preserved-publish/item/tree" in argv:
             return CommandResult(

@@ -11,8 +11,10 @@ __all__: list[str] = [
     "NeedsHumanRef",
     "NeedsHumanRefsUnobservable",
     "NeedsHumanScope",
+    "carrying_needs_human_refs",
     "newest_needs_human_ref",
     "refs_by_name",
+    "select_needs_human_ref",
 ]
 
 _LS_REMOTE_FIELDS = 2
@@ -60,6 +62,42 @@ def newest_needs_human_ref(
     timeout_seconds: float,
 ) -> NeedsHumanRef | NeedsHumanRefsUnobservable | None:
     """Return the tree to seed from: the descendant, else newest, tip among every carrying ref."""
+    carrying = carrying_needs_human_refs(
+        runner=runner,
+        repo=repo,
+        scope=scope,
+        ref_prefix=ref_prefix,
+        remote=remote,
+        timeout_seconds=timeout_seconds,
+    )
+    if isinstance(carrying, NeedsHumanRefsUnobservable):
+        return carrying
+    if not carrying:
+        return None
+    return select_needs_human_ref(
+        runner=runner,
+        repo=repo,
+        carrying=carrying,
+        ref_prefix=ref_prefix,
+        run_ids=scope.run_ids,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def carrying_needs_human_refs(
+    *,
+    runner: CommandRunner,
+    repo: Path,
+    scope: NeedsHumanScope,
+    ref_prefix: str,
+    remote: str,
+    timeout_seconds: float,
+) -> list[NeedsHumanRef] | NeedsHumanRefsUnobservable:
+    """Every needs-human ref that carries one of the scope's runs, each with its run.
+
+    Listed apart from the choice among them so a caller that ranks refs by the run
+    they carry can partition the listing before it chooses.
+    """
     run_ids = scope.run_ids
     result = runner.run(
         argv=["git", "ls-remote", remote, f"{ref_prefix}/*"],
@@ -91,19 +129,10 @@ def newest_needs_human_ref(
                 return run_id
         if run_id is not None:
             carrying.append(NeedsHumanRef(commit_sha=commit, ref=ref, run_id=run_id))
-    if not carrying:
-        return None
-    return _select(
-        runner=runner,
-        repo=repo,
-        carrying=carrying,
-        ref_prefix=ref_prefix,
-        run_ids=run_ids,
-        timeout_seconds=timeout_seconds,
-    )
+    return carrying
 
 
-def _select(
+def select_needs_human_ref(
     *,
     runner: CommandRunner,
     repo: Path,
