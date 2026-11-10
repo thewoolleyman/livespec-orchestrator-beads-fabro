@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_currency_probe impor
     remote_ref_sha,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minimum_release_floor import (
     MinimumReleaseVerdict,
@@ -81,9 +84,7 @@ CURRENCY_UNDETERMINED_STAGE = "dispatcher-currency-undetermined"
 MINIMUM_RELEASE_REFUSED_STAGE = "dispatcher-minimum-release-refused"
 
 _EXIT_PRECONDITION_ERROR = 3
-_PLUGIN_UPDATE_REMEDY = (
-    "claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
-)
+_ADOPT_REMEDY = ORCHESTRATOR_BUILD_ADOPT_REMEDY
 
 
 class _StalenessJournal(Protocol):
@@ -318,7 +319,8 @@ def _lag_warnings(
             detail=(
                 f"WARNING: dispatcher plugin build {build_id} lags latest release "
                 f"{release_sha[:12]}; dispatch proceeds because ambient staleness is "
-                f"surfaced, not enforced. Run `{_PLUGIN_UPDATE_REMEDY}` and restart to adopt it."
+                f"surfaced, not enforced. Run `{_ADOPT_REMEDY}` in livespec-dev-tooling, "
+                "then reload the session, to adopt it."
             )
         ),
     )

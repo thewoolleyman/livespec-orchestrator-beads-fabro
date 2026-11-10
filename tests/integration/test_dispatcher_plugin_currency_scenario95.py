@@ -289,7 +289,8 @@ def test_scenario95_a_release_below_the_committed_floor_refuses_fail_closed(
     assert records[0]["blocking"] is True
     detail = str(records[0]["detail"])
     assert "0.97.1 is below the committed dispatcher.minimum_release floor 0.98.0" in detail
-    assert "restart before dispatching" in detail
+    assert "just adopt-orchestrator-build <clone> <build>" in detail
+    assert "claude plugin update" not in detail
 
 
 def test_scenario95_unobservable_currency_is_recorded_undetermined_and_does_not_refuse(
