@@ -145,6 +145,21 @@ def test_published_head_ignores_a_head_line_a_proof_printed() -> None:
     assert module.published_head(body=body) == _HEAD
 
 
+def test_a_merged_proof_park_anchors_only_a_present_merged_head() -> None:
+    """The proof-only arm has no inherited record or run to attribute."""
+    module = _anchor_module()
+
+    assert module.merged_proof_anchor(head=None) is None
+    assert module.merged_proof_anchor(head="") is None
+    anchor = module.merged_proof_anchor(head=_HEAD)
+
+    assert anchor is not None
+    assert anchor.record is None
+    assert anchor.run_id is None
+    assert anchor.head == _HEAD
+    assert anchor.resumed_at == module.RESUMED_AT_PROOF_CAPTURE
+
+
 def test_the_factory_record_decides_the_stage_when_the_factory_lost_the_run() -> None:
     """Each factory verdict implies the stage the clause names for it."""
     module = _anchor_module()
