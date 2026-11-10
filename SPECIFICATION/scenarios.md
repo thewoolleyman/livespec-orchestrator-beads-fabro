@@ -6384,13 +6384,14 @@ Feature: A judged Definition-of-Done defect is found before a dispatch is spent 
     And each held item is listed with its recorded verdict's first remedy, and no item without a recorded verdict is listed
 ```
 
-## Scenario 175 — A run past the whole-run wall budget is exported, cancelled and rested for a human
+## Scenario 175 — A run past the whole-run wall budget continues while it progresses, and otherwise is exported, cancelled and rested for a human
 
 ```gherkin
-Feature: One factory run holds a slot no longer than the whole-run wall budget
+Feature: One factory run holds a slot past the whole-run wall budget only while it progresses, and never past its ceiling
   Scenario: A run past the budget parks at needs-human with its work preserved
     Given a dispatch whose resolved dispatcher.run_wall_budget_seconds is 21600
     And its run has been running for more than 21600 seconds since the factory first reported it running
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     When the watchdog samples the run
     Then the Dispatcher writes and reads back the run's preserve-by-reference pointer before it cancels the run
     And the run is cancelled and no longer holds a factory slot
@@ -6427,11 +6428,52 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     Given a run whose record carries no running instant and which no watchdog poll has yet observed running
     When the watchdog samples the run
     Then it does not cancel the run on the budget
-  Scenario: A progressing run is still bounded
-    Given a run whose event stream shows a command node started and not completed
-    And its slot-holding time exceeds the budget while that node's resolved timeout has not elapsed
+  Scenario: A run that committed work within its progress window continues past the budget
+    Given a dispatch whose resolved budget is 21600 seconds and whose largest resolved node timeout is 14400 seconds
+    And its run has held its slot for more than 21600 seconds
+    And the run created a new work-in-progress capture 3000 seconds before the poll
     When the watchdog samples the run
-    Then it exports and cancels the run as run-wall-budget-exceeded
+    Then the run is not cancelled
+    And the journal carries one run-wall-budget-continued record naming the capture ref and its commit
+    And the item carries one ledger comment naming the continuation
+  Scenario: A run that completed a new node within its progress window continues past the budget
+    Given a run past its budget whose event stream records the first completion in the run of its janitor node within its progress window
+    And the run created no work-in-progress capture within that window
+    When the watchdog samples the run
+    Then the run is not cancelled and the run-wall-budget-continued record names the janitor node and its completion instant
+  Scenario: Liveness alone is not progress past the budget
+    Given a run past its budget whose agent heartbeat is fresh and whose event stream shows a command node open
+    And the run created no work-in-progress capture and completed no node for the first time within its progress window
+    When the watchdog samples the run
+    Then it exports and cancels the run as run-wall-budget-exceeded with the bound budget
+    And the item rests at blocked with blocked_reason needs-human
+  Scenario: A repeated visit to a completed node is not progress
+    Given a run past its budget whose event stream within its progress window records only completions of the pr_refresh node, which had completed earlier in the run
+    And the run created no work-in-progress capture within that window
+    When the watchdog samples the run
+    Then it exports and cancels the run as run-wall-budget-exceeded with the bound budget
+  Scenario: An ungradable run past the budget is not treated as progressing
+    Given a run past its budget whose work-in-progress refs and event stream cannot be read at the poll
+    When the watchdog samples the run
+    Then it takes the budget disposition and does not continue the run
+  Scenario: The ceiling bounds a progressing run
+    Given a dispatch whose resolved ceiling is 64800 seconds
+    And its run has held its slot for more than 64800 seconds while creating a new work-in-progress capture within its progress window
+    When the watchdog samples the run
+    Then it exports and cancels the run as run-wall-budget-exceeded with the bound ceiling
+  Scenario: A ceiling below the budget is refused before any run exists
+    Given a .livespec.jsonc whose dispatcher.run_wall_ceiling_seconds is smaller than its dispatcher.run_wall_budget_seconds
+    When a dispatch is requested
+    Then it is rejected before any run exists, naming both keys and both values
+  Scenario: A continued run's credential window covers the ceiling
+    Given a dispatch whose resolved credential queue allowance is 86400 seconds, budget 21600 seconds and ceiling 64800 seconds
+    When the worker's credential-use deadline is projected
+    Then it is the projection instant plus 151200 seconds
+    And the in-sandbox start check still refuses a first launch when less than 21600 seconds remain before that deadline
+  Scenario: A run resting for a person blocks no admission
+    Given an item resting at blocked with blocked_reason needs-human after a budget cancel
+    When the next admission pass counts claims against wip_cap
+    Then the item is not a counted claim and its run holds no factory slot
   Scenario: A published run names its pull request and head
     Given a run past the budget whose event stream records a completed publish_draft whose pushed head can be read from the run's record
     When the Dispatcher journals run-wall-budget-exceeded
@@ -6450,6 +6492,7 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
   Scenario: An export that cannot be read back holds the cancel until it can
     Given a run past the budget whose preserve-by-reference pointer cannot be read back
     And origin holds no verified preservation ref of the run
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     When the watchdog samples the run
     Then it does not cancel the run
     And the journal carries a run-wall-budget-held record naming the run, the elapsed seconds, the budget and the failed measurement
@@ -6458,6 +6501,7 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     And once a re-attempt's read-back succeeds the run is cancelled as run-wall-budget-exceeded
   Scenario: A verified preservation ref releases a held budget cancel
     Given a run past the budget whose preserve-by-reference pointer cannot be read back
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     And a remote ref listing of origin shows refs/heads/needs-human/<run-id> at a commit whose tree equals the run branch's committed tip as the run's record reports it
     When the watchdog samples the run
     Then the run is cancelled as run-wall-budget-exceeded
@@ -6465,6 +6509,7 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     And the item rests at blocked with blocked_reason needs-human
   Scenario: A held budget cancel with no verified copy escalates once and keeps the run
     Given a run past the budget whose export read-back has failed on three consecutive polls
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     And no remote ref listing of origin shows a verified preservation ref of the run
     When the Dispatcher journals the third run-wall-budget-held record for the run
     Then the journal carries one run-wall-budget-hold-escalated record for the run
@@ -6473,12 +6518,14 @@ Feature: One factory run holds a slot no longer than the whole-run wall budget
     And a later poll that finds a verified preservation ref cancels the run as run-wall-budget-exceeded without a second escalation
   Scenario: An unreadable ref listing is not an absent ref
     Given a run past the budget whose export read-back fails
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     And the remote ref listing of origin cannot be taken on that poll
     When the watchdog samples the run
     Then the run-wall-budget-held record names the failed ref listing as a failed measurement
     And the run is not cancelled on that poll
   Scenario: The budget takes precedence over a simultaneous stall
     Given a run whose slot-holding time exceeds its budget
+    And no work-in-progress capture and no first completion of a node was recorded within its progress window
     And whose heartbeat and event stream have both stayed unchanged for the full stall window with no command node open
     When the watchdog samples the run
     Then it exports and cancels the run as run-wall-budget-exceeded
@@ -9168,7 +9215,7 @@ Feature: A proof-loop edge cannot price a fresh credential out of dispatch
 
   Scenario: The bounded window governs when it is smaller
     Given the resolved workflow's execution allowance is 902955 seconds
-    And dispatcher.credential_queue_allowance_seconds resolves to 86400 and the whole-run wall budget to 21600
+    And dispatcher.credential_queue_allowance_seconds resolves to 86400 and the whole-run wall budget and its ceiling (dispatcher.run_wall_ceiling_seconds) both to 21600
     And the documented margin is 3600 seconds
     When codex-cred-status reports the requirement
     Then the required lifetime is 111600 seconds, naming the bounded credential-use window as the governing figure
@@ -9181,7 +9228,7 @@ Feature: A proof-loop edge cannot price a fresh credential out of dispatch
     And a coding agent still running at that deadline is stopped
 
   Scenario: A long queue is refused at agent launch and rests for resume
-    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget and ceiling are both 21600 seconds
     And the run is first launched more than 108000 seconds after projection
     When the first coding-agent node launches
     Then the launch is refused naming the credential-use deadline
@@ -9193,7 +9240,7 @@ Feature: A proof-loop edge cannot price a fresh credential out of dispatch
     And the ending is neither a plain failed run nor counted toward any non-convergence or rework bound
 
   Scenario: A queue between the allowance and the deadline is refused before any turn starts
-    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget is 21600 seconds, projected at instant P
+    Given a dispatch whose credential queue allowance is 86400 seconds and whose whole-run wall budget and ceiling are both 21600 seconds, projected at instant P
     And the run's first coding-agent launch is at P plus 90000 seconds, so 18000 seconds remain before the deadline
     When the start check runs
     Then it refuses the launch because 18000 seconds is less than the 21600-second budget, naming the deadline, the remaining time and the budget
@@ -9244,7 +9291,7 @@ Feature: A proof-loop edge cannot price a fresh credential out of dispatch
 
   Scenario Outline: Reporting uses the execution allowance when it is smaller
     Given the execution allowance is 60000 seconds
-    And the credential queue allowance is 86400 seconds and the wall budget is 21600 seconds
+    And the credential queue allowance is 86400 seconds and the wall budget and its ceiling are both 21600 seconds
     And the documented margin is 3600 seconds
     And the first agent launched 3600 seconds after projection
     When <surface> reports this dispatch in flight

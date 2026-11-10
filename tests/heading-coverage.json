@@ -1751,7 +1751,7 @@
     "work_item": "bd-ib-7f66ar"
   },
   {
-    "heading": "## Scenario 175 \u2014 A run past the whole-run wall budget is exported, cancelled and rested for a human",
+    "heading": "## Scenario 175 \u2014 A run past the whole-run wall budget continues while it progresses, and otherwise is exported, cancelled and rested for a human",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_run_wall_budget_scenario175"
