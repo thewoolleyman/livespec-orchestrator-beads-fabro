@@ -71,6 +71,39 @@ def test_reconcile_runs_emits_a_json_projection_and_wires_every_input(
     assert inputs["cancelling_actor"] == "agent:test"
 
 
+def test_the_pass_collects_for_every_other_repository_the_hosts_registry_names(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    calls = _stub(monkeypatch=monkeypatch, summary=_summary())
+    own, console = tmp_path / "own", tmp_path / "console"
+    own.mkdir()
+    console.mkdir()
+    registry = tmp_path / "installed_plugins.json"
+    _ = registry.write_text(
+        json.dumps(
+            {
+                "plugins": {
+                    "livespec-orchestrator-beads-fabro@livespec": [
+                        {"projectPath": str(own), "installPath": "/cache"},
+                        {"projectPath": str(console), "installPath": "/cache"},
+                    ]
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli, "default_plugin_install_registry", lambda: registry)
+
+    exit_code = main(argv=["reconcile-runs", "--repo", str(own), "--fabro-bin", "fabro"])
+
+    inputs = calls["inputs"]
+    assert isinstance(inputs, dict)
+    assert exit_code == 0
+    assert inputs["dispatching_repositories"] == (console.resolve(),)
+
+
 def test_the_retired_stale_run_sweep_name_fails_as_an_unknown_subcommand(
     *,
     capsys: pytest.CaptureFixture[str],
@@ -406,6 +439,7 @@ def _stub(
             "blocked_run_grace_seconds": inputs.blocked_run_grace_seconds,
             "telemetry_spans_path": inputs.telemetry_spans_path,
             "cancelling_actor": inputs.cancelling_actor,
+            "dispatching_repositories": inputs.dispatching_repositories,
         }
         calls["factory_targets"] = factories
         calls["dry_run"] = dry_run
@@ -418,7 +452,14 @@ def _stub(
     monkeypatch.setattr(cli, "resolve_fabro_bin", _fabro_bin)
     monkeypatch.setattr(cli, "reconcile_runs", _reconcile)
     monkeypatch.setattr(cli, "repo_run_attribution", _attribution)
+    # The host's own install registry must never decide which repositories a test
+    # pass collects for.
+    monkeypatch.setattr(cli, "default_plugin_install_registry", _absent_registry)
     return calls
+
+
+def _absent_registry() -> Path:
+    return Path("/nonexistent/installed_plugins.json")
 
 
 class _StoreConfig:

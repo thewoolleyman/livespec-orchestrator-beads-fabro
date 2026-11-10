@@ -55,6 +55,12 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ended_run_collection import (
     collect_closed_ended_runs,
+    journaled_refusals,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fleet_run_collection import (
+    DispatchingRepository,
+    collect_fleet_closed_ended_runs,
+    read_dispatching_repository,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_acp_selection import (
     pass_selection_replays,
@@ -139,7 +145,7 @@ def reconcile_runs(
     dry_run: bool = False,
 ) -> ReconcileRunsSummary:
     """Survey every factory, reconciling the orphans the ledger disowns."""
-    item_statuses = {item.id: item.status for item in inputs.items}
+    fleet = _dispatching_repositories(inputs=inputs, dry_run=dry_run)
     reconciled: list[ReconciledRun] = []
     errors: list[ReconcileError] = []
     held: list[HeldRun] = []
@@ -173,7 +179,7 @@ def reconcile_runs(
         surveyed_factory = _reconcile_one_factory(
             inputs=inputs,
             factory=factory,
-            item_statuses=item_statuses,
+            fleet=fleet,
             dry_run=dry_run,
             reconciled=reconciled,
             errors=errors,
@@ -233,11 +239,25 @@ def _claim_lane(
     return lane(inputs=inputs, factories=factories, observed=observed, dry_run=dry_run)
 
 
+def _dispatching_repositories(
+    *, inputs: ReconcileInputs, dry_run: bool
+) -> tuple[DispatchingRepository, ...]:
+    """The other repositories whose runs this pass collects, read once per pass.
+
+    A dry run and a targeted pass collect no other repository's run, so neither
+    pays the read of their journals and ledgers.
+    """
+    if dry_run or inputs.only_work_item_id is not None:
+        return ()
+    loaded = (read_dispatching_repository(repo=repo) for repo in inputs.dispatching_repositories)
+    return tuple(repository for repository in loaded if repository is not None)
+
+
 def _reconcile_one_factory(
     *,
     inputs: ReconcileInputs,
     factory: FactoryTarget,
-    item_statuses: dict[str, str],
+    fleet: tuple[DispatchingRepository, ...],
     dry_run: bool,
     reconciled: list[ReconciledRun],
     errors: list[ReconcileError],
@@ -262,7 +282,7 @@ def _reconcile_one_factory(
         return _FactoryPass(held=(), run_statuses={}, surveyed=False)
     inventory = FactoryRunInventory(
         runs=ps.runs,
-        item_statuses=item_statuses,
+        item_statuses={item.id: item.status for item in inputs.items},
         journaled=inputs.journaled,
         id_prefix=inputs.id_prefix,
         factory_name=factory.name,
@@ -270,6 +290,7 @@ def _reconcile_one_factory(
         attribution=inputs.attribution,
         only_work_item_id=inputs.only_work_item_id,
         allow_goal_text_attribution=inputs.allow_goal_text_attribution,
+        refused_before=journaled_refusals(journal_path=inputs.journaled.source_path),
     )
     grace = measured_grace(
         port=port,
@@ -284,6 +305,14 @@ def _reconcile_one_factory(
         repo=inputs.repo,
         journal=inputs.journal,
         dry_run=dry_run,
+    )
+    collect_fleet_closed_ended_runs(
+        inventory=inventory,
+        port=port,
+        runner=inputs.runner,
+        journal=inputs.journal,
+        dry_run=dry_run,
+        repositories=fleet,
     )
     # NO EVENT-PROJECTION REPLAY RIDES THIS SURVEY. The replay that stood here
     # re-read each unresolved projection-failure fact's run through

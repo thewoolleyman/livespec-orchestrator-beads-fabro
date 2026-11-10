@@ -355,6 +355,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   repository-declared gate runs immediately after it, so output left behind
   would gate a head nobody committed, while demanding a clean tree would hold on
   every sandbox's own provisioning residue.
+- `_dispatcher_fleet_run_collection.py` — ended-run collection across EVERY
+  repository that dispatches to a factory (`bd-ib-q4xgcp`, Scenario 281). The
+  host timer starts the pass from one repository, whose own attribution reaches
+  only its own runs, so this module reads each other repository the host's plugin
+  install registry names (its journal, run stamps and item statuses) and hands the
+  runs no earlier repository claimed to the SAME `collect_closed_ended_runs`, with
+  `repo` naming the dispatching repository so its origin's preservation refs are
+  the ones deleted. An unreadable ledger reads as NO statuses, which refuses and
+  leaves the run in place; it is never read as closed. A dry run and a targeted
+  pass collect nothing here.
 - `_dispatcher_journal_file.py` — the append-only dispatch journal and the
   attribution stamp it owns, split out of `_dispatcher_io` for the same reason
   `_dispatcher_shell_runner` was: that aggregate's import closure reaches the
