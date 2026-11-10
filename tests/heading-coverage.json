@@ -3072,5 +3072,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-4xqmqh adds check-fleet-launch harness cases in which every launch-time command of a target declaring a stub tenant credential_wrapper runs under that wrapper and not the default one, a diverged checkout launches nothing with a checkout-not-at-origin-tip terminal line while a behind checkout is fast-forwarded to origin's default branch and launches, consecutive early exits re-take the same ticket after the three configured delays holding no mutex or in-flight marker, a failed goal-minijinja-preflight stage re-takes no ticket and leaves one ledger comment carrying no goal-template opening delimiter, and the overrides file's lines reach the stub drive as --acp-node arguments with non-empty judge-model host values exported. bd-ib-4xqmqh owns it.",
     "work_item": "bd-ib-4xqmqh"
+  },
+  {
+    "heading": "## Scenario 339 \u2014 A Definition of Done that permits a TODO coverage row against a shrink-only debt register is a mechanical filing finding",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-cm2k55 adds filing-seam cases in which a repository carrying a committed tests/heading-coverage-debt.json reports a (mechanical) finding quoting a Definition of Done bullet that names tests/heading-coverage.json and TODO, records it as a ledger comment, rests the item at pending-approval under auto admission, refuses approve until the bullet is edited, and reports no such finding where the register is absent. bd-ib-cm2k55 owns it.",
+    "work_item": "bd-ib-cm2k55"
   }
 ]
