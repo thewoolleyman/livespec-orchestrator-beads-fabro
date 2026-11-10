@@ -1,26 +1,26 @@
-"""Harness coverage for the frozen payload-retention regression's own scaffolding.
+"""Harness coverage for the payload-retention regression's own scaffolding.
 
-`test_payload_retention_after_eviction.py` is the accepted Red for work-item
-`bd-ib-mtuqxb`, and its bytes are frozen across the Red->Green pair. Its
-scaffolding carries three arms that the happy path never reaches — and this
-repository measures coverage over `tests/` too, so they cannot simply be left
-unexercised:
+`test_payload_retention_after_eviction.py` is the regression for work-item
+`bd-ib-mtuqxb`. Its scaffolding carries arms that the happy path never reaches,
+and this repository measures coverage over `tests/` too, so they cannot simply
+be left unexercised:
 
-- `_wait_for`'s early-child-exit arm, which turns a child that dies before the
-  startup handshake into an assertion carrying that child's own output;
-- `_wait_for`'s bounded-timeout arm, so a child that never signals fails the
-  test instead of hanging the suite;
+- `_wait_for_ready`'s early-child-exit arm, which turns a child that dies before
+  the startup handshake into an assertion carrying that child's own output;
 - the test body's `finally`, which kills a child still alive after
   `communicate` timed out, so a wedged probe is not left running.
 
-Every arm is driven HERE rather than by editing the frozen file, against real
-disposable child processes (and, for the `finally` arm, a deliberately hanging
-probe spliced in for the duration of one call). The frozen module is loaded by
-path so this file does not depend on how pytest names it.
+The handshake is a pipe the child writes one byte to, and the parent blocks
+reading it until the byte arrives or the child's end closes, so which arm runs
+is fixed by what the child does and never by how fast it does it. Every arm is
+driven HERE against real disposable child processes (and, for the `finally`
+arm, a deliberately hanging probe spliced in for the duration of one call). The
+regression module is loaded by path so this file does not depend on how pytest
+names it.
 
 The probe splice is the only narrow control used: `_PROBE` and
-`_DEFERRED_TIMEOUT_SECONDS` are module globals the frozen test body reads at
-call time, so replacing them exercises the real body — the real `copytree`,
+`_DEFERRED_TIMEOUT_SECONDS` are module globals the regression's test body reads
+at call time, so replacing them exercises the real body — the real `copytree`,
 the real `Popen`, the real `rmtree`, the real `finally` — against a child that
 announces readiness and then refuses to finish.
 
@@ -43,28 +43,26 @@ _FROZEN_TEST_PATH = Path(__file__).resolve().parent / "test_payload_retention_af
 _FROZEN_MODULE_NAME = "frozen_payload_retention_regression"
 
 # A child that exits immediately with a recognisable code and output, for the
-# early-exit arm; and one that blocks on stdin forever, for the timeout arm.
+# early-exit arm.
 _DYING_CHILD = (
     "import sys; sys.stdout.write('child stdout\\n'); "
     "sys.stderr.write('child stderr\\n'); raise SystemExit(7)"
 )
-_BLOCKING_CHILD = "import sys; _ = sys.stdin.read()"
 
 # The probe the `finally` arm needs: it completes the startup handshake, then
 # never finishes, so `communicate` times out with the child still alive.
 _HANGING_PROBE = """
+import os
+import signal
 import sys
-import time
-from pathlib import Path
 
-_, ready_path, go_path, _result_path = sys.argv[1:5]
-Path(ready_path).write_text("ready", encoding="utf-8")
+_, ready_fd, *_ = sys.argv[1:5]
+os.write(int(ready_fd), b"1")
 while True:
-    time.sleep(1)
+    signal.pause()
 """
 _HANGING_TIMEOUT_SECONDS = 2.0
 _DEAD_CHILD_EXIT = 7
-_NO_WAIT_SECONDS = 0.01
 _PATIENT_WAIT_SECONDS = 30.0
 
 
@@ -97,39 +95,27 @@ def _spawn(*, code: str) -> subprocess.Popen[str]:
     )
 
 
-def test_wait_for_reports_a_child_that_died_before_the_handshake(tmp_path: Path) -> None:
-    """A dead child must fail the regression WITH its own output, not time out."""
+def test_wait_for_ready_reports_a_child_that_died_before_the_handshake() -> None:
+    """A dead child must fail the regression WITH its own output, not hang."""
     module = _frozen_module()
+    ready_read_fd, ready_write_fd = os.pipe()
     process = _spawn(code=_DYING_CHILD)
+    # No child holds the write end, so the pipe is at end-of-file: the same
+    # state a child that exits without writing leaves behind.
+    os.close(ready_write_fd)
     _ = process.wait(timeout=_PATIENT_WAIT_SECONDS)
-    with pytest.raises(AssertionError) as excinfo:
-        module._wait_for(  # noqa: SLF001 - the frozen file's own scaffolding is the subject.
-            path=tmp_path / "never-written",
-            timeout=_PATIENT_WAIT_SECONDS,
-            process=process,
-        )
+    try:
+        with pytest.raises(AssertionError) as excinfo:
+            module._wait_for_ready(  # noqa: SLF001 - the regression's own scaffolding is the subject.
+                ready_fd=ready_read_fd,
+                process=process,
+            )
+    finally:
+        os.close(ready_read_fd)
     message = str(excinfo.value)
     assert f"child exited early (rc={_DEAD_CHILD_EXIT})" in message
     assert "child stdout" in message
     assert "child stderr" in message
-
-
-def test_wait_for_times_out_on_a_live_child_that_never_signals(tmp_path: Path) -> None:
-    """The bound is what keeps a silent child from hanging the whole suite."""
-    module = _frozen_module()
-    process = _spawn(code=_BLOCKING_CHILD)
-    try:
-        with pytest.raises(AssertionError) as excinfo:
-            module._wait_for(  # noqa: SLF001 - the frozen file's own scaffolding is the subject.
-                path=tmp_path / "never-written",
-                timeout=_NO_WAIT_SECONDS,
-                process=process,
-            )
-        assert "timed out after" in str(excinfo.value)
-        assert "never-written" in str(excinfo.value)
-    finally:
-        process.kill()
-        _ = process.communicate()
 
 
 def test_a_probe_that_never_finishes_is_killed_rather_than_left_running(
