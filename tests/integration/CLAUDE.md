@@ -1754,6 +1754,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   state files removed by hand, because a real `git commit` would run the very hook the
   case is holding open.
 
+- `test_commit_settle_stopped_rebase_hmed6n.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 176 and work-item `bd-ib-hmed6n`, the
+  sibling of the two settle modules above: a PASSED commit run mid-rebase whose
+  `git rebase --continue` stops on a LATER conflicting pick used to journal only
+  that the continue "did not complete" and return success, so the graph routed the
+  passed settle to the janitor, which failed on the leftover `rebase-merge`
+  directory and looped to its visit limit. The committed `fix_commit_settle` script
+  and the runner's exact source run in a real git fixture whose branch has three
+  picks, the first and third conflicting. The settle must exit non-zero with a
+  `failed` live-commit brief naming the stopped pick and every conflicted path,
+  leave the rebase open at that pick with the settled commit an ancestor of HEAD,
+  and let the NEXT settle (after a resolution commit) finish the rebase. A rebase or
+  merge abort that git refuses is driven with a `git` shim on `PATH`, because no
+  fixture state makes a real abort fail; the journal line must carry git's own
+  output. The merge case does NOT assert the merge stays open: the flattened-merge
+  undo that follows a failed run resets the tree regardless.
+
 - `test_needs_human_node_timeout_cut_scenario192.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 192 and the `contracts.md` paragraph "A
   commit run outlives a node-timeout cut" (work-item `bd-ib-ptnxyg`). The committed

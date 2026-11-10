@@ -811,11 +811,41 @@ def operation_in_progress():
     return None
 
 
-def run_git_operation(*argv):
+def attempt_git_operation(*argv):
+    """Run one git command that ends an operation; returns (completed, git's own output)."""
     environment = {**os.environ, "GIT_EDITOR": "true", "GIT_SEQUENCE_EDITOR": "true"}
-    return subprocess.run(
+    result = subprocess.run(
         ["git", *argv], capture_output=True, text=True, check=False, env=environment
-    ).returncode == 0
+    )
+    return result.returncode == 0, (result.stdout + result.stderr).strip()
+
+
+def run_git_operation(*argv):
+    return attempt_git_operation(*argv)[0]
+
+
+def stopped_pick():
+    """The pick a rebase stopped on and every path it left conflicted, or None.
+
+    None when no pick is recorded or no path is conflicted, so a continue that failed for
+    any other reason is still reported only as unresolved.
+    """
+    picked = subprocess.run(
+        ["git", "rev-parse", "--verify", "REBASE_HEAD"],
+        capture_output=True, text=True, check=False,
+    )
+    unmerged = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=U"],
+        capture_output=True, text=True, check=False,
+    )
+    paths = unmerged.stdout.split()
+    if picked.returncode or not paths:
+        return None
+    pick = picked.stdout.strip()
+    subject = subprocess.run(
+        ["git", "log", "-1", "--format=%h %s", pick], capture_output=True, text=True, check=False
+    ).stdout.strip()
+    return subject or pick, paths
 
 
 def undo_flattened_merge(path):
@@ -842,6 +872,20 @@ def undo_flattened_merge(path):
     return moved and run_git_operation("reset", "--hard", start_head)
 
 
+def stopped_rebase_brief(path, stopped):
+    """The re-entry brief for a passed commit run whose rebase continued onto a conflict."""
+    pick, paths = stopped
+    run = path.stem if path is not None else "the turn's commit run"
+    return (
+        "Commit run " + run + " PASSED mid-rebase, so its commit exists and stays on the"
+        " rebase's HEAD. The settle then ran `git rebase --continue`, which applied the"
+        " following picks and STOPPED on a conflict at pick " + pick + ". The rebase is"
+        " still in progress at that pick. Conflicted paths: " + ", ".join(paths) + ". Resolve"
+        " them, stage them, commit the resolution through the runner, and the next settle"
+        " continues the rebase; do not abort it.\n"
+    )
+
+
 def end_operation(state, stage, path=None):
     """Leave no merge or rebase in progress once the turn's commit run has settled.
 
@@ -849,26 +893,33 @@ def end_operation(state, stage, path=None):
     PASSED run mid-rebase finishes the rebase instead, because the settled commit sits on
     the rebase's detached HEAD and an abort would discard it. Any other state, and a passed
     run with a merge in progress, leaves the tree alone. A failed merge commit run also has
-    its head, index and tracked files put back on the head it began from. Returns the
-    journal lines.
+    its head, index and tracked files put back on the head it began from. A continue that
+    stops on a later conflicting pick leaves the rebase in progress at that pick, where the
+    settled commit stays reachable, and returns a brief naming the pick and its conflicted
+    paths; a command that does not complete journals git's own output. Returns the journal
+    lines and that brief (None when there is none).
     """
     if state not in ("failed", "passed"):
-        return []
+        return [], None
     named = "stage " + (stage or "implement")
     lines = []
+    stopped = None
     for _ in range(3):
         operation = operation_in_progress()
         if operation is None or (state == "passed" and operation != "rebase"):
             break
         flag = "--abort" if state == "failed" else "--continue"
-        done = run_git_operation(operation, flag)
+        done, said = attempt_git_operation(operation, flag)
         verb = "aborted" if state == "failed" else "finished"
         if not done:
             lines.append(
                 "LIVESPEC_COMMIT_SETTLE_OPERATION_UNRESOLVED: " + named + ": `git " + operation
                 + " " + flag + "` did not complete, so the in-progress " + operation
-                + " was left in place"
+                + " was left in place; git said:\n" + (said or "(no output)")
             )
+            if state == "passed":
+                found = stopped_pick()
+                stopped = stopped_rebase_brief(path, found) if found is not None else None
             break
         lines.append(
             "LIVESPEC_COMMIT_SETTLE_OPERATION_" + verb.upper() + ": " + named + ": " + verb
@@ -880,17 +931,24 @@ def end_operation(state, stage, path=None):
             "LIVESPEC_COMMIT_SETTLE_OPERATION_ABORTED: " + named + ": aborted the in-progress"
             + " merge after the failed commit run; HEAD is " + git_output("rev-parse", "HEAD")
         )
-    return lines
+    return lines, stopped
 
 
 def settle(timeout_seconds, brief_file, restore_head_before_wait=False, stage=None):
-    """Settle the turn's commit runs, then hand the next node a tree with no operation open."""
+    """Settle the turn's commit runs, then hand the next node a tree with no operation open.
+
+    The one exception is a rebase that stopped on a later conflicting pick: the brief then
+    reads `failed`, so the fix node re-enters on it with the rebase still open at that pick.
+    """
     state, path = settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage)
-    lines = end_operation(state, stage, path)
+    lines, stopped = end_operation(state, stage, path)
     for line in lines:
         print(line, file=sys.stderr)
     brief = Path(brief_file)
-    if lines and state == "failed" and brief.exists():
+    if stopped is not None:
+        brief.parent.mkdir(parents=True, exist_ok=True)
+        brief.write_text("failed\n" + stopped + "\n".join(lines) + "\n", encoding="utf-8")
+    elif lines and state == "failed" and brief.exists():
         with brief.open("a", encoding="utf-8") as handle:
             handle.write("\n".join(lines) + "\nRedo the integration that commit run recorded.\n")
     return 0
