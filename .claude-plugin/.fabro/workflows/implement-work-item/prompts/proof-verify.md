@@ -429,7 +429,18 @@ verbatim:
     Proof of Done — verified — run <run-id> — <UTC timestamp>
     Proof of Done — not_reproduced — run <run-id> — <UTC timestamp>
 
-using the run id you resolved in Step 3 and an ISO-8601 UTC timestamp.
+using the run id you resolved in Step 3 and a UTC timestamp that is a CLOCK
+READING, never a time you estimated, rounded or composed yourself. Read the
+clock in the SAME command that writes the header, immediately before you
+post, so the time is no later than the instant the comment is created and
+within minutes of it:
+
+    stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    printf 'Proof of Done — %s — run %s — %s\n' "<verified or not_reproduced>" "<run-id>" "$stamp" > <file>
+
+Write the rest of the body to that file before or after this command, but if
+more than a minute passes between this command and the `gh pr comment` that
+posts the file, run it again to refresh the time before posting.
 
 The SECOND line must declare, exactly once, the publish-branch head YOUR
 replay ran on:

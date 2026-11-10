@@ -31,6 +31,13 @@ instead.
   prompt carrying both the record title and the post call), with a control
   asserting it reached the two publishers known today.
 
+- `test_record_header_stamp_is_a_clock_reading.py` — bd-ib-yvmtrm: the
+  `proof_verify` and `review` prompts take their record header's UTC time from
+  `date -u` inside the command that writes the header, as `proof_capture`
+  already does, and forbid a time the agent estimated or composed. Without it
+  the agent wrote a made-up time, mostly ending `:00Z`, that was often later
+  than its own comment.
+
 - `test_proof_record_observation_scope_discipline.py` — bd-ib-v4exlm: both proof
   stages write the `Working directory: .` line ahead of their numbered steps,
   and only when every step ran from the repository root; `proof_verify` also
