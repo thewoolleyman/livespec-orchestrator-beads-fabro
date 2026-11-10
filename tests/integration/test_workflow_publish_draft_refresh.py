@@ -512,6 +512,45 @@ def test_an_http_5xx_draft_creation_adopts_the_open_pull_request_at_the_pushed_h
     assert "pull_request=#88" in published.result.stderr
 
 
+def test_an_http_5xx_draft_creation_without_an_open_pull_request_fails_after_fixed_rereads(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: a failed create stays closed when no matching draft appears."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        create_failure="HTTP 503 Service Unavailable",
+    )
+
+    assert published.result.returncode != 0
+    assert (
+        "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED: gh pr create failed and no pull "
+        "request at pushed head was found after 3 re-reads"
+    ) in published.result.stderr
+    assert (tmp_path / "create-reread-delays").read_text(encoding="utf-8") == "1\n2\n4\n"
+
+
+def test_an_http_5xx_draft_creation_does_not_adopt_an_open_pull_request_at_another_head(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: branch identity alone cannot adopt a different publication."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        create_failure="HTTP 502 Bad Gateway",
+        open_pr_after_create="89",
+        open_pr_head="different-head",
+    )
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_ADOPTED" not in published.result.stderr
+    assert "after 3 re-reads" in published.result.stderr
+
+
 @pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
 @pytest.mark.parametrize("phase", ["before_push", "after_refused_creation"])
 def test_a_merged_pull_request_no_dispatch_record_names_is_not_a_landed_publication(
