@@ -1132,6 +1132,13 @@ check-per-file-coverage:
 coverage-shard shard_index shard_count:
     dev-tooling/just-coverage-shard.sh "$@"
 
+# bd-ib-eq5ics: regenerate dev-tooling/coverage-shard-durations.tsv, the
+# committed per-test-file duration table coverage-shard balances the shards
+# with, from one timed run of the whole suite. Commit the result. Not a
+# `check-` slug and not in the `check` aggregate: it is a maintainer action.
+coverage-shard-durations:
+    dev-tooling/just-coverage-shard-durations.sh
+
 # Shared baseline Verifier: validates this repo's harness-conformance
 # declaration against the plugin-resolution invariant. Shipped by
 # livespec-dev-tooling (>=v0.21.0); with `harnesses` declared in
