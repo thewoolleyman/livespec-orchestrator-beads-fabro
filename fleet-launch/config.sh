@@ -72,6 +72,10 @@
 : "${FLEET_LAUNCH_ABANDON_S:=1200}"
 : "${FLEET_LAUNCH_POLL_S:=30}"
 : "${FLEET_LAUNCH_PREFLIGHT_REUSE_S:=600}"
+# How many times a launcher runs the ready-set check, one poll apart, before it gives up on a
+# refusal. A refusal that clears on its own (a blocker that has just closed, a ledger read that
+# lagged) keeps the launcher's ticket; one that persists ends with a terminal line and a ledger comment.
+: "${FLEET_LAUNCH_READY_RETRY_POLLS:=5}"
 : "${FLEET_LAUNCH_MUTEX_HOLD_S:=900}"
 # The two fixed poll intervals below are waits on an observed state (a free
 # mutex, a listed run); the hermetic harness shortens them so each of its cases

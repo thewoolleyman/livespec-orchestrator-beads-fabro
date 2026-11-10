@@ -53,7 +53,10 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
 GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
-ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0
+ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0; plugin=""
+# Non-run exit accounting: a launcher that exits before its run lists writes one terminal line and,
+# when its item still reads ready, one ledger comment naming the dropped ticket (Scenario 312).
+run_listed=0; terminal_written=0; exit_cause=""; exit_comment=if-ready; ready_refusals=0
 gmk_rows=""; hl_rows=""; gmk_live=U; hl_live=U; markers=U; fleet=U; gmk_idle=""
 mkdir -p "$OUT"
 
@@ -144,14 +147,46 @@ launch_hold_applies() {
 }
 give_up() {
   echo "no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up item=$ITEM queue-ticket=${ticket:-none}"
+  exit_cause="no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s: give up"
   exit 75
 }
 release_lock() {
   if [ -n "$lock" ] && grep -q "pid=$$ " "$lock/holder" 2>/dev/null; then rm -f "$lock/holder"; rmdir "$lock" 2>/dev/null; fi
   lock=""
 }
-trap 'drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"' EXIT
-trap 'exit 143' TERM INT
+# write_terminal <cause>: the one terminal line of a launcher that exits without a run.
+write_terminal() {
+  echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=$1"
+  terminal_written=1
+}
+# report_dropped_ticket <cause>: one ledger comment naming the dropped ticket and the cause, when the item
+# still reads ready (or exit_comment=always). The ticket is not re-taken: this launcher is exiting.
+report_dropped_ticket() {
+  local status body
+  [ -n "$plugin" ] || plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$(installed_build)"
+  status=$(item_status) || status=unreadable
+  [ "$exit_comment" = always ] || [ "$status" = ready ] || return 0
+  body="Fleet launcher $SEAT exited for $ITEM before its run listed: ticket ${ticket_number:-none} was dropped and not re-taken (cause: $1). This exit was not a run ending, and the item read $status. Remedy: launch it again, passing TICKET_NS=${ticket_number:-<none>} to keep its queue place."
+  (cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" comment "$plugin" "$REPO" "$ITEM" "$body") >/dev/null 2>&1 \
+    || echo "$(date -u +%FT%TZ) ledger comment for $ITEM failed: the dropped ticket ${ticket_number:-none} was not recorded"
+}
+# on_exit: every exit before the run lists. The terminal line is written before the ticket file is removed.
+on_exit() {
+  local rc=$? cause=""
+  trap - EXIT
+  if [ "$run_listed" = 0 ] && [ "$terminal_written" = 0 ]; then
+    cause=${exit_cause:-exit rc=$rc before its run listed}
+    write_terminal "$cause"
+  fi
+  drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"
+  [ -n "$cause" ] && report_dropped_ticket "$cause"
+  return 0
+}
+trap on_exit EXIT
+on_signal() { exit_cause="signal $1 (this exit was not a run ending)"; exit "$2"; }
+trap 'on_signal TERM 143' TERM
+trap 'on_signal INT 130' INT
+trap 'on_signal HUP 129' HUP
 
 read_fleet_cap() { FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null); FLEET_CAP=${FLEET_CAP:-0}; }
 
@@ -253,6 +288,14 @@ holder_dead() {
   [ -n "$pid" ] || return 1
   ! kill -0 "$pid" 2>/dev/null
 }
+# report_stall <ticket-file> <pid>: a queue reader met a ticket whose launcher is no longer alive. Written to
+# stderr, because the reader runs in a command substitution, and before the ticket is removed.
+report_stall() {
+  local f="$1" it name
+  name=${f##*/}
+  it=$(grep -oE 'item=[^ ]+' "$f" 2>/dev/null | head -1 | cut -d= -f2)
+  echo "$(date -u +%FT%TZ) stall: item=${it:-unknown} ticket=${name%%-*} dead-pid=${2:-none}: the launcher for ticket file $name is gone"
+} >&2
 # oldest_live_ticket <queue-dir>: the oldest ticket whose launcher is alive; dead tickets are removed.
 oldest_live_ticket() {
   local q="$1" f p
@@ -262,6 +305,7 @@ oldest_live_ticket() {
       grep -q '^held=' "$q/$f" && continue
       echo "$q/$f"; return
     fi
+    report_stall "$q/$f" "$p"
     rm -f "$q/$f"
   done
 }
@@ -303,8 +347,29 @@ ready_check() {
   fi
   (cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ready-set-check.py" "$p" "$REPO" "$ITEM" 2>/dev/null)
 }
-rcout=$(ready_check); rcrc=$?; echo "$(date -u +%FT%TZ) $rcout"
-[ $rcrc = 0 ] || { echo "$(date -u +%FT%TZ) ready-set check refused (rc=$rcrc): no slot taken, no launch"; exit 3; }
+# ready_refused: one refused ready-set check. The refusal is retried on the next poll until
+# FLEET_LAUNCH_READY_RETRY_POLLS polls have been tried; then the launcher gives up, naming the last reason
+# and the polls tried in its terminal line and, unconditionally, in a ledger comment on the item.
+ready_refused() {
+  local reason=${rcout:-no output, rc=$rcrc}
+  ready_refusals=$((ready_refusals + 1))
+  echo "$(date -u +%FT%TZ) ready-set check refused (rc=$rcrc, poll $ready_refusals of $FLEET_LAUNCH_READY_RETRY_POLLS): $1"
+  [ "$ready_refusals" -lt "$FLEET_LAUNCH_READY_RETRY_POLLS" ] && return 0
+  exit_cause="ready-set check refused: last reason: $reason; $ready_refusals polls tried"
+  exit_comment=always
+  exit 3
+}
+# A gmktec-only launch takes its FIFO ticket NOW and holds it while it polls, so a launcher queued
+# later cannot win the next freed slot ahead of it, and a refusal retried below keeps its place.
+if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
+  ensure_ticket
+fi
+while :; do
+  rcout=$(ready_check); rcrc=$?; echo "$(date -u +%FT%TZ) $rcout"
+  [ $rcrc = 0 ] && break
+  ready_refused "$rcout"
+  sleep "$FLEET_LAUNCH_POLL_S"
+done
 
 # A queued launcher takes its Definition-of-Done preflight while it waits; a pass
 # is reusable for FLEET_LAUNCH_PREFLIGHT_REUSE_S when it reaches the FIFO head.
@@ -315,10 +380,10 @@ launch_preflight() {
   [ $(( now - pf_ok_at )) -lt "$FLEET_LAUNCH_PREFLIGHT_REUSE_S" ] && return 0
   (cd "$REPO" && "$WRAP" -- "$FLEET_LAUNCH_ORCH_REPO/dev-tooling/dod-preflight.sh" "$ITEM") > "$pf" 2>&1; prc=$?
   if [ $prc = 0 ]; then pf_ok_at=$now; echo "$(date -u +%FT%TZ) launch-time preflight PASS"; return 0; fi
-  if [ $prc = 1 ]; then echo "$(date -u +%FT%TZ) launch-time preflight FAILED: $(tail -1 "$pf" | cut -c1-300): no slot, no launch"; exit 4; fi
+  if [ $prc = 1 ]; then echo "$(date -u +%FT%TZ) launch-time preflight FAILED: $(tail -1 "$pf" | cut -c1-300): no slot, no launch"; exit_cause="launch-time preflight failed"; exit 4; fi
   # A fenced JSON verdict makes dod-preflight.sh exit 2; a failed outcome inside it is a finding.
-  if [ $prc = 2 ] && grep -q '^{"outcome": "failed"' "$pf"; then echo "$(date -u +%FT%TZ) launch-time preflight FAILED (fenced verdict): $(grep -m1 '^{"outcome": "failed"' "$pf" | cut -c1-300): no slot, no launch"; exit 4; fi
-  echo "$(date -u +%FT%TZ) launch-time preflight TOOL FAILURE rc=$prc: no slot, no launch"; exit 70
+  if [ $prc = 2 ] && grep -q '^{"outcome": "failed"' "$pf"; then echo "$(date -u +%FT%TZ) launch-time preflight FAILED (fenced verdict): $(grep -m1 '^{"outcome": "failed"' "$pf" | cut -c1-300): no slot, no launch"; exit_cause="launch-time preflight failed (fenced verdict)"; exit 4; fi
+  echo "$(date -u +%FT%TZ) launch-time preflight TOOL FAILURE rc=$prc: no slot, no launch"; exit_cause="launch-time preflight tool failure rc=$prc"; exit 70
 }
 
 target=""; taken=0
@@ -326,11 +391,6 @@ target=""; taken=0
 # whose start-up alone outlasts FLEET_LAUNCH_MAX_WAIT_S on a loaded host still
 # reads the boards and reports why it gave up instead of giving up blind.
 evaluated=0
-# A gmktec-only launch takes its FIFO ticket NOW and holds it while it polls, so a launcher queued
-# later cannot win the next freed slot ahead of it.
-if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
-  ensure_ticket
-fi
 # --- holds re-read until admission --------------------------------------------------------------
 # After the drive is invoked the launcher re-reads every hold that applies to its launch on each poll
 # it makes while waiting for the run to list, until the item reads active, the run lists or the
@@ -380,7 +440,7 @@ drive_hold_poll() {
 stopped_after_admission() {
   local body
   echo "$(date -u +%FT%TZ) hold set before admission: stopped the drive for $ITEM (ticket ${ticket_number:-none}): $HOLD_DESC"
-  echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=stopped-after-admission"
+  write_terminal stopped-after-admission
   body="Fleet launcher $SEAT stopped its drive for $ITEM after a hold appeared (${HOLD_DESC}), but the drive had already admitted the item, so the item reads active with a pending claim stamp. This exit was not a run ending: ticket ${ticket_number:-none} was dropped and not re-taken. Remedy: the operator move valve (drive --action move:$ITEM:<status>) for the claim."
   (cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" comment "$plugin" "$REPO" "$ITEM" "$body") >/dev/null 2>&1 \
     || echo "$(date -u +%FT%TZ) ledger comment for $ITEM failed: the stopped-after-admission note was not recorded"
@@ -470,7 +530,7 @@ while :; do
     tserver=$HL
   fi
   if [ -n "${CAPTURE_NULL:-}" ]; then
-    [ "$target" = "${CAPTURE_EXPECT:-}" ] || { echo "CAPTURE_NULL but target=$target (expected ${CAPTURE_EXPECT:-unset}): refuse"; exit 70; }
+    [ "$target" = "${CAPTURE_EXPECT:-}" ] || { echo "CAPTURE_NULL but target=$target (expected ${CAPTURE_EXPECT:-unset}): refuse"; exit_cause="CAPTURE_NULL target $target is not the expected ${CAPTURE_EXPECT:-unset}"; exit 70; }
     unset LIVESPEC_FABRO_FACTORY; echo "$(date -u +%FT%TZ) CAPTURE_NULL: LIVESPEC_FABRO_FACTORY unset, no --factory"
   else
     export LIVESPEC_FABRO_FACTORY=$target
@@ -480,15 +540,20 @@ while :; do
   plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$build"
   build_version=$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))['version'])" "$plugin/plugin.json" 2>/dev/null)
   cred=$(cd "$REPO" && timeout 120 "$WRAP" -- python3 "$plugin/scripts/bin/dispatcher.py" claude-cred-status 2>/dev/null)
-  printf '%s\n' "$cred" | grep -q "is usable" || { echo "$(date -u +%FT%TZ) credential probe NOT usable: hold, no launch"; printf '%s\n' "$cred" | tail -3; rm -f "$marker"; marker=""; release_lock; exit 75; }
+  printf '%s\n' "$cred" | grep -q "is usable" || { echo "$(date -u +%FT%TZ) credential probe NOT usable: hold, no launch"; printf '%s\n' "$cred" | tail -3; rm -f "$marker"; marker=""; release_lock; exit_cause="credential probe not usable"; exit 75; }
   echo "$(date -u +%FT%TZ) credential probe usable (HTTP 200)"
   rcout=$(ready_check); rcrc=$?
-  if [ $rcrc != 0 ]; then echo "$(date -u +%FT%TZ) ready-set re-check refused before launch: $rcout"; rm -f "$marker"; marker=""; release_lock; exit 3; fi
+  if [ $rcrc != 0 ]; then
+    # This launcher has dropped its ticket at the bind: release the marker, re-take the ticket at the same
+    # number and poll again, up to the same bound as the first check.
+    echo "$(date -u +%FT%TZ) ready-set re-check refused before launch: $rcout"; rm -f "$marker"; marker=""; release_lock
+    ready_refused "$rcout"; ensure_ticket; sleep "$FLEET_LAUNCH_POLL_S"; continue
+  fi
   echo "$(date -u +%FT%TZ) LAUNCH target=$target head=$(git -C "$REPO" rev-parse --short HEAD) build=$build version=${build_version:-?}"
   if [ -n "${RELEASE_BLOCKED:-}" ]; then
     rel=$(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "resolve-blocked:${ITEM}:ready" --invoker "claude:$SEAT" --json 2>&1); rrc=$?
     echo "$(date -u +%FT%TZ) resolve-blocked:${ITEM}:ready rc=$rrc $(printf '%s' "$rel" | tr '\n' ' ' | cut -c1-300)"
-    [ $rrc = 0 ] || { echo "release refused: no launch"; exit 75; }
+    [ $rrc = 0 ] || { echo "release refused: no launch"; exit_cause="resolve-blocked release refused rc=$rrc"; exit 75; }
   fi
   (cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
   drive_pid=$!
@@ -511,7 +576,7 @@ while :; do
   run_row=""
   while [ "$drive_stopped" = 0 ]; do
     run_row=$(board_rows "$FABRO" "$tserver" | awk -v it="$ITEM" '$4==it {print; exit}')
-    if [ -n "$run_row" ]; then echo "$(date -u +%FT%TZ) LISTED on $target: $run_row"; break; fi
+    if [ -n "$run_row" ]; then run_listed=1; echo "$(date -u +%FT%TZ) LISTED on $target: $run_row"; break; fi
     if ! kill -0 "$drive_pid" 2>/dev/null; then echo "$(date -u +%FT%TZ) drive exited before listing"; break; fi
     drive_hold_poll || break
     if [ -n "$lock" ] && [ $(( $(date +%s) - taken )) -ge "$FLEET_LAUNCH_MUTEX_HOLD_S" ]; then echo "$(date -u +%FT%TZ) mutex hold elapsed: release (marker kept until listing or drive exit)"; release_lock; fi
@@ -525,4 +590,5 @@ echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?}
 wait "$drive_pid"; rc=$?
 echo "$(date -u +%FT%TZ) drive rc=$rc"
 echo "$(date -u +%FT%TZ) drive rc=$rc" >> "$OUT/$ITEM-r267.verdict"
+[ "$run_listed" = 1 ] || exit_cause="drive exited before its run listed (drive rc=$rc)"
 exit "$rc"
