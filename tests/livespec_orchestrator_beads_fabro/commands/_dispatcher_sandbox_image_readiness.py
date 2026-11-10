@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 _PROC = Path("/proc")
@@ -26,14 +27,20 @@ def wait_for_dispatcher_exec(
     proc: Path = _PROC,
     timeout_seconds: float = _EXEC_TIMEOUT_SECONDS,
     poll_seconds: float = _POLL_SECONDS,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> None:
-    """Wait, within a fixed budget, for `/proc` to expose the payload argv."""
-    deadline = time.monotonic() + timeout_seconds
+    """Wait, within a fixed budget, for `/proc` to expose the payload argv.
+
+    `monotonic` and `sleep` are injectable so a test fixes which lines run with a
+    fake `/proc` tree and a fake clock, never by how fast a real child execs.
+    """
+    deadline = monotonic() + timeout_seconds
     cmdline = proc / str(process.pid) / "cmdline"
     while not _has_execd(cmdline=cmdline, entry=entry):
-        if time.monotonic() >= deadline:
+        if monotonic() >= deadline:
             raise AssertionError(f"dispatcher fixture process {process.pid} did not exec {entry}")
-        time.sleep(poll_seconds)
+        sleep(poll_seconds)
 
 
 def start_dispatcher_process(*, build: Path) -> subprocess.Popen[bytes]:
