@@ -1725,6 +1725,19 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   "the wall treats the citation as stated" is a claim about what it does NOT
   refuse.
 
+- `test_commit_settle_restores_flattened_merge_2deww4.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 179 and work-item `bd-ib-2deww4`: a fix or
+  review_fix turn can end with its runner commit of an in-progress merge still
+  running, and the engine's per-node checkpoint then commits the merged index as a
+  TWO-parent commit that removes `MERGE_HEAD`. The committed settle node scripts and
+  the runner's exact source run in a real git fixture whose pre-commit hook holds the
+  runner commit open while that checkpoint is made. The restore step must move HEAD
+  back with the merge in progress on the merged-in commit; the held commit then passes
+  as a merge of the starting head and the merged-in commit, or fails to leave no merge
+  and the starting head's tree. The checkpoint is built with `commit-tree` and the
+  state files removed by hand, because a real `git commit` would run the very hook the
+  case is holding open.
+
 - `test_needs_human_node_timeout_cut_scenario192.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 192 and the `contracts.md` paragraph "A
   commit run outlives a node-timeout cut" (work-item `bd-ib-ptnxyg`). The committed
