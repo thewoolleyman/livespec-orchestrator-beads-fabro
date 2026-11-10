@@ -920,6 +920,7 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
         _DISPOSITION,
         "review_fix",
         "review_fix_commit_settle",
+        "review_fix_open_red_route",
         "janitor_admission",
         "janitor",
         _PUBLISH_DRAFT,

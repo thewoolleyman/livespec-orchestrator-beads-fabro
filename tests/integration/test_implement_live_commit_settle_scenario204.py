@@ -177,7 +177,8 @@ def test_the_turn_reaches_the_settle_before_the_completion_gate_on_both_outcomes
 def test_review_fix_reaches_the_settle_before_the_janitor() -> None:
     """The review-fix turn's ordinary route waits out its commit runs, then validates."""
     assert ("review_fix_commit_settle", "") in _targets(source="review_fix")
-    assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_REVIEW_FIX_SETTLE) == [("review_fix_open_red_route", "")]
+    assert (_JANITOR_ADMISSION, "") in _targets(source="review_fix_open_red_route")
     assert ("needs_human", "outcome=failed") in _targets(source="review_fix")
 
 
@@ -508,7 +509,8 @@ def test_the_fix_settle_is_billed_into_the_subprocess_ceiling() -> None:
 
 def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> None:
     """A first Red janitor does not strand the later review-fixed Green tree."""
-    assert _targets(source=_REVIEW_FIX_SETTLE) == [(_JANITOR_ADMISSION, "")]
+    assert _targets(source=_REVIEW_FIX_SETTLE) == [("review_fix_open_red_route", "")]
+    assert (_JANITOR_ADMISSION, "") in _targets(source="review_fix_open_red_route")
     assert _targets(source=_FIX_SETTLE) == [
         ("fix", "outcome=failed"),
         ("fix_open_red_route", ""),
