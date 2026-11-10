@@ -1272,6 +1272,6 @@ def test_build_attention_composes_the_release_adoption_lane(
         "hygiene:release-adoption:on-tip",
     ]
     assert "BEHIND" in adoption["hygiene:release-adoption:lagging"].summary
-    assert adoption["hygiene:release-adoption:lagging"].urgency == "high"
+    assert adoption["hygiene:release-adoption:lagging"].urgency == "low"
     assert "BEHIND" not in adoption["hygiene:release-adoption:on-tip"].summary
     assert adoption["hygiene:release-adoption:on-tip"].urgency == "low"

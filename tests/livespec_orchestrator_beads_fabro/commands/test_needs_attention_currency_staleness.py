@@ -93,15 +93,16 @@ def test_a_lagging_provisioned_build_surfaces_a_non_blocking_staleness_fact(
     assert "committed dispatcher.minimum_release floor can refuse" in fact.summary
     # It composes with the passing-canary restart surfacing rather than replacing it.
     assert "composes with the passing-canary restart-is-due surfacing" in fact.summary
-    assert (
-        "claude plugin update "
-        "livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro" in fact.summary
-    )
+    assert "just adopt-orchestrator-build <clone> <build>" in fact.summary
+    assert "claude plugin update" not in fact.summary
+    assert fact.urgency == "low"
     assert fact.source_ref.repo == "repo"
     assert fact.source_ref.path == str(seams.plugin_root)
     assert fact.handoff.kind == "shell"
     assert "adopt-dispatcher-release" in fact.handoff.command
     assert "surfaced, never enforced" in fact.handoff.command
+    assert "just adopt-orchestrator-build <clone> <build>" in fact.handoff.command
+    assert "claude plugin update" not in fact.handoff.command
 
 
 def test_a_single_step_behind_renders_the_singular_phrase(tmp_path: Path) -> None:
