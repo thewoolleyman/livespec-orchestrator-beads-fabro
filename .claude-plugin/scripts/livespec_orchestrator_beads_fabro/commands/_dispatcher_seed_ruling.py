@@ -12,7 +12,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import minijinj
 __all__: list[str] = [
     "SEED_RULING_MARKER",
     "SeedRuling",
+    "observed_ref_commit",
     "record_verified_seed_ruling",
+    "ruled_ref_mismatch_detail",
     "seed_ruling_comment_body",
     "verify_seed_ruling",
 ]
@@ -69,9 +71,20 @@ def verify_seed_ruling(*, runner: CommandRunner, repo: Path, ruling: SeedRuling)
         cwd=repo,
         timeout_seconds=120.0,
     )
-    observed = _observed_commit(stdout=result.stdout, ref=ruling.preservation_ref)
+    observed = observed_ref_commit(stdout=result.stdout, ref=ruling.preservation_ref)
     if observed is not None and observed == ruling.commit_sha:
         return observed
+    return ruled_ref_mismatch_detail(ruling=ruling, observed=observed)
+
+
+def ruled_ref_mismatch_detail(*, ruling: SeedRuling, observed: str | None) -> str:
+    """Name the ref, the ruled SHA and what origin observed, or that it observed nothing.
+
+    ONE rendering for every surface that reports a ruled ref origin does not
+    carry at the ruled commit — the writer's refusal, the writer's last check and
+    recovery routing's hold — so the three cannot come to say different things
+    about the same disagreement.
+    """
     named = "absent" if observed is None else observed
     return (
         f"ruled seed ref {ruling.preservation_ref} expected {ruling.commit_sha} "
@@ -92,10 +105,7 @@ def record_verified_seed_ruling(
     once and refuses a record that supplies its own.
     """
     if verified_commit != ruling.commit_sha:
-        return (
-            f"ruled seed ref {ruling.preservation_ref} expected {ruling.commit_sha} "
-            f"but origin observed {verified_commit or 'absent'}"
-        )
+        return ruled_ref_mismatch_detail(ruling=ruling, observed=verified_commit or None)
     body = seed_ruling_comment_body(
         work_item_id=ruling.work_item_id,
         preservation_ref=ruling.preservation_ref,
@@ -121,7 +131,7 @@ def record_verified_seed_ruling(
     return None
 
 
-def _observed_commit(*, stdout: str, ref: str) -> str | None:
+def observed_ref_commit(*, stdout: str, ref: str) -> str | None:
     """Read only the requested exact ref from `git ls-remote` output."""
     for line in stdout.splitlines():
         fields = line.split("\t")
