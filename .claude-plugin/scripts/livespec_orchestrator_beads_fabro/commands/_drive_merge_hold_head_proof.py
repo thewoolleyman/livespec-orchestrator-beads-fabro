@@ -23,6 +23,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import published_head
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_head_lineage import (
+    SharedTree,
     compare_heads,
 )
 
@@ -83,16 +84,15 @@ def head_outcome(
     if proved.head == pr_head:
         return None
     comparison = compare_heads(repo=repo, proved=proved.head, current=pr_head, runner=runner)
-    if comparison.tree is not None:
+    if isinstance(comparison, SharedTree):
         return MessageOnlyHeadMove(
             proved_head=proved.head, current_head=pr_head, tree=comparison.tree
         )
-    named = "" if comparison.failed is None else f"; {comparison.failed}"
     return UnprovedHead(
         detail=(
             f"it is at {pr_head} while its latest {proved.verdict} Proof of Done "
             f"record names {proved.head}, so the head it carries is one no record of this "
-            f"item's latest run proved{named}"
+            f"item's latest run proved; {comparison.measurement}"
         ),
     )
 

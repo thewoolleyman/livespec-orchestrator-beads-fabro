@@ -617,6 +617,41 @@ def test_release_refuses_a_head_whose_tree_differs_naming_the_tree_comparison(
     assert not any(call[:3] == ("gh", "pr", "merge") for call in runner.calls)
 
 
+def test_release_refuses_the_proved_tree_on_another_parent_naming_the_parent_comparison(
+    tmp_path: Path,
+) -> None:
+    """The same tree on a different parent is a different history, so it is not armed.
+
+    The trees match, so the TREE comparison passes and cannot be the measurement
+    named. The parent comparison is, and it is kept apart from the tree one for
+    the reason the clause keeps them apart: a rebase onto a new base reproduces
+    the tree of a change and not the code it will merge with.
+    """
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="rebase")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json(head=_OTHER_HEAD)),
+            *_guard_answers(),
+            *_commit_answers(current=_commit_json(parents=("4" * 40,))),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert _held()
+    assert result["domain_error"] == "unproved-head"
+    summary = str(result["summary"])
+    assert "parent comparison" in summary
+    assert "tree comparison" not in summary
+    assert _HEAD in summary
+    assert _OTHER_HEAD in summary
+    assert not any(call[:3] == ("gh", "pr", "merge") for call in runner.calls)
+
+
 def test_release_leaves_the_pull_request_unarmed_when_a_commit_cannot_be_read(
     tmp_path: Path,
 ) -> None:

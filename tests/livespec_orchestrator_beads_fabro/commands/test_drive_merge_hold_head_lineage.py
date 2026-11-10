@@ -17,6 +17,8 @@ from typing import cast
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
 from livespec_orchestrator_beads_fabro.commands._drive_merge_hold_head_lineage import (
+    HeadRefusal,
+    SharedTree,
     compare_heads,
 )
 
@@ -59,13 +61,23 @@ def _commit(*, tree: str = _TREE, parents: object = (_PARENT,)) -> CommandResult
     )
 
 
-def _shared(*, proved: CommandResult, current: CommandResult, tmp_path: Path) -> str | None:
+def _compare(
+    *, proved: CommandResult, current: CommandResult, tmp_path: Path
+) -> SharedTree | HeadRefusal:
     forge = _Forge(answers={_PROVED: proved, _CURRENT: current})
-    return compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge).tree
+    return compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
+
+
+def _refusal(*, proved: CommandResult, current: CommandResult, tmp_path: Path) -> str:
+    refused = _compare(proved=proved, current=current, tmp_path=tmp_path)
+    assert isinstance(refused, HeadRefusal)
+    return refused.measurement
 
 
 def test_two_commits_on_one_parent_with_one_tree_share_that_tree(tmp_path: Path) -> None:
-    assert _shared(proved=_commit(), current=_commit(), tmp_path=tmp_path) == _TREE
+    shared = _compare(proved=_commit(), current=_commit(), tmp_path=tmp_path)
+
+    assert shared == SharedTree(tree=_TREE)
 
 
 def test_each_commit_is_read_through_the_forge_by_its_full_sha(tmp_path: Path) -> None:
@@ -79,33 +91,43 @@ def test_each_commit_is_read_through_the_forge_by_its_full_sha(tmp_path: Path) -
     ]
 
 
-def test_a_different_tree_is_not_a_message_only_move(tmp_path: Path) -> None:
-    assert _shared(proved=_commit(), current=_commit(tree="3" * 40), tmp_path=tmp_path) is None
-
-
 def test_a_different_tree_names_the_tree_comparison_and_both_trees(tmp_path: Path) -> None:
-    forge = _Forge(answers={_PROVED: _commit(), _CURRENT: _commit(tree="3" * 40)})
+    named = _refusal(proved=_commit(), current=_commit(tree="3" * 40), tmp_path=tmp_path)
 
-    comparison = compare_heads(repo=tmp_path, proved=_PROVED, current=_CURRENT, runner=forge)
-
-    assert comparison.tree is None
-    assert comparison.failed is not None
-    assert "tree comparison" in comparison.failed
-    assert _TREE in comparison.failed
-    assert "3" * 40 in comparison.failed
+    assert "tree comparison" in named
+    assert _TREE in named
+    assert "3" * 40 in named
 
 
-def test_a_different_parent_is_not_a_message_only_move(tmp_path: Path) -> None:
-    other = _commit(parents=("4" * 40,))
-    assert _shared(proved=_commit(), current=other, tmp_path=tmp_path) is None
+def test_a_different_tree_is_named_before_a_different_parent(tmp_path: Path) -> None:
+    """When both moved, the tree is the measurement named: it is the one the proof graded."""
+    other = _commit(tree="3" * 40, parents=("4" * 40,))
+
+    named = _refusal(proved=_commit(), current=other, tmp_path=tmp_path)
+
+    assert "tree comparison" in named
+    assert "parent comparison" not in named
+
+
+def test_a_different_parent_names_the_parent_comparison_and_both_parents(
+    tmp_path: Path,
+) -> None:
+    named = _refusal(proved=_commit(), current=_commit(parents=("4" * 40,)), tmp_path=tmp_path)
+
+    assert "parent comparison" in named
+    assert "tree comparison" not in named
+    assert _PARENT in named
+    assert "4" * 40 in named
 
 
 @pytest.mark.parametrize("parents", [(), (_PARENT, "4" * 40)])
-def test_a_commit_without_exactly_one_parent_is_not_a_message_only_move(
+def test_a_commit_without_exactly_one_parent_names_the_parent_comparison(
     tmp_path: Path, parents: tuple[str, ...]
 ) -> None:
+    """Identical commits still refuse: a root or a merge commit is not a reworded commit."""
     same = _commit(parents=parents)
-    assert _shared(proved=same, current=same, tmp_path=tmp_path) is None
+
+    assert "parent comparison" in _refusal(proved=same, current=same, tmp_path=tmp_path)
 
 
 @pytest.mark.parametrize(
@@ -122,8 +144,12 @@ def test_a_commit_without_exactly_one_parent_is_not_a_message_only_move(
         _commit(parents=[{"sha": 7}]),
     ],
 )
-def test_an_unreadable_commit_on_either_side_is_not_a_message_only_move(
+def test_an_unreadable_commit_names_the_read_that_failed(
     tmp_path: Path, unreadable: CommandResult
 ) -> None:
-    assert _shared(proved=unreadable, current=_commit(), tmp_path=tmp_path) is None
-    assert _shared(proved=_commit(), current=unreadable, tmp_path=tmp_path) is None
+    """The refusal names WHICH commit's read failed, for either side."""
+    proved_side = _refusal(proved=unreadable, current=_commit(), tmp_path=tmp_path)
+    current_side = _refusal(proved=_commit(), current=unreadable, tmp_path=tmp_path)
+
+    assert f"the read of commit {_PROVED}" in proved_side
+    assert f"the read of commit {_CURRENT}" in current_side
