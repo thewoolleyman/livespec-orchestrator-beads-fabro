@@ -117,6 +117,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     ResumeObservation,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_rework_after_merge import (
+    rework_rejected_after_merge,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_probe import dispatch_ids_for
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -234,6 +237,11 @@ def gather_resume(
             ),
             earlier_run_succeeded=factory.earlier_run_succeeded,
             own_route=_own_route(repo=repo, item=item),
+            rework_after_merge=rework_rejected_after_merge(
+                records=journaled,
+                work_item_id=item.id,
+                merged_at=None if pull_request is None else pull_request.merged_at,
+            ),
         ),
         anchor=anchor,
         branch=branch,
