@@ -179,8 +179,11 @@ def _arrange_reexec(*, monkeypatch: pytest.MonkeyPatch, cwd: Path) -> None:
     monkeypatch.delenv("BEADS_DOLT_PASSWORD", raising=False)
     monkeypatch.delenv(CREDENTIAL_REEXEC_SENTINEL, raising=False)
     monkeypatch.delenv("COVERAGE_PROCESS_START", raising=False)
-    for name in [key for key in os.environ if key.startswith("COV_CORE_")]:
+    _ = [
         monkeypatch.delenv(name, raising=False)
+        for name in list(os.environ)
+        if name.startswith("COV_CORE_")
+    ]
     child = cwd / "resume_probe.py"
     _ = child.write_text(_CHILD_PROBE, encoding="utf-8")
     _write_wrapper_double(cwd=cwd)
