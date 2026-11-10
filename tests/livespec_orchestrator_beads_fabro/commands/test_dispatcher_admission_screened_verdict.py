@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import argparse
 import importlib
-import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -95,7 +94,8 @@ def test_a_fresh_screened_verdict_is_reused_without_a_second_assessment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The valve answers from the screen's reading, and resolves nothing of its own."""
-    screened = screened_module.ScreenedVerdict(verdict=_verdict(), taken_at=time.monotonic())
+    screened = screened_module.ScreenedVerdict(verdict=_verdict(), taken_at=100.0)
+    monkeypatch.setattr(screened_module.time, "monotonic", lambda: 100.0)
 
     verdict, resolutions = _admit(tmp_path=tmp_path, monkeypatch=monkeypatch, screened=screened)
 

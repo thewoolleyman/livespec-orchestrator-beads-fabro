@@ -3357,8 +3357,10 @@ def test_shell_runner_captures_exit_and_streams(tmp_path: Path) -> None:
 
 def test_shell_runner_converts_timeouts(tmp_path: Path) -> None:
     runner = ShellCommandRunner()
+    # real-time-required: the runner's timeout is the subject, and it is a wall-clock deadline
+    code = "import time; time.sleep(30)"  # real-time-required: the child outlives the deadline
     result = runner.run(
-        argv=[sys.executable, "-c", "import time; time.sleep(30)"],
+        argv=[sys.executable, "-c", code],
         cwd=tmp_path,
         timeout_seconds=0.2,
     )

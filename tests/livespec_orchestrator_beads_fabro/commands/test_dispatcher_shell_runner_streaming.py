@@ -54,6 +54,7 @@ def test_streaming_runner_ends_the_child_when_the_callback_refuses_a_line(
         argv=[
             sys.executable,
             "-c",
+            # real-time-required: the child idles until the runner ends it on the refused line
             "import sys, time; print('limit', flush=True); time.sleep(3600); print('late')",
         ],
         cwd=tmp_path,
@@ -107,6 +108,7 @@ def test_streaming_runner_ends_only_the_candidates_own_session_group(
         argv=[
             sys.executable,
             "-c",
+            # real-time-required: the child idles until the runner ends it on the refused line
             "import os, time; print(os.getpgrp(), flush=True); time.sleep(3600)",
         ],
         cwd=tmp_path,
@@ -133,8 +135,10 @@ def test_streaming_runner_maps_an_unfinished_stream_to_the_timeout_result(
     tmp_path: Path,
 ) -> None:
     """A candidate that emits no closing stream before its deadline is routable data."""
+    # real-time-required: the runner's timeout is the subject, and it is a wall-clock deadline
+    code = "import time; time.sleep(10)"  # real-time-required: the child outlives the deadline
     result = ShellCommandRunner().run_streaming(
-        argv=[sys.executable, "-c", "import time; time.sleep(10)"],
+        argv=[sys.executable, "-c", code],
         cwd=tmp_path,
         timeout_seconds=0.05,
         on_stdout_line=lambda line: line == "",
