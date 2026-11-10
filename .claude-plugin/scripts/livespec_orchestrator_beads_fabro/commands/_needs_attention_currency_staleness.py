@@ -7,7 +7,7 @@ plugin builds bind at SESSION START while the release ref MOVES, so a blocking
 comparison refused every live session's dispatches the moment a release was
 published mid-session. Freshness pressure has to be carried by SOMETHING, and
 this fact is that something: it states how far the operator-provisioned build
-lags the latest release and names the restart-and-update remedy.
+lags the latest release and names the adopt-step remedy.
 
 ⛔ THIS FACT MUST NEVER GATE A DISPATCH, AND THAT IS A CONTRACT RATHER THAN A
 DEFAULT. It is a surfaced TRIGGER in exactly the sense the detection-coverage
@@ -58,6 +58,9 @@ from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem, Handoff, SourceRef
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    ORCHESTRATOR_BUILD_ADOPT_REMEDY,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import plugin_root
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
@@ -80,9 +83,6 @@ __all__: list[str] = [
 # registry for a key that does not exist and the lane goes silent everywhere.
 _PLUGIN_NAME = "livespec-orchestrator-beads-fabro"
 _FACT_TYPE = "dispatcher-currency-staleness"
-_UPDATE_REMEDY = (
-    "claude plugin update livespec-orchestrator-beads-fabro@livespec-orchestrator-beads-fabro"
-)
 _COMPONENT_NAMES = ("major", "minor", "patch")
 
 
@@ -155,7 +155,7 @@ def currency_staleness_items(
         ConformanceContext(project_root=project_root, repo=repo).candidate(
             id=f"hygiene:{_FACT_TYPE}:{repo}",
             kind="hygiene",
-            urgency="medium",
+            urgency="low",
             summary=(
                 f"Dispatcher plugin currency is stale for {repo}: the operator-provisioned "
                 f"build {provisioned} lags the latest release {tip} by {_lag_phrase(lag=lag)}. "
@@ -164,7 +164,8 @@ def currency_staleness_items(
                 "dispatch — ambient staleness is surfaced, never enforced, and only a "
                 "committed dispatcher.minimum_release floor can refuse on currency. It "
                 "composes with the passing-canary restart-is-due surfacing rather than "
-                f"replacing it. Run `{_UPDATE_REMEDY}` and restart to adopt the release."
+                f"replacing it. Run `{ORCHESTRATOR_BUILD_ADOPT_REMEDY}` in livespec-dev-tooling "
+                "and reload the session to adopt the release."
             ),
             source_ref=SourceRef(repo=repo, path=str(seams.plugin_root)),
             handoff=Handoff(
@@ -221,7 +222,8 @@ def _handoff_command(*, project_root: Path, provisioned: str, tip: str) -> str:
     prompt = (
         f"adopt-dispatcher-release in repository {project_root}. The operator-provisioned "
         f"dispatcher build is {provisioned} and the latest release is {tip}. Run "
-        f"`{_UPDATE_REMEDY}` and restart so the newer payload takes effect. Do not convert "
+        f"`{ORCHESTRATOR_BUILD_ADOPT_REMEDY}` in livespec-dev-tooling and reload the "
+        "session so the newer payload takes effect. Do not convert "
         "this staleness into a dispatch refusal: it is surfaced, never enforced."
     )
     return f"cd {shlex.quote(str(project_root))} && codex exec {shlex.quote(prompt)} < /dev/null"
