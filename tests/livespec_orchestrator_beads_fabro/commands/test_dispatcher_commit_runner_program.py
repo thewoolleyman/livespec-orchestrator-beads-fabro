@@ -869,6 +869,12 @@ def test_settle_waits_for_the_live_run_and_a_passed_verdict_is_briefed_with_its_
     """The turn ended mid-commit; the run waits, and the commit it finds PASSED is named."""
     program = _settle_program(tmp_path)
     path = _record(tmp_path, _RUN_ID, {"state": "running"}, 4242)
+    stopped: list[tuple[Path, str]] = []
+
+    def stop_run(path: Path, proc_root: str) -> None:
+        stopped.append((path, proc_root))
+
+    program["stop_run"] = stop_run
     program["group_alive"] = _alive_once_then(
         path, {"state": "passed", "exit_code": 0, "head": "0123abc", "hook_ran": True}
     )
@@ -880,6 +886,7 @@ def test_settle_waits_for_the_live_run_and_a_passed_verdict_is_briefed_with_its_
     assert lines[0] == "passed"
     assert _RUN_ID in "\n".join(lines[1:])
     assert "0123abc" in "\n".join(lines[1:])
+    assert stopped == []
     assert json.loads(capsys.readouterr().out) == {
         "settled": [{REPORT_RUN_ID_KEY: _RUN_ID, REPORT_STATE_KEY: "passed"}]
     }
@@ -928,21 +935,30 @@ def test_settle_briefs_a_run_that_ended_without_a_verdict_as_having_made_no_comm
     assert "no commit was made" in body
 
 
-def test_settle_reports_running_when_the_bound_expires_and_the_worst_run_leads(
+def test_settle_stops_a_run_still_live_at_its_bound_and_briefs_no_verdict(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A run still live at the bound is `running`, and it outranks a passed sibling."""
+    """A timed-out settle ends the live run before the next stage may begin."""
     program = _settle_program(tmp_path)
     program["group_alive"] = _alive
-    _ = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, 4242)
+    path = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, 4242)
+    stopped: list[tuple[Path, str]] = []
+
+    def stop_run(run_path: Path, proc_root: str) -> None:
+        stopped.append((run_path, proc_root))
+
+    program["stop_run"] = stop_run
     brief = tmp_path / "brief"
 
     assert program["settle"](0, str(brief)) == 0
 
     lines = brief.read_text(encoding="utf-8").splitlines()
-    assert lines[0] == "running"
+    assert stopped == [(path, "/proc")]
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "no-verdict", "stopped": True}
+    assert lines[0] == "no-verdict"
     assert _OTHER_RUN_ID in "\n".join(lines[1:])
-    assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "running"
+    assert "ended without a verdict" in "\n".join(lines[1:])
+    assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "no-verdict"
 
 
 def test_main_routes_the_settle_operation_with_its_bound_and_brief_file(
