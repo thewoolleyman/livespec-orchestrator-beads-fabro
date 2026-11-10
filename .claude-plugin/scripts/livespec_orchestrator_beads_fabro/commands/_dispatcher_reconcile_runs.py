@@ -280,6 +280,8 @@ def _reconcile_one_factory(
     collect_closed_ended_runs(
         inventory=inventory,
         port=port,
+        runner=inputs.runner,
+        repo=inputs.repo,
         journal=inputs.journal,
         dry_run=dry_run,
     )

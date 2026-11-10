@@ -10,7 +10,15 @@ collectable merely because they appear in a shared factory inventory.
 
 from __future__ import annotations
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandRunner,
+    JournalWriter,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_preservation_ref_deletion import (
+    delete_ended_run_refs,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     FactoryRunInventory,
     attributed_runs,
@@ -30,10 +38,18 @@ def collect_closed_ended_runs(
     *,
     inventory: FactoryRunInventory,
     port: FabroPort,
+    runner: CommandRunner,
+    repo: Path,
     journal: JournalWriter,
     dry_run: bool,
 ) -> None:
     """Delete ended sandboxes whose recorded work-item is now closed.
+
+    The run's preservation refs are deleted from origin FIRST: once the item is
+    closed and the run has ended nothing can push to them or seed from them. A
+    deletion the forge refuses is journaled by the deletion and the run is left
+    standing, so the next pass finds it again and retries; the item's state is
+    never touched here.
 
     `fabro rm` is deliberately unforced: the server's provider-delete route
     is the collection operation, and its exit code and bounded response are
@@ -47,6 +63,14 @@ def collect_closed_ended_runs(
         if not _collectable(status_kind=row.run.status_kind, item_status=row.work_item_status):
             continue
         if dry_run:
+            continue
+        if not delete_ended_run_refs(
+            runner=runner,
+            repo=repo,
+            journal=journal,
+            work_item_id=row.work_item_id,
+            run_id=row.run.run_id,
+        ):
             continue
         removed = port.rm(
             run_id=row.run.run_id,

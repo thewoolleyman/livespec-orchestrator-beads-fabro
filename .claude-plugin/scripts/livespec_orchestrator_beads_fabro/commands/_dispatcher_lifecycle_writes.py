@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro._store_blocked_mutations import (
     update_work_item_blocked_state,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_lifecycle_ref_deletion import (
+    delete_refs_after_lifecycle_write,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_reconcile_hook import (
     reconcile_after_lifecycle_write,
 )
@@ -98,5 +101,9 @@ def _reconcile(*, path: StoreConfig, item_id: str, status: str) -> None:
 
     It runs AFTER the store call returns, so a write that raised never reaches
     it and a run is never reconciled against a disposition that did not land.
+
+    The preservation refs of an item that landed closed are deleted AFTER the
+    reconciliation: its runs are terminated by then, so none can push another.
     """
     reconcile_after_lifecycle_write(path=path, item_id=item_id, status=status)
+    delete_refs_after_lifecycle_write(path=path, item_id=item_id, status=status)

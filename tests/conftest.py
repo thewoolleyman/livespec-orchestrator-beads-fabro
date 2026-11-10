@@ -167,6 +167,40 @@ def _integration_dump_doubles_serve_run_state(
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_lifecycle_preservation_ref_deletion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep every close and accept in this suite off the real forge.
+
+    The lifecycle write seam deletes a closed item's preservation refs through
+    `gh api`, which on a host with an authenticated `gh` and a real remote reaches
+    the actual repository, and on any other host fails and journals a deletion
+    failure that is not the subject of the dispatch and reconcile tests asserting
+    their own exact journal stages. So the seam sees an origin that carries no
+    preservation ref. Tests of the deletion itself stand their own forge in.
+    """
+    from collections.abc import Mapping
+
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_lifecycle_ref_deletion
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+
+    class _OriginWithoutPreservationRefs:
+        def run(
+            self,
+            *,
+            argv: list[str],
+            cwd: Path,
+            timeout_seconds: float,
+            env: Mapping[str, str | None] | None = None,
+            stdin: int | None = None,
+        ) -> CommandResult:
+            _ = (argv, cwd, timeout_seconds, env, stdin)
+            return CommandResult(exit_code=0, stdout="", stderr="")
+
+    monkeypatch.setattr(
+        _dispatcher_lifecycle_ref_deletion, "ShellCommandRunner", _OriginWithoutPreservationRefs
+    )
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
         ClaudeCredentialStatus,
