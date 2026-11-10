@@ -93,6 +93,24 @@ on:
 # The baked `container:` image below is orthogonal to routing: it gives the
 # check jobs the SAME environment the Fabro sandbox runs, so "green in CI" and
 # "green in sandbox" mean the same thing (livespec plan/fabro-ci-image-factoring).
+
+# B' master-push concurrency (livespec-dev-tooling SPECIFICATION/constraints.md
+# §"CI matrix shape", v182; bd-ib-5o5ibo; the same shape as
+# livespec-dev-tooling-qzw2gf). Every push to refs/heads/master joins ONE group with
+# cancel-in-progress false: the run in progress always completes, and when a newer
+# master push joins, GitHub cancels the older run still PENDING in the group, so only
+# the newest pending run is kept. A dropped run is never its commit's verdict. Every
+# other run groups by its own run_id and is never held: pull requests,
+# `chore(master): release` commits, the incident recovery principal's
+# `Revert complete incident PR #` commits, and every push in which ANY commit carries a
+# `Factory-Override:` trailer, which covers the expedited-incident trailer (a superset, so
+# no expedited run is ever dropped). This repository calls no master-health reconciler,
+# which the allowance requires.
+concurrency:
+  group: >-
+    ${{ github.workflow }}-${{ (github.event_name == 'push' && github.ref == 'refs/heads/master' && !startsWith(github.event.head_commit.message, 'chore(master): release') && !startsWith(github.event.head_commit.message, 'Revert complete incident PR #') && !contains(join(github.event.commits.*.message, ' '), 'Factory-Override:')) && 'master-push' || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   check-python:
     name: ${{ matrix.target }} (${{ matrix.uid }})
