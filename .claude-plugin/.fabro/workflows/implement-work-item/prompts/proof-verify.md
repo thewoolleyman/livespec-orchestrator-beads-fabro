@@ -152,6 +152,16 @@ For each `factory_captured` assertion, execute its numbered steps
   test of a program YOU wrote, which proves nothing about the one the
   capture ran — and it would report a green that no later replay can earn.
 
+### Keep repository check aggregates serial
+
+Replay a record's steps with at most ONE repository check aggregate running at a time.
+Do this even when the record's steps start several aggregates at once.
+That unsafe schedule is the one replay detail you must not reproduce: run each
+aggregate to its terminal exit before starting the next, without a trailing
+`&` inside one tool call or parallel tool calls. Preserve every individual
+command and expected observation; if serial execution disagrees with an
+expected observation, record the resulting non-reproduction.
+
 ## Step 3 — capture your own proof
 
 Capture per assertion the same way the record did — a screenshot for
