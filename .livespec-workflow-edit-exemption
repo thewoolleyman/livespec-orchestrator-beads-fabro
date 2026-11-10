@@ -1,14 +1,11 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml and ci-root-uid.yml gains one step per pytest-running job (the four coverage shards, check-per-file-coverage, e2e-cli and acceptance in ci.yml; check-per-file-coverage in ci-root-uid.yml), each
-# placed after the job's pytest step with if: ${{ !cancelled() }} and calling
-# thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.189.0.
-# ADDITIVE ONLY: no workflow line is deleted or modified and no job is added.
-# The step uploads tmp/flake-retries/ when the livespec_flake_retry plugin
-# re-ran a test, and ships nothing otherwise (if-no-files-found: ignore), so CI
-# runtime grows by one artifact-upload step per job. Consumer leg of
-# livespec-dev-tooling-ljea46 under plan fleet-flaky-tests.
-work_item=bd-ib-j3rrad
-reason=Deliver each CI job's flake-retry records to the dev-host reader so every retried test files one root-fix item; the shared action owns the artifact contract.
-change=additive
-ci_runtime=no-significant-increase
+# The change: .github/workflows/ci.yml gains a top-level B' concurrency block
+# (livespec-dev-tooling v182 SPECIFICATION/constraints.md §"CI matrix shape",
+# livespec-dev-tooling#4010 at b060f7d8), in the same shape as
+# livespec-dev-tooling#4019 (livespec-dev-tooling-qzw2gf). Add-only by line count,
+# but MAINTAINER tier, because dropping superseded pending master runs yields fewer
+# master verdicts. No job, step, trigger, permission or required check changes;
+# runner-minutes go down.
+work_item=bd-ib-5o5ibo
+reason=Master pushes share one concurrency group with cancel-in-progress false, so the in-progress run completes and only the newest pending run is kept. Pull requests, release commits, principal reverts and Factory-Override commits group by run_id and are never held. Approved by the maintainer 2026-11-09 ~19:3xZ, verbatim "OK B'" (recorded on livespec-dev-tooling-6tgd2z at 19:35:10Z); v182 names livespec-orchestrator-beads-fabro as an adopting member.
