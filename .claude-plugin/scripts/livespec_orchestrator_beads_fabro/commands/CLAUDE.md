@@ -626,6 +626,10 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   EXECUTES a payload step needs the script AND its env (`tests/prepare_step_support`).
   Every PLAIN-TEXT payload rides packed, gzip then base64 (`pack_payload`), and its
   step decodes it with `python3` (`packed_payload_write_command`) (`bd-ib-p5e32s`).
+  The decode FAILS CLOSED: a base64 or gzip error (gzip checks CRC32 and length)
+  exits with `LIVESPEC_PREPARE_PAYLOAD_DECODE_FAILED: <file>: <reason>`, and the
+  bytes land through a temporary file renamed into place only on success, so no
+  partial helper is ever left for a later stage to run.
   The overlay is collected as the run's `workflow.toml`, which Fabro caps at
   524,288 bytes PER FILE, and plain helper source paid that budget twice, once in
   bytes and again in JSON escaping: livespec-dev-tooling's overlay reached 524,343

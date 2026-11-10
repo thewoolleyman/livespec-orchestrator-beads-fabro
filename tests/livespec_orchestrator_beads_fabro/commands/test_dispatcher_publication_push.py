@@ -46,7 +46,7 @@ def test_the_prepare_step_materializes_the_single_safe_push_recipe() -> None:
     assert path.endswith(f"/{PUBLICATION_PUSH_PROGRAM_FILENAME}")
     assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=source)}
     assert 'printf %s "$LIVESPEC_PREPARE_PAYLOAD" | python3 -c' in script
-    assert f'> "{path}"' in script
+    assert f'"{path}" 0' in script
     assert source not in script
     assert f'chmod 700 "{path}"' in script
 

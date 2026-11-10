@@ -65,12 +65,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 __all__: list[str] = [
+    "DECODE_FAILED_CAUSE",
     "MAX_PACKABLE_CHUNK_BYTES",
     "MAX_PAYLOAD_VALUE_BYTES",
     "PAYLOAD_ENV_VAR",
     "PrepareStep",
     "pack_payload",
-    "packed_payload_decode_command",
     "packed_payload_write_command",
     "payload_guard_command",
     "payload_write_command",
@@ -84,11 +84,27 @@ MAX_PAYLOAD_VALUE_BYTES = 96000
 # block, so a piece of three quarters of the cap, less a margin for the gzip
 # framing, packs under `MAX_PAYLOAD_VALUE_BYTES` whatever its content.
 MAX_PACKABLE_CHUNK_BYTES = MAX_PAYLOAD_VALUE_BYTES // 4 * 3 - 1024
-# The decoder every packed step runs: base64, then gzip, to stdout as raw bytes,
-# so the file it lands in is byte-identical to the packed text.
+# The decoder every packed step runs. It reads the packed value on stdin and
+# lands the decoded bytes at argv[1] (appending when argv[2] is "1"). It FAILS
+# CLOSED: a base64 or gzip error (gzip checks its CRC32 and length) exits
+# non-zero naming `DECODE_FAILED_CAUSE`, the file and the reason, and the bytes
+# go to a temporary file in the target's directory that is renamed into place
+# only after the whole value decoded, so no partial helper is ever left where a
+# later stage would run it. The target keeps the mode a shell redirect gives it:
+# its own when it exists, the umask's otherwise. It is terse on purpose: it rides
+# in every packed step's script, inside the very file whose size it protects, and
+# no single quote may appear in it because it sits in a single-quoted shell word.
+DECODE_FAILED_CAUSE = "LIVESPEC_PREPARE_PAYLOAD_DECODE_FAILED"
 _DECODE_PROGRAM = (
-    "import base64,gzip,sys;"
-    "sys.stdout.buffer.write(gzip.decompress(base64.b64decode(sys.stdin.buffer.read())))"
+    "import base64 as b,gzip as g,os,sys,tempfile as t\n"
+    "p,a=sys.argv[1:3]\n"
+    "try:d=g.decompress(b.b64decode(sys.stdin.buffer.read(),validate=1))\n"
+    f'except Exception as e:sys.exit("{DECODE_FAILED_CAUSE}: %s: %s"%(p,e))\n'
+    "x=os.path.exists(p)\n"
+    'if a=="1"and x:d=open(p,"rb").read()+d\n'
+    "u=os.umask(0);os.umask(u)\n"
+    'f,n=t.mkstemp(dir=os.path.dirname(p)or".");o=os.fdopen(f,"wb");o.write(d);o.close()\n'
+    "os.chmod(n,os.stat(p).st_mode&4095 if x else 438&~u);os.replace(n,p)"
 )
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
@@ -129,25 +145,23 @@ def pack_payload(*, text: str) -> str:
     return base64.b64encode(packed).decode("ascii")
 
 
-def packed_payload_decode_command(*, var: str = PAYLOAD_ENV_VAR) -> str:
-    """The shell lines that guard a packed payload and decode it to stdout."""
-    return (
-        f"{payload_guard_command(var=var)}\n"
-        f"printf %s \"${var}\" | python3 -c '{_DECODE_PROGRAM}'"
-    )
-
-
 def packed_payload_write_command(
     *, path_word: str, var: str = PAYLOAD_ENV_VAR, append: bool = False
 ) -> str:
     """The shell lines that decode one packed payload into `path_word`.
 
     `path_word` is a complete, already-quoted shell word, as for
-    `payload_write_command`. Under `set -e` a payload that does not decode fails
-    the step, because the pipeline's status is the decoder's.
+    `payload_write_command`; it reaches the decoder as an argument, so the
+    decoder, not a shell redirect, creates the file. A payload that does not
+    decode fails the step whether or not `set -e` is on, because the pipeline's
+    status is the decoder's and the step's last command is that pipeline or a
+    `set -e` script line.
     """
-    redirect = ">>" if append else ">"
-    return f"{packed_payload_decode_command(var=var)} {redirect} {path_word}"
+    mode = "1" if append else "0"
+    return (
+        f"{payload_guard_command(var=var)}\n"
+        f"printf %s \"${var}\" | python3 -c '{_DECODE_PROGRAM}' {path_word} {mode}"
+    )
 
 
 def _toml_string(*, value: str) -> str:
