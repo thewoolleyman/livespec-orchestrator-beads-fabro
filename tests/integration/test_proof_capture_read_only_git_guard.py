@@ -43,6 +43,7 @@ _PROOF_CAPTURE_ADAPTER = "proof_capture_adapter"
 _IMPLEMENT_ADAPTER = "implement_adapter"
 _FIX_ADAPTER = "fix_adapter"
 _ADAPTER = "ANTHROPIC_MODEL=claude-opus-4-8 claude-agent-acp"
+_PROTECTED_CHECKOUT_ENV_VAR = "LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT"
 
 
 def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_and_fix_run_them(
@@ -67,6 +68,7 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
 
     work, marker = _repository(tmp_path=tmp_path)
     assert not (work / ".claude-plugin").exists()
+    proof_environment[_PROTECTED_CHECKOUT_ENV_VAR] = str(work)
     guard = _install_proof_capture_launcher(tmp_path=tmp_path)
     _install_repository_hook(repo=work, hook="pre-commit", marker=marker)
     _install_repository_hook(repo=work, hook="pre-push", marker=marker)
@@ -86,12 +88,133 @@ def test_proof_capture_git_writes_refuse_before_repository_hooks_but_implement_a
     ]
 
 
+def test_proof_capture_scratch_repository_commits_keep_their_hooks_and_the_checkout_stays_read_only(
+    tmp_path: Path,
+) -> None:
+    """Only the run's checkout is the tree: a scratch repository commits normally."""
+    commands = guarded_adapter_commands(
+        run_inputs=(f"{_PROOF_CAPTURE_ADAPTER}={_ADAPTER}", f"{_IMPLEMENT_ADAPTER}={_ADAPTER}")
+    )
+    environment = _adapter_environment(command=commands[_PROOF_CAPTURE_ADAPTER])
+    _ = environment.pop("LIVESPEC_CREDENTIAL_USE_DEADLINE_EPOCH", None)
+    environment["LIVESPEC_CREDENTIAL_USE_UNPROTECTED"] = "1"
+    (tmp_path / "run").mkdir()
+    (tmp_path / "scratch").mkdir()
+    work, checkout_marker = _repository(tmp_path=tmp_path / "run")
+    environment[_PROTECTED_CHECKOUT_ENV_VAR] = str(work)
+    _ = _install_proof_capture_launcher(tmp_path=tmp_path)
+    # The launcher is put on PATH directly: the credential-use guard prefers the
+    # sandbox's own materialized launcher at its production path when one exists.
+    environment["PATH"] = os.pathsep.join(
+        (str(tmp_path / ".livespec" / "proof-capture-bin"), os.environ["PATH"])
+    )
+    _install_repository_hook(repo=work, hook="pre-commit", marker=checkout_marker)
+    scratch, scratch_marker = _repository(tmp_path=tmp_path / "scratch")
+    _install_repository_hook(repo=scratch, hook="pre-commit", marker=scratch_marker)
+    _install_repository_hook(repo=scratch, hook="commit-msg", marker=scratch_marker)
+    _install_repository_hook(repo=scratch, hook="pre-push", marker=scratch_marker)
+
+    _assert_scratch_commit_runs_its_own_hooks(
+        scratch=scratch, marker=scratch_marker, environment=environment
+    )
+    _assert_scratch_commit_through_the_hooks_path_runs_its_own_pre_commit(
+        tmp_path=tmp_path, scratch=scratch, marker=scratch_marker, environment=environment
+    )
+    _assert_checkout_commits_refuse_however_they_are_addressed(
+        tmp_path=tmp_path,
+        work=work,
+        scratch=scratch,
+        marker=checkout_marker,
+        environment=environment,
+    )
+    _assert_scratch_push_is_refused(scratch=scratch, marker=scratch_marker, environment=environment)
+
+
+def _assert_scratch_commit_runs_its_own_hooks(
+    *, scratch: Path, marker: Path, environment: dict[str, str]
+) -> None:
+    """Through the launcher, a scratch commit succeeds and runs its own hooks."""
+    _ = (scratch / "scratch.txt").write_text("scratch\n", encoding="utf-8")
+    _ = _git("add", "scratch.txt", repo=scratch, environment=environment)
+    started = time.monotonic()
+    committed = _git("commit", "-m", "scratch", repo=scratch, environment=environment)
+    assert time.monotonic() - started < 10
+    assert committed.returncode == 0, committed.stderr
+    assert "proof_capture is read-only" not in committed.stderr
+    assert marker.read_text(encoding="utf-8").splitlines() == ["pre-commit", "commit-msg"]
+    _ = marker.unlink()
+
+
+def _assert_scratch_commit_through_the_hooks_path_runs_its_own_pre_commit(
+    *, tmp_path: Path, scratch: Path, marker: Path, environment: dict[str, str]
+) -> None:
+    """Without the launcher, the private hooks path hands a scratch repo its own hook."""
+    hooks = tmp_path / ".livespec" / "proof-capture-hooks"
+    direct = {**environment, "GIT_CONFIG_VALUE_0": str(hooks), "PATH": os.environ["PATH"]}
+    _ = (scratch / "direct.txt").write_text("direct\n", encoding="utf-8")
+    _ = _git("add", "direct.txt", repo=scratch, environment=direct)
+    committed = _git("commit", "-m", "direct", repo=scratch, environment=direct)
+    assert committed.returncode == 0, committed.stderr
+    assert "proof_capture is read-only" not in committed.stderr
+    assert marker.read_text(encoding="utf-8").splitlines() == ["pre-commit"]
+    _ = marker.unlink()
+
+
+def _assert_checkout_commits_refuse_however_they_are_addressed(
+    *,
+    tmp_path: Path,
+    work: Path,
+    scratch: Path,
+    marker: Path,
+    environment: dict[str, str],
+) -> None:
+    """The checkout refuses by cwd, -C, --git-dir, GIT_DIR and linked worktree."""
+    linked = tmp_path / "linked-worktree"
+    _ = _git("worktree", "add", "-b", "linked", str(linked), repo=work, environment=None)
+    _ = (work / "w.txt").write_text("w\n", encoding="utf-8")
+    _ = (linked / "l.txt").write_text("l\n", encoding="utf-8")
+    for repo, argv, extra in (
+        (work, ("commit", "-m", "x"), {}),
+        (scratch, ("-C", str(work), "commit", "-m", "x"), {}),
+        (scratch, ("--git-dir", str(work / ".git"), "commit", "-m", "x"), {}),
+        (
+            scratch,
+            ("--git-dir", str(work / ".git"), "--work-tree", str(work), "commit", "-m", "x"),
+            {},
+        ),
+        (scratch, ("commit", "-m", "x"), {"GIT_DIR": str(work / ".git")}),
+        (linked, ("commit", "-m", "x"), {}),
+        (scratch, ("-C", str(linked), "commit", "-m", "x"), {}),
+    ):
+        _assert_git_write_is_refused(
+            argv=argv,
+            repo=repo,
+            marker=marker,
+            environment={**environment, **extra},
+            guard=None,
+        )
+
+
+def _assert_scratch_push_is_refused(
+    *, scratch: Path, marker: Path, environment: dict[str, str]
+) -> None:
+    """A push is refused everywhere, scratch repositories included."""
+    _assert_git_write_is_refused(
+        argv=("push", "origin", "HEAD:refs/heads/scratch"),
+        repo=scratch,
+        marker=marker,
+        environment=environment,
+        guard=None,
+    )
+
+
 def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> None:
     """The protected adapter selects its private hook and launcher boundaries."""
     assert environment["GIT_CONFIG_COUNT"] == "1"
     assert environment["GIT_CONFIG_KEY_0"] == "core.hooksPath"
     assert environment["GIT_CONFIG_VALUE_0"] == _DISPATCHER_PROOF_CAPTURE_HOOKS
     assert environment["LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY"] == "1"
+    assert environment[_PROTECTED_CHECKOUT_ENV_VAR] == "/workspace"
 
 
 def _assert_empty_proof_capture_adapter_is_guarded() -> None:
@@ -153,7 +276,7 @@ def _assert_git_write_is_refused(
     repo: Path,
     marker: Path,
     environment: dict[str, str],
-    guard: Path,
+    guard: Path | None,
 ) -> None:
     """One protected Git write stops before either repository hook can start."""
     started = time.monotonic()
