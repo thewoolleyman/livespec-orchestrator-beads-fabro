@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.312.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.1...v0.312.0) (2026-11-10)
+
+
+### Features
+
+* **incident:** take a local-gate receipt on stdin so it is bounded by the authority, not argv ([5b0474c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5b0474c1d0deedec0ca5a10116fa34a0f77b7ccd))
+
+
+### Bug Fixes
+
+* bound an incident authority read by a recorded head hint, not the generation count ([2f267b7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2f267b709a676c20056b2eb7f527c3deedb853ee))
+* the incident transition writer records the head hint a bounded read starts from ([d090157](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d090157f3b53a5c41fab18d55f34461c3853aa36))
+* treat a master-CI run with no aggregate verdict as no verdict ([9965c14](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9965c14aac4f5d478f7d8349cec50f472f481628))
+
 ## [0.311.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.311.0...v0.311.1) (2026-11-09)
 
 
