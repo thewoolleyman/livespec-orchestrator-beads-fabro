@@ -114,6 +114,9 @@ SETTLE_ORDER = (RUNNING, "failed", NO_VERDICT, "passed")
 # The gate aggregate's own list of failed recipes, ended by the first line that is not one.
 FAILED_TARGETS_HEADER = re.compile(r"^Failed targets \(\d+\):\s*$", re.MULTILINE)
 FAILED_TARGET_LINE = re.compile(r"^\s+-\s+(\S+)\s*$")
+# A message whose first line is a trailer: a hyphenated, capitalised key and its colon. A
+# conventional-commit type is one lowercase word, so it never reads as one.
+TRAILER_SUBJECT = re.compile(r"^[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+:(\s|$)")
 # git commit short options whose value follows them, so a bundle ends there.
 VALUE_SHORT_OPTIONS = "mFCct"
 # Short options whose OPTIONAL value is attached (`-uno`), so a bundle ends there too.
@@ -386,6 +389,23 @@ def start(command, program):
     return 0
 
 
+def unauthored_commit(record):
+    """The commit a passed run made with no authored subject line, undone, else None.
+
+    The commit is undone with a soft reset to the head the run began from, so HEAD is where
+    the run started and the index still holds what the commit recorded.
+    """
+    start_head = record.get("start_head")
+    head = git_output("rev-parse", "HEAD")
+    if not isinstance(start_head, str) or head == start_head:
+        return None
+    subject = git_output("log", "-1", "--format=%s", head)
+    if subject and TRAILER_SUBJECT.match(subject) is None:
+        return None
+    run_git_operation("reset", "--soft", start_head)
+    return head
+
+
 def worker(run_id):
     path = state_path(runs_directory(), run_id)
     # Written here as well as by `start`, so a start that died after launching
@@ -411,20 +431,35 @@ def worker(run_id):
         write_record(path, {"state": NO_VERDICT, "signal": -result.returncode})
         return 1
     text = path.with_suffix(".output").read_text(encoding="utf-8", errors="replace")
-    terminal = {"state": "passed" if result.returncode == 0 else "failed"}
+    exit_code = result.returncode
+    subjectless = unauthored_commit(record) if exit_code == 0 else None
+    if subjectless is not None:
+        # Git ran the commit-msg hook BEFORE its empty-message check, so a hook that appends a
+        # trailer turned an empty message into a commit. It is not one: undo it.
+        text += (
+            "LIVESPEC_COMMIT_NO_AUTHORED_SUBJECT: commit " + subjectless
+            + " has no authored subject line (its first message line is a trailer or empty);"
+            + " HEAD was restored to " + str(record.get("start_head"))
+            + ", so no commit was made\n"
+        )
+        path.with_suffix(".output").write_text(text, encoding="utf-8")
+        exit_code = 1
+    terminal = {"state": "passed" if exit_code == 0 else "failed"}
     for key in ("start_head", "operation"):
         if record.get(key) is not None:
             terminal[key] = record[key]
-    terminal["exit_code"] = result.returncode
+    if subjectless is not None:
+        terminal["no_authored_subject"] = subjectless
+    terminal["exit_code"] = exit_code
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
     if terminal["hook_ran"] and hook_passed_output(text):
         terminal["hook_passed"] = True
-        refusal = git_refusal_line(text) if result.returncode != 0 else None
+        refusal = git_refusal_line(text) if exit_code != 0 else None
         if refusal is not None:
             terminal["git_refusal_line"] = refusal
-    if result.returncode != 0:
+    if exit_code != 0:
         terminal["failed_targets"] = targets_for_refusal(text)
-    if result.returncode == 0:
+    if exit_code == 0:
         terminal["head"] = git_output("rev-parse", "HEAD")
     write_record(path, terminal)
     return 0
@@ -600,6 +635,18 @@ def brief_text(run_id, path, record, state, timeout_seconds):
     output = full_output(path)
     targets = targets_for_refusal(output)
     tail = "\n".join(output.splitlines()[-BRIEF_TAIL_LINES:])
+    if record.get("no_authored_subject"):
+        return (
+            "failed targets: none\n\n"
+            + named
+            + "ended FAILED: the commit it made, " + str(record.get("no_authored_subject"))
+            + ", has no authored subject line (its first message line is a trailer or empty), so"
+            " it was undone; HEAD is back at " + str(record.get("start_head"))
+            + " and no commit was made. Redo that commit through the runner with a non-empty"
+            " authored message (a commit-msg hook appends trailers to an empty one). Its own"
+            " error lines (the tail of its recorded output at "
+            + str(path.with_suffix(".output")) + "):\n\n" + tail + "\n"
+        )
     if hook_passed(record, output):
         refusal = recorded_git_refusal(record, output)
         refusal_text = refusal if refusal is not None else "Git's refusal line was not captured"
@@ -752,7 +799,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
         path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
         if (
             recorded_state(record) != "failed"
-            or record.get("hook_ran") is not True
+            or not (record.get("hook_ran") is True or record.get("no_authored_subject"))
             or record.get("settled") is True
         ):
             brief.unlink(missing_ok=True)
@@ -788,7 +835,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
             write_record(path, {"state": NO_VERDICT})
         outcomes.append((path, record, state))
     path, record, state = min(outcomes, key=lambda one: SETTLE_ORDER.index(one[2]))
-    if state == "failed" and record.get("hook_ran") is True:
+    if state == "failed" and (record.get("hook_ran") is True or record.get("no_authored_subject")):
         write_record(path, {**record, "settled": True})
     brief.parent.mkdir(parents=True, exist_ok=True)
     brief.write_text(
