@@ -22,6 +22,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -283,3 +284,96 @@ def test_a_failed_fix_commit_run_reenters_fix_with_a_brief_naming_it(tmp_path: P
     assert brief.startswith("failed\n")
     assert run_id in brief
     assert "aborted the in-progress merge" in brief
+
+
+_WAITING_HOOK = (
+    "#!/bin/sh\n"
+    "printf 'lefthook v1.13.6  hook: pre-commit\\n'\n"
+    "touch '{started}'\n"
+    "while ! test -f '{release}'; do sleep 0.05; done\n"
+    "exit 1\n"
+)
+
+
+def _wait_for(path: Path) -> None:
+    deadline = time.monotonic() + 30
+    while not path.exists():
+        assert time.monotonic() < deadline, f"{path} never appeared"
+        time.sleep(0.05)
+
+
+def _integrate_clean_merge(repo: Path) -> None:
+    """Start a conflict-free `--no-commit --no-ff` merge of a branch that adds one file."""
+    _do(repo, "checkout", "--quiet", "-b", "other", "base")
+    _write(repo, "d.txt", "other\n")
+    _commit(repo, "other")
+    _do(repo, "checkout", "--quiet", "work")
+    _do(repo, "merge", "--no-commit", "--no-ff", "other")
+
+
+def _engine_checkpoint(repo: Path, *, merge_state: str) -> None:
+    """The engine's per-node checkpoint: the merged index as a single-parent commit.
+
+    It is made while the commit run is in flight and moves HEAD past the run's
+    starting head; `merge_state` says whether the merge's own state files survive.
+    """
+    _do(repo, "add", "-A")
+    checkpoint = _git(repo, "commit-tree", _git(repo, "write-tree"), "-p", "HEAD", "-m", "cp")
+    _do(repo, "update-ref", "HEAD", checkpoint)
+    if merge_state == "cleared":
+        for name in ("MERGE_HEAD", "MERGE_MSG", "MERGE_MODE"):
+            (repo / ".git" / name).unlink(missing_ok=True)
+    else:
+        assert "MERGE_HEAD" in _in_progress(repo)
+
+
+def _settle_once_head_is_restored(
+    repo: Path, plugins: Path, *, started_from: str, release: Path
+) -> str:
+    """Run the fix settle, release the held commit hook once HEAD is back, return stderr."""
+    environment = {**_clean_environment(), "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)}
+    settling = subprocess.Popen(
+        ["sh", "-c", _node_script(node="fix_commit_settle")],
+        cwd=repo,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=environment,
+    )
+    deadline = time.monotonic() + 30
+    while _git(repo, "rev-parse", "HEAD") != started_from:
+        assert time.monotonic() < deadline, "settle never restored the starting head"
+        time.sleep(0.05)
+    _ = release.write_text("go\n", encoding="utf-8")
+    return settling.communicate(timeout=60)[1]
+
+
+@pytest.mark.parametrize("merge_state", ["kept", "cleared"])
+@pytest.mark.parametrize("integration", ["conflicted", "clean"])
+def test_an_in_flight_merge_commit_is_aborted_after_an_engine_checkpoint_moved_head(
+    tmp_path: Path, integration: str, merge_state: str
+) -> None:
+    repo = _repo(tmp_path)
+    plugins = _plugins(tmp_path)
+    started_from = _git(repo, "rev-parse", "HEAD")
+    if integration == "conflicted":
+        _integrate(repo, "merge")
+    else:
+        _integrate_clean_merge(repo)
+    started, release = tmp_path / "hook-started", tmp_path / "hook-release"
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    _ = hook.write_text(_WAITING_HOOK.format(started=started, release=release), encoding="utf-8")
+    hook.chmod(0o755)
+    _ = _runner(repo, plugins, "start", "--", "git", "commit", "--no-edit")
+    _wait_for(started)
+    _engine_checkpoint(repo, merge_state=merge_state)
+
+    stderr = _settle_once_head_is_restored(
+        repo, plugins, started_from=started_from, release=release
+    )
+
+    assert "aborted the in-progress merge" in stderr
+    assert _in_progress(repo) == []
+    assert _git(repo, "rev-parse", "HEAD") == started_from
+    assert _git(repo, "write-tree") == _git(repo, "rev-parse", "HEAD^{tree}")
+    assert _git(repo, "status", "--porcelain", "--untracked-files=no") == ""

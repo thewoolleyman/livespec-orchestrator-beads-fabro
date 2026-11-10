@@ -312,6 +312,7 @@ def test_a_start_launches_the_commit_unchanged_in_its_own_session_and_prints_its
         "command": command,
         "root": str(tmp_path),
         "start_head": "0123abc",
+        "operation": None,
     }
     assert fake.popens[0][1:] == ["/runner.py", "worker", run_id]
     assert (tmp_path / "runs" / f"{run_id}.pid").read_text(encoding="utf-8") == "4242\n"
@@ -518,6 +519,31 @@ def test_the_worker_records_the_commit_s_own_exit_status_and_head(tmp_path: Path
         "failed_targets": ["check-types"],
     }
     assert "check-types" in path.with_suffix(".output").read_text(encoding="utf-8")
+
+
+def test_the_worker_carries_the_starting_head_and_operation_into_the_verdict(
+    tmp_path: Path,
+) -> None:
+    """Scenario 176: a failed merge commit run can be undone from its own record."""
+    program = _program(tmp_path, _FakeSubprocess(returncode=1))
+    path = _record(
+        tmp_path,
+        _RUN_ID,
+        {
+            "state": "running",
+            "command": ["git", "commit"],
+            "start_head": "0123abc",
+            "operation": "merge",
+        },
+        1,
+    )
+
+    _ = program["worker"](_RUN_ID)
+
+    verdict = json.loads(path.read_text(encoding="utf-8"))
+    assert verdict["state"] == "failed"
+    assert verdict["start_head"] == "0123abc"
+    assert verdict["operation"] == "merge"
 
 
 def test_the_worker_keeps_the_agent_stage_variable_out_of_the_commit_hook_s_processes(

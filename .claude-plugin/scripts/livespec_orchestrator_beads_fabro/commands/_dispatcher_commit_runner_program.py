@@ -367,6 +367,7 @@ def start(command, program):
             "command": command,
             "root": root,
             "start_head": git_output("rev-parse", "HEAD"),
+            "operation": operation_in_progress(),
         },
     )
     with path.with_suffix(".launch.log").open("w", encoding="utf-8") as log:
@@ -410,6 +411,9 @@ def worker(run_id):
         return 1
     text = path.with_suffix(".output").read_text(encoding="utf-8", errors="replace")
     terminal = {"state": "passed" if result.returncode == 0 else "failed"}
+    for key in ("start_head", "operation"):
+        if record.get(key) is not None:
+            terminal[key] = record[key]
     terminal["exit_code"] = result.returncode
     terminal["hook_ran"] = HOOK_BANNER.search(text) is not None
     if terminal["hook_ran"] and hook_passed_output(text):
@@ -662,13 +666,19 @@ def restore_starting_head(path, record):
     fresh = read_record(path)
     if fresh is None or recorded_state(fresh) != RUNNING or not commit_in_flight(path):
         return
+    if operation_in_progress() == "merge":
+        # `git reset --soft` refuses mid-merge, and any reset would delete MERGE_HEAD
+        # before the settle could see the merge: move only the branch tip back.
+        git_output("update-ref", "HEAD", start_head)
+        return
     git_output("reset", "--soft", start_head)
 
 
 def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
     """Wait live runs and brief the latest terminal hook refusal exactly once.
 
-    Returns the settled state of the turn's commit run, or None when none was recorded.
+    Returns the settled state of the turn's commit run and the path of its record, or
+    (None, None) when none was recorded.
     """
     directory = runs_directory()
     brief = Path(brief_file)
@@ -684,7 +694,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
         if not records:
             brief.unlink(missing_ok=True)
             reset_running_waits(directory, stage)
-            return None
+            return None, None
         path, record = max(records, key=lambda item: item[0].stat().st_mtime_ns)
         if (
             recorded_state(record) != "failed"
@@ -693,7 +703,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
         ):
             brief.unlink(missing_ok=True)
             reset_running_waits(directory, stage)
-            return recorded_state(record)
+            return recorded_state(record), path
         write_record(path, {**record, "settled": True})
         brief.parent.mkdir(parents=True, exist_ok=True)
         brief.write_text(
@@ -702,7 +712,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
         )
         print(json.dumps({"settled": [{"run_id": path.stem, "state": "failed"}]}, sort_keys=True))
         reset_running_waits(directory, stage)
-        return "failed"
+        return "failed", path
     if restore_head_before_wait:
         for path in live:
             record = read_record(path)
@@ -732,7 +742,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
     settled_runs = [{"run_id": one.stem, "state": status} for one, _, status in outcomes]
     print(json.dumps({"settled": settled_runs}, sort_keys=True))
     reset_running_waits(directory, stage)
-    return state
+    return state, path
 
 
 def operation_in_progress():
@@ -752,13 +762,39 @@ def run_git_operation(*argv):
     ).returncode == 0
 
 
-def end_operation(state, stage):
+def undo_flattened_merge(path):
+    """Put the tree back on the head a failed merge commit run began from.
+
+    The engine's per-node checkpoint can commit the merge's index as a single-parent
+    commit, and may delete the merge's state files while doing it, so a failed run that
+    began mid-merge is undone from its own record rather than from MERGE_HEAD: HEAD, the
+    index and every tracked path return to the starting head. Once per run, so a later
+    settle never discards a later turn's work. Returns True when anything had to move.
+    """
+    record = read_record(path) if path is not None else None
+    start_head = (record or {}).get("start_head")
+    if record is None or not isinstance(start_head, str):
+        return False
+    if record.get("operation") != "merge" or record.get("operation_ended") is True:
+        return False
+    write_record(path, {**record, "operation_ended": True})
+    moved = (
+        git_output("rev-parse", "HEAD") != start_head
+        or not run_git_operation("diff", "--quiet", start_head)
+        or not run_git_operation("diff", "--cached", "--quiet", start_head)
+    )
+    return moved and run_git_operation("reset", "--hard", start_head)
+
+
+def end_operation(state, stage, path=None):
     """Leave no merge or rebase in progress once the turn's commit run has settled.
 
     A FAILED run aborts the operation, which puts HEAD back where the operation began; a
     PASSED run mid-rebase finishes the rebase instead, because the settled commit sits on
     the rebase's detached HEAD and an abort would discard it. Any other state, and a passed
-    run with a merge in progress, leaves the tree alone. Returns the journal lines.
+    run with a merge in progress, leaves the tree alone. A failed merge commit run also has
+    its head, index and tracked files put back on the head it began from. Returns the
+    journal lines.
     """
     if state not in ("failed", "passed"):
         return []
@@ -783,13 +819,18 @@ def end_operation(state, stage):
             + " the in-progress " + operation + " after the " + state
             + " commit run; HEAD is " + git_output("rev-parse", "HEAD")
         )
+    if state == "failed" and undo_flattened_merge(path) and not lines:
+        lines.append(
+            "LIVESPEC_COMMIT_SETTLE_OPERATION_ABORTED: " + named + ": aborted the in-progress"
+            + " merge after the failed commit run; HEAD is " + git_output("rev-parse", "HEAD")
+        )
     return lines
 
 
 def settle(timeout_seconds, brief_file, restore_head_before_wait=False, stage=None):
     """Settle the turn's commit runs, then hand the next node a tree with no operation open."""
-    state = settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage)
-    lines = end_operation(state, stage)
+    state, path = settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage)
+    lines = end_operation(state, stage, path)
     for line in lines:
         print(line, file=sys.stderr)
     brief = Path(brief_file)
