@@ -671,6 +671,22 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   twin — a twin would be a second account of one merge, and only the copy the
   sandbox runs decides anything. This raises NO ceiling; it makes the ceiling
   the overlay already declared the effective one.
+- `_dispatcher_definition_of_done_origin_spec.py` — the H2 headings the
+  Definition-of-Done wall resolves a `References:` line against, read from the
+  target repository's `origin/master` and never from the primary checkout's
+  working tree (`bd-ib-ahtcng`). A primary is auto-pulled, so it lags after a merge
+  burst and refused headings a merged revise had already added. Three properties
+  an editor must not invert. The read FETCHES first, then reads the tree out of
+  the remote-tracking ref with `git ls-tree` and `git show`; the filing display
+  and the dispatch-time wall both reach it through `definition_of_done_findings`,
+  so they judge one revision. An unreadable remote is an `OriginSpecUnreadable`
+  VALUE and the item is REFUSED naming `origin/master` — it is never an empty set
+  that skips the check and never a fallback to the working tree, which is the
+  stale read this module exists to remove. And ambient `GIT_DIR`-class selectors
+  are scrubbed from the child, so a caller running under a git hook reads the
+  repository at `cwd`. The suite's autouse `_hermetic_origin_spec_headings`
+  answers a directory with no `.git` of its own from its `SPECIFICATION/`
+  working tree; a directory that IS a repository takes the real read.
 - `_dispatcher_default_branch_fetch.py` — the DISPATCH BASE every dispatch
   fetches into its sandbox clone, so `origin/<default_branch>` exists for the
   `implementation_diff` node and for every check that diffs the default branch

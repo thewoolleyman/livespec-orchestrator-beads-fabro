@@ -208,11 +208,15 @@ def _world(*, tmp_path: Path) -> tuple[Path, Path, Path, str]:
     _ = workflow.write_text(_WORKFLOW_TOML, encoding="utf-8")
     _ = (repo / "graph.toml").write_text(_GRAPH, encoding="utf-8")
     (repo / "dead-run.txt").write_text("published by dead run\n", encoding="utf-8")
+    (repo / "SPECIFICATION").mkdir()
+    _ = (repo / "SPECIFICATION" / "scenarios.md").write_text(
+        "# Scenarios\n\n## Scenario 144\n\nSome prose.\n", encoding="utf-8"
+    )
     _ = _git("add", ".", cwd=repo)
     _ = _git("commit", "-m", "dead publish", cwd=repo)
     head = _git("rev-parse", "HEAD", cwd=repo)
     _ = _git("remote", "add", "origin", str(origin), cwd=repo)
-    _ = _git("push", "origin", f"HEAD:refs/heads/{branch}", cwd=repo)
+    _ = _git("push", "origin", f"HEAD:refs/heads/{branch}", "HEAD:refs/heads/master", cwd=repo)
     return origin, repo, workflow, head
 
 

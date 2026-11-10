@@ -47,8 +47,15 @@ from typing import Any, Protocol
 
 import pytest
 from hypothesis import settings
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_definition_of_done_findings as _dod_findings,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    OriginSpecUnreadable,
+    origin_spec_h2_headings,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
     FabroHttpPort,
@@ -987,6 +994,44 @@ def _hermetic_fabro_bin(monkeypatch: pytest.MonkeyPatch, _fabro_stub_bin: str) -
     paths override it explicitly (an explicit `--fabro-bin`, or `delenv`).
     """
     monkeypatch.setenv("LIVESPEC_FABRO_BIN", _fabro_stub_bin)
+
+
+class _EveryHeading(frozenset[str]):
+    """A heading set that carries every heading, for a fixture with no spec tree."""
+
+    def __contains__(self, item: object) -> bool:
+        return True
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_origin_spec_headings(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give a throwaway directory with no git repository of its own a spec tree to read.
+
+    The Definition-of-Done wall resolves References headings from the target
+    repository's `origin/master` (work-item bd-ib-ahtcng), which a test's bare
+    `tmp_path` fixture directory has neither of: it is a plain directory under
+    the temp root's shared worktree, not a clone with an origin. The honest
+    stand-in for such a directory is its own `SPECIFICATION/` working tree, which
+    is the only spec tree the fixture ever built. A fixture that never built one
+    has nothing to grade a reference against, so every reference resolves rather
+    than a refusal the test is not about being invented. A directory that IS a git
+    repository (it carries its own `.git`) takes the real remote read, so a test
+    that wants origin behavior builds an origin and gets exactly that.
+    """
+
+    def _read(*, repo: Path) -> frozenset[str] | OriginSpecUnreadable:
+        if (repo / ".git").exists():
+            return origin_spec_h2_headings(repo=repo)
+        if not (repo / "SPECIFICATION").is_dir():
+            return _EveryHeading()
+        headings: set[str] = set()
+        for path in sorted((repo / "SPECIFICATION").glob("*.md")):
+            for line in path.read_text(encoding="utf-8").splitlines():
+                if line.startswith("## "):
+                    headings.add(f"## {line[3:].strip()}")
+        return frozenset(headings)
+
+    monkeypatch.setattr(_dod_findings, "origin_spec_h2_headings", _read)
 
 
 @pytest.fixture(scope="session", autouse=True)

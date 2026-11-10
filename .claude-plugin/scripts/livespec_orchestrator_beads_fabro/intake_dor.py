@@ -70,9 +70,9 @@ filer who read the display finds the same sentence on the item.
 
 WHY THE GRADE IS SKIPPED WHEN THE CONNECTION DESCRIPTOR CARRIES NO `repo_root`.
 Both halves of the wall are graded against the governed spec tree, which lives
-in the repository: with no repository there is no tree, and an empty heading set
-is the absence of evidence rather than evidence that a reference is wrong (the
-reasoning `_dispatcher_definition_of_done_findings` records for the same read).
+in the repository: with no repository there is no tree to read `origin/master`
+from (the revision `_dispatcher_definition_of_done_findings` resolves References
+against), and so nothing to grade.
 The one verdict where that absence could matter is the `ready` approval, and
 that branch already raises `TypeError` on it, so nothing can reach `ready`
 ungraded.

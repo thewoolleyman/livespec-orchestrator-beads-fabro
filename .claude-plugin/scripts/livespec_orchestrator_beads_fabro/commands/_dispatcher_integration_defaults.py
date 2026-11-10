@@ -62,6 +62,9 @@ __all__: list[str] = [
     "MASTER_CI_WORKFLOW_DEFAULT",
     "MERGE_MODES",
     "MERGE_MODE_DEFAULT",
+    "ORIGIN_DEFAULT_FETCH_REFSPEC",
+    "ORIGIN_DEFAULT_REMOTE_REF",
+    "ORIGIN_DEFAULT_REVISION",
     "RELEASE_REPOSITORY_MASTER_REF",
     "RELEASE_REPOSITORY_RELEASE_REF",
     "RELEASE_REPOSITORY_URL",
@@ -249,6 +252,16 @@ FLEET_CORE_REPO_URL = "https://github.com/thewoolleyman/livespec.git"
 RELEASE_REPOSITORY_URL = "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git"
 RELEASE_REPOSITORY_RELEASE_REF = "refs/heads/release"
 RELEASE_REPOSITORY_MASTER_REF = "refs/heads/master"
+
+# The remote revision of a GOVERNED repository's default branch that the
+# Definition-of-Done wall resolves References headings against (bd-ib-ahtcng), in
+# the three spellings its git steps need: the name an operator and a finding use,
+# the remote-tracking ref the tree is read out of, and the refspec that brings
+# that ref up to date. They live here for the reason the release refs above do --
+# each is a bare default-branch name used AS A REF.
+ORIGIN_DEFAULT_REVISION = "origin/master"
+ORIGIN_DEFAULT_REMOTE_REF = "refs/remotes/origin/master"
+ORIGIN_DEFAULT_FETCH_REFSPEC = "+refs/heads/master:refs/remotes/origin/master"
 
 # The explicit no-op VALUE a prepare-toolchain premise resolves to for a
 # repository that carries no such premise. Never an absent key -- see the module
