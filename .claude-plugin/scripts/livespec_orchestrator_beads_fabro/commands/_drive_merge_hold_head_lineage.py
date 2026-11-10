@@ -24,7 +24,7 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
-__all__: list[str] = ["message_only_tree"]
+__all__: list[str] = ["HeadComparison", "compare_heads"]
 
 _COMMIT_ENDPOINT = "/repos/{owner}/{repo}/git/commits"
 _COMMIT_TIMEOUT_SECONDS = 60.0
@@ -36,21 +36,37 @@ class _Commit:
     parents: tuple[str, ...]
 
 
-def message_only_tree(
-    *, repo: Path, proved: str, current: str, runner: CommandRunner
-) -> str | None:
-    """The tree the two heads share when `current` differs from `proved` only in its message.
+@dataclass(frozen=True, kw_only=True)
+class HeadComparison:
+    """What comparing the proved head with the current head showed.
 
-    `None` means the move is not shown to be message-only: a commit could not be
-    read, or the two do not share one tree on one sole parent.
+    `tree` is set when the move is message-only. `failed` is set when a
+    measurement REFUSED the move and names it. Neither is set when the move is
+    not shown to be message-only and no measurement can be named.
     """
+
+    tree: str | None = None
+    failed: str | None = None
+
+
+def compare_heads(
+    *, repo: Path, proved: str, current: str, runner: CommandRunner
+) -> HeadComparison:
+    """Compare `current` with `proved`, reading both commits through the forge."""
     proved_commit = _read_commit(repo=repo, sha=proved, runner=runner)
     current_commit = _read_commit(repo=repo, sha=current, runner=runner)
     if proved_commit is None or current_commit is None:
-        return None
+        return HeadComparison()
+    if proved_commit.tree != current_commit.tree:
+        return HeadComparison(
+            failed=(
+                f"the tree comparison failed: {proved} carries tree {proved_commit.tree} "
+                f"but {current} carries tree {current_commit.tree}"
+            )
+        )
     if len(proved_commit.parents) != 1 or proved_commit.parents != current_commit.parents:
-        return None
-    return proved_commit.tree if proved_commit.tree == current_commit.tree else None
+        return HeadComparison()
+    return HeadComparison(tree=proved_commit.tree)
 
 
 def _read_commit(*, repo: Path, sha: str, runner: CommandRunner) -> _Commit | None:
