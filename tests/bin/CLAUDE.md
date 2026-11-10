@@ -75,17 +75,19 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   drive and Dispatcher routes, read a packaged asset and spawn a
   `scripts/bin/` helper. No in-process `main()` can stand in: the
   question is what a second process sees after its own source tree is
-  gone. Listed in `subprocess_spawn_allowlist`. Its bytes are FROZEN
-  across its Red->Green pair — cover anything it leaves unexercised in
-  the harness file below rather than editing it.
-- `test_payload_retention_harness.py` — coverage for the frozen
-  regression's own scaffolding, which this repo measures like any other
-  `tests/` file: `_wait_for`'s early-child-exit and bounded-timeout
-  arms, and the test body's `finally` reaping a wedged probe. It loads
-  the frozen module BY PATH and drives those arms against real
-  disposable children, so the frozen file never has to change. It
-  asserts nothing about `_payload.py` — harness robustness, not product
-  Red. Listed in `subprocess_spawn_allowlist`.
+  gone. Listed in `subprocess_spawn_allowlist`. The startup
+  handshake is a pipe the child writes one byte to and the parent
+  blocks reading (the child's stdin carries the release), so no polling
+  loop decides which lines run; the child bounds itself with
+  `faulthandler`. Cover anything it leaves unexercised in the harness
+  file below.
+- `test_payload_retention_harness.py` — coverage for the regression's
+  own scaffolding, which this repository measures like any other
+  `tests/` file: `_wait_for_ready`'s early-child-exit arm, and the test
+  body's `finally` reaping a wedged probe. It loads the regression
+  module BY PATH and drives those arms against real disposable children.
+  It asserts nothing about `_payload.py` — harness robustness, not
+  product Red. Listed in `subprocess_spawn_allowlist`.
 - `test_payload_concurrent_release_isolation.py` — two concurrent
   invocations launched from two distinguishable installs that carry
   the SAME manifest version, with the older install deleted between
@@ -333,7 +335,7 @@ Tests for the shebang wrappers under `.claude-plugin/scripts/bin/`.
   one of them resolving from an environment that carries a record. Loads
   the frozen module BY PATH and drives that arm, exactly as
   `test_payload_retention_harness.py` does for the frozen retention
-  regression's `_wait_for`. Asserts nothing about `_payload.py` — harness
+  regression's `_wait_for_ready`. Asserts nothing about `_payload.py` — harness
   robustness, not product Red, and not evidence for any assertion.
 - `test_payload_public_route_exact_outcomes.py` — the EXACT-outcome
   counterpart of the file above, which accepts any `int` helper exit code

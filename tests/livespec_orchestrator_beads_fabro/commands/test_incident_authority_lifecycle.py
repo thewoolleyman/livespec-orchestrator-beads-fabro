@@ -9,11 +9,13 @@ view as the only fake effect.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
+from livespec_orchestrator_beads_fabro import incident_regression_recovery as recovery_module
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, IssueDraft
 from livespec_orchestrator_beads_fabro._incident_authority_payload import (
     attempt_record,
@@ -24,6 +26,7 @@ from livespec_orchestrator_beads_fabro._incident_genesis import decode_genesis_r
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
     ClaimStamp,
+    claim_stamp_from_record,
     claim_stamp_metadata,
     create_claim_token,
 )
@@ -444,6 +447,320 @@ def test_reopen_regression_reopens_the_same_item_into_a_fenced_reverting_generat
     item = tenant.client.show_issue(issue_id=ITEM)
     assert (item["status"], item["assignee"]) == ("active", PRINCIPAL)
     assert _recovery_kinds(tenant.client) == ["recovery-request"]
+
+
+class _Killed(BaseException):
+    """The client's ceiling killing the call between the chain write and the claim move."""
+
+
+def _interrupted_reopen(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> tuple[IncidentAttempt, IncidentAttempt, IncidentAttempt]:
+    """A reopen killed after it recorded its `reverting` generation, before the claim moved."""
+    observed, active = _live_repayment(tenant)
+    return observed, active, _interrupt(tenant, monkeypatch, active, observed)
+
+
+def _interrupt(
+    tenant: _Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+    active: IncidentAttempt,
+    observed: IncidentAttempt,
+) -> IncidentAttempt:
+    """Kill a reopen of `active` at its claim move; return the generation it recorded."""
+    real_change_claim = recovery_module.change_claim
+
+    def killed(**_: object) -> NoReturn:
+        raise _Killed
+
+    monkeypatch.setattr(recovery_module, "change_claim", killed)
+    with pytest.raises(_Killed):
+        _ = _reopen(tenant, active, observed, _finding())
+    monkeypatch.setattr(recovery_module, "change_claim", real_change_claim)
+    # The chain holds the next generation; the item still carries the factory's claim.
+    reverting = _chain_head(tenant)
+    assert (reverting.phase, reverting.generation) == ("reverting", active.generation + 1)
+    item = tenant.client.show_issue(issue_id=ITEM)
+    assert (item["status"], item["assignee"]) == ("active", "fabro")
+    stamp = claim_stamp_from_record(record=item)
+    assert stamp is not None and stamp.dispatch_id == "01DISPATCH"
+    claim = item["metadata"]["incident_claim"]
+    assert (claim["operation_id"], claim["generation"]) == ("operation-1", 1)
+    return reverting
+
+
+def _chain_head(state: _Tenant) -> IncidentAttempt:
+    """The generation the one recovery request names, read as the chain's current head."""
+    requests = [
+        json.loads(row["text"][len(RECOVERY_MARKER) :])
+        for row in state.client.list_comments(issue_id=ITEM)
+        if row["text"].startswith(RECOVERY_MARKER)
+    ]
+    assert len(requests) == 1
+    operation_id = requests[0]["operation_id"]
+    reading = read_incident_authority(
+        client=state.client,
+        repository=REPOSITORY,
+        item_id=ITEM,
+        query={
+            "attempt_id": operation_id.removesuffix("#reverting"),
+            "phase": "reverting",
+            "operation_id": operation_id,
+            "generation": requests[0]["generation"],
+            "owner": PRINCIPAL,
+        },
+    )
+    assert isinstance(reading, IncidentReading) and reading.is_current
+    return reading.attempt
+
+
+def _claim_moves(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Spy on the reopen's claim move, recording each attempt's outcome."""
+    real_change_claim = recovery_module.change_claim
+    outcomes: list[str] = []
+
+    def spy(**kwargs: Any) -> Any:
+        result = real_change_claim(**kwargs)
+        outcomes.append(result.outcome)
+        return result
+
+    monkeypatch.setattr(recovery_module, "change_claim", spy)
+    return outcomes
+
+
+def _chain_and_item(state: _Tenant) -> tuple[object, ...]:
+    """Every write a reopen can make: chain tokens, retained records and the item row."""
+    return (
+        state.client.no_history_issue_ids(),
+        state.client.list_comments(issue_id=ITEM),
+        state.client.show_issue(issue_id=ITEM),
+    )
+
+
+def test_an_interrupted_reopen_retried_with_the_same_identity_moves_the_claim_exactly_once(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (1): generation recorded, claim not moved; the same retry completes it."""
+    observed, active, reverting = _interrupted_reopen(tenant, monkeypatch)
+    tokens = tenant.client.no_history_issue_ids()
+    moves = _claim_moves(monkeypatch)
+    retried = _verified(_reopen(tenant, active, observed, _finding()))
+    # The retry recovers the recorded generation, still the chain's head.
+    assert retried == reverting
+    assert _chain_head(tenant) == reverting
+    assert _recovery_kinds(tenant.client) == ["recovery-request"]
+    # The claim moved once, from the factory's stamp, to the recovery's own holder.
+    assert moves == ["applied"]
+    item = tenant.client.show_issue(issue_id=ITEM)
+    # The one record the retry minted is the moved claim's successor token, not a generation.
+    minted = set(tenant.client.no_history_issue_ids()) - set(tokens)
+    assert minted == {item["metadata"][CLAIM_TOKEN_METADATA_KEY]}
+    assert (item["status"], item["assignee"]) == ("active", PRINCIPAL)
+    claim = item["metadata"]["incident_claim"]
+    assert (claim["operation_id"], claim["generation"], claim["owner"]) == (
+        reverting.operation_id,
+        reverting.generation,
+        PRINCIPAL,
+    )
+    assert claim["prior_claim"]["dispatch_claim"]["dispatch_id"] == "01DISPATCH"
+    holder = claim_stamp_from_record(record=item)
+    assert holder is not None and holder.dispatch_id == f"incident:{reverting.operation_id}"
+    # A further delivery finds the claim already held and moves nothing.
+    assert _verified(_reopen(tenant, active, observed, _finding())) == reverting
+    assert moves == ["applied"]
+
+
+def test_a_reopen_retried_after_it_completed_returns_the_recorded_result_and_writes_nothing(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (2): the same identity after a completed reopen recovers its reply."""
+    observed, active = _live_repayment(tenant)
+    first = _reopen(tenant, active, observed, _finding())
+    reverting = _verified(first)
+    before = _chain_and_item(tenant)
+    moves = _claim_moves(monkeypatch)
+    again = _reopen(tenant, active, observed, _finding())
+    assert _verified(again) == reverting
+    assert again == first
+    assert (moves, _chain_and_item(tenant)) == ([], before)
+
+
+@pytest.mark.parametrize(
+    ("finding", "principal"),
+    [
+        (_finding(run_id="master-run-10"), PRINCIPAL),
+        (_finding(attributed_commit="0" * 40), PRINCIPAL),
+        (_finding(), "operator:mallory"),
+    ],
+    ids=["another-finding", "unattributed-finding", "another-principal"],
+)
+def test_a_reopen_with_a_different_identity_against_a_moved_chain_is_still_refused_stale(
+    *, tenant: _Tenant, monkeypatch: pytest.MonkeyPatch, finding: str, principal: str
+) -> None:
+    """bd-ib-hyho7h (3): only the reopen's OWN recorded generation is recovered."""
+    observed, active, _ = _interrupted_reopen(tenant, monkeypatch)
+    before = _chain_and_item(tenant)
+    moves = _claim_moves(monkeypatch)
+    refused = tenant.cli(
+        "reopen-regression",
+        active,
+        "--attributed-json",
+        _json(attempt_record(attempt=observed)),
+        "--finding-json",
+        finding,
+        "--principal",
+        principal,
+    )
+    assert _refused(refused) == f"incident-reopen-stale-observation: {ITEM}"
+    # Nothing moved: no generation, no record, and the item keeps the factory's claim.
+    assert (moves, _chain_and_item(tenant)) == ([], before)
+
+
+def _acceptance_landing_the_attributed_commit(
+    state: _Tenant, active: IncidentAttempt
+) -> IncidentAttempt:
+    """A pr-bound repayment-acceptance that also lands the attributed master commit."""
+    reading = read_incident_authority(
+        client=state.client,
+        repository=REPOSITORY,
+        item_id=ITEM,
+        query={key: getattr(active, key) for key in _IDENTITY},
+    )
+    assert isinstance(reading, IncidentReading)
+    carrier = asdict(active.carrier) if active.carrier is not None else {}
+    return _successor(
+        state.client,
+        reading,
+        generation=active.generation + 1,
+        operation_id=f"{active.attempt_id}#repayment-acceptance",
+        phase="repayment-acceptance",
+        head="9" * 40,
+        pr_number=12,
+        landed_commits=[MASTER_HEAD],
+        landed_trees=["7" * 40],
+        carrier=carrier | dict(state="pr-bound", remote_head="9" * 40),
+    ).attempt
+
+
+def test_a_reopen_naming_another_eligible_attributed_attempt_is_refused_stale_by_its_bytes(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (3): an identical lookup identity with other carrier bytes is not OWN."""
+    observed, active = _live_repayment(tenant)
+    acceptance = _acceptance_landing_the_attributed_commit(tenant, active)
+    _ = _interrupt(tenant, monkeypatch, acceptance, observed)
+    before = _chain_and_item(tenant)
+    # The same finding and principal attributed to the acceptance plans the same attempt,
+    # operation, generation and owner as the recorded reopen, with other carrier bytes.
+    refused = _reopen(tenant, acceptance, acceptance, _finding())
+    assert _refused(refused) == f"incident-reopen-stale-observation: {ITEM}"
+    assert _chain_and_item(tenant) == before
+
+
+_CONFLICT = _json(
+    dict(
+        receipt="rollback-conflict:action-9:owner:operator:alice:head:" + BROKEN_MASTER,
+        release_condition="controller-release:action-9",
+    )
+)
+
+
+def test_a_rollback_conflict_on_a_reopen_whose_claim_never_moved_refuses_without_writing(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (4): the chain never reaches rollback-conflict while the item is unblocked."""
+    observed, active, reverting = _interrupted_reopen(tenant, monkeypatch)
+    before = _chain_and_item(tenant)
+    conflict = ("record-rollback-conflict", reverting, "--rollback-conflict-json", _CONFLICT)
+    assert _refused(tenant.cli(*conflict)) == (
+        f"incident-rollback-conflict-claim-not-held: {reverting.operation_id}"
+    )
+    assert _chain_and_item(tenant) == before
+    assert _chain_head(tenant) == reverting
+    # The caller retries the reopen, which completes, and then the conflict blocks the item.
+    assert _verified(_reopen(tenant, active, observed, _finding())) == reverting
+    first = tenant.cli(*conflict)
+    blocked = _verified(first)
+    assert (blocked.phase, tenant.client.show_issue(issue_id=ITEM)["status"]) == (
+        "rollback-conflict",
+        "blocked",
+    )
+    # An exact retry of the completed conflict still recovers its recorded reply.
+    after = _chain_and_item(tenant)
+    assert tenant.cli(*conflict) == first
+    assert _chain_and_item(tenant) == after
+
+
+def _race(monkeypatch: pytest.MonkeyPatch, *, rival: Callable[[], None]) -> list[str]:
+    """Run `rival` to completion the moment the reopen enters its claim move, once.
+
+    The reopen has already decided (claim not held, generation current) when the
+    rival runs, so its write lands after another writer finished. Returns every
+    claim-move outcome of the reopen verb, the rival's included, in order.
+    """
+    real_change_claim = recovery_module.change_claim
+    outcomes: list[str] = []
+    raced: list[bool] = []
+
+    def racing(**kwargs: Any) -> Any:
+        if not raced:
+            raced.append(True)
+            rival()
+        result = real_change_claim(**kwargs)
+        outcomes.append(result.outcome)
+        return result
+
+    monkeypatch.setattr(recovery_module, "change_claim", racing)
+    return outcomes
+
+
+def test_two_concurrent_retries_of_an_interrupted_reopen_move_the_claim_exactly_once(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (5): the retry that loses the race returns the recorded result."""
+    observed, active, reverting = _interrupted_reopen(tenant, monkeypatch)
+    tokens = tenant.client.no_history_issue_ids()
+    rival: dict[str, Any] = {}
+
+    def winner() -> None:
+        rival["reply"] = _reopen(tenant, active, observed, _finding())
+        rival["item"] = tenant.client.show_issue(issue_id=ITEM)
+
+    outcomes = _race(monkeypatch, rival=winner)
+    loser = _reopen(tenant, active, observed, _finding())
+    assert _verified(rival["reply"]) == reverting
+    assert _verified(loser) == reverting
+    assert outcomes == ["applied", "claim-changed"]
+    item = tenant.client.show_issue(issue_id=ITEM)
+    assert item == rival["item"]
+    minted = set(tenant.client.no_history_issue_ids()) - set(tokens)
+    assert minted == {item["metadata"][CLAIM_TOKEN_METADATA_KEY]}
+
+
+def test_a_slow_reopen_retry_never_returns_an_item_blocked_by_a_later_rollback_conflict(
+    tenant: _Tenant, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """bd-ib-hyho7h (5): a rollback-conflict between two retries keeps the item blocked."""
+    observed, active, reverting = _interrupted_reopen(tenant, monkeypatch)
+    rival: dict[str, Any] = {}
+
+    def winner_then_conflict() -> None:
+        _ = _verified(_reopen(tenant, active, observed, _finding()))
+        conflict = ("record-rollback-conflict", reverting, "--rollback-conflict-json", _CONFLICT)
+        rival["blocked"] = _verified(tenant.cli(*conflict))
+        rival["item"] = tenant.client.show_issue(issue_id=ITEM)
+
+    outcomes = _race(monkeypatch, rival=winner_then_conflict)
+    slow = _reopen(tenant, active, observed, _finding())
+    assert _refused(slow) == "incident-reopen-lifecycle-refused: claim-changed"
+    assert outcomes == ["applied", "claim-changed"]
+    item = tenant.client.show_issue(issue_id=ITEM)
+    assert item == rival["item"]
+    assert (item["status"], item["metadata"]["incident_claim"]["generation"]) == (
+        "blocked",
+        rival["blocked"].generation,
+    )
+    assert _recovery_kinds(tenant.client) == ["recovery-request", "rollback-conflict"]
 
 
 def test_record_deferred_finding_owes_the_debt_and_a_reopen_on_it_alone_is_refused(

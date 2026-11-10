@@ -30,7 +30,7 @@ apart from ordinary acceptance rework and nonconvergence budgets.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from typing import TYPE_CHECKING, Any, Literal, cast
 
 from livespec_orchestrator_beads_fabro._incident_authority_types import (
@@ -193,6 +193,26 @@ def _verified(
     return found.attempt
 
 
+def _own_or_stale(
+    *, client: BeadsClient, reading: IncidentReading, plan: RecoveryPlan | AuthorityRefusal
+) -> RecoveryPlan | AuthorityRefusal:
+    """A stale observation is refused unless the chain already retains this exact reopen.
+
+    The reopen records its generation before it moves the claim, so a call
+    interrupted between the two leaves its observation stale. The same
+    identity plans the same successor; when the chain retains it byte for byte
+    (same attempt, phase, operation, generation and owner), that generation is
+    this reopen's own and the retry recovers it. Every other identity is stale.
+    """
+    if reading.is_current:
+        return plan
+    stale = _refuse(code="incident-reopen-stale-observation", detail=reading.attempt.item_id)
+    if isinstance(plan, AuthorityRefusal):
+        return stale
+    own = _verified(client=client, attempt=plan.attempt)
+    return stale if isinstance(own, AuthorityRefusal) else plan
+
+
 def reopen_for_regression(
     *,
     client: BeadsClient,
@@ -208,12 +228,17 @@ def reopen_for_regression(
     back to `active` under the incident owner through its claim token, the
     incident holder's stamp replacing the factory's so the superseded run's
     terminal, proof or cleanup write answers `claim-changed`. A repeated
-    delivery recovers the recorded generation and record and writes nothing.
+    delivery recovers the recorded generation and record and writes nothing;
+    one interrupted before its claim moved completes that move once, and of
+    concurrent retries only one moves it while the rest return the recorded result.
     """
     verified = _verified(client=client, attempt=attributed)
     if isinstance(verified, AuthorityRefusal):
         return verified
-    plan = plan_reopen(reading=reading, attributed=verified, finding=finding, owner=owner)
+    # Planned as if current: the same identity yields the successor it recorded.
+    as_current = replace(reading, is_current=True)
+    planned = plan_reopen(reading=as_current, attributed=verified, finding=finding, owner=owner)
+    plan = _own_or_stale(client=client, reading=reading, plan=planned)
     entry = _commit(client=client, reading=reading, plan=plan)
     if isinstance(entry, AuthorityRefusal):
         return entry
@@ -244,10 +269,12 @@ def reopen_for_regression(
             root_token_id=current.committed_token_id,
             prior=prior_claim(record=record),
         ),
+        # Bound to the row this retry decided on: a rival that moved the claim first wins.
+        still_as_decided=lambda row: prior_claim(record=row) == prior_claim(record=record),
     )
-    if result.outcome != "applied":
-        return _refuse(code="incident-reopen-lifecycle-refused", detail=result.outcome)
-    return entry
+    if result.outcome == "applied" or held(client.show_issue(issue_id=successor.item_id)):
+        return entry
+    return _refuse(code="incident-reopen-lifecycle-refused", detail=result.outcome)
 
 
 def require_repayment_current(

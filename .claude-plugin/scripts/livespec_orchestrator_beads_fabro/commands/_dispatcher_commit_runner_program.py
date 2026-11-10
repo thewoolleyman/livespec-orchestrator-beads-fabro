@@ -698,12 +698,43 @@ def is_ancestor(commit):
     return result.returncode == 0
 
 
+def checkpointed_merge_parent(record):
+    """The commit an engine checkpoint merged in above a merge commit run's starting head.
+
+    A checkpoint made while the run was in flight commits the merge's index as a
+    two-parent commit and removes MERGE_HEAD, so the merged-in commit survives only as
+    the second parent of the oldest commit above the starting head that has the starting
+    head and one other commit as its parents. None when the run did not begin mid-merge
+    or no such commit exists.
+    """
+    start_head = record["start_head"]
+    if record.get("operation") != "merge":
+        return None
+    above = git_output("rev-list", "--parents", "--reverse", start_head + "..HEAD")
+    for line in above.splitlines():
+        parents = line.split()[1:]
+        if len(parents) == 2 and parents[0] == start_head:
+            return parents[1]
+    return None
+
+
+def reopen_merge(merged_in):
+    """Put back the merge state an engine checkpoint's commit removed."""
+    git_directory = runs_directory().parent
+    (git_directory / "MERGE_HEAD").write_text(merged_in + "\n", encoding="utf-8")
+    message = git_directory / "MERGE_MSG"
+    if not message.exists():
+        message.write_text("Merge commit '" + merged_in + "'\n", encoding="utf-8")
+
+
 def restore_starting_head(path, record):
     """Put an in-flight amend back on the commit it began from, keeping its index.
 
     Only while the commit is verifiably still running and HEAD still descends from the
     commit it began from: a finished amend leaves a HEAD that does not, so its own
-    commit is never moved off the branch.
+    commit is never moved off the branch. A merge commit run whose merge an engine
+    checkpoint already committed gets that merge back in progress, so the run's commit
+    is again a merge commit of the starting head and the merged-in commit.
     """
     start_head = record.get("start_head")
     if not isinstance(start_head, str):
@@ -716,6 +747,13 @@ def restore_starting_head(path, record):
     if operation_in_progress() == "merge":
         # `git reset --soft` refuses mid-merge, and any reset would delete MERGE_HEAD
         # before the settle could see the merge: move only the branch tip back.
+        git_output("update-ref", "HEAD", start_head)
+        return
+    merged_in = checkpointed_merge_parent(record)
+    if merged_in is not None:
+        # MERGE_HEAD first: a soft reset would leave the merged tree staged with no merge
+        # open, and the run's commit would then be refused or flatten the merged-in side.
+        reopen_merge(merged_in)
         git_output("update-ref", "HEAD", start_head)
         return
     git_output("reset", "--soft", start_head)
