@@ -345,6 +345,49 @@ def _published_empties(*, world: _World) -> list[str]:
     return _commits_that_started_empty(world=world, base=base, head=published)
 
 
+def test_a_first_publication_rewrites_checkpoint_and_merge_history_to_authored_commits(
+    tmp_path: Path,
+) -> None:
+    """Publication never offers engine or merge history to a rebase-merge pull request.
+
+    The Petri checkpoint commits are not reliably empty: stages that materialize
+    an artifact before their checkpoint give an engine subject a real diff. A
+    merge of the default branch is likewise not empty, so the older empty-only
+    rewrite leaves both shapes on the branch GitHub rebase-merges. This fixture
+    carries each shape and asks the real ``publish_draft`` script what it
+    actually pushes to a real origin.
+    """
+    world = _petri_run(root=tmp_path)
+    advanced = _advance_default(world=world)
+    _ = _git("fetch", "--quiet", "origin", _DEFAULT_BRANCH, cwd=world.clone)
+    _ = _git("merge", "--quiet", "--no-edit", f"origin/{_DEFAULT_BRANCH}", cwd=world.clone)
+    _ = _commit(
+        cwd=world.clone,
+        path="checkpoint.txt",
+        text="engine-owned stage artifact\n",
+        subject="fabro(run): proof_capture (succeeded)",
+    )
+    source_tree = _git("rev-parse", "HEAD^{tree}", cwd=world.clone).stdout.strip()
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode == 0, result.stderr
+    published = world.remote_head(ref=_BRANCH)
+    base = _git("rev-parse", f"origin/{_DEFAULT_BRANCH}", cwd=world.clone).stdout.strip()
+    subjects = _git(
+        "log", "--format=%s", f"{base}..{published}", cwd=world.clone
+    ).stdout.splitlines()
+    parent_counts = _git(
+        "rev-list", "--parents", f"{base}..{published}", cwd=world.clone
+    ).stdout.splitlines()
+
+    assert all(not subject.startswith("fabro(") for subject in subjects)
+    assert all(len(line.split()) == 2 for line in parent_counts)
+    assert _git("rev-parse", f"{published}^{{tree}}", cwd=world.clone).stdout.strip() == source_tree
+    assert set(subjects) <= {"feat: the run's work"}
+    assert _git("merge-base", "--is-ancestor", advanced, published, cwd=world.clone).returncode == 0
+
+
 def test_a_first_publication_drops_the_engine_s_empty_checkpoint_commits(
     tmp_path: Path,
 ) -> None:
