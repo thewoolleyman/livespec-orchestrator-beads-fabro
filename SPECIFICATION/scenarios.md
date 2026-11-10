@@ -8740,6 +8740,24 @@ Feature: New behaviour gets new spec before it is built
     When the item reaches a dispatch path
     Then the tier decision is taken again against the new revision
 
+  Scenario: A proof-mode-only Definition of Done edit reuses the spec-change tier decision
+    Given an item whose spec-change tier record reads tier none against an unchanged specification revision
+    And the only edit to its Definition of Done since the record moves one bullet, word for word, under a `### Host-captured` sub-heading with a new `Reason:` line
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused, no model is run, and the item is not held
+
+  Scenario: A reordered Definition of Done reuses the spec-change tier decision
+    Given an item whose spec-change tier record was taken against an unchanged specification revision
+    And the only edit to its Definition of Done since the record reorders its bullets
+    When the item reaches a dispatch path
+    Then the recorded tier decision is reused and no model is run
+
+  Scenario: A reworded Definition of Done bullet takes the spec-change tier decision again
+    Given an item whose spec-change tier record was taken against an unchanged specification revision
+    And one word of one Definition of Done bullet has changed since the record
+    When the item reaches a dispatch path
+    Then the tier decision is taken again
+
   Scenario: The release of a held spec-change-tier item never reuses a verdict across a revision
     Given a held spec-change-tier item whose linked proposal is ratified in a new revision
     And the selection against the new revision returns the same clauses as before
@@ -13924,4 +13942,29 @@ Feature: The committed fleet launcher runs under the tenant wrapper, from the or
     And LIVESPEC_DOD_JUDGEMENT_MODEL is set in its environment
     When the overrides file is removed
     Then the next drive receives no --acp-node argument
+```
+
+## Scenario 339 — A Definition of Done that permits a TODO coverage row against a shrink-only debt register is a mechanical filing finding
+
+Governing clause: `contracts.md` §"Dispatcher admission, WIP cap, and post-merge acceptance" → "Effective acceptance criteria".
+
+```gherkin
+Feature: An unsatisfiable coverage escape is caught at filing, not at the run's last gate
+  As an operator filing a coverage-repair work item
+  I want a TODO escape that the debt register will refuse reported where it was written
+  So that no factory run spends its budget taking an option no merge can accept
+
+  Scenario: the filing display reports the bullet and approve refuses until it is edited
+    Given a repository whose project root carries a committed tests/heading-coverage-debt.json
+    And a work item W filed through the capture filing seam whose Definition of Done section has a bullet naming tests/heading-coverage.json and allowing a row to be set to TODO, and which otherwise carries no mechanical finding
+    Then filing_display reports a (mechanical) finding that quotes that bullet and names tests/heading-coverage-debt.json as the shrink-only register
+    And W carries that finding as a definition-of-done finding (mechanical) ledger comment
+    And W rests at pending-approval even when its effective admission_policy is auto
+    And an approve of W leaves it at pending-approval with a result naming the finding
+    And once the bullet is edited to require an existing test for every row, an approve of W routes it onward as it would any other item
+
+  Scenario: no register, no finding
+    Given a repository whose project root carries no tests/heading-coverage-debt.json
+    When the same work item is filed there
+    Then filing_display reports no debt-register finding for that bullet
 ```
