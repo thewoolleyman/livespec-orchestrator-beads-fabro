@@ -599,6 +599,27 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   to "keep it readable" — `test_dispatcher_prepare_payload_off_script` renders the
   whole overlay and refuses any heredoc or long base64 run in a script. A test that
   EXECUTES a payload step needs the script AND its env (`tests/prepare_step_support`).
+- `_dispatcher_setup_nodes.py` — the sandbox setup chain as explicit COMMAND NODES
+  named `run_prepare_<N>`, because upstream Fabro refuses `run.prepare` from
+  `v0.396.0-nightly.0` (`bd-ib-dpsiwz`). It lifts every `[[run.prepare.steps]]`
+  block out of a rendered overlay (`split_prepare_steps`, judged by a postcondition:
+  what remains must parse to the original document minus `run.prepare`) and hangs
+  them off the graph's setup-chain TAIL (`splice_setup_nodes`). Five properties an
+  editor must not invert. The names are FIXED: the carrier's re-prepare-on-reacquire
+  recognises a run's setup only by the `run_prepare_` prefix. The numbering CONTINUES
+  from the committed graph's own `run_prepare_1` .. `run_prepare_K`, so the committed
+  provisioning steps come first and the Dispatcher's after them, as the overlay
+  always ordered them. Every node carries a conditional `outcome=failed` edge to the
+  terminal `setup_failed` node as well as its unconditional one, because a command
+  node that exits non-zero otherwise follows its unconditional edge and the run
+  succeeds; the unconditional edge stays because the engine rejects a node whose
+  every edge is conditional. A step's `env` rides the node as one JSON attribute
+  (`SETUP_ENV_ATTRIBUTE`), not the script, so the engine's compact fidelity does not
+  re-send helper-program bytes to every agent turn; that attribute name is the one
+  thing only a live engine can confirm. And every value is MiniJinja-ESCAPED, since
+  the engine renders node attributes and `run.prepare` was left verbatim. The
+  derived graphs (`_dispatcher_resume_entry`) move the edge out of the chain's tail,
+  so a resume or the proof-only arm keeps its setup.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by ALL FOUR projections that write a fixed `/workspace` path:
