@@ -38,7 +38,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     definition_of_done,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
-    ORIGIN_REVISION,
     OriginSpecUnreadable,
     origin_spec_h2_headings,
 )
@@ -114,7 +113,7 @@ def _reference_findings(
 def _unreadable_origin_finding(*, item: WorkItem, unreadable: OriginSpecUnreadable) -> str:
     return (
         f"work-item {item.id}: the Definition of Done references cannot be checked because"
-        f" the remote revision {ORIGIN_REVISION} of the governed spec tree is unreadable"
+        f" the remote revision {unreadable.revision} of the governed spec tree is unreadable"
         f" ({unreadable.detail}); restore access to the repository's origin and retry"
     )
 
