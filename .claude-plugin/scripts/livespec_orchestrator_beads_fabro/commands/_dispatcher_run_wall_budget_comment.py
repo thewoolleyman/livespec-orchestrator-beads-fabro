@@ -62,13 +62,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comment
 
 __all__: list[str] = [
     "RUN_WALL_BUDGET_COMMENT_MARKER",
+    "RUN_WALL_BUDGET_HOLD_ESCALATION_MARKER",
     "run_wall_budget_comment",
+    "run_wall_budget_hold_escalation_comment",
 ]
 
 # Labelled so it is greppable beside the `livespec-needs-human-cause`,
 # `livespec-stall-cancel-needs-human` and `livespec-preserve-by-reference`
 # records an operator already reads on a parked item.
 RUN_WALL_BUDGET_COMMENT_MARKER = "livespec-run-wall-budget-exceeded"
+
+# The marker of the one comment a held run's escalation leaves, which the
+# escalation itself reads back to recognise a run it already escalated.
+RUN_WALL_BUDGET_HOLD_ESCALATION_MARKER = "livespec-run-wall-budget-hold-escalated"
 
 
 def run_wall_budget_comment(*, item_id: str, row: Mapping[str, object] | None) -> str:
@@ -95,12 +101,12 @@ def run_wall_budget_comment(*, item_id: str, row: Mapping[str, object] | None) -
             f"slot-holding seconds: {_measured_field(row=row, key='elapsed_seconds')}",
             f"whole-run wall budget seconds: {_measured_field(row=row, key='budget_seconds')}",
             f"budget supplied by layer: {cancel_row_field(row=row, key='budget_layer')}",
-            f"preserve-by-reference pointer: {cancel_row_field(row=row, key='preserved_pointer')}",
+            *_preservation_lines(row=row),
             *_publication_lines(row=row),
             "",
-            "This run held a factory slot past its whole-run wall budget, so its",
-            "record was exported and read back and the run was then cancelled to",
-            "release the slot. A budget cancel is NOT factory non-convergence:",
+            "This run held a factory slot past its whole-run wall budget, so",
+            *_account_lines(row=row),
+            "A budget cancel is NOT factory non-convergence:",
             "the item was not bounced to backlog, no non-convergence observation",
             "was recorded, and its across-dispatch progress count is unchanged.",
             "",
@@ -108,11 +114,108 @@ def run_wall_budget_comment(*, item_id: str, row: Mapping[str, object] | None) -
             f"- release it with `resolve-blocked:{item_id}:ready`, which is the",
             "  only route out of blocked and what the resume refusal ladder names",
             "  for an item resting on a human decision.",
-            "- read the preserve-by-reference pointer above before re-dispatching:",
-            "  it names the factory and the run the cancelled tree was exported",
-            "  from, which is what a re-dispatch from preserved work reads.",
+            *_pointer_remedy_lines(row=row),
         )
     )
+
+
+def run_wall_budget_hold_escalation_comment(
+    *,
+    item_id: str,
+    run_id: str,
+    factory: str,
+    elapsed_seconds: float,
+    budget_seconds: float,
+    failed_measurements: tuple[str, ...],
+) -> str:
+    """The durable account of one held run's escalation, plus the way out.
+
+    The cancel is withheld because the cancel would destroy the only copy of the
+    run's work, so the comment says that no verified preservation ref exists and
+    names every failed measurement: the person reading it has to preserve or
+    abandon the work, and which repair is owed depends on which measurement
+    failed. The item's status is deliberately NOT part of this comment's story,
+    because the escalation leaves it alone while the run is live.
+    """
+    return "\n".join(
+        (
+            RUN_WALL_BUDGET_HOLD_ESCALATION_MARKER,
+            "",
+            f"work-item: {item_id}",
+            f"run id: {run_id}",
+            f"factory: {factory}",
+            f"slot-holding seconds: {elapsed_seconds:g}",
+            f"whole-run wall budget seconds: {budget_seconds:g}",
+            "failed measurements:",
+            *[f"- {measurement}" for measurement in failed_measurements],
+            "",
+            "This run is past its whole-run wall budget and its export has not read",
+            "back on three consecutive polls, and no verified preservation ref of its",
+            "committed tree exists on origin: no verified preservation ref exists, so",
+            "cancelling the run would destroy the only copy of its work. The run was",
+            "NOT cancelled and the item's status is unchanged. The Dispatcher keeps",
+            "re-attempting the export and the ref listing on every poll and",
+            "cancels the run as soon as either succeeds.",
+            "",
+            "Remedy: a person preserves or abandons the run's work and then",
+            "cancels the run.",
+        )
+    )
+
+
+def _preservation_lines(*, row: Mapping[str, object] | None) -> tuple[str, ...]:
+    """Where the cancelled run's work is preserved, as a pointer or as a ref.
+
+    A cancel released by a verified preservation ref names that ref and its
+    commit id IN PLACE OF the pointer, with the statement that the export could
+    not be read back and the measurement that failed.
+    """
+    ref: object = None if row is None else row.get("preserved_ref")
+    if not isinstance(ref, str):
+        return (
+            f"preserve-by-reference pointer: {cancel_row_field(row=row, key='preserved_pointer')}",
+        )
+    commit = cancel_row_field(row=row, key="preserved_ref_commit")
+    failed = cancel_row_field(row=row, key="export_failed_measurement")
+    return (
+        f"verified preservation ref: {ref}",
+        f"verified preservation ref commit id: {commit}",
+        f"export read back: no -- the export could not be read back ({failed})",
+    )
+
+
+def _account_lines(*, row: Mapping[str, object] | None) -> tuple[str, ...]:
+    """The sentence saying how the slot-releasing cancel was made safe."""
+    if _released_by_ref(row=row):
+        return (
+            "its export could not be read back, but origin holds a verified",
+            "preservation ref of its committed tree, so the run was cancelled to",
+            "release the slot.",
+        )
+    return (
+        "its record was exported and read back and the run was then cancelled to",
+        "release the slot.",
+    )
+
+
+def _pointer_remedy_lines(*, row: Mapping[str, object] | None) -> tuple[str, ...]:
+    """The remedy line that sends a person to the preserved copy."""
+    if _released_by_ref(row=row):
+        return (
+            "- read the verified preservation ref above before re-dispatching: it",
+            "  holds the cancelled run's committed tree on origin, which is what a",
+            "  re-dispatch from preserved work reads.",
+        )
+    return (
+        "- read the preserve-by-reference pointer above before re-dispatching:",
+        "  it names the factory and the run the cancelled tree was exported",
+        "  from, which is what a re-dispatch from preserved work reads.",
+    )
+
+
+def _released_by_ref(*, row: Mapping[str, object] | None) -> bool:
+    """Whether the cancel was released by a verified preservation ref."""
+    return row is not None and isinstance(row.get("preserved_ref"), str)
 
 
 def _measured_field(*, row: Mapping[str, object] | None, key: str) -> str:

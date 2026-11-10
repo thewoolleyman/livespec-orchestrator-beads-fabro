@@ -931,6 +931,28 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
     `blocked` / `needs-human` carrying the remedy `resolve-blocked:<id>:ready`;
     it has no release arm, since a budget cancel is not a non-convergence
     observation and must not bounce the slice to `backlog`.
+  - `_dispatcher_run_wall_budget_refs.py` and
+    `_dispatcher_run_wall_budget_hold.py` — what keeps the hold from being
+    unbounded (`bd-ib-l77jxo`, v311). A held poll lists origin with
+    `git ls-remote` (never a local clone) for a VERIFIED PRESERVATION REF of the
+    run (`needs-human/<run>`, `preserve/run-<run>`, a preserved-publish ref, or
+    the run's latest `wip/<item>/<run>/<n>` capture) whose commit's tree equals
+    the run branch's committed tip as the run's own record reports it
+    (`committed_tip`), and cancels as `run-wall-budget-exceeded` the moment one
+    exists, naming that ref and commit INSTEAD of the pointer. Three answers,
+    never two: a ref, an answered listing holding none, and a listing or tree
+    read that could not be taken — the third is a named failed measurement and
+    is never "no ref", or a flaky `ls-remote` would hide a safe tree and a
+    wrong release would destroy an unsafe one. With no tip reported only the
+    needs-human ref and the latest capture qualify on their own. The third
+    consecutive held record escalates ONCE (`run-wall-budget-hold-escalated`
+    plus one ledger comment, never a status write: the seam is the comment
+    surface), the in-memory flag stops a repeat inside a watch and the comment's
+    marker plus run id stops one after a restart. `refs` deliberately imports
+    neither `_dispatcher_wip_capture_receipt` nor anything else that reaches
+    `_dispatcher_io`, and the records module imports `refs` not at all:
+    `_dispatcher_io` reaches the watch through the launcher, so such an import
+    closes a cycle.
   THE `exceeded` RECORD ALSO ANCHORS A RESUME, and that reader is
   `_dispatcher_resume_cancel_anchor` rather than anything in this family — the
   clause says the record "anchors resume ... exactly as a

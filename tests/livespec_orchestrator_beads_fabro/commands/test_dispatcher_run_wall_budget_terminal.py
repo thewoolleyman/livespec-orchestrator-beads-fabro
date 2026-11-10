@@ -138,6 +138,11 @@ class _HeldScriptedRunner:
             if self._polls >= self.polls_before_run_returns:
                 self.run_done.set()
             return CommandResult(exit_code=0, stdout=_INSPECT_RUNNING, stderr="")
+        if verb == "ls-remote":
+            # A held poll asks origin for a verified preservation ref of the
+            # run; an answered, empty listing is "none exists", so the run stays
+            # held, which is what this case is about.
+            return CommandResult(exit_code=0, stdout="", stderr="")
         assert verb == "events", verb
         return CommandResult(exit_code=0, stdout=_FROZEN_EVENTS, stderr="")
 

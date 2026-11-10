@@ -188,6 +188,8 @@ def _journal_rest(
             "elapsed_seconds": None if row is None else row.get("elapsed_seconds"),
             "budget_seconds": None if row is None else row.get("budget_seconds"),
             "preserved_pointer": None if row is None else row.get("preserved_pointer"),
+            "preserved_ref": None if row is None else row.get("preserved_ref"),
+            "preserved_ref_commit": None if row is None else row.get("preserved_ref_commit"),
         }
     )
     _ = write_stderr(

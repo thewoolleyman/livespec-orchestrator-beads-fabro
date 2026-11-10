@@ -46,13 +46,15 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs import refs_by_name
-from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture_receipt import (
-    latest_wip_capture,
+from livespec_orchestrator_beads_fabro.commands._fabro_port_checkpoints import (
+    fabro_inspect_checkpoints,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_records import fabro_inspect_record
 
 __all__: list[str] = [
     "PreservationRefsUnobservable",
     "VerifiedPreservationRef",
+    "committed_tip",
     "verified_preservation_ref",
 ]
 
@@ -83,6 +85,25 @@ class _Candidate:
 
     found: VerifiedPreservationRef
     qualifies_alone: bool
+
+
+def committed_tip(*, record: object | None) -> str | None:
+    """The run branch's committed tip as the run's own record reports it, or None.
+
+    The newest checkpoint that names a commit, because a checkpoint is the
+    engine's own account of the commit it cut the run branch at. A record that
+    names none -- unreadable, empty, or carrying checkpoints with no commit -- is
+    None, which the caller reads as "the record cannot report that tip" and which
+    lets the run's latest capture or its needs-human ref qualify on its own.
+    """
+    run = fabro_inspect_record(payload=record)
+    if run is None:
+        return None
+    for checkpoint in reversed(fabro_inspect_checkpoints(record=run)):
+        commit: object = checkpoint.get("git_commit_sha")
+        if isinstance(commit, str) and commit:
+            return commit
+    return None
 
 
 def verified_preservation_ref(
@@ -121,18 +142,19 @@ def verified_preservation_ref(
             )
         )
     refs = refs_by_name(stdout=listing.stdout)
-    capture = latest_wip_capture(work_item_id=work_item_id, run_id=run_id, refs=refs)
+    wip_prefix = f"{_WIP_REF_PREFIX}/{work_item_id}/{run_id}/"
+    captures = sorted(
+        (int(ref.removeprefix(wip_prefix)), ref)
+        for ref in refs
+        if ref.startswith(wip_prefix) and ref.removeprefix(wip_prefix).isdecimal()
+    )
     candidates = [
         *[
             _candidate(ref=ref, commit=refs[ref], alone=ref == needs_human)
             for ref in (needs_human, preserve)
             if ref in refs
         ],
-        *(
-            []
-            if capture is None
-            else [_candidate(ref=capture.ref, commit=capture.commit, alone=True)]
-        ),
+        *[_candidate(ref=ref, commit=refs[ref], alone=True) for _, ref in captures[-1:]],
         *[
             _candidate(ref=ref, commit=refs[ref], alone=False)
             for ref in sorted(refs)
