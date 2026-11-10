@@ -49,6 +49,8 @@ __all__: list[str] = [
     "MEASUREMENT_FORGE_PULL_REQUEST_RECORDS",
     "MEASUREMENT_PRESERVED_WORK",
     "MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE",
+    "MEASUREMENT_SEED_RULING_COMMENTS",
+    "MEASUREMENT_SEED_RULING_REF",
     "unobservable_measurements",
 ]
 
@@ -61,6 +63,14 @@ MEASUREMENT_FORGE_PULL_REQUEST_HEAD = "forge-pull-request-head"
 MEASUREMENT_FACTORY_RUN_LIVENESS = "factory-run-liveness"
 MEASUREMENT_PRESERVED_WORK = "preserved-work"
 MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE = "publishing-run-unobservable"
+
+# The two reads a current seed ruling adds. `seed-ruling-ref` is the hold taken for a
+# ruled ref origin does not carry at the ruled commit — a cause in its own right, which
+# is why it has a token rather than borrowing `preserved-work`. `seed-ruling-comments`
+# is the hold taken when the item's ledger comments could not be read at all, because a
+# ruling lives only there and an unread ledger may hold one.
+MEASUREMENT_SEED_RULING_REF = "seed-ruling-ref"
+MEASUREMENT_SEED_RULING_COMMENTS = "seed-ruling-comments"
 
 
 def unobservable_measurements(*, observation: ResumeObservation) -> tuple[RecoveryMeasurement, ...]:

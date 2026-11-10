@@ -82,6 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryResume,
     RecoveryRoute,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_ruled_seed import (
+    current_seed_ruling,
+    ruled_seed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
@@ -90,6 +94,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling import SeedRuling
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_release import (
     stale_assignee_with_run,
 )
@@ -225,9 +230,17 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
-        if not released_for_recovery(
-            records=journaled, work_item_id=item.id
-        ) and not stale_assignee_with_run(repo=repo, item=item):
+        ruling = current_seed_ruling(repo=repo, item=item)
+        if isinstance(ruling, RecoveryHold):
+            routes.append(_held_route(item=item, journal=journal, hold=ruling))
+            continue
+        # "While an item carries a current ruling, recovery routing MUST treat the
+        # item as released for recovery", whatever its latest dispatch ended in.
+        if (
+            ruling is None
+            and not released_for_recovery(records=journaled, work_item_id=item.id)
+            and not stale_assignee_with_run(repo=repo, item=item)
+        ):
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
         routes.append(
@@ -243,6 +256,7 @@ def route_recovery(
                 repo=repo,
                 runner=runner,
                 journal=journal,
+                ruling=ruling,
             )
         )
     return RecoveryRouting(routes=tuple(routes))
@@ -272,6 +286,7 @@ def _released_route(
     repo: Path,
     runner: CommandRunner,
     journal: JournalFile,
+    ruling: SeedRuling | None,
 ) -> RecoveryRoute:
     """The route one RELEASED candidate takes, from the resume's own measurement.
 
@@ -296,6 +311,15 @@ def _released_route(
     reason `run_resume_command` narrows them: without an anchor there is no head
     to check out and no record to attribute, so proceeding would launch a plain
     run while the journal recorded a resume.
+
+    A CURRENT SEED RULING IS GRADED THIRD, between those two gradings and the
+    ladder. It outranks the ladder because "Routing MUST take its seed from a
+    current seed ruling ahead of a `resume` and ahead of the preference order",
+    and it does NOT outrank the two gradings above it: "A non-fallback refusal
+    keeps its precedence over a ruling", and an unanswered measurement is held
+    whatever the ruling says. The pre-claim refusal of "Across-dispatch
+    required-result progress" is graded earlier still, by the pre-dispatch wall,
+    before this step is reached for any item.
     """
     measurements = unobservable_measurements(observation=gather.observation)
     if measurements:
@@ -315,6 +339,24 @@ def _released_route(
         # would carry out a remedy the refusal exists to forbid, and would do it
         # with the record reading like an ordinary measured fallback.
         return _held_route(item=item, journal=journal, hold=RecoveryHold(refusals=refusals))
+    if ruling is not None:
+        # A CURRENT SEED RULING takes the seed "ahead of a `resume` and ahead of the
+        # preference order", so it sits past the two gradings above (which a ruling
+        # does not outrank) and ahead of the ladder. A ruled ref origin does not
+        # carry at the ruled commit holds the item: "Routing MUST NOT then fall
+        # through to another preserved tree, to the observed published head, or to
+        # `fresh`", which is why the hold returns here and not into the fallback.
+        ruled = ruled_seed(
+            runner=runner, repo=repo, ruling=ruling, earlier_run_ids=gather.earlier_run_ids
+        )
+        if isinstance(ruled, RecoveryHold):
+            return _held_route(item=item, journal=journal, hold=ruled)
+        return RecoveryRoute(
+            work_item_id=item.id,
+            route=ROUTE_SEEDED,
+            seed=ruled,
+            preserved_work=PRESERVED_WORK_VERIFIED,
+        )
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
