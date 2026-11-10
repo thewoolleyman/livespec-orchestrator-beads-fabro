@@ -55,8 +55,8 @@ def _patch(monkeypatch: pytest.MonkeyPatch, *, result: object) -> object:
     """Substitute the audit itself: this module's subject is the ROW, not the audit."""
     module = _module()
 
-    def _audit(*, project_root: Path) -> object:
-        _ = project_root
+    def _audit(*, project_root: Path, journal_holds: object = None) -> object:
+        _ = (project_root, journal_holds)
         return result
 
     monkeypatch.setattr(module, "idle_slot_audit", _audit)
@@ -110,3 +110,24 @@ def test_the_row_is_byte_identical_across_two_passes(
 
     assert [item.summary for item in first] == [item.summary for item in second]
     assert [item.handoff.command for item in first] == [item.handoff.command for item in second]
+
+
+def test_the_snapshots_journal_reading_reaches_the_audit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The audit applies the snapshot's one reading, so the lane must hand it over."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    seen: list[object] = []
+
+    def _audit(*, project_root: Path, journal_holds: object = None) -> object:
+        _ = project_root
+        seen.append(journal_holds)
+        return _result(finding=None)
+
+    monkeypatch.setattr(module, "idle_slot_audit", _audit)
+    reading = object()
+
+    _ = module.idle_slot_items(project_root=tmp_path, repo="repo", journal_holds=reading)
+
+    assert seen == [reading]

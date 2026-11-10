@@ -46,6 +46,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
     plan_admissions,
     resolve_assignee,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_journal_hold import (
+    JournalHoldReading,
+)
 from livespec_orchestrator_beads_fabro.commands._needs_attention_waits import (
     acp_chain_wait_active,
     provider_exhaustion_wait_active,
@@ -54,8 +57,11 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "HOLD_ACP_CHAIN_WAIT",
+    "HOLD_JOURNAL_UNREADABLE",
     "HOLD_PROVIDER_EXHAUSTION_WAIT",
+    "HOLD_RECOVERY_HELD",
     "HOLD_STAGE_READINESS",
+    "journal_hold_reasons",
     "tenant_hold_reasons",
 ]
 
@@ -66,6 +72,14 @@ HOLD_ACP_CHAIN_WAIT = (
     "tenant admission-required ACP chain wait: every ready child of this tenant is held"
 )
 HOLD_STAGE_READINESS = "refused at the readiness stage"
+HOLD_RECOVERY_HELD = (
+    "recovery-held: journal-recorded, so recovery routing does not offer this item "
+    "to the admission valve"
+)
+HOLD_JOURNAL_UNREADABLE = (
+    "dispatch journal cannot be read: whether a journal-recorded recovery-held holds "
+    "this item is unobservable"
+)
 
 
 def tenant_hold_reasons(*, repo: Path, items: Sequence[WorkItem]) -> dict[str, str]:
@@ -86,6 +100,28 @@ def tenant_hold_reasons(*, repo: Path, items: Sequence[WorkItem]) -> dict[str, s
     reasons.update(_wall_refusals(repo=repo, candidates=candidates))
     reasons.update(_admission_holds(repo=repo, candidates=candidates, refused=set(reasons)))
     return reasons
+
+
+def journal_hold_reasons(
+    *, reading: JournalHoldReading, items: Sequence[WorkItem]
+) -> dict[str, str]:
+    """Map each ready row of THIS repository's tenant the dispatch journal holds to why.
+
+    The journal-recorded half of the hold evidence, and the only half that reads
+    a journal: it is this repository's own, so the audit applies it to the
+    tenant whose checkout is this repository and to no other. A live
+    `recovery-held` holds its item, and a journal that cannot be read holds
+    every ready row, because an unobserved hold set must not be read as an
+    empty one.
+    """
+    ready = [item.id for item in items if item.status == READY_STATUS]
+    if not reading.observable:
+        return {item_id: HOLD_JOURNAL_UNREADABLE for item_id in ready}
+    return {
+        item_id: HOLD_RECOVERY_HELD
+        for item_id in ready
+        if item_id in reading.live_recovery_held_ids
+    }
 
 
 def _tenant_wait(*, repo: Path) -> str | None:

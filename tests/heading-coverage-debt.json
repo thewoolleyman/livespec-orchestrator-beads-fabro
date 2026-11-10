@@ -1122,13 +1122,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention",
-    "work_item": "bd-ib-5xogp4",
-    "first_seen": "2026-11-07"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 325 — A workflow-declared node timeout stands unless configuration names the node",
     "work_item": "bd-ib-2eyiwy",
     "first_seen": "2026-11-07"
