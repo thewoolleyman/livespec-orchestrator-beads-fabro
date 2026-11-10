@@ -155,8 +155,9 @@ def _run_program(
     )
     program = tmp_path / "livespec-run-from-clones.py"
     program.write_text(source)
-    for name in [name for name in os.environ if name.startswith(_SCRUBBED_PREFIXES)]:
-        monkeypatch.delenv(name)
+    _ = [
+        monkeypatch.delenv(name) for name in list(os.environ) if name.startswith(_SCRUBBED_PREFIXES)
+    ]
     for name, value in (env or {}).items():
         monkeypatch.setenv(name, value)
     monkeypatch.chdir(project)
