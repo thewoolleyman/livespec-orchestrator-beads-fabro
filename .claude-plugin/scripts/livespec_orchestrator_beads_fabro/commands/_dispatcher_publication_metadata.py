@@ -66,7 +66,8 @@ from dataclasses import dataclass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -232,9 +233,9 @@ def publication_metadata_env_lines(*, metadata: PublicationMetadata | None) -> s
 def publication_metadata_prepare_steps_block(*, metadata: PublicationMetadata | None) -> str:
     """A prepare step that materializes the rendered body inside the sandbox.
 
-    The body rides the step's `env` and `printf %s` writes it, so the bytes the
-    sandbox holds are exactly the rendered body and nothing about it is encoded
-    or decoded on the way.
+    The body rides the step's `env` packed (`_dispatcher_prepare_payload`) and
+    the step decodes it, so the bytes the sandbox holds are exactly the rendered
+    body and the shell expands nothing inside it.
     """
     if metadata is None:
         return ""
@@ -245,11 +246,11 @@ def publication_metadata_prepare_steps_block(*, metadata: PublicationMetadata | 
                 "set -eu",
                 f'root="{root}"',
                 'mkdir -p "$root"',
-                payload_write_command(path_word=f'"$root/{PUBLICATION_BODY_FILENAME}"'),
+                packed_payload_write_command(path_word=f'"$root/{PUBLICATION_BODY_FILENAME}"'),
                 f'echo "{PUBLICATION_BODY_MARKER}: $root/{PUBLICATION_BODY_FILENAME}"',
             ]
         ),
-        env={PAYLOAD_ENV_VAR: metadata.body},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=metadata.body)},
     )
     header = (
         "\n# --- Dispatcher-materialized pull-request body: the `pr` stage applies\n"

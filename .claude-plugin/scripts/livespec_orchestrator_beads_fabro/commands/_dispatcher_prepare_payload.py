@@ -34,19 +34,44 @@ per-string exec limit (`MAX_ARG_STRLEN`, 128 KiB), independently of the larger
 total. A value over it makes `execve` fail with `E2BIG` and kills the run at
 launch with no branch (`bd-ib-gnli`). The cap is deliberately under the limit,
 the same margin the gh-refresh chunking already used.
+
+WHY EVERY PLAIN-TEXT PAYLOAD IS PACKED. The overlay these steps render into is
+collected as the run's `workflow.toml`, and the engine caps that ONE file at
+524,288 bytes (Fabro `MAX_WORKFLOW_VERSION_FILE_BYTES`, per file, not per
+package). Helper programs carried as plain text pay that budget twice: once for
+their bytes and again for the JSON escaping every newline and quote takes in a
+TOML basic string. After v0.312.3 the livespec-dev-tooling overlay measured
+524,343 bytes and every dispatch there was refused before listing
+(bd-ib-p5e32s); about 185 KB of it was plain helper source, while the one payload
+already packed, the gh-refresh bundle, cost a third of its raw size. So a
+plain-text payload rides `pack_payload` -- gzip, then base64, one line with
+nothing to escape -- and its step decodes it with `packed_payload_write_command`.
+The decoder is `python3`, which the prepare chain already requires (the
+gh-refresh unpack and the plugin-cache gate run under it), rather than
+`base64 -d | gunzip`, which the sandbox image does not promise.
+
+`payload_write_command` stays for a value that is ALREADY packed -- the
+gh-refresh archive chunks are base64 of a gzip tarball, and packing them again
+would only add bytes.
 """
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 __all__: list[str] = [
+    "MAX_PACKABLE_CHUNK_BYTES",
     "MAX_PAYLOAD_VALUE_BYTES",
     "PAYLOAD_ENV_VAR",
     "PrepareStep",
+    "pack_payload",
+    "packed_payload_decode_command",
+    "packed_payload_write_command",
     "payload_guard_command",
     "payload_write_command",
     "render_prepare_step",
@@ -54,6 +79,17 @@ __all__: list[str] = [
 
 PAYLOAD_ENV_VAR = "LIVESPEC_PREPARE_PAYLOAD"
 MAX_PAYLOAD_VALUE_BYTES = 96000
+# The largest plain-text piece whose PACKED form still fits one env value. Base64
+# grows its input by 4/3 and gzip can grow incompressible input by a few bytes per
+# block, so a piece of three quarters of the cap, less a margin for the gzip
+# framing, packs under `MAX_PAYLOAD_VALUE_BYTES` whatever its content.
+MAX_PACKABLE_CHUNK_BYTES = MAX_PAYLOAD_VALUE_BYTES // 4 * 3 - 1024
+# The decoder every packed step runs: base64, then gzip, to stdout as raw bytes,
+# so the file it lands in is byte-identical to the packed text.
+_DECODE_PROGRAM = (
+    "import base64,gzip,sys;"
+    "sys.stdout.buffer.write(gzip.decompress(base64.b64decode(sys.stdin.buffer.read())))"
+)
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
@@ -81,6 +117,37 @@ def payload_write_command(
     """
     redirect = ">>" if append else ">"
     return f'{payload_guard_command(var=var)}\nprintf %s "${var}" {redirect} {path_word}'
+
+
+def pack_payload(*, text: str) -> str:
+    """`text` as one line of gzip+base64, the form a plain-text payload rides in.
+
+    The gzip header's clock is fixed, so the same text always packs to the same
+    value and the rendered overlay stays deterministic.
+    """
+    packed = gzip.compress(text.encode("utf-8"), compresslevel=9, mtime=0)
+    return base64.b64encode(packed).decode("ascii")
+
+
+def packed_payload_decode_command(*, var: str = PAYLOAD_ENV_VAR) -> str:
+    """The shell lines that guard a packed payload and decode it to stdout."""
+    return (
+        f"{payload_guard_command(var=var)}\n"
+        f"printf %s \"${var}\" | python3 -c '{_DECODE_PROGRAM}'"
+    )
+
+
+def packed_payload_write_command(
+    *, path_word: str, var: str = PAYLOAD_ENV_VAR, append: bool = False
+) -> str:
+    """The shell lines that decode one packed payload into `path_word`.
+
+    `path_word` is a complete, already-quoted shell word, as for
+    `payload_write_command`. Under `set -e` a payload that does not decode fails
+    the step, because the pipeline's status is the decoder's.
+    """
+    redirect = ">>" if append else ">"
+    return f"{packed_payload_decode_command(var=var)} {redirect} {path_word}"
 
 
 def _toml_string(*, value: str) -> str:

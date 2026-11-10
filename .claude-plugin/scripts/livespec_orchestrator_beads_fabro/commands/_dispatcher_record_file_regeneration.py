@@ -64,7 +64,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declarat
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_files import (
@@ -547,9 +548,9 @@ def record_file_program_prepare_steps_block() -> str:
     step = PrepareStep(
         script=(
             f'set -eu\nmkdir -p "{root}"\n'
-            + payload_write_command(path_word=f'"{root}/{RECORD_FILE_PROGRAM_FILENAME}"')
+            + packed_payload_write_command(path_word=f'"{root}/{RECORD_FILE_PROGRAM_FILENAME}"')
         ),
-        env={PAYLOAD_ENV_VAR: record_file_program_source()},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=record_file_program_source())},
     )
     header = (
         "\n# --- Dispatcher-materialized generated-record-file resolution: a\n"

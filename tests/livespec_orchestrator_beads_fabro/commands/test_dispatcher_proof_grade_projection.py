@@ -13,7 +13,10 @@ import base64
 import json
 from dataclasses import replace
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    pack_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     PROOF_GRADE_ASSERTIONS_ENV_VAR,
     PROOF_GRADE_PROGRAM_FILENAME,
@@ -172,6 +175,6 @@ def test_the_reader_travels_as_the_packages_own_bytes_with_no_package_import_lef
         assert "livespec_orchestrator_beads_fabro" not in source, name
         assert source.strip() != "", name
         var = f"{PAYLOAD_ENV_VAR}_{index}"
-        assert step.env[var] == source, name
-        assert f'printf %s "${var}" > "' in step.script
+        assert step.env[var] == pack_payload(text=source), name
+        assert f'printf %s "${var}" | python3 -c' in step.script
         assert source not in step.script, name

@@ -624,6 +624,16 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   to "keep it readable" — `test_dispatcher_prepare_payload_off_script` renders the
   whole overlay and refuses any heredoc or long base64 run in a script. A test that
   EXECUTES a payload step needs the script AND its env (`tests/prepare_step_support`).
+  Every PLAIN-TEXT payload rides packed, gzip then base64 (`pack_payload`), and its
+  step decodes it with `python3` (`packed_payload_write_command`) (`bd-ib-p5e32s`).
+  The overlay is collected as the run's `workflow.toml`, which Fabro caps at
+  524,288 bytes PER FILE, and plain helper source paid that budget twice, once in
+  bytes and again in JSON escaping: livespec-dev-tooling's overlay reached 524,343
+  bytes after v0.312.3 and stopped dispatching. `payload_write_command` is only for
+  a value that is already packed, such as the gh-refresh archive chunks.
+  `check-materialized-workflow-toml-size` (in the aggregate) and
+  `check-fleet-materialized-workflow-toml-size` (pre-push, every fleet member) hold
+  the rendered file under 471,859 bytes.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by ALL FOUR projections that write a fixed `/workspace` path:
