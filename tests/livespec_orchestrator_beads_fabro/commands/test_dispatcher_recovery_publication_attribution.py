@@ -138,7 +138,7 @@ def test_a_route_row_lists_each_passed_over_needs_human_ref_with_its_commit() ->
     )
     row = recovery_route_record(work_item_id="item", route=ROUTE_SEEDED, seed=seed)
     assert row["passed_over_needs_human"] == [
-        {"ref": "refs/heads/needs-human/old", "commit": _HEAD}
+        {"ref": "refs/heads/needs-human/old", "commit": _HEAD, "reason": "not-taken"}
     ]
 
 
