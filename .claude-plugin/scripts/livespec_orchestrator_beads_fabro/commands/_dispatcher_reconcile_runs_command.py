@@ -72,6 +72,9 @@ from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro._beads_client import make_beads_client
 from livespec_orchestrator_beads_fabro.commands._config import resolve_fabro_bin
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fleet_run_collection import (
+    registered_dispatching_repositories,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import invoker_from_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
@@ -82,6 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     calibration_spans_path,
     journal_path,
     store_config,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
+    default_plugin_install_registry,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_claim_lane import (
     reconcile_claim_lane,
@@ -172,6 +178,12 @@ def run_reconcile_runs_command(*, args: argparse.Namespace) -> int:
             # surfaces the stranded-claim clause names.
             claim_journal=journal,
             claim_lane=reconcile_claim_lane,
+            # Every other repository this host dispatches for, so ONE timer pass
+            # collects a closed item's ended runs whichever repository
+            # dispatched them.
+            dispatching_repositories=registered_dispatching_repositories(
+                own_repo=repo, install_record=default_plugin_install_registry()
+            ),
         ),
         factories=factories,
         dry_run=args.dry_run,

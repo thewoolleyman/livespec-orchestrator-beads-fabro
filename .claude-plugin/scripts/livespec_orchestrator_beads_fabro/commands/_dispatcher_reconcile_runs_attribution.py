@@ -128,6 +128,10 @@ class FactoryRunInventory:
     item's parks and nobody else's. A run it narrows away keeps whatever
     moot-question reason the ledger already had for it, so a targeted pass and
     a sweep still agree about every run they both act on.
+
+    `refused_before` is read by ended-run collection alone: the (run id, item
+    status) pairs whose collection refusal the journal already holds, so a
+    standing refusal is journaled once and not on every periodic pass.
     """
 
     runs: Sequence[FabroRunSummary]
@@ -139,6 +143,7 @@ class FactoryRunInventory:
     attribution: RunAttribution = GOAL_TEXT_ONLY
     only_work_item_id: str | None = None
     allow_goal_text_attribution: bool = False
+    refused_before: frozenset[tuple[str, str | None]] = frozenset()
 
 
 @dataclass(frozen=True, kw_only=True)

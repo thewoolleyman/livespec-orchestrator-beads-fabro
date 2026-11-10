@@ -13,6 +13,22 @@ still holds every orphaned Fabro run it launched, and an orphan holds a
 scheduler slot until something looks at it — so the interval with no dispatches
 is exactly the interval with nobody watching. The timer is what closes it.
 
+## One pass collects every dispatching repository's ended runs
+
+The pass also deletes, through the provider, every ended run whose work-item is
+closed in the ledger of the repository that dispatched it. It reaches the other
+repositories through the host's plugin install registry
+(`~/.claude/plugins/installed_plugins.json`): each registered repository's own
+dispatch journal and ledger attribute and grade its runs, so a repository's runs
+do not depend on a timer of that repository's own, and a repository that has never
+collected (livespec-console-beads-fabro) is collected by this one. A run whose
+work-item is open, blocked, needs-human or unreadable in its repository's ledger is
+left in place; the pass journals each collection (`ended-run-collected`) and each
+refusal (`ended-run-collection-refused`) with the run id, the dispatching
+repository, the work-item id and the status read, and journals a standing refusal
+once. The one-time sweep of already-leaked workspaces is a host operation, not part
+of this timer.
+
 ## Install
 
 ```bash
