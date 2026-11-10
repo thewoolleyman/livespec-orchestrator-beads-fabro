@@ -3150,15 +3150,26 @@ check MUST record that it could not determine currency, distinctly from
 recording that the build is current, and MUST proceed rather than refuse.
 
 **Ambient staleness is surfaced, not enforced.** When the executing
-operator-provisioned dispatcher build lags the latest available release,
-the needs-attention snapshot MUST carry a non-blocking
+operator-provisioned dispatcher build lags the latest available release, the
+needs-attention snapshot MUST carry a non-blocking
 dispatcher-currency-staleness fact stating how far the provisioned build is
-behind — in released versions and/or elapsed time — and naming the
-restart-and-update remedy, modeled on the detection-coverage staleness
-facts in §"Detection coverage records and staleness facts". This fact is a
-surfaced TRIGGER: it MUST NOT itself refuse or gate a dispatch, and it
-composes with the already-required passing-canary "restart is due"
-surfacing rather than replacing it.
+behind — in released versions and/or elapsed time — and naming as its remedy
+livespec-dev-tooling's operator step
+`just adopt-orchestrator-build <clone> <build>` followed by a session
+reload, and never a raw `claude plugin update`, modeled on the
+detection-coverage staleness facts in §"Detection coverage records and
+staleness facts". This fact is a surfaced TRIGGER: it MUST NOT itself refuse
+or gate a dispatch, and it composes with the already-required passing-canary
+"restart is due" surfacing rather than replacing it. A fleet clone's session
+reconcile holds its installed orchestrator build (livespec-dev-tooling
+`contracts.md` §"Orchestrator build adoption", ratified in its spec v155),
+so a clone behind the offered build is the expected state between rolls.
+This fact, and every needs-attention currency or release-adoption item
+raised because a clone's registered install is behind the offered or latest
+released build, MUST carry low urgency and MUST NOT carry high urgency on
+that ground alone. Any handoff such an item carries MUST name the same adopt
+step and MUST NOT tell an agent to refresh, update or reinstall the install
+directly.
 
 **A session resolves its project's registered build rather than a remembered
 one.** The plugin MUST ship a command that prints the plugin root of a
@@ -3172,7 +3183,9 @@ import this plugin's package from a snippet MUST bootstrap that import
 through the plugin root this command prints for the governed project, and
 MUST NOT name a literal cache-build path. The plugin's session-start hook
 MUST print a staleness warning naming the registered install's version and
-the latest released version when the governed project's registered install
+the latest released version, and naming the adopt step
+`just adopt-orchestrator-build <clone> <build>` as its remedy rather than a
+raw `claude plugin update`, when the governed project's registered install
 is older than the latest release. When either version is unobservable, the
 hook MUST say that currency could not be determined rather than reporting
 the install current. The warning is surfacing only: the hook MUST NOT fail
@@ -3182,15 +3195,29 @@ dispatcher-currency-staleness fact rather than replacing it.
 **The sole blocking currency form is a deliberate operator floor.** The
 dispatch-admission check MAY refuse dispatch fail-closed if and only if the
 operator has committed a `dispatcher.minimum_release` floor in this repo's
-`.livespec.jsonc` AND the executing release is below that floor. Absent
-that key the check has no blocking authority over currency.
+`.livespec.jsonc` AND the executing release is below that floor. Absent that
+key the check has no blocking authority over currency.
 `dispatcher.minimum_release` (optional; when present, a released-version
 identifier) is a human-chosen safety floor for a release known to be
 safety-critical, never an ambient latest-release comparison. When the floor
 is configured but cannot be evaluated because the executing or available
 release is unobservable, the check MUST record that it could not determine
 currency and MUST proceed, never fail open into a false refusal nor silence
-the undetermined result into a pass.
+the undetermined result into a pass. A refusal under the floor, and every
+other Dispatcher refusal or finding about this plugin's build currency, MUST
+name `just adopt-orchestrator-build <clone> <build>` in livespec-dev-tooling
+as its remedy and MUST NOT name `claude plugin update`.
+
+**An executing build that differs from the registered install is surfaced in
+either direction.** When a dispatch's executing build of this plugin differs
+from the target repository's registered install of it, the Dispatcher MUST
+print a non-blocking finding naming both builds, whether the executing build
+is older or newer than the registered install. A newer executing build, such
+as one reached through a session bound to another project's newer install,
+runs a build the target clone has not adopted, so it is surfaced as an older
+one is. The plugin's agent guidance on stale plugin builds MUST give the fix
+rollout path as release, adopt step, reload, dispatch, and MUST NOT give a
+raw `claude plugin update` as that path.
 
 The factory's GitHub credential is likewise self-contained and
 tenant-scoped (the github-app-auth design record, Pillars 1 and 2).
