@@ -215,7 +215,18 @@ def test_v111_ialgtq_keeps_the_delegated_gate_runner_clause_and_every_h2_heading
     tree = _fixture_tree()
     statement = asked_for_behaviour(item=_ITEM)
     condensed = condensed_spec_tree(spec_tree=tree, statement=statement)
-    old_order = _old_raw_order(tree=tree, statement=statement)
+    # The control reads the archived input: the statement as it rendered the whole
+    # description, proof-mode sub-heading and `Reason:` line included, which is
+    # the text the reported failure was measured on.
+    archived_statement = "\n\n".join(
+        [
+            f"Work item {_ITEM.id}",
+            f"Title: {_ITEM.title}",
+            f"Description: {_ITEM.description.strip()}",
+            "Acceptance criteria: (none recorded)",
+        ]
+    )
+    old_order = _old_raw_order(tree=tree, statement=archived_statement)
 
     assert _REFERENCED_HEADING in old_order[4:], (
         "the archived fixture no longer proves that raw relevance would have "
