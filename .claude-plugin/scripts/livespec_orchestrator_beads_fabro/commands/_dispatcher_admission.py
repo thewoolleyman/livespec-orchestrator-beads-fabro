@@ -81,6 +81,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission imp
     admit_rework,
     rework_pending_candidates,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import (
+    claim_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
     ScreenedVerdict,
     reusable_verdict,
@@ -289,8 +292,11 @@ def admit_and_select(  # noqa: PLR0913 — kw-only; `explicit_factory` is the on
             claim_refused.append((item, refusal))
             continue
         _ = write_dispatch_lock(repo=repo, work_item_id=item.id, dispatch_id=dispatch_id)
+        # `dispatch_id` lets the goal and the judgement subject of THIS dispatch
+        # skip the claim it just took when they bound the rider set, so the claim a
+        # dispatch takes never moves its own bound (`_dispatcher_rider_bound`).
         journal.append(
-            record={"stage": "ledger-admit", "work_item_id": item.id, "assignee": assignee}
+            record=claim_journal_record(item_id=item.id, assignee=assignee, dispatch_id=dispatch_id)
         )
         admitted.append(replace(journal_item, status="active", assignee=assignee))
     refused.extend(
