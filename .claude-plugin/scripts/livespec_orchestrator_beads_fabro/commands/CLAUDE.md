@@ -648,13 +648,34 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   terminal `setup_failed` node as well as its unconditional one, because a command
   node that exits non-zero otherwise follows its unconditional edge and the run
   succeeds; the unconditional edge stays because the engine rejects a node whose
-  every edge is conditional. A step's `env` rides the node as one JSON attribute
-  (`SETUP_ENV_ATTRIBUTE`), not the script, so the engine's compact fidelity does not
-  re-send helper-program bytes to every agent turn; that attribute name is the one
-  thing only a live engine can confirm. And every value is MiniJinja-ESCAPED, since
-  the engine renders node attributes and `run.prepare` was left verbatim. The
+  every edge is conditional. A step's payload variables ride the RUN's environment
+  table and not the node (`hoist_step_env`, `append_env_lines`): the engine's compact
+  fidelity re-sends every setup script and no environment, so helper-program bytes
+  stay out of the agent turns, a command node has no environment of its own that the
+  engine is known to read, and the engine's 524,288-byte workflow-file limit makes
+  the payloads (most of the overlay's weight) a poor fit for the graph file. Each
+  variable is renamed `LIVESPEC_SETUP_<position>__<name>`, because a run-wide table
+  admits one `LIVESPEC_PREPARE_PAYLOAD` where a dozen steps each had their own, and
+  the rename matches WHOLE names so it never rewrites the front of
+  `LIVESPEC_PREPARE_PAYLOAD_0`. The append is read back through a TOML parse and
+  refused if any entry did not land, since a payload that never arrived would fail
+  its own `${VAR:?}` guard minutes into the run. And every script is
+  MiniJinja-ESCAPED, since the engine renders node attributes and `run.prepare` was
+  left verbatim. The
   derived graphs (`_dispatcher_resume_entry`) move the edge out of the chain's tail,
   so a resume or the proof-only arm keeps its setup.
+  `_dispatcher_setup_materialize.py` is where that happens to a REAL dispatch:
+  `overlay_with_setup_nodes` splits the rendered overlay, writes the steps into the
+  dispatch's own copy of the graph and returns the overlay without them, called from
+  `materialize_overlay` after the overlay is rendered whole (so the twenty-one
+  emitters are untouched). A graph with no `start` node, or no per-dispatch graph at
+  all, keeps its steps in the config, since every engine rejects such a graph
+  before a run exists; a graph WITH `start` and nothing to hang the chain on
+  REFUSES, and the refusal gives the minted proof credentials back. The committed
+  setup steps are the `run_prepare_1` .. `run_prepare_K` nodes of each committed
+  `workflow.fabro`, so the Dispatcher's steps continue the numbering at `K + 1`.
+  `_dispatcher_open_command_node` matches the numbered nodes by shape, since a step
+  such as `uv sync` outlasts the stall window with no event inside it.
 - `_dispatcher_sandbox_worktree_exclude.py` — the ONE renderer that makes a
   Dispatcher-materialized sandbox path invisible to the run's own git worktree,
   shared by ALL FOUR projections that write a fixed `/workspace` path:

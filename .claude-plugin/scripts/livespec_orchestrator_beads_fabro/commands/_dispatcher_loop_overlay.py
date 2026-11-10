@@ -138,6 +138,9 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # rather than from the committed default a bare `fabro run` would see.
         review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=overlay.recorded.payload.graph,
+        # The node timeouts that graph was rendered with, so the setup nodes the
+        # overlay adds to it take their durations from the same resolution.
+        node_timeouts=overlay.recorded.payload.timeouts,
         # The client build the record MEASURED for this plan's factory binary,
         # which decides how the written config may name that graph: a Petri-era
         # client collects the package the config sits in, and refuses an

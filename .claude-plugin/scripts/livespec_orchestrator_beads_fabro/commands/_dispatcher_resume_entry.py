@@ -76,6 +76,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pyright_cache import (
     pyright_cache_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
+    SETUP_FAILURE_NODE,
+    setup_chain_tail,
+    setup_node_names,
+)
 
 __all__: list[str] = [
     "RESUME_ENTRY_NODE_ARG",
@@ -109,12 +114,19 @@ RESUME_FETCH_REF_ARG = "resume_fetch_ref"
 # ordinary graph entered at a node" but a different graph with every edge replaced.
 RESUME_PROOF_ONLY_ARG = "resume_proof_only"
 
-# The unconditional `start` edge, as the committed graph spells it: a bare
-# `start -> <target>` line carrying no attribute list. The CONDITIONAL form is
-# deliberately not matched — `start` carries exactly one outgoing edge, and fabro
-# rejects a node whose every outgoing edge is conditional, so a conditional
-# `start` edge is a graph that could never have run.
-_START_EDGE = re.compile(r"(?m)^(?P<indent>[ \t]*)start[ \t]*->[ \t]*(?P<target>\w+)[ \t]*$")
+
+# The unconditional edge LEAVING the setup chain's tail -- `start` itself in a graph
+# that declares no setup nodes -- as the committed graph spells it: a bare
+# `<tail> -> <target>` line carrying no attribute list. The CONDITIONAL form is
+# deliberately not matched: the tail carries exactly one unconditional edge, and
+# fabro rejects a node whose every outgoing edge is conditional, so a graph with
+# none could never have run. A resumed run still sets its sandbox up, so the edge
+# that moves is the one OUT of the chain and the chain stays whole in front of it.
+def _edge_leaving(*, tail: str) -> re.Pattern[str]:
+    return re.compile(
+        rf"(?m)^(?P<indent>[ \t]*){re.escape(tail)}[ \t]*->[ \t]*(?P<target>\w+)[ \t]*$"
+    )
+
 
 # One attribute body, from its opening bracket to the bracket that CLOSES it.
 # The quoted-string alternative is what makes that the right bracket: this graph's
@@ -216,19 +228,22 @@ def graph_entered_at(*, graph_text: str, node: str) -> str | None:
     graph = parse_dot_graph(text=graph_text)
     if isinstance(graph, str) or node not in graph.nodes:
         return None
-    edge = _START_EDGE.search(graph_text)
+    tail = setup_chain_tail(graph=graph)
+    edge = _edge_leaving(tail=tail).search(graph_text)
     if edge is None:
         return None
     orphaned = _orphaned_by_entering(graph=graph, entry=node)
     derived = _spliced(
         text=graph_text,
         edits=[
-            (edge.start(), edge.end(), f"{edge.group('indent')}start -> {node}"),
+            (edge.start(), edge.end(), f"{edge.group('indent')}{tail} -> {node}"),
             *_declaration_spans(graph_text=graph_text, names=orphaned),
             *_edge_spans(graph_text=graph_text, names=orphaned, moved=edge.span()),
         ],
     )
-    return _validated(text=derived, declared=frozenset(graph.nodes) - orphaned, entry=node)
+    return _validated(
+        text=derived, declared=frozenset(graph.nodes) - orphaned, entry=node, tail=tail
+    )
 
 
 def proof_only_graph(*, graph_text: str) -> str | None:
@@ -245,31 +260,53 @@ def proof_only_graph(*, graph_text: str) -> str | None:
     graph = parse_dot_graph(text=graph_text)
     if isinstance(graph, str) or frozenset(graph.nodes) < _PROOF_ONLY_NODES:
         return None
-    removed_nodes = frozenset(graph.nodes) - _PROOF_ONLY_NODES
-    proof_edges = "".join(_proof_only_edge_line(route=route) for route in _PROOF_ONLY_EDGES)
+    chain = frozenset(setup_node_names(graph=graph))
+    setup_nodes = chain | (frozenset(graph.nodes) & {SETUP_FAILURE_NODE})
+    # The setup chain survives whole, because this arm's sandbox is set up like any
+    # other's: only the edge OUT of its tail is replaced, so that it enters capture.
+    kept_edges = [
+        found
+        for found in graph.edges
+        if found.source in chain | {_START_NODE} and found.destination in setup_nodes
+    ]
+    routes = (
+        *(
+            (found.source, found.destination, found.attributes.get("condition"))
+            for found in kept_edges
+        ),
+        (setup_chain_tail(graph=graph), *_PROOF_ONLY_EDGES[0][1:]),
+        *_PROOF_ONLY_EDGES[1:],
+    )
+    proof_edges = "".join(_proof_only_edge_line(route=route) for route in routes[len(kept_edges) :])
     derived = _spliced(
         text=graph_text,
         edits=[
-            *_declaration_spans(graph_text=graph_text, names=removed_nodes),
+            *_declaration_spans(
+                graph_text=graph_text,
+                names=frozenset(graph.nodes) - _PROOF_ONLY_NODES - setup_nodes,
+            ),
             *_edge_spans(
                 graph_text=graph_text,
                 names=frozenset(graph.nodes),
                 moved=(-1, -1),
+                kept_routes=frozenset((found.source, found.destination) for found in kept_edges),
             ),
             (graph_text.rfind("}"), graph_text.rfind("}"), f"\n{proof_edges}"),
         ],
     )
-    return _proof_only_validated(text=derived)
+    return _proof_only_validated(text=derived, nodes=_PROOF_ONLY_NODES | setup_nodes, routes=routes)
 
 
 def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
     """Every declared node the moved `start` edge leaves with no route to it.
 
-    The walk runs from `entry` rather than from `start`, because `start`'s one
-    outgoing edge is the one being rewritten and the committed text still carries
-    its old destination. `start` itself is excluded from the result for the reason
-    the constant records.
+    The walk runs from `entry` rather than from `start`, because the setup chain's
+    tail edge is the one being rewritten and the committed text still carries its
+    old destination. `start` itself is excluded from the result for the reason the
+    constant records, and so is the setup chain with its failure node: they stay in
+    front of the entry, so the move leaves them no orphan to prune.
     """
+    kept = {_START_NODE, *setup_node_names(graph=graph), SETUP_FAILURE_NODE}
     reached = {entry}
     frontier = [entry]
     while frontier:
@@ -278,7 +315,7 @@ def _orphaned_by_entering(*, graph: DotGraph, entry: str) -> frozenset[str]:
             if edge.source == source and edge.destination not in reached:
                 reached.add(edge.destination)
                 frontier.append(edge.destination)
-    return frozenset(graph.nodes) - reached - {_START_NODE}
+    return frozenset(graph.nodes) - reached - kept
 
 
 def _declaration_spans(*, graph_text: str, names: frozenset[str]) -> list[tuple[int, int, str]]:
@@ -296,7 +333,11 @@ def _declaration_spans(*, graph_text: str, names: frozenset[str]) -> list[tuple[
 
 
 def _edge_spans(
-    *, graph_text: str, names: frozenset[str], moved: tuple[int, int]
+    *,
+    graph_text: str,
+    names: frozenset[str],
+    moved: tuple[int, int],
+    kept_routes: frozenset[tuple[str, str]] = frozenset(),
 ) -> list[tuple[int, int, str]]:
     """A deletion edit for each edge line either end of which is a pruned node.
 
@@ -311,11 +352,13 @@ def _edge_spans(
     return [
         (found.start(), found.end(), "")
         for found in _EDGE.finditer(graph_text)
-        if found.span() != moved and {found.group("source"), found.group("target")} & names
+        if found.span() != moved
+        and {found.group("source"), found.group("target")} & names
+        and (found.group("source"), found.group("target")) not in kept_routes
     ]
 
 
-def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None:
+def _validated(*, text: str, declared: frozenset[str], entry: str, tail: str) -> str | None:
     """The derived text, or `None` when it is not the graph the prune intended.
 
     A POSTCONDITION rather than a second opinion, and it is what lets the two
@@ -343,9 +386,7 @@ def _validated(*, text: str, declared: frozenset[str], entry: str) -> str | None
             for found in graph.edges
             for endpoint in (found.source, found.destination)
         )
-        or not any(
-            found.source == _START_NODE and found.destination == entry for found in graph.edges
-        )
+        or not any(found.source == tail and found.destination == entry for found in graph.edges)
     ):
         return None
     return text
@@ -358,15 +399,17 @@ def _proof_only_edge_line(*, route: tuple[str, str, str | None]) -> str:
     return f"    {source} -> {destination}{attributes}\n"
 
 
-def _proof_only_validated(*, text: str) -> str | None:
+def _proof_only_validated(
+    *, text: str, nodes: frozenset[str], routes: tuple[tuple[str, str, str | None], ...]
+) -> str | None:
     """Return a proof-only graph only when its nodes and routes are exact."""
     graph = parse_dot_graph(text=text)
-    if isinstance(graph, str) or frozenset(graph.nodes) != _PROOF_ONLY_NODES:
+    if isinstance(graph, str) or frozenset(graph.nodes) != nodes:
         return None
-    routes = tuple(
+    found = tuple(
         (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
     )
-    if routes != _PROOF_ONLY_EDGES:
+    if found != routes:
         return None
     return text
 
