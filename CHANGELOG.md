@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.313.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.3...v0.313.0) (2026-11-10)
+
+
+### Features
+
+* delete a closed item's preservation refs from origin ([2577c84](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2577c84aac976dc3df35f08ab34cfc5d0fbc18b4))
+* ended-run collection deletes the run's preservation refs before removing it ([11926d1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/11926d11b6786706df8770b003ccca4399210ab9))
+* find a verified preservation ref of a run on origin ([5aa4187](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5aa4187c6a686220ab28997e30aa45856850ae2e))
+* **needs-attention:** compose journal-recorded holds as hygiene:journal-hold facts ([8558ff3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8558ff3a863ce8a86eab222c9bc402c9e64f483f))
+* release a held whole-run wall budget cancel on a verified preservation ref ([c31f0ca](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c31f0ca05ffe354a0717a7f6d2f5a987856ea62c))
+
+
+### Bug Fixes
+
+* **dispatcher:** name the refresh stage's own cause after a briefless refresh failure ([60a9789](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/60a97890861c278fe49026a598171528297dbe26))
+* **needs-attention:** journal-recorded recovery-held and an unreadable journal clear the idle-factory fact ([3f10f76](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3f10f767a98b83fdc0df8afecbf8902e76a39f42))
+
 ## [0.312.3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.2...v0.312.3) (2026-11-10)
 
 
