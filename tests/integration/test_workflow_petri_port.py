@@ -581,7 +581,7 @@ def test_no_node_script_carries_a_backslash_escaped_single_quote() -> None:
     # one line, and a later visit may add more.
     for node, needle in (
         ("pr", "--jq '.mergeCommit.oid'"),
-        ("publish_draft", "--jq '.[0].number'"),
+        ("publish_draft", "--jq '.[]|[.number,.headRefOid]|@tsv'"),
     ):
         assert node in scripts, sorted(scripts)
         wrapped = needle.replace("'", _ESCAPED_SINGLE_QUOTE)

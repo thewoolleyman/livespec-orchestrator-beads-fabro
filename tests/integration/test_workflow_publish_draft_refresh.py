@@ -147,6 +147,9 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         '&& test -f "$GH_CREATE_REFUSED"; then\n'
         '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LATE_LANDED_PR" && exit 0; done\n'
         "fi\n"
+        'if test "$1 $2" = "pr list" && test "${LIVESPEC_OPEN_PR_BEFORE_CREATE:-}" != ""; then\n'
+        '  for arg in "$@"; do test "$arg" = "open" && printf \'%s\\t%s\\n\' "$LIVESPEC_OPEN_PR_BEFORE_CREATE" "$LIVESPEC_OPEN_PR_BEFORE_CREATE_HEAD" && exit 0; done\n'
+        "fi\n"
         'if test "$1 $2" = "pr list" && test "${LIVESPEC_OPEN_PR_AFTER_CREATE:-}" != "" '
         '&& test -f "$GH_CREATE_REFUSED"; then\n'
         '  if test "$LIVESPEC_OPEN_PR_HEAD" = current; then head=$(git rev-parse HEAD); else head="$LIVESPEC_OPEN_PR_HEAD"; fi\n'
@@ -217,6 +220,8 @@ def _publish(
     create_failure: str | None = None,
     open_pr_after_create: str | None = None,
     open_pr_head: str | None = None,
+    open_pr_before_create: str | None = None,
+    open_pr_before_create_head: str | None = None,
 ) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
@@ -251,6 +256,8 @@ def _publish(
             "LIVESPEC_CREATE_FAILURE": create_failure or "",
             "LIVESPEC_OPEN_PR_AFTER_CREATE": open_pr_after_create or "",
             "LIVESPEC_OPEN_PR_HEAD": open_pr_head or "",
+            "LIVESPEC_OPEN_PR_BEFORE_CREATE": open_pr_before_create or "",
+            "LIVESPEC_OPEN_PR_BEFORE_CREATE_HEAD": open_pr_before_create_head or "",
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
@@ -549,6 +556,24 @@ def test_an_http_5xx_draft_creation_does_not_adopt_an_open_pull_request_at_anoth
     assert published.result.returncode != 0
     assert "LIVESPEC_PUBLISH_DRAFT_ADOPTED" not in published.result.stderr
     assert "after 3 re-reads" in published.result.stderr
+
+
+def test_an_existing_open_pull_request_at_another_head_is_not_adopted(
+    tmp_path: Path,
+) -> None:
+    """Scenario 256: the initial branch lookup verifies the published head too."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        open_pr_before_create="90",
+        open_pr_before_create_head="different-head",
+    )
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_HEAD_MISMATCH" in published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.result.stderr
 
 
 @pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
