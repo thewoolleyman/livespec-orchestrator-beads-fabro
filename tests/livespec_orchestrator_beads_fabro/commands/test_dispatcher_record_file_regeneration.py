@@ -28,7 +28,10 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    pack_payload,
+)
 
 from tests.prepare_step_support import steps_in
 
@@ -142,7 +145,7 @@ def test_the_prepare_step_carries_the_program_in_env_and_writes_it_verbatim(
     block = module.record_file_program_prepare_steps_block()
     [step] = steps_in(block=block)
     assert module.RECORD_FILE_PROGRAM_FILENAME in step.script
-    assert step.env == {PAYLOAD_ENV_VAR: module.record_file_program_source()}
+    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=module.record_file_program_source())}
     assert module.record_file_program_source() not in step.script
     _ = tmp_path
 

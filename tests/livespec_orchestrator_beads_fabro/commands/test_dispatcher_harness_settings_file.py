@@ -58,7 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
     ResumeCheckout,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import readable, steps_in
 
 # Opaque non-secret placeholders: the overlay renders whatever it is handed, and
 # a literal spelled like a credential at the call site reads to the lint rule as
@@ -173,7 +173,7 @@ def _settings_writers(*, overlay: str) -> tuple[str, ...]:
     what discriminates them.
     """
     return tuple(
-        "\n".join([step.script, *step.env.values()])
+        "\n".join([step.script, *(readable(value=v) for v in step.env.values())])
         for step in steps_in(block=overlay)
         if _SETTINGS_RELATIVE_PATH in step.script and "python3" in step.script
     )

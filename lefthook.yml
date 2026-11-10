@@ -87,3 +87,8 @@ pre-push:
     # `check-ledger-conformance-live` recipe header.
     02-ledger-conformance:
       run: just check-ledger-conformance-live
+    # Host-local, not part of the delegated aggregate: it reads every fleet
+    # member's committed configuration from the sibling clones, which the
+    # cluster gate's pod does not carry (bd-ib-p5e32s).
+    03-fleet-materialized-workflow-toml-size:
+      run: just check-fleet-materialized-workflow-toml-size

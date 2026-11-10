@@ -15,6 +15,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
+    pack_payload,
+    packed_payload_write_command,
     payload_write_command,
     render_prepare_step,
 )
@@ -294,9 +296,11 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
     fixed tail) ride the step's `env`; the script only writes them.
     """
     push_helper = f"{bundle_root}/bin/push_origin"
-    write_mint = payload_write_command(path_word='"$mint"', var=_MINT_VAR)
-    write_push = payload_write_command(path_word=f'"{push_helper}"', var=_PUSH_VAR)
-    write_tail = payload_write_command(path_word='"$real_gh"', var=_WRAPPER_TAIL_VAR, append=True)
+    write_mint = packed_payload_write_command(path_word='"$mint"', var=_MINT_VAR)
+    write_push = packed_payload_write_command(path_word=f'"{push_helper}"', var=_PUSH_VAR)
+    write_tail = packed_payload_write_command(
+        path_word='"$real_gh"', var=_WRAPPER_TAIL_VAR, append=True
+    )
     script = (
         "set -eu\n"
         f'bundle_root="{bundle_root}"\n'
@@ -324,9 +328,9 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
     return PrepareStep(
         script=script,
         env={
-            _MINT_VAR: _MINT_HELPER_SOURCE,
-            _PUSH_VAR: PUSH_ORIGIN_SOURCE,
-            _WRAPPER_TAIL_VAR: _WRAPPER_TAIL,
+            _MINT_VAR: pack_payload(text=_MINT_HELPER_SOURCE),
+            _PUSH_VAR: pack_payload(text=PUSH_ORIGIN_SOURCE),
+            _WRAPPER_TAIL_VAR: pack_payload(text=_WRAPPER_TAIL),
         },
     )
 

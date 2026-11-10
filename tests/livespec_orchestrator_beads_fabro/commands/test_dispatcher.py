@@ -211,7 +211,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 from livespec_runtime.cross_repo.types import CrossRepoManifest
 from livespec_runtime.github_auth.errors import GithubAppAuthError
 
-from tests.prepare_step_support import runnable_script, steps_in
+from tests.prepare_step_support import readable, runnable_script, steps_in
 
 _GITHUB_APP_ENV_KEYS = (
     "GITHUB_APP_ID",
@@ -1882,7 +1882,7 @@ def test_render_run_config_overlay_prepares_refreshing_gh_wrapper(
     assert "livespec-refreshing-gh-wrapper" in rendered[:env_table_at]
     assert "mint_app_token.py" in rendered[:env_table_at]
     prepared = "\n".join(
-        "\n".join([step.script, *step.env.values()])
+        "\n".join([step.script, *(readable(value=v) for v in step.env.values())])
         for step in steps_in(block=rendered[:env_table_at])
     )
     assert 'token="$(python3 ' in prepared
@@ -1920,7 +1920,9 @@ def test_render_run_config_overlay_projects_gh_mint_helper_for_target_without_sc
     steps = steps_in(block=rendered)
     # The wrapper's fixed tail is a helper source, so it rides a step's env; the
     # unpack program is a short command and stays in the script.
-    assert any('token="$(python3 "$mint")"' in v for s in steps for v in s.env.values())
+    assert any(
+        'token="$(python3 "$mint")"' in readable(value=v) for s in steps for v in s.env.values()
+    )
     assert any('tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz")' in s.script for s in steps)
 
 

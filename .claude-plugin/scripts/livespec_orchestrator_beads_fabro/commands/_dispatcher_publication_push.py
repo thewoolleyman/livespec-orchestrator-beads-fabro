@@ -28,7 +28,8 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -93,10 +94,10 @@ def publication_push_program_prepare_steps_block() -> str:
     step = PrepareStep(
         script=(
             f'set -eu\nmkdir -p "{root}"\n'
-            + payload_write_command(path_word=f'"{path}"')
+            + packed_payload_write_command(path_word=f'"{path}"')
             + f'\nchmod 700 "{path}"'
         ),
-        env={PAYLOAD_ENV_VAR: publication_push_program_source()},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=publication_push_program_source())},
     )
     header = (
         "\n# --- Dispatcher-materialized exact-object publication push: the ONE\n"

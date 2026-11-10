@@ -36,10 +36,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     judgement_subject,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    MAX_PAYLOAD_VALUE_BYTES,
+    MAX_PACKABLE_CHUNK_BYTES,
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -100,13 +101,13 @@ def dod_gate_subject_prepare_steps_block(*, subject: str | None) -> str:
                     "set -eu",
                     f'root="{root}"',
                     'mkdir -p "$root"',
-                    payload_write_command(
+                    packed_payload_write_command(
                         path_word=f'"$root/{DOD_GATE_SUBJECT_FILENAME}"', append=index > 0
                     ),
                     f'echo "{DOD_GATE_SUBJECT_MARKER}: $root/{DOD_GATE_SUBJECT_FILENAME}"',
                 ]
             ),
-            env={PAYLOAD_ENV_VAR: chunk},
+            env={PAYLOAD_ENV_VAR: pack_payload(text=chunk)},
         )
         for index, chunk in enumerate(_chunks(text=subject))
     ]
@@ -123,7 +124,7 @@ def _chunks(*, text: str) -> list[str]:
     chunks: list[str] = []
     start = 0
     while start < len(data):
-        end = min(start + MAX_PAYLOAD_VALUE_BYTES, len(data))
+        end = min(start + MAX_PACKABLE_CHUNK_BYTES, len(data))
         while end < len(data) and data[end] & _UTF8_CONTINUATION_MASK == _UTF8_CONTINUATION_BITS:
             end -= 1
         chunks.append(data[start:end].decode())

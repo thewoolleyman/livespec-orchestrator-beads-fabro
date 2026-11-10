@@ -90,7 +90,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
@@ -536,8 +537,8 @@ def proof_grade_program_prepare_steps_block() -> str:
     destinations.append((f"{root}/{PROOF_GRADE_PROGRAM_FILENAME}", proof_grade_program_source()))
     for index, (destination, source) in enumerate(destinations):
         var = f"{PAYLOAD_ENV_VAR}_{index}"
-        env[var] = source
-        lines.append(payload_write_command(path_word=f'"{destination}"', var=var))
+        env[var] = pack_payload(text=source)
+        lines.append(packed_payload_write_command(path_word=f'"{destination}"', var=var))
     step = PrepareStep(script=chr(10).join(lines), env=env)
     header = (
         "\n# --- Dispatcher-materialized per-assertion Proof of Done grade: the\n"

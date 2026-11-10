@@ -7,7 +7,8 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -64,7 +65,7 @@ def _prepare_script(*, filename: str) -> str:
     root = sandbox_plugins_root_expansion()
     return (
         f'set -eu\nmkdir -p "{root}"\n'
-        + payload_write_command(path_word=f'"{root}/{filename}"')
+        + packed_payload_write_command(path_word=f'"{root}/{filename}"')
         + f'\nchmod 700 "{root}/{filename}"'
     )
 
@@ -73,7 +74,7 @@ def _prepare_step(*, script: str, source: str) -> str:
     """Render one executable program-writing prepare step."""
     step = PrepareStep(
         script=script,
-        env={PAYLOAD_ENV_VAR: source},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=source)},
     )
     return render_prepare_step(step=step)
 

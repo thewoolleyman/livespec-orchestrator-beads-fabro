@@ -473,6 +473,7 @@ check:
         check-fresh-clone-setup
         check-doctor-static
         check-acp-preflight-config
+        check-materialized-workflow-toml-size
     )
     LIVESPEC_AGGREGATE_TARGETS
     # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
@@ -932,6 +933,28 @@ check-doctor-static:
 # Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
 check-acp-preflight-config:
     uv run python dev-tooling/checks/acp_preflight_config.py
+
+# `check-materialized-workflow-toml-size` — SPECIFICATION/contracts.md
+# §"Self-contained plugin dispatch" and Scenario 279. Renders THIS repository's
+# dispatch packages (reserved workflow and registered variants) the way a dispatch
+# does, for a representative item and a worst-case Definition-of-Done subject, and
+# fails when a package file passes 471,859 bytes, the package passes 1,887,436
+# bytes (both 90 percent of Fabro's caps) or holds more than 460 files. Reads
+# nothing outside this checkout, so it runs in the delegated cluster gate too.
+# Not a canonical livespec-dev-tooling slug, so it is wired in the private block
+# (bd-ib-p5e32s).
+check-materialized-workflow-toml-size:
+    uv run python dev-tooling/checks/materialized_workflow_toml_size.py
+
+# `check-fleet-materialized-workflow-toml-size` — the same measurement for EVERY
+# member of the `fleet` array in livespec's `.livespec-fleet-manifest.jsonc`, each
+# rendered from its clone's `origin/master` tree (never its working tree), with
+# this checkout standing in for this repository. A member with no clone FAILS,
+# naming it. Deliberately NOT in the `check:` aggregate: the delegated cluster
+# gate's pod carries no sibling clones, so it runs host-local from lefthook's
+# pre-push.
+check-fleet-materialized-workflow-toml-size:
+    uv run python dev-tooling/checks/materialized_workflow_toml_size.py --fleet
 
 # ---------------------------------------------------------------
 # Canonical structural checks (shared from livespec-dev-tooling).
