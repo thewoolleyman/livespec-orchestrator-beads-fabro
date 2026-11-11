@@ -41,6 +41,14 @@ _NEGATED_WORKFLOW_SCOPE = re.compile(
     rf"\bno\s+files?\s+(?:under|in)\s+{re.escape(_WORKFLOW_PREFIX)}",
     re.IGNORECASE,
 )
+_NEGATED_VERB_BEFORE_WORKFLOW_SCOPE = re.compile(
+    rf"^\s+no\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}",
+    re.IGNORECASE,
+)
+_NEGATED_WORKFLOW_SCOPE_BEFORE_VERB = re.compile(
+    rf"\bno\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}[^\n]{{0,80}}$",
+    re.IGNORECASE,
+)
 
 
 def is_host_only_item(*, item: WorkItem, raw_labels: Sequence[str] = ()) -> bool:
@@ -123,7 +131,12 @@ def _verb_near_workflow_prefix(*, line: str, verb: re.Match[str]) -> bool:
 
 def _verb_is_negated(*, line: str, verb: re.Match[str]) -> bool:
     preceding = line[: verb.start()]
+    following = line[verb.end() :]
     if _NEGATOR_BEFORE_VERB.search(preceding) is not None:
+        return True
+    if _NEGATED_VERB_BEFORE_WORKFLOW_SCOPE.match(following) is not None:
+        return True
+    if _NEGATED_WORKFLOW_SCOPE_BEFORE_VERB.search(preceding) is not None:
         return True
     return (
         _NOUN_NEGATOR_BEFORE_VERB.search(preceding) is not None
