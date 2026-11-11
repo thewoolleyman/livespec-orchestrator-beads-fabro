@@ -98,7 +98,7 @@ case "$subcommand" in
             /*|./*|../*)
                 remote_url="$remote"
                 ;;
-            *) refuse ;;
+            *) remote_url=$(/usr/bin/git -C "$target" remote get-url "$remote" 2>/dev/null) || refuse ;;
         esac
         temporary_root=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || refuse
         remote_path=$(cd "$remote_url" 2>/dev/null && pwd -P) || refuse
