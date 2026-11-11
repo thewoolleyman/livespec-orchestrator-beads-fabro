@@ -835,10 +835,10 @@ def stopped_pick():
         capture_output=True, text=True, check=False,
     )
     unmerged = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=U"],
+        ["git", "diff", "--name-only", "-z", "--diff-filter=U"],
         capture_output=True, text=True, check=False,
     )
-    paths = unmerged.stdout.split()
+    paths = [path for path in unmerged.stdout.split("\0") if path]
     if picked.returncode or not paths:
         return None
     pick = picked.stdout.strip()

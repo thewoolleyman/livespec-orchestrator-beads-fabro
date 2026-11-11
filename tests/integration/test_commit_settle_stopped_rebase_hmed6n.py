@@ -81,8 +81,12 @@ def _commit(repo: Path, message: str) -> None:
     _do(repo, "commit", "--quiet", "-m", message)
 
 
-def _repo(tmp_path: Path) -> Path:
-    """A `work` branch whose first and third commits each conflict with `side`."""
+def _repo(tmp_path: Path, *, spaced: str = "d.txt") -> Path:
+    """A `work` branch whose first and third commits each conflict with `side`.
+
+    `spaced` names the third commit's second conflicted path, so a path carrying
+    whitespace can be conflicted.
+    """
     repo = tmp_path / "clone"
     repo.mkdir()
     _do(repo, "init", "--quiet", "-b", "base")
@@ -90,12 +94,12 @@ def _repo(tmp_path: Path) -> Path:
     _do(repo, "config", "user.email", "fixture@example.invalid")
     _write(repo, "a.txt", "base\n")
     _write(repo, "c.txt", "base\n")
-    _write(repo, "d.txt", "base\n")
+    _write(repo, spaced, "base\n")
     _commit(repo, "base")
     _do(repo, "checkout", "--quiet", "-b", "side")
     _write(repo, "a.txt", "side\n")
     _write(repo, "c.txt", "side\n")
-    _write(repo, "d.txt", "side\n")
+    _write(repo, spaced, "side\n")
     _commit(repo, "side")
     _do(repo, "checkout", "--quiet", "base")
     _do(repo, "checkout", "--quiet", "-b", "work")
@@ -104,7 +108,7 @@ def _repo(tmp_path: Path) -> Path:
     _write(repo, "b.txt", "work two\n")
     _commit(repo, "work two")
     _write(repo, "c.txt", "work\n")
-    _write(repo, "d.txt", "work\n")
+    _write(repo, spaced, "work\n")
     _commit(repo, "work three")
     return repo
 
@@ -206,6 +210,24 @@ def test_a_continue_that_stops_on_a_later_pick_fails_the_settle_with_a_brief(
     _do(repo, "merge-base", "--is-ancestor", settled, "HEAD")
     assert _git(repo, "show", "HEAD:b.txt") == "work two"
     assert "CONFLICT" in result.stderr
+
+
+def test_a_conflicted_path_carrying_whitespace_is_named_whole_in_the_brief(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path, spaced="my file.txt")
+    plugins = _plugins(tmp_path)
+    _stop_on_first_pick(repo)
+    _hook(repo, status=0)
+    report = _run_commit(repo, plugins)
+    assert report["state"] == "passed"
+
+    result = _settle(repo, plugins)
+
+    assert result.returncode != 0, result.stderr
+    brief = (repo / ".git" / "livespec-fix-live-commit").read_text(encoding="utf-8")
+    listed = brief.split("Conflicted paths: ", 1)[1].split(". Resolve", 1)[0]
+    assert listed == "c.txt, my file.txt"
 
 
 def test_a_continue_that_stops_leaves_the_pick_for_the_next_turn_to_finish(
