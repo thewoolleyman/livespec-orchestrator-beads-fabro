@@ -105,3 +105,21 @@ def test_each_component_field_is_rejected_when_it_has_the_wrong_shape(tmp_path: 
             release_components(project_root=tmp_path, repository=_REPOSITORY),
             InvalidReleaseComponents,
         )
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/tools/component/", "../tools/component/", "tools/../../component/", "tools/..", ".."],
+)
+def test_a_component_path_that_is_not_repository_relative_is_a_configuration_finding(
+    tmp_path: Path, path: str
+) -> None:
+    _write_config(
+        tmp_path=tmp_path,
+        components=[{"name": "component", "tag_prefix": "component-v", "paths": [path]}],
+    )
+
+    result = release_components(project_root=tmp_path, repository=_REPOSITORY)
+
+    assert isinstance(result, InvalidReleaseComponents)
+    assert "dispatcher.release_components" in result.finding

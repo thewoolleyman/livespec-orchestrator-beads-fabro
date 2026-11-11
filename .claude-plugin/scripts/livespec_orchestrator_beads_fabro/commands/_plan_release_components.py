@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
@@ -61,10 +61,18 @@ def _component(*, entry: object) -> ReleaseComponent | None:
     if not isinstance(paths, list) or not paths:
         return None
     path_values = cast("list[object]", paths)
-    if not all(isinstance(path, str) and path.strip() for path in path_values):
+    if not all(_repository_relative(path=path) for path in path_values):
         return None
     typed_paths = tuple(cast("str", path) for path in path_values)
     return ReleaseComponent(name=name, tag_prefix=tag_prefix, paths=typed_paths)
+
+
+def _repository_relative(*, path: object) -> bool:
+    """A non-empty path prefix that stays inside the repository: not absolute, no parent segment."""
+    if not isinstance(path, str) or not path.strip():
+        return False
+    pure = PurePosixPath(path.strip())
+    return not pure.is_absolute() and ".." not in pure.parts
 
 
 def _invalid(*, repository: str) -> InvalidReleaseComponents:
