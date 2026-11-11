@@ -128,6 +128,12 @@ def test_authoring_stage_scopes_then_falls_back_to_the_aggregate(
 
 def test_workflow_change_selects_graph_reading_tests(*, tmp_path: Path) -> None:
     """A graph edit is scoped to the tests that read the workflow payload."""
+    graph_reader = tmp_path / "tests" / "test_graph_reader.py"
+    graph_reader.parent.mkdir()
+    _ = graph_reader.write_text(
+        "WORKFLOW = 'workflow.fabro'\n",
+        encoding="utf-8",
+    )
     tools = tmp_path / "bin"
     tools.mkdir()
     log = tmp_path / "just.log"
