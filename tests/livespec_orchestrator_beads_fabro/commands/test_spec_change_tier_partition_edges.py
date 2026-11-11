@@ -105,3 +105,21 @@ def test_a_reason_line_outside_a_proof_mode_sub_heading_is_content() -> None:
     )
     before_any_sub_heading = "## Definition of Done\n\nReason: why.\n\n- First bullet.\n"
     assert "Reason: why." in _statement(description=before_any_sub_heading)
+
+
+def test_the_order_of_bullets_under_a_non_proof_mode_sub_heading_is_partition_too() -> None:
+    grouped = (
+        "## Definition of Done\n\n- Lead bullet.\n\n### Context\n\n"
+        "- First bullet.\n- Second bullet.\n"
+    )
+    reordered = grouped.replace(
+        "- First bullet.\n- Second bullet.", "- Second bullet.\n- First bullet."
+    )
+    assert _digest(description=reordered) == _digest(description=grouped)
+    reworded = grouped.replace("Second bullet", "Third bullet")
+    assert _digest(description=reworded) != _digest(description=grouped)
+    moved_out = grouped.replace(
+        "### Context\n\n- First bullet.\n- Second bullet.",
+        "- First bullet.\n\n### Context\n\n- Second bullet.",
+    )
+    assert _digest(description=moved_out) != _digest(description=grouped)

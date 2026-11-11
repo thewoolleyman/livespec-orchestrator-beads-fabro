@@ -307,8 +307,10 @@ def _without_proof_mode_partition(*, text: str) -> str:
     other sub-heading (`### Context`) with whatever sits under it, and a `Reason:`
     line that does not belong to a proof-mode sub-heading, because each of those is
     something the judge reads. Blank lines are separators and are not kept. A bullet
-    under a non-proof-mode sub-heading stays under it. Text outside the section is
-    kept verbatim, and a description with no section is returned as it came.
+    under a non-proof-mode sub-heading stays under it, sorted there after that
+    sub-heading's other lines, so reordering it is not an edit. Text outside the
+    section is kept verbatim, and a description with no section is returned as it
+    came.
     """
     section = definition_of_done_source(description=text)
     if not section:
@@ -323,10 +325,11 @@ def _without_proof_mode_partition(*, text: str) -> str:
             title is not None
             and declared_proof_mode(sub_heading=title.group(1)) != PROOF_MODE_FACTORY_CAPTURED
         )
-        kept, found = _segment_content(
-            lines=lines, pooled=sub_heading is None or proof_mode, proof_mode=proof_mode
-        )
-        bullets.extend(found)
+        kept, found = _segment_content(lines=lines, proof_mode=proof_mode)
+        if sub_heading is None or proof_mode:
+            bullets.extend(found)
+        else:
+            kept.extend(f"- {bullet}" for bullet in sorted(found))
         if sub_heading is None:
             before = kept
         else:
@@ -351,14 +354,12 @@ def _sub_heading_segments(*, body: list[str]) -> list[tuple[str | None, list[str
     return segments
 
 
-def _segment_content(
-    *, lines: list[str], pooled: bool, proof_mode: bool
-) -> tuple[list[str], list[str]]:
-    """One segment's kept lines and, when `pooled`, the bullets it contributes.
+def _segment_content(*, lines: list[str], proof_mode: bool) -> tuple[list[str], list[str]]:
+    """One segment's kept non-bullet lines and the bullets it holds.
 
-    A pooled segment (the default region or a proof-mode sub-heading) hands its
-    bullets over to be sorted; a proof-mode segment also loses its `Reason:` line
-    and that line's indented wrapping. Blank lines are separators and are dropped.
+    The caller decides whether the bullets are pooled or sorted in place; a
+    proof-mode segment also loses its `Reason:` line and that line's indented
+    wrapping. Blank lines are separators and are dropped.
     """
     kept: list[str] = []
     bullets: list[str] = []
@@ -368,7 +369,7 @@ def _segment_content(
         if not raw.strip():
             _close_bullet(bullets=bullets, pending=pending)
             in_reason = False
-        elif pooled and _BULLET_MARKER.match(raw) is not None:
+        elif _BULLET_MARKER.match(raw) is not None:
             _close_bullet(bullets=bullets, pending=pending)
             pending.append(_BULLET_MARKER.sub("", raw, count=1).strip())
         elif pending and raw[:1].isspace():
