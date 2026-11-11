@@ -52,6 +52,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_held i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
+    identity_for_dod_taking,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
     did_not_run_comment,
@@ -66,8 +69,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
     SpecIdentity,
-    spec_identity_for_governing,
-    whole_tree_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
@@ -138,7 +139,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
     governing_heading: GoverningHeadingReader | None = None,
-    release_of_held_spec_tier: bool = False,
+    release_of_held_spec_tier: bool | None = None,
 ) -> DodJudgementDecision:
     """Reuse the recorded verdict, else take the judgement and record it.
 
@@ -194,10 +195,12 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             else governing_heading
         )
         governing = reader(item=item, repo=repo)
-    identity = (
-        whole_tree_identity(cwd=repo)
-        if release_of_held_spec_tier
-        else spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+    identity = identity_for_dod_taking(
+        item=item,
+        cwd=repo,
+        comments=comments,
+        governing=governing,
+        release_of_held_spec_tier=release_of_held_spec_tier,
     )
     digest = judgement_subject_digest(
         item=item, cwd=repo, comments=comments, spec_identity=identity.value
