@@ -136,6 +136,9 @@ _ACTIVE_STATUS = "active"
 _LABELS_UNREADABLE = "labels-unreadable"
 _MERGE_HOLD = "merge-hold"
 _WHITESPACE = re.compile(r"\s+")
+_ASSERTION_HEADING = re.compile(
+    r"^## Assertion \d+ — (?P<assertion>[^\n]+(?:\n(?![ \t]*$)[^\n]+)*)$", re.MULTILINE
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -252,15 +255,29 @@ def gather_resume(
 
 
 def unproved_assertions(*, item: WorkItem, record: ProofRecord) -> tuple[str, ...]:
-    """The item's current assertions the anchoring record does not carry.
+    """Every named assertion that establishes the item and anchoring record differ.
 
-    The LIST rather than a boolean, because the refusal has to name the
-    difference: an operator reading which assertion arrived after the earlier run
-    can decide whether a plain dispatch is what they want.
+    Current-only assertions arrived after the earlier run and keep the
+    established refusal wording; they come first.  A record-only assertion was
+    removed while the item rested, which is the other direction of the
+    exact-match precondition, and follows them, so an addition never hides a
+    removal.  Either makes a plain dispatch the safe route.
     """
+    assertions = effective_criteria(item=item).assertions
     body = _normalized(text=record.body)
+    current = frozenset(_normalized(text=one) for one in assertions)
+    missing = tuple(one for one in assertions if _normalized(text=one) not in body)
+    removed = tuple(
+        one for one in _recorded_assertions(record=record) if _normalized(text=one) not in current
+    )
+    return missing + removed
+
+
+def _recorded_assertions(*, record: ProofRecord) -> tuple[str, ...]:
+    """The assertion text the standard headings carry, including a wrapped tail."""
     return tuple(
-        one for one in effective_criteria(item=item).assertions if _normalized(text=one) not in body
+        " ".join(match.group("assertion").split())
+        for match in _ASSERTION_HEADING.finditer(record.body)
     )
 
 
@@ -298,7 +315,7 @@ def _earlier_run_id(*, cancel: CancelAnchor | None, provisional: ResumeAnchor | 
 
 
 def _changed_assertions(*, item: WorkItem, anchor: ResumeAnchor | None) -> tuple[str, ...]:
-    """The item's assertions the anchoring record does not carry; none without one.
+    """The item/record assertion difference, or none without an inherited record.
 
     An anchor carrying NO record inherits no proof — the resumed run enters at
     `proof_capture` and captures afresh — so there is no record for an assertion
