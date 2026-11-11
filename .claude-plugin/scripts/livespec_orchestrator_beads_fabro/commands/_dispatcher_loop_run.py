@@ -55,6 +55,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lease import (
     revoke_proof_credentials,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_launch import (
+    consume_seed_ruling_for_run,
+    seeded_launch_receipt,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging import (
     SourceStagingRunner,
 )
@@ -138,6 +142,10 @@ class DispatchRunContext:
     # watchdog's heartbeat probe can look beats up by the SAME id
     # `cc_otel_overlay_env` projected into the sandbox.
     dispatch_id: str | None = None
+    # The dispatch record's ruling evidence travels with the run so the receipt
+    # is written only once a concrete Fabro run id exists.
+    seed_ruling_comments: tuple[str, ...] = ()
+    seed_ruling_work_item_id: str | None = None
     prelaunch_checkpoint: PrelaunchCheckpoint = ignore_prelaunch_checkpoint
 
 
@@ -225,4 +233,16 @@ def run_dispatch_with_watchdog(
                 prelaunch_checkpoint=context.prelaunch_checkpoint,
             ),
         )
+        if context.seed_ruling_work_item_id is not None and context.dispatch_id is not None:
+            consume_seed_ruling_for_run(
+                receipt=seeded_launch_receipt(
+                    args=context.args,
+                    comments=context.seed_ruling_comments,
+                    work_item_id=context.seed_ruling_work_item_id,
+                    dispatch_id=context.dispatch_id,
+                    run_id=outcome.fabro_run_id,
+                ),
+                repo=context.repo,
+                journal=context.journal,
+            )
     return started_at, outcome

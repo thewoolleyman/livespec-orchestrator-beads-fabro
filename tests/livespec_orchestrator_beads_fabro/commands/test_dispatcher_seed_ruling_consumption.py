@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import dispatcher
@@ -109,3 +110,47 @@ def test_reconciliation_backfills_a_missing_consumed_comment_from_the_runs_seed_
         f"\ndispatch-id: {_DISPATCH}\nrun-id: {_RUN}"
     ]
     assert written_records[0]["stage"] == "seed-ruling-consumed"
+
+
+def test_dispatch_and_reconciliation_wire_the_seed_ruling_receipts() -> None:
+    """A launched ruled seed records its receipt and reconciliation repairs it."""
+    module = importlib.import_module(_MODULE)
+    comments = [
+        "\n".join(
+            (
+                "livespec-seed-ruling",
+                f"work-item: {_ITEM}",
+                f"preservation-ref: {_REF}",
+                f"commit-sha: {_SHA}",
+                "invoker: coordinator",
+                "reason: preserve the tree",
+                f"instant: {_INSTANT}",
+            )
+        )
+    ]
+    written_comments: list[str] = []
+    written_records: list[dict[str, object]] = []
+
+    assert hasattr(module, "consume_seed_ruling_for_run")
+    module.consume_seed_ruling_for_run(
+        comments=comments,
+        work_item_id=_ITEM,
+        preservation_ref=_REF,
+        commit_sha=_SHA,
+        dispatch_id=_DISPATCH,
+        run_id=_RUN,
+        append_comment=written_comments.append,
+        append_journal=written_records.append,
+    )
+
+    assert written_comments[0].startswith("livespec-seed-ruling-consumed\n")
+    assert written_records[0]["run_id"] == _RUN
+
+    loop = importlib.import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_loop")
+    reconciliation = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_pass"
+    )
+    assert "consume_seed_ruling_for_run" in inspect.getsource(loop)
+    assert "backfill_seed_ruling_consumptions_from_ledger" in inspect.getsource(
+        reconciliation.reconcile_runs_pass
+    )

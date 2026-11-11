@@ -57,10 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_overlay import 
     DispatchOverlay,
     materialize_dispatch_overlay,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
-    goal_file_path,
-    overlay_file_path,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import dispatch_artifact_paths
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_record import record_dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import (
     DispatchLaunchContext,
@@ -185,8 +182,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
     if isinstance(recorded, DispatchOutcome):
         return recorded
     plan = recorded.plan
-    goal_file = goal_file_path(work_item_id=item.id)
-    overlay_file = getattr(plan, "workflow_toml", overlay_file_path(work_item_id=item.id))
+    goal_file, default_overlay_file = dispatch_artifact_paths(work_item_id=item.id)
+    overlay_file = getattr(plan, "workflow_toml", default_overlay_file)
     with profile.during(name="github-app-auth"):
         token_supplier = selfup.github_token_supplier()
     if isinstance(token_supplier, str):
@@ -288,6 +285,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             payload_dir=recorded.payload.payload_dir,
             token_supplier=token_supplier,
             dispatch_id=identity.dispatch_id,
+            seed_ruling_comments=tuple(comment.text for comment in recorded.comments),
+            seed_ruling_work_item_id=item.id,
             prelaunch_checkpoint=profile.checkpoint,
         ),
         run_dispatch_func=run_dispatch,
@@ -296,6 +295,8 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
             on_worker_running=secret_sink.release_launch_guard,
         ),
     )
+    # `consume_seed_ruling_for_run` is called by the run boundary, immediately
+    # after the launcher returns the run id and before it disposes the outcome.
     # REBOUND, not merely called: the post-merge acceptance valve runs inside, and
     # the outcome it returns is the one the dispatch RESULT must report — a park
     # reported as the janitor's own `green at done` is finding F7(b).

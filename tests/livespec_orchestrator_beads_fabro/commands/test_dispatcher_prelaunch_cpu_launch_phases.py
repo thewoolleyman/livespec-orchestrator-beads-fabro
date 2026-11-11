@@ -185,6 +185,7 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     events: list[str] = []
+    consumed: list[object] = []
 
     def checkpoint(*, name: str) -> None:
         events.append(name)
@@ -193,6 +194,11 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     monkeypatch.setattr(run_module, "dispatch_spans_path", lambda **_: tmp_path / "spans.jsonl")
     monkeypatch.setattr(run_module, "heartbeat_path", lambda **_: tmp_path / "beat.jsonl")
     monkeypatch.setattr(run_module, "revoke_proof_credentials", lambda **_: None)
+    monkeypatch.setattr(
+        run_module,
+        "consume_seed_ruling_for_run",
+        lambda *, receipt, **_: consumed.append(receipt),
+    )
     outcome = DispatchOutcome(
         work_item_id="bd-ib-5d5aue",
         status="green",
@@ -213,13 +219,32 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
 
     _ = run_module.run_dispatch_with_watchdog(
         context=run_module.DispatchRunContext(
-            args=argparse.Namespace(poll_attempts=1, poll_interval_seconds=0.0),
+            args=argparse.Namespace(
+                poll_attempts=1,
+                poll_interval_seconds=0.0,
+                resume_fetch_ref="refs/seed",
+                resume_head="a" * 40,
+            ),
             repo=tmp_path,
             plan=_plan(repo=tmp_path),
             journal=JournalFile(path=tmp_path / "journal.jsonl"),
             overlay_file=tmp_path / "overlay.toml",
             token_supplier=lambda: "token",
             dispatch_id="dispatch-7",
+            seed_ruling_comments=(
+                "\n".join(
+                    (
+                        "livespec-seed-ruling",
+                        "work-item: bd-ib-5d5aue",
+                        "preservation-ref: refs/seed",
+                        f"commit-sha: {'a' * 40}",
+                        "invoker: coordinator",
+                        "reason: preserve",
+                        "instant: 2026-11-11T00:00:00Z",
+                    )
+                ),
+            ),
+            seed_ruling_work_item_id="bd-ib-5d5aue",
             prelaunch_checkpoint=checkpoint,
         ),
         run_dispatch_func=run_dispatch,
@@ -227,6 +252,7 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     )
 
     assert events == ["span", "dispatch-span", "launcher", "engine"]
+    assert getattr(consumed[0], "run_id", None) == "01RUN"
 
 
 def test_a_resumed_dispatch_hands_its_pull_request_head_to_source_staging(
