@@ -64,13 +64,35 @@ def test_the_host_timer_surveys_only_the_live_factories() -> None:
     assert declared_factory_names(block=configured) == ("candidate", "petri")
 
 
-def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:
-    timer = _TIMER.read_text(encoding="utf-8")
+def test_the_timer_fires_ten_minutes_after_the_previous_pass_ends() -> None:
+    """The interval is counted from the end of a pass, never from its start.
 
-    assert "OnUnitActiveSec=10min" in timer
+    Counted from the start, any pass of 10 minutes or more was followed by the
+    next one with no gap, which is how passes ran back to back on vmi3006760 on
+    2026-11-11.
+    """
+    timer = _TIMER.read_text(encoding="utf-8")
+    settings = [line for line in timer.splitlines() if not line.startswith("#")]
+
+    assert "OnUnitInactiveSec=10min" in settings
+    assert not any(line.startswith("OnUnitActiveSec=") for line in settings)
+    assert "OnBootSec=5min" in settings
     assert "Persistent=true" in timer
     assert "Unit=reconcile-runs.service" in timer
     assert "WantedBy=timers.target" in timer
+
+
+def test_a_pass_yields_cpu_and_is_reclaimed_but_never_hard_capped() -> None:
+    """A hard MemoryMax near the measured peak would OOM-kill every pass."""
+    settings = [
+        line
+        for line in _SERVICE.read_text(encoding="utf-8").splitlines()
+        if not line.startswith("#")
+    ]
+
+    assert "CPUWeight=20" in settings
+    assert "MemoryHigh=5G" in settings
+    assert not any(line.startswith("MemoryMax=") for line in settings)
 
 
 def test_the_installer_refuses_without_the_project_env_wrapper(tmp_path: Path) -> None:
