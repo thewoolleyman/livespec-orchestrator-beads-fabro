@@ -12507,6 +12507,24 @@ Feature: incident completion requires final normal proof rather than an old repa
     And missing cancelled or unreadable evidence remains an explicit obligation
 ```
 
+## Scenario: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused
+
+```gherkin
+Feature: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused
+
+  Scenario: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused
+    Given an incident item at phase reverting whose every carrier reached pr-bound, every one of whose pull requests merged into an incident-scratch/** base branch, with no landed or revert commit reachable from master and repayment owed
+    And a second incident item labelled incident:drill whose bound carrier pull request's base branch is master
+    And a third incident item in repair whose carrier is still pre-PR
+    And a fourth incident item whose bound pull request's base branch the forge cannot read
+    When an operator applies the drill-close action to each item
+    Then the first item reads incident phase drill-closed with canonical lifecycle state done, and its provenance shows no repayment outstanding
+    And the second and third items are refused with incident-not-a-recorded-drill and are unchanged
+    And the fourth item is refused with incident-drill-evidence-unavailable and is unchanged
+    And a commit-transition naming a drill-closed successor is refused with incident-drill-close-requires-action
+    And a recovery request against the first item is refused with incident-reopen-not-eligible
+```
+
 ## Scenario: an attributable regression fences repayment and reopens the same incident
 
 ```gherkin
