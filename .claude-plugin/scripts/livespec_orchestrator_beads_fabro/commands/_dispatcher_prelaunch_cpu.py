@@ -7,6 +7,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Protocol, TypeVar, runtime_checkable
 
@@ -18,9 +19,11 @@ __all__: list[str] = [
     "PrelaunchCpuProfile",
     "PrelaunchStep",
     "PrelaunchStepJournal",
+    "drive_process_age_seconds",
     "drive_tree_cpu_seconds",
     "ignore_prelaunch_checkpoint",
     "prelaunch_phase",
+    "process_age_seconds",
     "process_tree_cpu_seconds",
 ]
 
@@ -99,7 +102,12 @@ class PrelaunchCpuProfile:
             cpu_seconds=drive_tree_cpu_seconds,
             baseline_cpu_seconds=0.0,
         )
+        age = drive_process_age_seconds()
+        profile.record_step(event="start", name="drive-startup", at=_seconds_ago(seconds=age))
         profile.checkpoint(name="drive-startup")
+        profile.record_step(
+            event="end", name="drive-startup", elapsed_seconds=age, outcome="completed"
+        )
         return profile
 
     def __post_init__(self) -> None:
@@ -252,6 +260,32 @@ def drive_tree_cpu_seconds() -> float:
     return process_tree_cpu_seconds(
         root=Path("/proc"), pid=os.getpid(), clock_ticks=os.sysconf("SC_CLK_TCK")
     )
+
+
+def drive_process_age_seconds() -> float:
+    """Seconds since the current Dispatcher process started."""
+    return process_age_seconds(
+        root=Path("/proc"), pid=os.getpid(), clock_ticks=os.sysconf("SC_CLK_TCK")
+    )
+
+
+def process_age_seconds(*, root: Path, pid: int, clock_ticks: int) -> float:
+    """Return a procfs process age, or zero when the necessary reading is absent."""
+    uptime = attempt(
+        action=lambda: float((root / "uptime").read_text(encoding="utf-8").split()[0]),
+        exceptions=(OSError, ValueError, IndexError),
+    )
+    stat = attempt(
+        action=lambda: (root / str(pid) / "stat").read_text(encoding="utf-8"), exceptions=(OSError,)
+    )
+    if isinstance(uptime, AttemptFailure) or isinstance(stat, AttemptFailure):
+        return 0.0
+    return max(0.0, uptime - int(stat.rpartition(")")[2].split()[19]) / clock_ticks)
+
+
+def _seconds_ago(*, seconds: float) -> str:
+    """Render an instant relative to now in the journal's UTC representation."""
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def process_tree_cpu_seconds(*, root: Path, pid: int, clock_ticks: int) -> float:

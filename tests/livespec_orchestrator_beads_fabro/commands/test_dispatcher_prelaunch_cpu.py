@@ -94,6 +94,18 @@ def test_process_tree_cpu_counts_live_descendants_that_os_times_cannot_see(
     assert seconds == 4.2
 
 
+def test_process_age_uses_uptime_and_returns_zero_when_procfs_is_unreadable(tmp_path: Path) -> None:
+    """Startup attribution covers both procfs readings without a fabricated age."""
+    module = importlib.import_module(_MODULE)
+    (tmp_path / "uptime").write_text("1000.50 0.0\n", encoding="utf-8")
+    (tmp_path / "42").mkdir()
+    fields = ["S", "1", *["0"] * 17, "99000", "0"]
+    (tmp_path / "42" / "stat").write_text(f"42 (python) {' '.join(fields)}\n", encoding="utf-8")
+
+    assert module.process_age_seconds(root=tmp_path, pid=42, clock_ticks=100) == 10.5
+    assert module.process_age_seconds(root=tmp_path, pid=43, clock_ticks=100) == 0.0
+
+
 def test_a_launch_profile_holds_its_rows_until_the_dispatched_item_is_named() -> None:
     """Phases that close before the drive knows its item are not lost."""
     module = importlib.import_module(_MODULE)
