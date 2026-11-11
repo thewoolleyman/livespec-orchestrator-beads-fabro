@@ -87,6 +87,7 @@ class BuildIdentity:
     release_tag: str | None
     installed_build: str | None
     commit: str | None
+    artifact_paths: tuple[str, ...] | None = None
 
     @property
     def containment_ref(self) -> str | None:
@@ -114,6 +115,10 @@ class BuildIdentity:
             (RELEASE_TAG_LABEL, NO_RELEASE if self.release_tag is None else self.release_tag),
             (INSTALLED_BUILD_LABEL, self.installed_build),
             (COMMIT_LABEL, self.commit),
+            (
+                "artifact paths",
+                ", ".join(self.artifact_paths) if self.artifact_paths is not None else None,
+            ),
         )
         lines = [f"## {BUILD_IDENTITY_HEADING}", ""]
         lines.extend(f"- {label}: {value}" for label, value in bullets if value is not None)
