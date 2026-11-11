@@ -556,6 +556,9 @@ with open(state_path, "w") as handle:
     json.dump(state, handle)
 
 if argv[:2] == ["pr", "view"]:
+    if argv[argv.index("--json") + 1] == "number":
+        print("184")
+        sys.exit(0)
     if argv[argv.index("--json") + 1] == "comments":
         print(json.dumps({"comments": state.get("comments", [])}))
         sys.exit(0)
@@ -1382,6 +1385,47 @@ def test_a_remote_moving_after_observation_is_rejected_by_the_lease(tmp_path: Pa
     assert box.remote_head(ref=_BRANCH) == late
     assert box.state(name=REFRESH_CHANGED_STATE_FILENAME) is None
     assert box.state(name=REFRESH_COUNT_STATE_FILENAME) is None
+
+
+def test_a_rejected_leased_push_that_landed_is_named_as_landed_errored(
+    tmp_path: Path,
+) -> None:
+    """A forge error after a real write is not evidence that the lease lost.
+
+    The helper first invokes the production exact-head push, then updates the
+    pull-request ref to the same head and reports the measured forge error.
+    Origin therefore proves that the publish write landed even though its
+    client reported failure; an ordinary lease refusal leaves the branch at
+    its previous head and cannot satisfy this control.
+    """
+    box = _build(root=tmp_path)
+    helper_root = tmp_path / "push-helper"
+    helper = helper_root / "bin" / "push_origin"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        "#!/bin/sh\n"
+        '"$@"\n'
+        'git push --quiet origin "HEAD:refs/pull/184/head"\n'
+        "printf '%s\\n' 'remote: fatal error in commit_refs' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o700)
+    _ = _advance_default(box=box)
+
+    result = _run(
+        box=box,
+        extra_env={"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(helper_root)},
+    )
+
+    pushed = box.local_head()
+    assert result.returncode == 1, result.stdout
+    assert box.remote_head(ref=_BRANCH) == pushed
+    assert "LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED" in result.stderr
+    assert "fatal error in commit_refs" in result.stderr
+    assert pushed in result.stderr
+    assert "refs/pull/184/head" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
 
 
 def test_a_forge_server_error_retries_the_leased_push_while_origin_is_unchanged(
