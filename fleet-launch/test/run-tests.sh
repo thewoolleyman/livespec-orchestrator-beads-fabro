@@ -148,6 +148,10 @@ if [ "${1:-}" = -- ]; then shift; fi
 for argument in "$@"; do
     case ${argument##*/} in
         ready-set-check.py)
+            if [ -n "${STUB_READY_BLOCKED_UNTIL_RELEASE:-}" ] && [ ! -s "$STUB_RELEASE_LOG" ]; then
+                printf 'READY-CHECK stub: blocked until the seat-gated release runs\n'
+                exit 3
+            fi
             if [ -n "${STUB_READY_REFUSALS:-}" ]; then
                 # Refuse the first STUB_READY_REFUSALS calls with STUB_READY_REASON and record what the
                 # launcher held at each call: its FIFO ticket, the launch mutex and an in-flight marker.
@@ -241,7 +245,14 @@ for argument in "$@"; do
         drive.py)
             item=""
             for token in "$@"; do
-                case $token in impl:*) item=${token#impl:} ;; esac
+                case $token in
+                    impl:*) item=${token#impl:} ;;
+                    resolve-blocked:*:ready)
+                        printf '%s\n' "$token" >> "$STUB_RELEASE_LOG"
+                        printf '{"status": "stub-released"}\n'
+                        exit 0
+                        ;;
+                esac
             done
             case ${LIVESPEC_FABRO_FACTORY:-} in
                 petri) server=$STUB_SERVER_GMK ;;
@@ -436,6 +447,7 @@ DRIVE_MUTEX_LOG=""
 PREFLIGHT_LOG=""
 RESUME_LOG=""
 RESUME_OBSERVATION_LOG=""
+RELEASE_LOG=""
 PS_LOG=""
 SNAPSHOT_DIR=""
 BOARD_GMK=""
@@ -461,6 +473,8 @@ new_case() {
     : > "$RESUME_LOG"
     RESUME_OBSERVATION_LOG="$CASE_DIR/resume-observation-log"
     : > "$RESUME_OBSERVATION_LOG"
+    RELEASE_LOG="$CASE_DIR/release-log"
+    : > "$RELEASE_LOG"
     PS_LOG="$CASE_DIR/ps-log"
     : > "$PS_LOG"
     SNAPSHOT_DIR="$CASE_DIR/board-snapshot"
@@ -481,6 +495,7 @@ new_case() {
     export STUB_PREFLIGHT_LOG="$PREFLIGHT_LOG"
     export STUB_RESUME_LOG="$RESUME_LOG"
     export STUB_RESUME_OBSERVATION_LOG="$RESUME_OBSERVATION_LOG"
+    export STUB_RELEASE_LOG="$RELEASE_LOG"
     export STUB_PS_LOG="$PS_LOG"
     unset STUB_PS_DELAY_S
     export STUB_READY_EXIT=0
@@ -555,7 +570,7 @@ new_case() {
     export FLEET_LAUNCH_MUTEX_HOLD_S=60
     export FLEET_LAUNCH_LISTING_WAIT_S=60
     export FLEET_LAUNCH_STOP_GRACE_S=5
-    unset STUB_RESUME_UNLISTED
+    unset STUB_RESUME_UNLISTED STUB_READY_BLOCKED_UNTIL_RELEASE
     unset ONLY_GMK ONLY_HL CAPTURE_NULL CAPTURE_EXPECT TICKET_NS REWORK RELEASE_BLOCKED
 }
 
@@ -1002,7 +1017,7 @@ stop_launcher "$older_pid"
 wait "$older_pid" || true
 fi
 
-# Cases 9-13 cover the resume launcher and the in-flight marker count, not
+# Cases 9-14 cover the resume launcher, seat-gated releases and in-flight marker count, not
 # Scenario 297's queued preflight, so the scenario297 slice skips them: that
 # slice runs under a 60 s bound in tests/integration/test_fleet_launch_scenario297.py
 # and the full set took it to about 73 s, turning master red on every CI run.
@@ -1063,7 +1078,41 @@ else
     fail "the resume did not retain its marker through mutex release: $(tr '\n' ' ' < "$RESUME_OBSERVATION_LOG")"
 fi
 
-# --- 10. a resume marker stays counted until the board lists the run --------
+# --- 10. a seat-gated direct release waits for the cap ----------------------
+# A blocked item is deliberately absent from the ready set until its release
+# action runs.  The release must therefore bypass that first ready-set read,
+# but only after the normal FIFO/cap binding has made space and retained its
+# in-flight marker.
+echo "--- 10. a seat-gated direct release waits for the fleet cap"
+new_case direct-release-cap
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_READY_BLOCKED_UNTIL_RELEASE=1
+write_board "$BOARD_GMK" 8 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
+RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-direct-release > "$DIRECT_RELEASE_LOG" 2>&1 &
+direct_release_pid=$!
+if wait_for_line "$DIRECT_RELEASE_LOG" "fleet not green" 30 \
+    && [ ! -s "$RELEASE_LOG" ] \
+    && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a seat-gated direct release waits for fleet headroom before it releases or drives"
+else
+    fail "the direct release bypassed the fleet cap or stalled before the cap gate"
+    tail -8 "$DIRECT_RELEASE_LOG" >&2
+fi
+write_board "$BOARD_GMK" 7 gmk
+wait "$direct_release_pid"; direct_release_rc=$?
+if [ "$direct_release_rc" = 0 ] \
+    && grep -qx 'resolve-blocked:bd-ib-direct-release:ready' "$RELEASE_LOG" \
+    && grep -qx 'bd-ib-direct-release' "$DRIVE_LOG"; then
+    pass "the release and its drive run only after the capped FIFO binding"
+else
+    fail "the seat-gated direct release did not complete through the launcher (rc=$direct_release_rc releases=$(tr '\n' ' ' < "$RELEASE_LOG") drives=$(drive_log_items))"
+    tail -8 "$DIRECT_RELEASE_LOG" >&2
+fi
+
+# --- 11. a resume marker stays counted until the board lists the run --------
 # The resume client returns at once, before the run lists on the board.  The
 # launcher must keep its in-flight marker so concurrent launchers still count
 # the resume, and drop it only after the board lists the run.
@@ -1092,7 +1141,7 @@ else
     fail "the resume marker was not cleared after listing (rc=$resume_rc)"
 fi
 
-# --- 11. an unreadable in-flight directory counts as at the cap -------------
+# --- 12. an unreadable in-flight directory counts as at the cap -------------
 # A regular file stands where the in-flight directory belongs, so the count of
 # in-flight launches cannot be read.  With empty boards and headroom under the
 # cap, the resume must still refuse to start.
@@ -1111,7 +1160,7 @@ else
     fail "the resume started or misread an unreadable in-flight directory (rc=$resume_rc resumes=$(tr '\n' ' ' < "$RESUME_LOG"))"
 fi
 
-# --- 12. a launch that lists between the board read and the marker read ----
+# --- 13. a launch that lists between the board read and the marker read ----
 # Another launcher's in-flight marker covers a run the board does not list yet.
 # During the resume's board read, that launcher sees its run listed and removes
 # its marker (the hook below does both, after the read has captured its rows).
@@ -1143,7 +1192,7 @@ else
     tail -6 "$RESUME_CASE_LOG" >&2
 fi
 
-# --- 13. the impl launcher counts a launch listed mid-read too -------------
+# --- 14. the impl launcher counts a launch listed mid-read too -------------
 # The same race as case 12, against the impl launcher's fleet-green count.
 echo "--- 13. the impl launcher keeps a launch listed mid-read counted"
 new_case impl-listing-race

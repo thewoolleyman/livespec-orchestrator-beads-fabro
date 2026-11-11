@@ -381,15 +381,23 @@ ready_refused() {
 if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
   ensure_ticket
 fi
-while :; do
-  # See the repository-hold loop below: default TERM can reach EXIT cleanup
-  # with a zero child status, so retain its cause while this retry waits too.
-  exit_cause="signal TERM (this exit was not a run ending)"
-  rcout=$(ready_check); rcrc=$?; echo "$(date -u +%FT%TZ) $rcout"
-  if [ $rcrc = 0 ]; then exit_cause=""; break; fi
-  ready_refused "$rcout"
-  sleep "$FLEET_LAUNCH_POLL_S"
-done
+# A seat-gated release starts blocked, so it cannot pass the ordinary ready-set
+# check until its release valve runs.  Defer that check until after this
+# launcher has taken the same FIFO, mutex, cap and in-flight-marker path as a
+# queued launch; the post-release re-check below remains the admission guard.
+if [ -n "${RELEASE_BLOCKED:-}" ]; then
+  echo "$(date -u +%FT%TZ) seat-gated release: defer ready-set check until after capped FIFO binding"
+else
+  while :; do
+    # See the repository-hold loop below: default TERM can reach EXIT cleanup
+    # with a zero child status, so retain its cause while this retry waits too.
+    exit_cause="signal TERM (this exit was not a run ending)"
+    rcout=$(ready_check); rcrc=$?; echo "$(date -u +%FT%TZ) $rcout"
+    if [ $rcrc = 0 ]; then exit_cause=""; break; fi
+    ready_refused "$rcout"
+    sleep "$FLEET_LAUNCH_POLL_S"
+  done
+fi
 
 # A queued launcher takes its Definition-of-Done preflight while it waits; a pass
 # is reusable for FLEET_LAUNCH_PREFLIGHT_REUSE_S when it reaches the FIFO head.
@@ -561,6 +569,11 @@ while :; do
   cred=$(cd "$REPO" && timeout 120 "$WRAP" -- python3 "$plugin/scripts/bin/dispatcher.py" claude-cred-status 2>/dev/null)
   printf '%s\n' "$cred" | grep -q "is usable" || { echo "$(date -u +%FT%TZ) credential probe NOT usable: hold, no launch"; printf '%s\n' "$cred" | tail -3; rm -f "$marker"; marker=""; release_lock; exit_cause="credential probe not usable"; exit 75; }
   echo "$(date -u +%FT%TZ) credential probe usable (HTTP 200)"
+  if [ -n "${RELEASE_BLOCKED:-}" ]; then
+    rel=$(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "resolve-blocked:${ITEM}:ready" --invoker "claude:$SEAT" --json 2>&1); rrc=$?
+    echo "$(date -u +%FT%TZ) resolve-blocked:${ITEM}:ready rc=$rrc $(printf '%s' "$rel" | tr '\n' ' ' | cut -c1-300)"
+    [ $rrc = 0 ] || { echo "release refused: no launch"; exit_cause="resolve-blocked release refused rc=$rrc"; exit 75; }
+  fi
   rcout=$(ready_check); rcrc=$?
   if [ $rcrc != 0 ]; then
     # This launcher has dropped its ticket at the bind: release the marker, re-take the ticket at the same
@@ -569,11 +582,6 @@ while :; do
     ready_refused "$rcout"; ensure_ticket; sleep "$FLEET_LAUNCH_POLL_S"; continue
   fi
   echo "$(date -u +%FT%TZ) LAUNCH target=$target head=$(git -C "$REPO" rev-parse --short HEAD) build=$build version=${build_version:-?}"
-  if [ -n "${RELEASE_BLOCKED:-}" ]; then
-    rel=$(cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "resolve-blocked:${ITEM}:ready" --invoker "claude:$SEAT" --json 2>&1); rrc=$?
-    echo "$(date -u +%FT%TZ) resolve-blocked:${ITEM}:ready rc=$rrc $(printf '%s' "$rel" | tr '\n' ' ' | cut -c1-300)"
-    [ $rrc = 0 ] || { echo "release refused: no launch"; exit_cause="resolve-blocked release refused rc=$rrc"; exit 75; }
-  fi
   (cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
   drive_pid=$!
   if [ -n "${CAPTURE_NULL:-}" ]; then
