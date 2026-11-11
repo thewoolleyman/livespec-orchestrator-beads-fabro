@@ -141,10 +141,15 @@ When this file exists, you were re-entered for exactly that:
 
 The brief names the open Red commit. Do NOT author a new Red commit and do not
 rewrite the test: write the minimum implementation that makes that Red's test
-pass, run the test file, and complete its Green amend through the commit runner
-(`git commit --amend --no-edit`, so the Red trailer block survives). The
-test-file bytes must stay identical across the pair. A turn that ends with the
-Red still open spends one of this node's eight visits and the run ends at
+pass, run the test file, and complete its Green amend through the sandbox commit
+runner (`git commit --amend --no-edit`, so the Red trailer block survives). The
+runner folds engine checkpoint commits sitting above the open Red onto it before
+amending, so issue that runner amend while HEAD is on the checkpoints rather
+than declining because they sit above the Red. Before that runner amend, do not
+run `git reset` with either `--soft` or `--hard`, and do not otherwise rewrite
+the open Red or the checkpoints above it. The test-file bytes must stay identical
+across the pair. A turn that ends with the Red still open spends one of this
+node's eight visits and the run ends at
 `needs_human` when they are used. If the file does not exist, this visit was
 entered on a janitor or proof finding; carry on below.
 

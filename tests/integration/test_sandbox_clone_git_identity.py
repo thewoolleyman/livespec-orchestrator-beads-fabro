@@ -297,8 +297,10 @@ def _publish_draft_script() -> str:
     assert not isinstance(graph, str), graph
     script = graph.nodes["publish_draft"]["script"]
     assert "{{ inputs.default_branch }}" in script, script
-    return script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH).replace(
-        "{{ inputs.sandbox_check_suite }}", "true"
+    return (
+        script.replace("{{ inputs.default_branch }}", _DEFAULT_BRANCH)
+        .replace("{{ inputs.sandbox_check_suite }}", "true")
+        .replace("{{ inputs.conformance_hook_install }}", "")
     )
 
 
