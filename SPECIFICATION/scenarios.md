@@ -13921,7 +13921,7 @@ Feature: A run whose sandbox was OOM-killed is classified permanent and names th
 
 ## Scenario 336 — A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones
 
-Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A sandbox runs its tools from pinned clones and works in the latest clones."
+Governing clause: `contracts.md` §"Self-contained plugin dispatch" → "A sandbox runs its tools from pinned clones and works in the latest clones." and → "Helper programs are fetched in the sandbox from the dispatching build's own commit."
 
 ```gherkin
 Feature: A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones
@@ -13952,6 +13952,37 @@ Feature: A sandbox checks a tree with the tooling release that tree pins, and wo
     And each is writable by the run's agent
     And each is non-shallow or carries the depth its repository declares sufficient
     And livespec's wiring-completeness-cross-repo check reads the sibling clones under /livespec-siblings
+
+  Scenario: A dispatch's run configuration carries a helper manifest and no helper source
+    Given a ready work item dispatched from an installed plugin build at commit C
+    When the Dispatcher writes the dispatch's rendered run configuration
+    Then it carries a helper manifest naming the orchestrator repository, commit C and one sha256 digest per helper program
+    And it carries no helper program's source and no gzip+base64-packed helper payload
+
+  Scenario: The setup step writes every helper program from the pinned commit and verifies its digest
+    Given a dispatch whose helper manifest names commit C
+    When the helper-fetch setup step runs in the sandbox
+    Then each helper program at its sandbox path is byte-identical to the Dispatcher's composition of it at C, with its file mode
+    And the step runs again before the next stage when the run resumes onto a re-acquired sandbox
+
+  Scenario Outline: A helper the setup step cannot verify fails the run before dod_gate
+    Given a dispatch whose helper manifest names commit C
+    And <condition>
+    When the helper-fetch setup step runs
+    Then the run fails before dod_gate
+    And its failure cause is LIVESPEC_PREPARE_PAYLOAD_DIGEST_MISMATCH followed by the helper's name and the reason
+
+    Examples:
+      | condition                                                              |
+      | one helper composed at C has a digest that differs from the manifest   |
+      | commit C cannot be fetched                                             |
+      | one helper's source path is missing at commit C                        |
+
+  Scenario: A build commit the forge does not have is refused before claim
+    Given an installed plugin build whose commit is not reachable on the forge
+    When the Dispatcher dispatches a ready work item
+    Then the dispatch is refused before any dispatch claim is written
+    And the journaled refusal names the commit
 ```
 
 ## Scenario 337 — A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed

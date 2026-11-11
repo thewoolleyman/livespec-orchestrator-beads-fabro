@@ -3002,12 +3002,18 @@ explicit `--workflow <path>` override remains the escape hatch.
 
 Because the workflow ships in the payload and resolves from the plugin
 root, the factory dispatches from the ENABLED PLUGIN ALONE: no clone of
-the orchestrator's own source is required at dispatch time. Fleet
+the orchestrator's own source is required on the dispatching HOST. Fleet
 members and adopters therefore consume the orchestrator IDENTICALLY —
-enabling the plugin is the whole installation. The only repository
-clones the dispatch path makes are of the dispatch TARGET repo (the work
-site, cloned host-side and again inside the Fabro sandbox); the
-orchestrator's own source is never a dispatch-time prerequisite.
+enabling the plugin is the whole installation. The only repository clone
+the dispatch path makes host-side is of the dispatch TARGET repo (the
+work site); the orchestrator's own source is never a host-side
+dispatch-time prerequisite. Inside the Fabro sandbox the dispatch path
+clones the target again, takes the run-from and work clones of "A
+sandbox runs its tools from pinned clones and works in the latest
+clones", and fetches the orchestrator's own source at the installed
+plugin build's commit solely to compose its helper programs, per
+"Helper programs are fetched in the sandbox from the dispatching build's
+own commit".
 
 **The release channel.** Fleet members and adopters resolve this plugin
 through the moving `release` branch: every consumer's marketplace
@@ -3485,6 +3491,36 @@ NOT use one kind for the other's purpose.
   for archaeology and debugging: non-shallow, or a depth the repository declares
   sufficient. A cross-repository conformance read, such as livespec's
   `wiring-completeness-cross-repo`, MUST read the work clones.
+
+Scenario 336 in `scenarios.md` exercises this paragraph.
+
+**Helper programs are fetched in the sandbox from the dispatching build's own commit.**
+A *helper program* is a program the Dispatcher materializes into a dispatch's
+sandbox from this plugin's own source, such as the commit runner and the gate
+preview. The Dispatcher MUST NOT carry any helper program's source in a
+dispatch's rendered run configuration. It MUST write a *helper manifest* there
+instead, naming the orchestrator repository, the commit of the installed plugin
+build, and one sha256 digest per helper program, each digest taken over that
+helper's composed bytes as the Dispatcher composes them. A setup step of the
+dispatched workflow MUST fetch the plugin source at the manifest's commit,
+sparse and shallow, MUST compose every helper program from it with the same
+composition the Dispatcher uses, MUST write each to its sandbox path with its
+file mode, and MUST verify every digest. Because it is a setup step, it re-runs
+when a run resumes onto a re-acquired sandbox. A composed helper whose digest
+differs from the manifest, a manifest commit that cannot be fetched, or a source
+path missing at that commit MUST fail the run before `dod_gate`, with the failure
+cause `LIVESPEC_PREPARE_PAYLOAD_DIGEST_MISMATCH` followed by `<helper>: <reason>`.
+A dispatch whose installed plugin build commit is not reachable on the forge
+MUST be refused before any dispatch claim is written, and the journaled refusal
+MUST name the commit. The rendered run configuration MUST carry no
+gzip+base64-packed helper payload; per-dispatch data that is not in the
+repository, namely the `dod_gate` subject and the pull-request body, MAY stay
+inline, packed. The setup step's own script MUST stay short and MUST NOT inline
+any helper program's source, because the engine renders a completed command
+stage's script into the prompt of every later agent stage. The dispatching host
+still needs no orchestrator clone, as this section's opening paragraphs state;
+the sandbox takes a pinned fetch of the orchestrator for its helper programs the
+way it takes run-from clones for its tools.
 
 Scenario 336 in `scenarios.md` exercises this paragraph.
 
