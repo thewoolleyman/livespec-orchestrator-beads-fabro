@@ -7,7 +7,10 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_comments import (
+    append_work_item_comment,
+    read_work_item_comments,
+)
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_wip_capture_receipt as receipt
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.store import append_work_item
@@ -131,6 +134,39 @@ def test_non_numeric_refs_are_not_captures() -> None:
         )
         is None
     )
+
+
+def test_a_needs_human_ref_is_named_with_its_tip_and_merge_base_diff(tmp_path: Path) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    journal = _Journal()
+    ref = f"refs/heads/needs-human/{_RUN}"
+    commit = "n" * 40
+    append_work_item_comment(
+        path=_config(),
+        work_item_id=_ITEM,
+        body="\n".join(
+            [
+                "livespec-needs-human-cause",
+                f"run id: {_RUN}",
+                f"preservation: the tree was preserved on {ref} (see pointer)",
+            ]
+        ),
+    )
+    runner = _Runner(stdout=f"{commit}\t{ref}\n")
+
+    receipt.record_wip_capture_receipt(
+        repo=repo,
+        work_item_id=_ITEM,
+        run_id=_RUN,
+        factory="petri",
+        journal=journal,
+        runner=runner,
+    )
+
+    body = _comments()[-1]
+    assert ref in body
+    assert f"commit id: {commit}" in body
+    assert "files changed" in body
 
 
 def test_no_capture_and_an_unreadable_forge_are_distinct_receipts(tmp_path: Path) -> None:
