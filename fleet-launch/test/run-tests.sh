@@ -263,6 +263,17 @@ for argument in "$@"; do
                 # A drive waiting in its master-CI preflight: the item reads
                 # `ready` until the gate file appears, then `active` (admitted),
                 # and the run is submitted only after STUB_DRIVE_SUBMIT_GATE too.
+                if [ -n "${STUB_DRIVE_START_GATE:-}" ]; then
+                    # A slow drive start: the drive has been invoked but has not yet
+                    # reached its preflight wait. The harness opens the gate once it
+                    # has advanced its own clock past any fixed startup bound.
+                    : > "$STUB_DRIVE_START_GATE.reached"
+                    start_deadline=$(( $(date +%s) + ${HARNESS_PREFLIGHT_HANG_GUARD_S:-300} ))
+                    while [ ! -e "$STUB_DRIVE_START_GATE" ] \
+                        && [ "$(date +%s)" -lt "$start_deadline" ]; do
+                        sleep "$HARNESS_POLL_S"
+                    done
+                fi
                 printf '%s\n' "$item" >> "$STUB_DRIVE_WAITING"
                 printf '%s\n' "$$" >> "$STUB_DRIVE_PIDS"
                 if [ -n "${STUB_DRIVE_ADMIT_ON_TERM:-}" ]; then
@@ -1551,26 +1562,48 @@ prepare_330_case() {
     export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
     export STUB_DRIVE_SUBMIT_GATE="$STUB_DRIVE_SUBMIT_GATE_FILE"
 }
-# wait_for_drive_invocations <count> <seconds>: until the stub drive has started <count> times.
-wait_for_drive_invocations() {
-    local count="$1" limit="$2" deadline
-    deadline=$(( $(date +%s) + limit ))
+# harness_now: the case-20 waits' clock. HARNESS_CLOCK_SKEW_FILE, when it names a
+# file, adds its seconds, so a case can put the clock past any fixed startup bound
+# while the drive is held, without sleeping that long.
+harness_now() {
+    local skew=0
+    if [ -n "${HARNESS_CLOCK_SKEW_FILE:-}" ] && [ -s "$HARNESS_CLOCK_SKEW_FILE" ]; then
+        skew=$(cat "$HARNESS_CLOCK_SKEW_FILE")
+    fi
+    echo $(( $(date +%s) + skew ))
+}
+# wait_on_launcher <launcher> <pid> <log> <condition...>: until the condition holds.
+# The verdict is the launcher's own state: the condition holding passes, and the
+# launcher exiting first fails at once. HARNESS_PREFLIGHT_HANG_GUARD_S only stops a
+# genuinely hung launcher; it is not a startup budget, so a slow start still passes.
+# On failure WAIT_FAILURE_DETAIL names the reason and the last launcher log line.
+WAIT_FAILURE_DETAIL=""
+wait_on_launcher() {
+    local launcher="$1" pid="$2" log="$3" deadline reason alive last_line
+    shift 3
+    deadline=$(( $(harness_now) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
     while :; do
-        if [ "$(wc -l < "$STUB_DRIVE_WAITING")" -ge "$count" ]; then return 0; fi
-        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        # Liveness first, then the condition, as wait_for_preflight samples them.
+        alive=1
+        kill -0 "$pid" 2>/dev/null || alive=0
+        if "$@"; then return 0; fi
+        if [ "$alive" = 0 ]; then reason="the launcher exited first"; break; fi
+        if [ "$(harness_now)" -ge "$deadline" ]; then
+            reason="hung past the ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard"
+            break
+        fi
         sleep "$HARNESS_POLL_S"
     done
+    last_line=$(tail -n 1 "$log" 2>/dev/null || true)
+    WAIT_FAILURE_DETAIL="launcher=$launcher: $reason; last launcher log line: ${last_line:-<no launcher log output>}"
+    return 1
 }
-# wait_for_item_status <status> <seconds>: until the stub item reads <status>.
-wait_for_item_status() {
-    local want="$1" limit="$2" deadline
-    deadline=$(( $(date +%s) + limit ))
-    while :; do
-        if [ "$(cat "$STUB_ITEM_STATUS_FILE")" = "$want" ]; then return 0; fi
-        [ "$(date +%s)" -lt "$deadline" ] || return 1
-        sleep "$HARNESS_POLL_S"
-    done
-}
+drive_invoked_at_least() { [ "$(wc -l < "$STUB_DRIVE_WAITING")" -ge "$1" ]; }
+item_reads() { [ "$(cat "$STUB_ITEM_STATUS_FILE")" = "$1" ]; }
+# wait_for_drive_invocations <count> <pid> <log>: until the stub drive has started <count> times.
+wait_for_drive_invocations() { wait_on_launcher drive-start "$2" "$3" drive_invoked_at_least "$1"; }
+# wait_for_item_status <status> <pid> <log>: until the stub item reads <status>.
+wait_for_item_status() { wait_on_launcher item-status "$2" "$3" item_reads "$1"; }
 # drive_gone: no stub drive process is left running for this case.
 drive_gone() {
     local pid
@@ -1602,7 +1635,7 @@ prepare_330_case hold-before-admission
 STOP_LOG="$CASE_DIR/launcher.log"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-before > "$STOP_LOG" 2>&1 &
 stop_pid=$!
-if wait_for_drive_invocations 1 10; then
+if wait_for_drive_invocations 1 "$stop_pid" "$STOP_LOG"; then
     set_hold "$HOLD_FILE" 'engine restart'
     if wait_for_line "$STOP_LOG" "stopped the drive for bd-ib-hold-before" 10 \
         && kill -0 "$stop_pid" 2>/dev/null \
@@ -1628,7 +1661,7 @@ if wait_for_drive_invocations 1 10; then
         tail -n 8 "$STOP_LOG" >&2
     fi
 else
-    fail "the stub drive never started for the hold-before-admission case"
+    fail "the stub drive never started for the hold-before-admission case ($WAIT_FAILURE_DETAIL)"
     stop_launcher "$stop_pid"
     wait "$stop_pid" 2>/dev/null
 fi
@@ -1640,7 +1673,7 @@ STOP_LOG="$CASE_DIR/launcher.log"
 printf 'kinds: resume\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-repo-hold > "$STOP_LOG" 2>&1 &
 stop_pid=$!
-if wait_for_drive_invocations 1 10; then
+if wait_for_drive_invocations 1 "$stop_pid" "$STOP_LOG"; then
     sleep 0.3
     if log_has "$STOP_LOG" "stopped the drive"; then
         fail "a resume-scoped repository hold stopped an impl drive"
@@ -1656,7 +1689,7 @@ if wait_for_drive_invocations 1 10; then
         tail -n 8 "$STOP_LOG" >&2
     fi
 else
-    fail "the stub drive never started for the repository-hold case"
+    fail "the stub drive never started for the repository-hold case ($WAIT_FAILURE_DETAIL)"
 fi
 stop_launcher "$stop_pid"
 wait "$stop_pid" 2>/dev/null
@@ -1667,7 +1700,7 @@ STOP_LOG="$CASE_DIR/launcher.log"
 : > "$STUB_DRIVE_ADMIT_GATE_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after > "$STOP_LOG" 2>&1 &
 stop_pid=$!
-if wait_for_item_status active 10; then
+if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
     set_hold "$HOLD_FILE" 'engine restart'
     sleep 0.3
     held_alive=0
@@ -1683,7 +1716,7 @@ if wait_for_item_status active 10; then
         tail -n 8 "$STOP_LOG" >&2
     fi
 else
-    fail "the stub item never read active in the hold-after-admission case"
+    fail "the stub item never read active in the hold-after-admission case ($WAIT_FAILURE_DETAIL)"
     stop_launcher "$stop_pid"
     wait "$stop_pid" 2>/dev/null
 fi
@@ -1724,7 +1757,7 @@ for after_stop in admitted unreadable; do
     fi
     ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-stop-admit > "$STOP_LOG" 2>&1 &
     stop_pid=$!
-    if wait_for_drive_invocations 1 10; then
+    if wait_for_drive_invocations 1 "$stop_pid" "$STOP_LOG"; then
         if [ "$after_stop" = unreadable ]; then : > "$STUB_ITEM_STATUS_UNREADABLE_FILE"; fi
         if [ "$after_stop" = admitted ] && ! wait_for_file "$STUB_DRIVE_WATCHER_ARMED_FILE" 10; then
             fail "the stub drive's TERM watcher never armed its trap before case 20e set the hold"
@@ -1760,12 +1793,45 @@ for after_stop in admitted unreadable; do
             tail -n 8 "$STOP_LOG" >&2
         fi
     else
-        fail "the stub drive never started for the stopped-after-admission case"
+        fail "the stub drive never started for the stopped-after-admission case ($WAIT_FAILURE_DETAIL)"
         report_case_20e_admission_order
         stop_launcher "$stop_pid"
         wait "$stop_pid" 2>/dev/null
     fi
 done
+
+# 20f. A slow drive start still passes the case-20 wait: the drive is held at its start
+# gate while the wait's clock is put 15 s past launcher start, beyond the fixed 10 s bound
+# the waits once used, and only then released. The wait is decided by the drive starting.
+prepare_330_case slow-drive-start
+STOP_LOG="$CASE_DIR/launcher.log"
+export STUB_DRIVE_START_GATE="$CASE_DIR/drive-start-gate"
+export HARNESS_CLOCK_SKEW_FILE="$CASE_DIR/clock-skew"
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+: > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-slow-start > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+slow_rc_file="$CASE_DIR/slow-start-wait.rc"
+if wait_for_file "$STUB_DRIVE_START_GATE.reached" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+    ( wait_for_drive_invocations 1 "$stop_pid" "$STOP_LOG"; printf '%s\n' "$?" > "$slow_rc_file" ) &
+    slow_waiter=$!
+    printf '15\n' > "$HARNESS_CLOCK_SKEW_FILE"
+    : > "$STUB_DRIVE_START_GATE"
+    wait "$slow_waiter"
+    wait "$stop_pid"
+    stop_rc=$?
+    if [ "$(cat "$slow_rc_file")" = 0 ] && [ "$stop_rc" = 0 ] && log_has "$STOP_LOG" "LISTED on petri"; then
+        pass "a drive that starts 15 s after the launcher still passes the case-20 wait and its run lists"
+    else
+        fail "a slow drive start failed the case-20 wait (wait rc=$(cat "$slow_rc_file") launcher rc=$stop_rc)"
+        tail -n 8 "$STOP_LOG" >&2
+    fi
+else
+    fail "the stub drive never reached its start gate in the slow-start case"
+    stop_launcher "$stop_pid"
+    wait "$stop_pid" 2>/dev/null
+fi
+unset STUB_DRIVE_START_GATE HARNESS_CLOCK_SKEW_FILE
 fi
 
 # --- 23. a launcher that exits without a run leaves a terminal line ---------
