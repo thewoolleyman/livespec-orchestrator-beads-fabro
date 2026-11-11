@@ -63,6 +63,9 @@ from livespec_runtime import spec_stated
 from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    CAUSE_UNPARSEABLE_VERDICT,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
@@ -197,16 +200,17 @@ def classify_spec_change_tier(
     if standing is not None:
         return standing
     judge_runner = runner or ShellCommandRunner()
+    classification_model = drift_judge(
+        project_root=repo,
+        runner=judge_runner,
+        reply="item_class",
+        caller=_CALLER,
+    )
     classification = spec_stated.classify(
         title=item.title,
         description=item.description,
         item_type=item.type,
-        run_model=drift_judge(
-            project_root=repo,
-            runner=judge_runner,
-            reply="item_class",
-            caller=_CALLER,
-        ),
+        run_model=classification_model,
     )
     if not is_successful(classification):
         return did_not_run_outcome(
@@ -214,7 +218,11 @@ def classify_spec_change_tier(
             stage=stage,
             spec_version=spec_version,
             digest=digest,
-            cause=CAUSE_CLASSIFICATION_UNREADABLE,
+            cause=(
+                CAUSE_CLASSIFICATION_UNREADABLE
+                if classification_model.cause in ("", CAUSE_UNPARSEABLE_VERDICT)
+                else classification_model.cause
+            ),
             comments=comments,
             append=append,
         )

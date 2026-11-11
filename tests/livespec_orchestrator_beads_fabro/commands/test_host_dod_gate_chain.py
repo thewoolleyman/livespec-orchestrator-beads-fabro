@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import os
 import sys
 from collections.abc import Mapping
@@ -202,6 +203,81 @@ def test_missing_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
     )
 
     assert dod_gate_candidates(cwd=repo) is None
+
+
+def test_a_structured_workflow_default_runs_the_host_judgement_without_a_repository_entry(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    workflow = repo / ".fabro" / "workflows" / "implement-work-item"
+    workflow.mkdir(parents=True)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}',
+        encoding="utf-8",
+    )
+    _ = (workflow / "workflow.toml").write_text(
+        "[run.inputs]\n"
+        'dod_gate_adapter = \'{"agent": "claude-acp", "model": "claude-opus-5"}\'\n',
+        encoding="utf-8",
+    )
+    runner = _Runner(results=[CommandResult(exit_code=0, stdout="accepted", stderr="")])
+
+    candidates = dod_gate_candidates(cwd=repo)
+
+    assert candidates is not None
+    assert candidates[0].agent_id == "claude-acp"
+    reply, cause = run_dod_gate_prompt(
+        prompt="one prompt",
+        cwd=repo,
+        runner=runner,
+        is_verdict=lambda text: text == "accepted",
+    )
+    assert (reply, cause) == ("accepted", "")
+    assert runner.argvs[0][1:] == [
+        "-p",
+        "--model",
+        "claude-opus-5",
+        "--name",
+        "purpose:host_judgement@repo",
+        "--tools",
+        "",
+        "--add-dir",
+        str(repo),
+        "--setting-sources",
+        "",
+        "--managed-settings",
+        "{}",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--no-session-persistence",
+    ]
+
+
+def test_malformed_structured_pr_default_does_not_hide_a_valid_dod_gate_identity(
+    tmp_path: Path,
+) -> None:
+    module_path = Path(candidate_module.__file__).with_name("_dispatcher_acp_workflow.py")
+    assert module_path.is_file()
+    workflow_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_acp_workflow"
+    )
+    workflow = tmp_path / "workflow.toml"
+    _ = workflow.write_text(
+        "[run.inputs]\n"
+        'dod_gate_adapter = \'{"agent": "claude-acp", "model": "claude-opus-5"}\'\n'
+        "pr_adapter = '{not-json'\n",
+        encoding="utf-8",
+    )
+
+    configured = workflow_module.workflow_configuration(
+        committed=workflow,
+        catalogs=importlib.import_module(
+            "livespec_orchestrator_beads_fabro.commands._acp_catalogs"
+        ).builtin_catalogs(),
+    )
+
+    assert not isinstance(configured, str), configured
+    assert configured[2] == {"dod_gate_adapter": "claude-acp"}
 
 
 def test_a_non_mapping_stream_record_is_not_journalled(tmp_path: Path) -> None:

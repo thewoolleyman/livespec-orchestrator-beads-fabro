@@ -321,6 +321,26 @@ def test_an_unreadable_classification_records_the_cause_once_and_no_tier(
     assert _calls(ledger=ledger) == 2
 
 
+def test_a_classifier_with_no_eligible_model_records_that_distinct_cause(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}, '
+        '"dispatcher": {}}}',
+        encoding="utf-8",
+    )
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    outcome = classify_item_spec_change_tier(
+        item=_item(), repo=repo, path=_config(repo=repo), stage=STAGE_FILING
+    )
+
+    assert outcome.recorded is None
+    assert outcome.cause == "no-eligible-model"
+    assert "no-eligible-model" in _comments(repo=repo)[0]
+
+
 def test_an_unreadable_spec_tree_records_its_own_cause_and_spends_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
