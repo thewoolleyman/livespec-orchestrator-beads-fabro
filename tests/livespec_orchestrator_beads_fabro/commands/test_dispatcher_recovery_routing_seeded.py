@@ -68,6 +68,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ITEM_ID = "bd-ib-qgcpoc"
 _BRANCH = f"feat/{_ITEM_ID}"
 _RUN = "01M509HNX5KGKSRV04VQEYVWH6"
@@ -116,6 +118,8 @@ class _Shell:
         for needle, result in _Shell.answers.items():
             if needle in joined:
                 return result
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         message = f"unscripted command reached the shell seam: {joined}"
         raise AssertionError(message)
 

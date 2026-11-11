@@ -17,7 +17,9 @@ sources routing reads on this base:
 
 1. an admitted resume;
 2. a needs-human ref or failed-checkpoint preservation ref published at the LATEST
-   run's ending;
+   run's ending (when the latest run holds a needs-human ref, the newest by
+   committer time across every earlier-run identifier's refs, which
+   `test_dispatcher_recovery_pr_run_older_ref` holds);
 3. the latest run's highest-numbered work-in-progress ref;
 4. an earlier run's needs-human ref or failed-checkpoint preservation ref, which
    outranks the observed published head only when its run is the head's run or a
@@ -69,6 +71,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing imp
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ITEM = "bd-ib-prec"
 _EARLIER = "01EARLIERRUN0000000000000A"
 _LATEST = "01LATESTRUN00000000000000B"
@@ -79,6 +83,9 @@ _NH_EARLIER = f"refs/heads/needs-human/{_EARLIER}"
 _NH_LATEST = f"refs/heads/needs-human/{_LATEST}"
 _NH_EARLIER_COMMIT = "a1" * 20
 _NH_LATEST_COMMIT = "a2" * 20
+# Once the latest run holds a needs-human ref the newest tip across every run's refs
+# is taken, so a row naming both reads their committer times: the latest run's is newer.
+_COMMITTER_TIMES = {_NH_EARLIER_COMMIT: 1_000, _NH_LATEST_COMMIT: 2_000}
 
 _WIP = f"refs/livespec/wip/{_ITEM}/{_LATEST}"
 _WIP_COMMITS = {1: "b1" * 20, 9: "b9" * 20, 10: "b0" * 20}
@@ -103,6 +110,19 @@ _BUDGET_CANCEL = "run-wall-budget-exceeded"
 _STALL_RELEASE = "stall-release"
 
 
+def _history_read_answer(*, argv: list[str]) -> CommandResult | None:
+    """The scripted tip, committer-time and ancestry reads, else `None`.
+
+    No tip descends from another, so the newest committer time decides.
+    """
+    if argv[:4] == ["git", "show", "-s", "--format=%H %ct"]:
+        stdout = "".join(f"{commit} {_COMMITTER_TIMES[commit]}\n" for commit in argv[4:])
+        return CommandResult(exit_code=0, stdout=stdout, stderr="")
+    if argv[:3] == ["git", "merge-base", "--is-ancestor"]:
+        return CommandResult(exit_code=1, stdout="", stderr="")
+    return tip_read_answer(argv=argv)
+
+
 class _Origin:
     """A scripted origin, forge and factory board; an unscripted argv FAILS.
 
@@ -119,6 +139,8 @@ class _Origin:
 
     def answer(self, *, argv: list[str]) -> CommandResult:
         joined = " ".join(argv)
+        if (read := _history_read_answer(argv=argv)) is not None:
+            return read
         if argv[:3] == ["git", "ls-remote", "origin"]:
             lines = [
                 f"{commit}\t{ref}"

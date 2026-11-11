@@ -53,9 +53,10 @@ __all__: list[str] = [
 RECOVERY_ROUTE_STAGE = "recovery-route"
 RECOVERY_HELD_STAGE = "recovery-held"
 
-# Why a listed needs-human ref was passed over. `no-change` is the clause's other
-# reason, for a ref that carries no work; this build lists no such ref.
+# Why a listed needs-human ref was passed over: `no-change` for a ref whose tip
+# tree is its merge base's tree and so carries no work, `not-taken` for any other.
 _PASSED_OVER_NOT_TAKEN = "not-taken"
+_PASSED_OVER_NO_CHANGE = "no-change"
 
 # What the route row says about preserved work, for the two routes that measured
 # it. `absent` is the LOSS the clause requires recording; `verified` is the seed's
@@ -98,27 +99,45 @@ def recovery_route_record(
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
-        "passed_over_needs_human": _passed_over(seed=seed),
+        "passed_over_needs_human": _passed_over(seed=seed, loss=loss),
     }
 
 
-def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
+def _passed_over(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> list[dict[str, str]]:
     """Each needs-human ref that carried an earlier run and was not taken, with its commit.
 
-    Every entry carries the reason `not-taken`: this listing holds the refs the
-    choice passed over, and a ref that carries no change never reaches it.
+    The refs the choice passed over carry the reason `not-taken`; the refs whose tip
+    tree is their merge base's tree carry `no-change`, because they were never
+    candidates and were not passed over in favour of anything. The two sit on a
+    seed, and the second also sits on a loss, since an item whose only needs-human
+    refs carry no work is routed fresh and the loss is where that is recorded.
 
     An empty list and never an omitted key, for a route that took no needs-human
     ref at all as for a seed that passed none over: the clause requires the field
     on every `seeded`, `fresh` and `resume` row so a reader can tell "nothing was
     passed over" from a record written by a build that never listed them.
     """
-    if seed is None:
-        return []
+    not_taken = () if seed is None else seed.passed_over_needs_human
+    no_change = _no_change(seed=seed, loss=loss)
     return [
-        {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
-        for ref, commit in seed.passed_over_needs_human
+        *(
+            {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
+            for ref, commit in not_taken
+        ),
+        *(
+            {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NO_CHANGE}
+            for ref, commit in no_change
+        ),
     ]
+
+
+def _no_change(
+    *, seed: RecoverySeed | None, loss: RecoveryLoss | None
+) -> tuple[tuple[str, str], ...]:
+    """The needs-human refs carrying no work, from whichever payload names them."""
+    if seed is not None:
+        return seed.no_change_needs_human
+    return () if loss is None else loss.no_change_needs_human
 
 
 def _source_run_id(*, seed: RecoverySeed | None, loss: RecoveryLoss | None) -> str | None:

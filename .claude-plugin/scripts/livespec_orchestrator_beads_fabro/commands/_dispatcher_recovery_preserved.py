@@ -13,7 +13,10 @@ tidy ranking: it is the clause's, and `test_dispatcher_recovery_seed_precedence`
 holds every pair of it in one table.
 
 1. A needs-human ref, or a checkpoint-failed preservation ref, of the LATEST run:
-   it carries the run's TERMINAL tree, which is everything the dying run had.
+   it carries the run's TERMINAL tree, which is everything the dying run had. When
+   the latest run holds a needs-human ref the choice ranges over the needs-human
+   refs of EVERY earlier-run identifier and takes the newest by committer time, so
+   a mid-run ref of the run the pull request names never outranks newer work.
 2. The latest run's highest-numbered work-in-progress ref: the run's latest
    settled capture, which "MUST be preferred over the observed published head and
    over every preservation ref of an earlier run of the item".
@@ -64,7 +67,7 @@ preparation rather than running against whatever the clone happens to carry.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -73,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_refs imp
     NeedsHumanRefsUnobservable,
     NeedsHumanScope,
     carrying_needs_human_refs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_needs_human_unchanged import (
+    split_unchanged_needs_human_refs,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_checkpoint import (
     newest_preserved_tree_row,
@@ -177,6 +183,7 @@ class PreservedWorkAbsent:
 
     source_run_id: str
     sources_asked: tuple[str, ...]
+    no_change_needs_human: tuple[tuple[str, str], ...] = ()
 
 
 def verified_preserved_seed(
@@ -239,6 +246,24 @@ def verified_preserved_seed(
                 " exactly as it stands"
             )
         )
+    split = split_unchanged_needs_human_refs(
+        runner=runner,
+        repo=repo,
+        carrying=carrying,
+        remote=SEED_REMOTE,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    if isinstance(split, NeedsHumanRefsUnobservable):
+        return PreservedWorkUnobservable(
+            detail=(
+                f"{split.detail}, so no seed was taken and the publish branch is left"
+                " exactly as it stands"
+            )
+        )
+    # A ref carrying no work is neither a candidate nor a ref anything is passed
+    # over for, so it leaves the ranking here and is listed with the reason
+    # `no-change` once the route is decided.
+    unchanged = tuple((one.ref, one.commit_sha) for one in split.unchanged)
     # The published tree is named by this item's OWN journal, so with no row
     # naming one there is no ref that source could stand at and the round trip
     # would ask origin about nothing.
@@ -251,7 +276,7 @@ def verified_preserved_seed(
         work_item_id=work_item_id,
         journal_records=journal_records,
         publications=publications,
-        carrying=carrying,
+        carrying=split.with_work,
     )
     found = _seed_in_order(
         ranking=ranking,
@@ -261,9 +286,12 @@ def verified_preserved_seed(
         run_ids=run_ids,
         earlier_run_ids=earlier_run_ids,
     )
+    if isinstance(found, RecoverySeed):
+        return replace(found, no_change_needs_human=unchanged)
     if found is not None:
         return found
     return PreservedWorkAbsent(
+        no_change_needs_human=unchanged,
         source_run_id=leading_identifier(identifiers=earlier_run_ids),
         sources_asked=(
             PRESERVED_SOURCE_TERMINAL_TREE,
@@ -295,11 +323,18 @@ def _seed_in_order(
     """
     latest_tree = tree_row if tree_row is not None and tree_row[2] in latest_ids else None
     earlier_tree = tree_row if tree_row is not None and tree_row[2] not in latest_ids else None
+    latest_refs = [one for one in ranking.carrying if one.run_id in latest_ids]
+    # Once the latest run holds a needs-human ref the terminal tree is the answer,
+    # and which one is the newest by committer time across EVERY earlier-run
+    # identifier: the latest run's own ref may be an older mid-run preserve beside
+    # a newer ref another run (or its dispatch id) left. A latest run holding only
+    # a capture or a tree keeps the tiers below, so the capture still outranks an
+    # earlier run's ref.
     ranked = _ranked(
         ranking=ranking,
-        refs=[one for one in ranking.carrying if one.run_id in latest_ids],
+        refs=ranking.carrying if latest_refs else [],
         tree=latest_tree,
-        run_ids=latest_ids,
+        run_ids=run_ids if latest_refs else latest_ids,
     )
     if ranked is not None:
         return ranked

@@ -36,6 +36,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
+from tests.livespec_orchestrator_beads_fabro.commands._recovery_tip_reads import tip_read_answer
+
 _ = _admission
 
 _ITEM_ID = "bd-ib-oknwxm"
@@ -66,6 +68,8 @@ class _Runner:
         for needle, answer in _Runner.answers.items():
             if needle in joined:
                 return answer
+        if (tip := tip_read_answer(argv=argv)) is not None:
+            return tip
         return CommandResult(exit_code=0, stdout="", stderr="")
 
 
