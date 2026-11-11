@@ -34,14 +34,11 @@ program prints back off the run's recorded tool output through
 `DetachedCommitRunner` state machine; the report's JSON keys are therefore the
 contract between the two halves, and `REPORT_*` below names them once.
 
-IT SETS NO VARIABLE, AND REMOVES ONE. The clause forbids setting any variable
-that skips or relaxes a check, so the worker passes the agent's environment on
-as it is, except that `LIVESPEC_AGENT_STAGE` is dropped: that variable only
-activates the publication guard of the projected `push_origin` and `gh`
-wrapper, which an agent's own call must meet, and a tree's test suite run by
-the commit hook must not (Scenario 326). The hook reads no such variable, so
-no check is relaxed. Stdin is closed only so that a commit that would open an
-editor fails rather than waiting forever on a terminal nobody holds.
+IT SETS NO VARIABLE. The worker passes the agent's environment on as it is.
+`LIVESPEC_AGENT_STAGE` lets the repository's pre-commit hook select the
+affected-tests gate for a fix turn; it does not skip or relax a check. Stdin is
+closed only so that a commit that would open an editor fails rather than waiting
+forever on a terminal nobody holds.
 """
 
 from __future__ import annotations
@@ -493,7 +490,7 @@ def worker(run_id):
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,
-            env={k: v for k, v in os.environ.items() if k != "LIVESPEC_AGENT_STAGE"},
+            env=os.environ.copy(),
             check=False,
         )
     if result.returncode < 0:
