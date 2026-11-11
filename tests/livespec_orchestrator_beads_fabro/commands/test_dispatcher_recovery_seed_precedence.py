@@ -25,9 +25,11 @@ sources routing reads on this base:
 5. the observed published head;
 6. a preserved-publish ref an earlier reclaim left behind.
 
-A non-fallback refusal holds the item before any of them. The two rulings that
-rank above a resume are not read by recovery routing on this base, so they have no
-row here; the items that make routing read them add their rows to this table.
+A non-fallback refusal holds the item before any of them. The current seed ruling
+that ranks above a resume is read by recovery routing from the item's ledger
+comments, and its rows are in `test_dispatcher_recovery_ruled_seed` and
+`test_dispatcher_recovery_ruled_seed_routes`, where the ledger can be seeded; the
+fresh ruling that ranks beside it is not read by routing yet and has no row.
 
 The table drives `route_recovery` itself, over a scripted origin, forge and
 factory board, so a row exercises the resume admission and the seed choice as one
