@@ -3,15 +3,20 @@
 from __future__ import annotations
 
 import stat
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands import dispatcher
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
     classify_item_spec_change_tier,
 )
-from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import STAGE_FILING
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
+    STAGE_FILING,
+    recorded_spec_change_tier,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -83,16 +88,15 @@ def _item(*, item_id: str) -> WorkItem:
 
 
 def _install_judge(
-    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, classification: str, verdict: str
+    *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replies: tuple[str, ...]
 ) -> None:
     script = tmp_path / "fake-judge"
     _ = script.write_text(
         "#!/bin/sh\n"
         'calls=$(wc -l < "$LIVESPEC_TIER_CALLS" 2>/dev/null || true)\n'
         "case $calls in\n"
-        f"0) echo {classification} ;;\n"
-        f"1) echo '{verdict}' ;;\n"
-        "*) exit 1 ;;\n"
+        + "".join(f"{index}) echo '{reply}' ;;\n" for index, reply in enumerate(replies))
+        + "*) exit 1 ;;\n"
         "esac\n"
         'echo call >> "$LIVESPEC_TIER_CALLS"\n',
         encoding="utf-8",
@@ -122,8 +126,7 @@ def test_filing_holds_a_non_feature_classification_for_unstated_behaviour(
     _install_judge(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
-        classification=classification,
-        verdict=verdict,
+        replies=(classification, verdict),
     )
     item = _item(item_id=f"bd-ib-{classification}")
     append_work_item(path=_config(repo=repo), item=item)
@@ -138,3 +141,27 @@ def test_filing_holds_a_non_feature_classification_for_unstated_behaviour(
     assert outcome.recorded.verdict_kind in ("partial", "unstated")
     assert outcome.recorded.linked_proposal_topic is not None
     assert len(read_work_item_comments(path=_config(repo=repo), work_item_id=item.id)) == 1
+
+
+def test_classify_tier_rejudges_a_changed_item_and_records_its_new_tier(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        replies=("feature", _UNSTATED, "feature", _UNSTATED),
+    )
+    item = _item(item_id="bd-ib-rejudge")
+    append_work_item(path=_config(repo=repo), item=item)
+    assert dispatcher.main(argv=["classify-tier", "--repo", str(repo), "--item", item.id]) == 0
+
+    changed = replace(item, description="Changed observable behaviour.")
+    append_work_item(path=_config(repo=repo), item=changed)
+
+    assert dispatcher.main(argv=["classify-tier", "--repo", str(repo), "--item", item.id]) == 0
+    comments = read_work_item_comments(path=_config(repo=repo), work_item_id=item.id)
+    recorded = recorded_spec_change_tier(comments=tuple(comment.text for comment in comments))
+    assert len(comments) == 2
+    assert recorded is not None
+    assert recorded.is_spec_change is True

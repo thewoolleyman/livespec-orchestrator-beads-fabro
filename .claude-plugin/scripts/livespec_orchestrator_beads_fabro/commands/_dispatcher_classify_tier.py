@@ -26,7 +26,6 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     RecordedSpecChangeTier,
-    recorded_spec_change_tier,
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr, write_stdout
 
@@ -47,13 +46,12 @@ def add_classify_tier_arguments(*, parser: argparse.ArgumentParser) -> None:
 def run_classify_tier_command(*, args: argparse.Namespace) -> int:
     """Record or report one item's tier without dispatching it.
 
-    An item that already carries ANY classification record is reported as it
-    stands, whatever specification it was taken against: the command appends
-    only for an item with no record, so a stale one is left for the next cadence
-    point to retake. The judgement is the one the pre-dispatch wall takes. Its
-    ledger writes are held back until it has produced a classification, so a
-    judgement that could not be obtained leaves the item's comments untouched
-    and exits non-zero rather than recording a did-not-run alarm.
+    A recorded tier is reused only when its behaviour digest and clause
+    provenance still match the current item and specification. The judgement is
+    the one the pre-dispatch wall takes. Its ledger writes are held back until
+    it has produced a classification, so a judgement that could not be obtained
+    leaves the item's comments untouched and exits non-zero rather than
+    recording a did-not-run alarm.
     """
     repo = Path(args.repo)
     item = next(
@@ -67,10 +65,6 @@ def run_classify_tier_command(*, args: argparse.Namespace) -> int:
     if bodies is None:
         _ = write_stderr(text=f"ERROR: {item.id}: ledger comments unreadable; nothing written\n")
         return EXIT_FAILURE
-    standing = recorded_spec_change_tier(comments=bodies)
-    if standing is not None:
-        _ = write_stdout(text=_report(item_id=item.id, action="existing", recorded=standing))
-        return 0
     held: list[str] = []
 
     def hold(*, body: str) -> None:
@@ -86,7 +80,8 @@ def run_classify_tier_command(*, args: argparse.Namespace) -> int:
         return EXIT_FAILURE
     for body in held:
         append_work_item_comment(path=path, work_item_id=item.id, body=body)
-    _ = write_stdout(text=_report(item_id=item.id, action="recorded", recorded=outcome.recorded))
+    action = "existing" if outcome.reused else "recorded"
+    _ = write_stdout(text=_report(item_id=item.id, action=action, recorded=outcome.recorded))
     return 0
 
 

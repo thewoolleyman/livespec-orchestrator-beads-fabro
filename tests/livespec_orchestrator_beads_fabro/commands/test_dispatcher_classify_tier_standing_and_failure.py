@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ITEM = "bd-ib-parked-child"
+_UNSTATED = (
+    '{"kind": "unstated", "stated_by": [], "generalization_target": '
+    '"## A governing clause", "rationale": "the ratified text does not state it"}'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -96,11 +100,25 @@ def _bodies(*, repo: Path) -> list[str]:
     return [comment.text for comment in comments]
 
 
-def test_a_stale_existing_record_is_reported_and_nothing_is_appended(
+def test_a_stale_existing_record_is_rejudged_and_replaced(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, reply="echo bug")
+    calls = tmp_path / "calls"
+    _ = calls.touch()
+    _install_judge(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        reply=(
+            f'calls=$(wc -l < "{calls}")\n'
+            "case $calls in\n"
+            "0) echo feature ;;\n"
+            f"1) echo '{_UNSTATED}' ;;\n"
+            "*) exit 1 ;;\n"
+            "esac\n"
+            f'echo call >> "{calls}"'
+        ),
+    )
     append_work_item(path=_config(repo=repo), item=_item())
     append_work_item_comment(
         path=_config(repo=repo),
@@ -117,8 +135,8 @@ def test_a_stale_existing_record_is_reported_and_nothing_is_appended(
 
     assert dispatcher.main(argv=["classify-tier", "--repo", str(repo), "--item", _ITEM]) == 0
 
-    assert _bodies(repo=repo) == before
-    assert "existing classification tier none" in capsys.readouterr().out
+    assert len(_bodies(repo=repo)) == len(before) + 1
+    assert "recorded classification tier spec-change" in capsys.readouterr().out
 
 
 def test_a_judgement_that_cannot_be_obtained_exits_non_zero_and_writes_nothing(
