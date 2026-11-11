@@ -13334,6 +13334,25 @@ Feature: Run-age-bounded recovery preference
     When recovery routing grades the item
     Then the item is routed held and stays ready
     And the recovery-held record names the measurement publishing-run-unobservable
+
+  Scenario: a preserve that descends from the published head with more work refuses the resume and seeds
+    Given an item whose run R published head H on an open pull request that passes every other resume precondition
+    And a needs-human ref N of run R whose tip descends from H and whose tip tree differs from H's tree
+    When recovery routing grades the item
+    Then the resume refuses naming N, its tip and H, with the remedy a plain dispatch
+    And the route is seeded from N at its tip
+
+  Scenario: a preserve of an earlier run that descends from a later run's head does not refuse the resume
+    Given an item whose later run L published head H on an open pull request that passes every resume precondition
+    And a needs-human ref N of an earlier run whose tip descends from H and whose tip tree differs from H's tree
+    When recovery routing grades the item
+    Then the route is resume onto H
+
+  Scenario: a preserve that does not descend from the published head does not refuse the resume
+    Given an item whose run R published head H on an open pull request that passes every resume precondition
+    And a needs-human ref N of run R whose tip does not descend from H
+    When recovery routing grades the item
+    Then the route is resume onto H
 ```
 
 ## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention
