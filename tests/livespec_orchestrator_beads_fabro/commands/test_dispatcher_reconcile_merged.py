@@ -1904,3 +1904,38 @@ def test_regrade_rewrites_the_proof_pointer_to_the_pull_request_it_graded(
         _REGRADED_RUN_ID,
     )
     assert "#4655" not in stored.description
+
+
+def test_regrade_that_loses_the_claim_token_leaves_the_proof_pointer_on_the_pull_request_it_named(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refused re-grade wrote nothing, so the pointer must not move to the graded pull request."""
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=()
+    )
+    client = make_beads_client(config=_config())
+    client.update_issue(issue_id=item.id, description=_SUPERSEDED_POINTER_DESCRIPTION)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade, "run_acceptance_pass", lambda **_: _GradedPass(proof=_verified_proof_leg())
+    )
+    close = client.close_issue_without_verdict
+
+    def _raced(*, issue_id: str, reason: str) -> None:
+        if issue_id == token:
+            close(issue_id=issue_id, reason="another writer won this token")
+        close(issue_id=issue_id, reason=reason)
+
+    monkeypatch.setattr(client, "close_issue_without_verdict", _raced)
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    payload = json.loads(capsys.readouterr().out)[0]
+    assert exit_code == 1
+    assert (payload["status"], payload["stage"]) == ("failed", "regrade")
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.description == _SUPERSEDED_POINTER_DESCRIPTION

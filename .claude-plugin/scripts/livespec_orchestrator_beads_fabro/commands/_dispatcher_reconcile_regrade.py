@@ -47,6 +47,8 @@ its size ceiling.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from functools import partial
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
@@ -206,7 +208,10 @@ def _grade_and_dispose(
     # The pointer is made to name the pull request this pass graded, which the plain
     # pass does on every disposition: `accept` reads the pull request OFF the pointer,
     # so one left on a superseded pull request refuses a valid replay on the graded one.
-    incident_proof_pointer(
+    # It is written only once the claim check has passed, inside the park or the close,
+    # because a refused re-grade writes nothing and must not redirect the pointer.
+    write_pointer = partial(
+        incident_proof_pointer,
         repo=repo,
         item=item,
         outcome=outcome,
@@ -227,8 +232,16 @@ def _grade_and_dispose(
             result=result,
             journal=journal,
             claim=claim,
+            write_pointer=write_pointer,
         )
-    return _close_regraded_item(repo=repo, item=item, outcome=outcome, journal=journal, claim=claim)
+    return _close_regraded_item(
+        repo=repo,
+        item=item,
+        outcome=outcome,
+        journal=journal,
+        claim=claim,
+        write_pointer=write_pointer,
+    )
 
 
 def _park_regraded_item(  # noqa: PLR0913 — kw-only; the pass's facts and the claim it rests on.
@@ -240,11 +253,13 @@ def _park_regraded_item(  # noqa: PLR0913 — kw-only; the pass's facts and the 
     result: AcceptancePassResult,
     journal: JournalFile,
     claim: RegradeClaim,
+    write_pointer: Callable[[], None],
 ) -> DispatchOutcome:
     """Park a passing re-grade whose host or human proof leg is still pending."""
     lost = claim.park()
     if lost is not None:
         return refused_regrade_outcome(item=item, outcome=outcome, refusal=lost)
+    write_pointer()
     park_in_acceptance(
         repo=repo,
         item_id=item.id,
@@ -270,6 +285,7 @@ def _close_regraded_item(
     outcome: DispatchOutcome,
     journal: JournalFile,
     claim: RegradeClaim,
+    write_pointer: Callable[[], None],
 ) -> DispatchOutcome:
     """Close a re-graded PASS, which is what clears the `rework:pending` marker.
 
@@ -283,6 +299,7 @@ def _close_regraded_item(
     lost = claim.hold()
     if lost is not None:
         return refused_regrade_outcome(item=item, outcome=outcome, refusal=lost)
+    write_pointer()
     close_dispatch_item(
         repo=repo,
         item=item,
