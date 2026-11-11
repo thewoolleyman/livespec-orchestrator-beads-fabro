@@ -79,6 +79,10 @@ def _program(tmp_path: Path, fake: _FakeSubprocess | None = None) -> dict[str, A
         ("rev-parse", "--git-path", "livespec-commit-runs"): str(runs),
         ("rev-parse", "--show-toplevel"): str(tmp_path),
         ("rev-parse", "HEAD"): "0123abc",
+        # An amend's start first asks whether HEAD is an engine checkpoint above an
+        # open Red (bd-ib-gisyvv); this HEAD is an authored commit, so nothing folds.
+        ("rev-list", "--parents", "-n", "1", "HEAD"): "0123abc 4567def",
+        ("log", "-1", "--format=%B", "0123abc"): "feat: an authored commit\n",
     }
 
     def git_output(*argv: str) -> str:
