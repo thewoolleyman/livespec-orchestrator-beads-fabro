@@ -1,10 +1,12 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: one NEW file, .github/workflows/disarm-on-hold-label.yml,
-# rendered by copier from livespec's orchestrator-plugin template at v0.47.3
-# (livespec v240). It turns a pull request's auto-merge off when do-not-merge
-# is added to it. No existing workflow line is deleted or modified.
-work_item=bd-ib-jdaawy
+# The change: two purely additive pieces in .github/workflows/ci.yml for the
+# Scenario 279 size bound. One line runs check-materialized-workflow-toml-size in
+# check-metadata-batch, and one new job, check-fleet-materialized-workflow-toml-size,
+# shallow-clones the public fleet repositories anonymously (no token) and runs the
+# fleet-wide render. No existing job, step, trigger, permission, runner or
+# required check changes. Measured on vmi3006760: 7.5 s and 29 s.
+work_item=bd-ib-pwkhqz
 change=additive
 ci_runtime=no-significant-increase
-reason=ADDITIVE tier (approval:workflow-edit-additive, set under legacy-coordinator-agent's delegation, ruling ~00:2xZ 2026-11-11, recorded on bd-ib-jdaawy). Adds the hold-label disarm workflow that livespec non-functional-requirements.md §"Shared content sync — copier template" makes fleet policy, inherited here via constraints.md ## Inherited from livespec. It runs only on pull_request labeled events for do-not-merge (one short job), so CI runtime does not grow measurably. actionlint exit 0. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).
+reason=Additive CI wiring of the materialized workflow package size gate, self-scope plus fleet-wide, under the maintainer's delegated additive tier, authorized by legacy-coordinator-agent (session 4e17d8e9) 2026-11-11 for plan dispatch-payload-packaging (bd-ib-x5ypbf).
