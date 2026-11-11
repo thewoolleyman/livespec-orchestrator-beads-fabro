@@ -68,8 +68,9 @@ PY
 # (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
 # stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings"' EXIT
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings" "$judgement_input.record"' EXIT
 python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
+import json
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -86,6 +87,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_f
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     judgement_subject,
+    judgement_subject_digest,
+    rubric_digest,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
+    is_receipt_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_for_governing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -182,12 +191,25 @@ Path(f"{side}.findings").write_text(
 if not reading.holds:
     with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
         advisory.writelines(f"advisory: {finding}\n" for finding in reading.findings)
-sys.stdout.write(
-    judgement_prompt(
-        gate_prompt=rubric,
-        subject=judgement_subject(item=item, cwd=repo, comments=comments, governing=governing),
-    )
+subject = judgement_subject(item=item, cwd=repo, comments=comments, governing=governing)
+identity = spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+Path(f"{side}.record").write_text(
+    json.dumps(
+        {
+            "item_id": item.id,
+            "subject_digest": judgement_subject_digest(
+                item=item, cwd=repo, comments=comments, spec_identity=identity.value
+            ),
+            "rubric_digest": rubric_digest(rubric=rubric),
+            "subject_characters": len(subject),
+            "carried_rider_count": sum(
+                not is_receipt_comment(body=comment) for comment in comments
+            ),
+        }
+    ),
+    encoding="utf-8",
 )
+sys.stdout.write(judgement_prompt(gate_prompt=rubric, subject=subject))
 PROMPT_PY
 if [ -s "$judgement_input.section_findings" ]; then
   cat "$judgement_input.section_findings"
@@ -213,7 +235,8 @@ fi
 # recognisable Claude adapter into that resolver until the configuration is
 # migrated.
 set +e
-python3 - "$install_root" "$repo_root" "$judgement_input" <<'JUDGE_PY'
+python3 - "$install_root" "$repo_root" "$judgement_input" "$judgement_input.record" <<'JUDGE_PY'
+import json
 import sys
 from pathlib import Path
 
@@ -232,10 +255,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
     run_candidate_chain,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    did_not_run_comment,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 
 repo = Path(sys.argv[2])
 prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
+record = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
 
 
 def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
@@ -261,10 +290,26 @@ chain = run_candidate_chain(
     runner=ShellCommandRunner(),
     is_verdict=lambda text: is_verdict(text=text),
     candidate_resolver=candidates,
+    bound_input=True,
     caller="dod_preflight",
     journal_spend=True,
 )
 if chain.reply is None:
+    append_work_item_comment(
+        path=store_config(repo=repo),
+        work_item_id=record["item_id"],
+        body=did_not_run_comment(
+            item_id=record["item_id"],
+            stage="repository-preflight",
+            digest=record["subject_digest"],
+            rubric_digest=record["rubric_digest"],
+            cause=chain.cause,
+            subject_characters=record["subject_characters"],
+            carried_rider_count=record["carried_rider_count"],
+            bound_ended_candidates=chain.bound_ended_candidates,
+            attempts=chain.attempts,
+        ),
+    )
     print(f"DID-NOT-RUN {chain.cause}")
     raise SystemExit(2)
 print(chain.reply)

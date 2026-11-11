@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.319.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.318.0...v0.319.0) (2026-11-11)
+
+
+### Features
+
+* allow proof capture scratch pushes to temporary bare paths ([67af4dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/67af4dc2c68b810a6f04fc4e82f4555bd2952e87))
+* describe bound-ended judgement subjects ([1c75c7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1c75c7f596c65adb13ca638aec142d19596e6bdb))
+* record preflight input-bound outcomes ([3ff0572](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3ff05724a1d157fcb3619a7572b1c1cea4b130b4))
+* resolve temporary proof capture push remotes ([1f3f731](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1f3f731d3a2eba4770a897330ca46c422a891373))
+
+
+### Bug Fixes
+
+* avoid early-exiting reader in TERM harness ([067d6ab](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/067d6ab1962d1787f17564256295b00b58b454fa))
+* compact proof capture git launcher ([02304bf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02304bfa8e49ec93b19cf8d8b16dac38a285d2de))
+* enforce preflight input bound ([0cc0761](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0cc07617bf86405c881488cdb6f70653a043479c))
+* **fleet-launch:** gate blocked releases before dispatch ([d22a302](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d22a302d1bfd2b2936efa473e84f3f0f75d9f083))
+* **fleet-launch:** keep INT and HUP attributed to their own signal ([cc2c687](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cc2c6876e6dfee1a39120b6b32aa657e55debb12))
+* **fleet-launch:** prove TERM exits during hold substitutions ([e2b9812](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e2b9812b10cdff7a654a0868979f139e20581a3f))
+* merge clean-status held pull requests directly ([b680248](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b680248244534c26cb76c93829c338e048be4825))
+* refuse overridden proof capture push URLs ([8c59c21](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8c59c21cff66462b4c4b9b783ccde9716b629135))
+* refuse unsafe proof capture push options ([0517421](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/05174212ecf52fc0936e5a6a47833db908b94333))
+* resolve nested relative bare paths in the proof_capture push guard ([f5089c4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f5089c44bd40cb003453a94e0e6ee805bac1ee3e))
+* resolve relative bare paths in the proof_capture push guard ([26ba3cc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/26ba3ccb46950aa3de017f67b35c661a1ac60a65))
+* **workflow:** count refresh installer sites ([6d198c0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6d198c002c9a8ab4702e24d50de6d3aeaf4dd7b2))
+* **workflow:** cover groom hook installer argv ([6964732](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/69647324dc72ed2aa7e01c36b582d1397130b606))
+* **workflow:** cover synchronized refresh installers ([5879bc7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5879bc7a5f1263aee153b804b2fc190ca3a9c874))
+* **workflow:** execute refresh hook installer argv ([54fb86d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/54fb86d6b13efecf4f7f41540b3b8345233fe499))
+* **workflow:** fail closed after refresh hook install ([1e380e0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1e380e0be5d5b183e48eb971746f1ead5a4a39cf))
+
 ## [0.318.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.317.0...v0.318.0) (2026-11-11)
 
 

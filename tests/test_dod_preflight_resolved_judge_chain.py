@@ -47,3 +47,9 @@ def test_the_judge_program_imports_its_shell_runner_from_dispatcher_io() -> None
         "from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import ShellCommandRunner"
         not in program
     )
+
+
+def test_the_preflight_enforces_the_definition_of_done_input_bound() -> None:
+    program = _judge_program()
+
+    assert "bound_input=True" in program

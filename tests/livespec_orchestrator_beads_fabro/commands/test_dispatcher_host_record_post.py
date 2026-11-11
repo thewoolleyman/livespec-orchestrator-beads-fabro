@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli impo
     reconcile_for,
     reconcile_merged_for_item,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_payload import (
+    read_evidence,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_post import (
     HOST_RECORD_STAGE,
     HOST_RECORD_SURFACE,
@@ -100,6 +103,34 @@ Reason: the proof needs the released build installed on an operator host.
 
 References: ## Scenario 136 — A host-captured assertion holds the item in acceptance
 """
+
+
+def test_a_non_array_artifact_paths_value_is_refused_naming_the_field(tmp_path: Path) -> None:
+    """The shared payload reader rejects a non-array before either posting primitive can post."""
+    record = tmp_path / "artifact-paths.json"
+    _ = record.write_text(
+        json.dumps(
+            {
+                "build": {"artifact_paths": "not-an-array"},
+                "assertions": [{"text": _HOST_ASSERTION}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    emitted: list[str] = []
+
+    evidence = read_evidence(
+        record_path=record,
+        work_item_id=_ITEM_ID,
+        declared={_HOST_ASSERTION: "host_captured"},
+        verdict_is_replay=False,
+        surface=HOST_RECORD_SURFACE,
+        scenario_fallback=None,
+        emit=emitted.append,
+    )
+
+    assert evidence is None
+    assert "artifact_paths" in "".join(emitted)
 
 
 @dataclass(kw_only=True)

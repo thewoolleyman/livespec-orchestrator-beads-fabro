@@ -47,6 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
     DodJudgement,
+    judgement_subject,
     judgement_subject_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
@@ -338,10 +339,12 @@ def test_a_did_not_run_record_is_written_once_per_distinct_cause(tmp_path: Path)
     assert len(ledger.bodies) == 2
 
 
-def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("stage", [(STAGE_PRE_ADMISSION,), (STAGE_PRE_DISPATCH,)])
+def test_an_input_bound_record_measures_the_subject_and_its_carried_riders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: tuple[str]
 ) -> None:
     ended = ("claude-acp:claude-opus-5", "codex-acp:gpt-5.6-terra")
+    riders = ("operator rider one", "operator rider two")
 
     def exhausted(**_: object) -> DodJudgement:
         return DodJudgement(
@@ -350,18 +353,27 @@ def test_a_did_not_run_record_lists_each_candidate_the_input_bound_ended(
 
     monkeypatch.setattr(gate_module, "run_dod_judgement", exhausted)
     ledger = _Ledger()
+    ledger.bodies.extend(riders)
+    item = _item()
+    repo = _repo(tmp_path=tmp_path)
+    expected_subject_size = len(judgement_subject(item=item, cwd=repo, comments=riders))
+    stage_name = stage[0]
 
     decision = _judge(
         tmp_path=tmp_path,
         ledger=ledger,
         runner=_Runner(results=[CommandResult(exit_code=0, stdout="", stderr="")]),
+        stage=stage_name,
+        item=item,
     )
 
     assert decision.outcome == JUDGEMENT_UNAVAILABLE
-    assert len(ledger.bodies) == 1
-    body = ledger.bodies[0]
+    assert len(ledger.bodies) == len(riders) + 1
+    body = ledger.bodies[-1]
     assert UNAVAILABLE_COMMENT_MARKER in body
     assert "judgement-unavailable-cause: input-limit-reached" in body
+    assert f"subject-size-characters: {expected_subject_size}" in body
+    assert "carried-rider-count: 2" in body
     for candidate in ended:
         assert f"bound-ended-candidate: {candidate}" in body
     assert "deciding-candidate: " not in body

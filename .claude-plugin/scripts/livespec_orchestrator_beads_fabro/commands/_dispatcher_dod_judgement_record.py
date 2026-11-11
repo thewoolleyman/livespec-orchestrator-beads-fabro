@@ -42,9 +42,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
-    CandidateAttempt,
     candidate_record_lines,
-    unavailable_record_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_clause_record import (
     clauses_from,
@@ -63,13 +61,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_record
     governing_record_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
-    JUDGEMENT_UNAVAILABLE,
     DodJudgement,
     first_remedy,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
     BOUND_ENDED_CANDIDATE_FIELD,
-    bound_ended_lines,
     input_usage_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
@@ -85,6 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_re
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
     GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dod_unavailable_record import (
+    STAGE_PRE_ADMISSION,
+    STAGE_PRE_DISPATCH,
+    did_not_run_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 
@@ -102,13 +103,6 @@ __all__: list[str] = [
     "reusable_verdict",
     "verdict_comment",
 ]
-
-# The two call sites the clause names, as self-describing values rather than
-# numbered positions: the record says WHERE the judgement was taken, which is
-# what tells an operator reading the item whether a dispatch or an admission
-# produced it.
-STAGE_PRE_ADMISSION = "pre-admission"
-STAGE_PRE_DISPATCH = "pre-dispatch"
 
 _WORK_ITEM_FIELD = "work-item"
 _STAGE_FIELD = "stage"
@@ -285,41 +279,6 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
             evidence=evidence_from(values=_repeated(body=body, key=GOVERNING_EVIDENCE_FIELD)) or (),
         )
     return None
-
-
-def did_not_run_comment(  # noqa: PLR0913 - each argument is one field of the record it writes.
-    *,
-    item_id: str,
-    stage: str,
-    digest: str,
-    rubric_digest: str,
-    cause: str,
-    bound_ended_candidates: Sequence[str] = (),
-    attempts: Sequence[CandidateAttempt] = (),
-) -> str:
-    """The ledger comment recording that the judgement did not run, why, and who ran.
-
-    It names each candidate the chain ran and the one whose failure ended it, and
-    each candidate the input bound ended, because an exhausted chain and a chain
-    that never ran a candidate send an operator to opposite places and the cause
-    alone does not say which this was.
-    """
-    return "\n".join(
-        (
-            UNAVAILABLE_COMMENT_MARKER,
-            "",
-            f"The {stage} Definition-of-Done judgement did not run for this item.",
-            "",
-            f"{_WORK_ITEM_FIELD}{_FIELD_SEPARATOR}{item_id}",
-            f"{_STAGE_FIELD}{_FIELD_SEPARATOR}{stage}",
-            f"{_OUTCOME_FIELD}{_FIELD_SEPARATOR}{JUDGEMENT_UNAVAILABLE}",
-            f"{_DIGEST_FIELD}{_FIELD_SEPARATOR}{digest}",
-            f"{_RUBRIC_DIGEST_FIELD}{_FIELD_SEPARATOR}{rubric_digest}",
-            f"{_CAUSE_FIELD}{_FIELD_SEPARATOR}{cause}",
-            *bound_ended_lines(candidates=bound_ended_candidates),
-            *unavailable_record_lines(attempts=attempts),
-        )
-    )
 
 
 def reusable_verdict(

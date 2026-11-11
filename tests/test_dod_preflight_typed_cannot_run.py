@@ -26,3 +26,12 @@ def test_failed_judge_commands_emit_the_typed_cannot_run_sentinel_last() -> None
 
     assert 'print(f"DID-NOT-RUN {chain.cause}")' in text
     assert "raise SystemExit(2)" in text
+
+
+def test_an_input_bound_cannot_run_is_recorded_without_turning_into_a_refusal() -> None:
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "did_not_run_comment" in text
+    assert "append_work_item_comment" in text
+    assert "cause=chain.cause" in text
+    assert "raise SystemExit(2)" in text

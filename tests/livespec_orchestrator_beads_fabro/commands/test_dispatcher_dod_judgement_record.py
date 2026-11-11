@@ -351,6 +351,22 @@ def test_a_did_not_run_comment_names_the_cause_and_the_stage() -> None:
     assert "did not run" in body
 
 
+def test_an_input_bound_did_not_run_comment_names_its_subject_size_and_carried_riders() -> None:
+    body = did_not_run_comment(
+        item_id="bd-ib-1",
+        stage=STAGE_PRE_ADMISSION,
+        digest=_DIGEST,
+        rubric_digest=_RUBRIC,
+        cause=CAUSE_INPUT_LIMIT,
+        subject_characters=100_001,
+        carried_rider_count=2,
+    )
+
+    assert "judgement-unavailable-cause: input-limit-reached" in body
+    assert "subject-size-characters: 100001" in body
+    assert "carried-rider-count: 2" in body
+
+
 def test_a_verdict_taken_under_a_different_rubric_is_not_reused() -> None:
     # The other half of the reuse condition. Without it a verdict survives the
     # very rubric change that retires it, and the surviving verdict reads as a
