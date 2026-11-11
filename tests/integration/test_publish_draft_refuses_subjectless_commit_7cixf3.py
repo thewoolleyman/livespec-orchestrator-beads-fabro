@@ -42,7 +42,12 @@ def _graph() -> DotGraph:
 
 
 def _script(*, node: str) -> str:
-    return _graph().nodes[node]["script"].replace("{{ inputs.default_branch }}", "master")
+    return (
+        _graph()
+        .nodes[node]["script"]
+        .replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.conformance_hook_install }}", "")
+    )
 
 
 def _sandbox(*, tmp_path: Path, message: str) -> Path:
