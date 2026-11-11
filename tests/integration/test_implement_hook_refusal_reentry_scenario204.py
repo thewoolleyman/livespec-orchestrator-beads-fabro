@@ -34,12 +34,12 @@ fresh suite over the tree the turn left.
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 from pathlib import Path
 
+import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import setup_node_names
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import render_run_config_overlay
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
     derive_fabro_timeout_seconds,
@@ -50,8 +50,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
 _PROMPT = _PAYLOAD / "prompts" / "implement.md"
-_GRAPH = _PAYLOAD / "workflow.fabro"
-_CHECK_SUITE_TOKEN = re.compile(r"\{\{\s*inputs\.sandbox_check_suite\s*\}\}")
+_RUN_CONFIG = _PAYLOAD / "workflow.toml"
 
 _GATE = "implement_completion"
 _ROUTE = "implement_hook_route"
@@ -176,20 +175,20 @@ def _recorded_suite(*, repo: Path, output: str) -> None:
 
 
 def _check_suite_runner_prepare_script() -> str:
-    """Locate the committed setup node that writes the suite runner, as the engine renders it.
-
-    The node's `inputs.sandbox_check_suite` token is replaced the way the engine
-    replaces one in a node attribute: verbatim, with the quoted value this case is
-    about.
-    """
-    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
-    assert not isinstance(graph, str), graph
-    script = next(
-        str(graph.nodes[name]["script"])
-        for name in setup_node_names(graph=graph)
-        if "livespec-implement-check-suite" in str(graph.nodes[name]["script"])
+    """Render and locate the committed prepare step that writes the suite runner."""
+    rendered = render_run_config_overlay(
+        committed_text=_RUN_CONFIG.read_text(encoding="utf-8"),
+        workflow_dir=_RUN_CONFIG.parent,
+        token="",
+        github_token="",
+        siblings=None,
+        prepare_inputs={"sandbox_check_suite": _QUOTED_CHECK_SUITE},
     )
-    return _CHECK_SUITE_TOKEN.sub(lambda _: _QUOTED_CHECK_SUITE, script)
+    assert rendered is not None
+    steps = tomli.loads(rendered)["run"]["prepare"]["steps"]
+    return next(
+        step["script"] for step in steps if "livespec-implement-check-suite" in step["script"]
+    )
 
 
 def test_the_quoted_check_suite_runner_is_inert_until_its_own_invocation(tmp_path: Path) -> None:

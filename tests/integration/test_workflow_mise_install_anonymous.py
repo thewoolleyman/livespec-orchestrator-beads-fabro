@@ -33,23 +33,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
     resolve_repo_integration_contract,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import setup_node_names
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_WORKFLOW_GRAPH = (
-    _REPO_ROOT
-    / ".claude-plugin"
-    / ".fabro"
-    / "workflows"
-    / "implement-work-item"
-    / "workflow.fabro"
+_WORKFLOW_TOML = (
+    _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 )
 _CONFIG = _REPO_ROOT / ".livespec.jsonc"
 _MISE_INPUT = "prepare_toolchain_mise"
@@ -72,10 +65,11 @@ def _mise_install_command() -> str:
 
 
 def _prepare_scripts() -> list[str]:
-    """Every setup node's script, in chain order (the prepare steps of the run config before bd-ib-dpsiwz)."""
-    graph = parse_dot_graph(text=_WORKFLOW_GRAPH.read_text(encoding="utf-8"))
-    assert not isinstance(graph, str), graph
-    return [str(graph.nodes[name]["script"]) for name in setup_node_names(graph=graph)]
+    return [
+        line.strip()
+        for line in _WORKFLOW_TOML.read_text(encoding="utf-8").splitlines()
+        if line.startswith("script = ")
+    ]
 
 
 def test_mise_install_scrubs_every_github_credential_variable() -> None:

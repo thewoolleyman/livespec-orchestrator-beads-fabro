@@ -1504,24 +1504,8 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   identity survives untouched — which is what leaves that question with the
   relay authority that owns it.
 
-- `test_sandbox_setup_nodes_scenario32.py` — binds the setup-node scenarios of
-  `SPECIFICATION/scenarios.md` Scenario 32 (work-item `bd-ib-dpsiwz`): neither
-  committed run config declares a prepare table, each committed graph's setup is a
-  numbered `run_prepare_<N>` chain entered from `start` and left into the first
-  stage, and a failed step ends the run. The graph is read through the shared
-  parser. Two properties an editor must not weaken. Every setup node is asserted to
-  carry BOTH a conditional failed edge to `setup_failed` and exactly ONE
-  unconditional edge, because a command node that exits non-zero otherwise follows
-  its unconditional edge and the run succeeds, while the engine rejects a node whose
-  every edge is conditional; the walk case follows only the failed outcome from each
-  node and requires it to end at the terminal without entering the first stage,
-  with the all-succeeded walk as its control. And the terminal's OWN script is
-  executed by `sh` in a throwaway repository whose branch carries engine-shaped
-  `fabro(<run>): <node> (<status>)` checkpoints, because the step it names is read
-  off that chain.
-
-- `test_sandbox_history_preparation.py` — the FIRST setup node (`run_prepare_1`)
-  of the shipped implement-work-item graph, EXECUTED under `/bin/sh` against
+- `test_sandbox_history_preparation.py` — the FIRST `[[run.prepare.steps]]` entry
+  of the shipped implement-work-item run config, EXECUTED under `/bin/sh` against
   real complete and shallow clones (work-item bd-ib-ukht2p). It executes rather
   than matching the command line because the assertion is what the step does to a
   clone, and a conditional that inspects the wrong thing — or swallows a failure
