@@ -17,6 +17,13 @@ _TARGET_EXTRACTOR = _REPO_ROOT / "dev-tooling" / "aggregate-targets.sh"
 # A liveness guard against a hung harness, never a duration budget for its verdict.
 _HARNESS_HANG_GUARD_SECONDS = 600
 
+# The startup delay injected into every dispatch-dual.sh launcher. The harness
+# polls each launcher every HARNESS_POLL_S (0.01 s) with no startup budget, only
+# its hang guard, so two seconds is about 200 polls it must wait through. A
+# longer delay proves nothing more: each of the six launchers pays it, and
+# 30 s per launcher made this one test take about three minutes.
+_INJECTED_LAUNCHER_DELAY_SECONDS = 2
+
 
 def _run(
     *, argv: list[str], environment: dict[str, str] | None = None
@@ -49,7 +56,8 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     temporary_directory = TemporaryDirectory()
     delayed_launcher_startup = Path(temporary_directory.name) / "delayed-launcher-startup.sh"
     delayed_launcher_startup.write_text(
-        '[ "${0##*/}" = "dispatch-dual.sh" ] && sleep 30\n', encoding="utf-8"
+        f'[ "${{0##*/}}" = "dispatch-dual.sh" ] && sleep {_INJECTED_LAUNCHER_DELAY_SECONDS}\n',
+        encoding="utf-8",
     )
     environment = {**os.environ, "BASH_ENV": str(delayed_launcher_startup)}
 
