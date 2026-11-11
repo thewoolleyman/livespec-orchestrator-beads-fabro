@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import setup_chain_tail
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry"
 
@@ -53,6 +52,7 @@ _RESUMED_AT_STAGES = (
     "pr_refresh",
 )
 _COMPLETED_STAGES = ("dod_gate", "implement")
+_START_NODE = "start"
 
 # The stages whose ORPHAN SET reaches a declaration whose attribute body carries a
 # `]` inside a quoted value — `publish_draft`, whose script spells
@@ -108,21 +108,6 @@ def _parsed(*, text: str) -> Any:
     return graph
 
 
-def _entered_at(*, graph: Any) -> list[str]:
-    """Where the derived graph goes once its setup chain is done.
-
-    The chain stays whole in front of the entry, so the route a resume moves is the
-    UNCONDITIONAL edge out of the chain's tail -- `start` itself in a graph that
-    declares no setup nodes -- and not `start`'s own.
-    """
-    tail = setup_chain_tail(graph=graph)
-    return [
-        edge.destination
-        for edge in graph.edges
-        if edge.source == tail and "condition" not in edge.attributes
-    ]
-
-
 def test_every_edge_of_the_derived_graph_names_a_node_it_declares() -> None:
     """A surviving edge pointing at a pruned node is a graph nobody wrote."""
     for node in _RESUMED_AT_STAGES:
@@ -134,10 +119,10 @@ def test_every_edge_of_the_derived_graph_names_a_node_it_declares() -> None:
 
 
 def test_the_derived_graph_enters_at_the_resumed_at_stage() -> None:
-    """The setup chain's one way out is the stage the resume was asked for."""
+    """`start`'s one route is the stage the resume was asked for."""
     for node in _RESUMED_AT_STAGES:
         graph = _parsed(text=_derived(node=node))
-        assert _entered_at(graph=graph) == [node]
+        assert [edge.destination for edge in graph.edges if edge.source == _START_NODE] == [node]
 
 
 def test_the_derived_graph_mentions_neither_completed_stage_at_all() -> None:
@@ -198,7 +183,7 @@ def test_a_stage_whose_orphan_carries_a_bracketed_script_still_derives() -> None
         derived = module.graph_entered_at(graph_text=committed, node=node)
         assert derived is not None, node
         graph = _parsed(text=derived)
-        assert _entered_at(graph=graph) == [node]
+        assert [edge.destination for edge in graph.edges if edge.source == _START_NODE] == [node]
         endpoints = {
             endpoint for edge in graph.edges for endpoint in (edge.source, edge.destination)
         }

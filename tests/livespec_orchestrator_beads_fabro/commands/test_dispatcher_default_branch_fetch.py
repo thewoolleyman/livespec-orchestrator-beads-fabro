@@ -59,7 +59,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import par
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import is_setup_node
 
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 _DIFF_NODE = "implementation_diff"
@@ -252,22 +251,12 @@ def _rendered_overlay(*, tmp_path: Path) -> str:
 def _committed_run_config() -> str:
     """A minimal run config carrying the SHIPPED unshallow step, read not retyped.
 
-    The step is a `run_prepare_<N>` command node of the shipped graph now, so it is
-    read from there and handed to the overlay renderer as a committed step, which is
-    the shape the renderer still accepts from a dispatch target's own run config.
-
     The unshallow is what gives the staged branch its full history, so the executed
     sequence has to include it or the dispatch-base fetch would be measured against
     a shape no dispatch ever runs. Copying the script out of the shipped payload
     keeps this fixture following that step rather than pinning a paraphrase of it.
     """
-    workflow = parse_dot_graph(text=(_BUNDLE / "workflow.fabro").read_text(encoding="utf-8"))
-    assert not isinstance(workflow, str), workflow
-    shipped = [
-        str(attributes["script"])
-        for name, attributes in workflow.nodes.items()
-        if is_setup_node(name=name) and "git fetch" in str(attributes["script"])
-    ]
+    shipped = _fetch_steps(text=(_BUNDLE / "workflow.toml").read_text(encoding="utf-8"))
     assert len(shipped) == 1, f"expected one committed fetch step, got {shipped}"
     assert "--unshallow" in shipped[0], shipped[0]
     return (

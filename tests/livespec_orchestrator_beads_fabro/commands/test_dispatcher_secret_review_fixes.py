@@ -245,7 +245,7 @@ def test_factory_authentication_precedes_vault_materialization(
         plan=plan,
         committed_workflow=tmp_path / "workflow.toml",
         comments=(),
-        payload=SimpleNamespace(graph=None, timeouts=None),
+        payload=SimpleNamespace(graph=None),
         git_author=object(),
     )
     monkeypatch.setattr(loop_module, "record_dispatch", lambda **_: recorded)

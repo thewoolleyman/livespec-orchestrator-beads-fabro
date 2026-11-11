@@ -54,17 +54,13 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+import tomli
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
-_SHIPPED_GRAPH = (
-    _REPO_ROOT
-    / ".claude-plugin"
-    / ".fabro"
-    / "workflows"
-    / "implement-work-item"
-    / "workflow.fabro"
+_SHIPPED_RUN_CONFIG = (
+    _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
 )
 
 # The command line the step carried before this repair, measured failing twice.
@@ -215,21 +211,17 @@ class _Fixture:
 
 
 def _history_preparation_script() -> str:
-    """The FIRST setup node's script, parsed as the engine parses the workflow graph.
+    """The FIRST prepare step's script, parsed as the engine parses the run config.
 
-    The step is the `run_prepare_1` command node of the shipped graph (it was the
-    first prepare step until work-item bd-ib-dpsiwz moved the chain into the graph,
-    because upstream Fabro refuses the run-config prepare table). It is read through
-    the shared graph parser rather than grepped: the property under grade is the
-    value the engine resolves, and a line-shaped read would happily return a
-    commented-out declaration. The step is asserted to bind no rendered input,
-    because this caller EXECUTES what it returns -- a step carrying an unexpanded
-    token would run as whatever the shell made of the literal rather than as what a
-    dispatch runs.
+    Parsed with `tomli` rather than grepped: the property under grade is the value
+    the engine resolves, and a line-shaped read would happily return a commented-out
+    declaration. The step is asserted to bind no rendered input, because this
+    caller EXECUTES what it returns -- a step carrying an unexpanded token would run
+    as whatever the shell made of the literal rather than as what a dispatch runs.
     """
-    graph = parse_dot_graph(text=_SHIPPED_GRAPH.read_text(encoding="utf-8"))
-    assert not isinstance(graph, str), graph
-    script: str = graph.nodes["run_prepare_1"]["script"]
+    document: dict[str, Any] = tomli.loads(_SHIPPED_RUN_CONFIG.read_text(encoding="utf-8"))
+    steps: list[dict[str, Any]] = document["run"]["prepare"]["steps"]
+    script: str = steps[0]["script"]
     assert "inputs." not in script, script
     return script
 
