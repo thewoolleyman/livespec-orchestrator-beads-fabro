@@ -14,8 +14,9 @@ two-sided — a draft that declared a factory slice must be ROUTED to
 propose-change when its behaviour is unstated, and a draft that declared a
 spec-change slice must be FILED when the specification already states it.
 
-A `bug` IS NEVER SPEC-CHANGE TIER whatever the draft says, which is the third
-case and the one that keeps the groom door from closing on ordinary repair work.
+A `bug`, `chore` OR `non_functional` SLICE IS JUDGED TOO: its classification no
+longer exempts it, so an unstated or partial behaviour is routed to propose-change
+and a stated one is filed as ordinary repair work.
 
 AND A JUDGEMENT THAT CANNOT RUN LEAVES THE DRAFT'S OWN DECLARATION STANDING,
 which is the clause's route-as-before direction at this position: the groom cut
@@ -122,10 +123,31 @@ def test_the_judgement_overrides_the_draft_in_both_directions(
     assert classified[1].repo_target == "livespec-orchestrator-beads-fabro"
 
 
-def test_a_bug_is_never_spec_change_tier_whatever_the_draft_declared(
+def test_a_bug_whose_behaviour_is_unstated_is_routed_to_spec_change(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug",))
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug", _UNSTATED))
+    classified = classified_candidate_slices(
+        slices=[_candidate(is_spec_change=False)], repo=_repo(tmp_path=tmp_path)
+    )
+    assert classified[0].is_spec_change is True
+
+
+def test_a_chore_whose_behaviour_is_partial_is_routed_to_spec_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    partial = _UNSTATED.replace('"unstated"', '"partial"')
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("chore", partial))
+    classified = classified_candidate_slices(
+        slices=[_candidate(is_spec_change=False)], repo=_repo(tmp_path=tmp_path)
+    )
+    assert classified[0].is_spec_change is True
+
+
+def test_a_bug_whose_behaviour_is_stated_is_filed_as_factory_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug", _STATED))
     classified = classified_candidate_slices(
         slices=[_candidate(is_spec_change=True)], repo=_repo(tmp_path=tmp_path)
     )
