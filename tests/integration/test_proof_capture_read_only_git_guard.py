@@ -234,6 +234,41 @@ def _assert_scratch_push_to_temporary_bare_repository_is_allowed(
     named_arrival = _git("rev-parse", "refs/heads/scratch-by-name", repo=remote, environment=None)
     assert named_arrival.returncode == 0, named_arrival.stderr
     assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
+    _ = marker.unlink()
+    _assert_scratch_push_to_relative_bare_path_is_allowed(
+        scratch=scratch, marker=marker, environment=environment
+    )
+
+
+def _assert_scratch_push_to_relative_bare_path_is_allowed(
+    *, scratch: Path, marker: Path, environment: dict[str, str]
+) -> None:
+    """A bare word naming a bare directory is a path, not an unresolved remote name."""
+    relative = scratch / "relative.git"
+    _ = _git("init", "--bare", str(relative), repo=scratch, environment=None)
+    pushed = _git(
+        "push", "relative.git", "HEAD:refs/heads/by-relative", repo=scratch, environment=environment
+    )
+    assert pushed.returncode == 0, pushed.stderr
+    arrived = _git("rev-parse", "refs/heads/by-relative", repo=relative, environment=None)
+    assert arrived.returncode == 0, arrived.stderr
+    assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
+    _ = marker.unlink()
+    through_c = _git(
+        "-C",
+        str(scratch),
+        "push",
+        "relative.git",
+        "HEAD:refs/heads/by-relative-c",
+        repo=scratch.parent,
+        environment=environment,
+    )
+    assert through_c.returncode == 0, through_c.stderr
+    unresolved = _git(
+        "push", "missing.git", "HEAD:refs/heads/nowhere", repo=scratch, environment=environment
+    )
+    assert unresolved.returncode != 0
+    assert "proof_capture is read-only" in unresolved.stderr
 
 
 def _assert_protected_and_unsafe_pushes_are_refused(
