@@ -194,7 +194,7 @@ def test_a_primary_verdict_stops_the_chain_before_the_anthropic_fallback(tmp_pat
     ]
 
 
-def test_missing_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
+def test_missing_dod_gate_uses_the_committed_workflow_default(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
@@ -202,7 +202,10 @@ def test_missing_dod_gate_has_no_host_candidate(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    assert dod_gate_candidates(cwd=repo) is None
+    candidates = dod_gate_candidates(cwd=repo)
+
+    assert candidates is not None
+    assert candidates[0].agent_id == "claude-acp"
 
 
 def test_a_structured_workflow_default_runs_the_host_judgement_without_a_repository_entry(
@@ -251,6 +254,27 @@ def test_a_structured_workflow_default_runs_the_host_judgement_without_a_reposit
         "--strict-mcp-config",
         "--no-session-persistence",
     ]
+
+
+def test_a_manual_workflow_default_does_not_invent_a_host_agent_identity(
+    tmp_path: Path,
+) -> None:
+    """Only structured workflow input values carry an agent identity."""
+    repo = tmp_path / "repo"
+    workflow = repo / ".fabro" / "workflows" / "implement-work-item"
+    workflow.mkdir(parents=True)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}',
+        encoding="utf-8",
+    )
+    _ = (workflow / "workflow.toml").write_text(
+        "[run.inputs]\n"
+        'dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-5 npx -y '
+        '@agentclientprotocol/claude-agent-acp"\n',
+        encoding="utf-8",
+    )
+
+    assert dod_gate_candidates(cwd=repo) is None
 
 
 def test_malformed_structured_pr_default_does_not_hide_a_valid_dod_gate_identity(
@@ -330,7 +354,7 @@ def test_no_resolved_candidate_uses_the_did_not_run_cause(tmp_path: Path) -> Non
     repo = tmp_path / "repo"
     repo.mkdir()
     _ = (repo / ".livespec.jsonc").write_text(
-        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {}}}',
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"acp_nodes": {"dod_gate": {"agent": "missing-acp", "model": "missing"}}}}}',
         encoding="utf-8",
     )
     runner = _Runner(results=[])

@@ -248,7 +248,7 @@ disposition_adapter = "npx -y @agentclientprotocol/claude-agent-acp"
 # pin's model-versus-adapter rationale, the API-only-attribute constraint that
 # forces the model into the adapter's own env, and the version-less package
 # rationale all live on `review_adapter` — they are not restated here.
-dod_gate_adapter = "ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high npx -y @agentclientprotocol/claude-agent-acp"
+dod_gate_adapter = '{"agent": "claude-acp", "model": "claude-opus-4-8[1m]", "effort": "high"}'
 
 # ACP adapter for the PROOF_CAPTURE node (S5 / bd-ib-b4u6b7). Its built-in
 # default is the entry this workflow declares for its IMPLEMENT input —

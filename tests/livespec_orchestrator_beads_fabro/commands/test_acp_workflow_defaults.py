@@ -45,6 +45,7 @@ _WORKFLOW_TOML = (
 
 _CLAUDE = "npx -y @agentclientprotocol/claude-agent-acp"
 _V107_IMPLEMENTER = f"ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
+_V107_DOD_GATE = f"ANTHROPIC_MODEL=claude-opus-4-8[1m] CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
 
 # The ratified built-in entry per input, from the contract's own table.
 _STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, str], str]] = {
@@ -59,6 +60,10 @@ _STRUCTURED_DEFAULTS: dict[str, tuple[dict[str, str], str]] = {
     "review_fix_adapter": (
         {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"},
         _V107_IMPLEMENTER,
+    ),
+    "dod_gate_adapter": (
+        {"agent": "claude-acp", "model": "claude-opus-4-8[1m]", "effort": "high"},
+        _V107_DOD_GATE,
     ),
 }
 

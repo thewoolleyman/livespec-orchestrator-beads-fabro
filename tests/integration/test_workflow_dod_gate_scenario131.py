@@ -195,20 +195,15 @@ def test_the_gate_falls_through_to_implement_and_routes_a_failure_to_needs_human
 
 
 def test_the_bundle_declares_the_gate_adapter_default() -> None:
-    """The built-in default is the entry the workflow declares for its review input.
-
-    The contracts file's built-in-defaults table puts `dod_gate` on the entry the
-    workflow declares for its review input, so the two lines are compared to each other
-    rather than to a model name restated here — a default pinned by copying a
-    literal would drift the moment the review pin moved.
-    """
+    """The gate's bundled default is a structured entry retaining the 1M model variant."""
     toml = _toml(payload=_BUNDLE)
-    gate = re.search(rf'^\s*{_ADAPTER_INPUT}\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
-    review = re.search(r'^\s*review_adapter\s*=\s*"(?P<value>.+)"', toml, re.MULTILINE)
+    gate = re.search(rf"^\s*{_ADAPTER_INPUT}\s*=\s*'(?P<value>.+)'", toml, re.MULTILINE)
 
-    assert review is not None
     assert gate is not None, "the reserved workflow declares no dod_gate_adapter input"
-    assert gate.group("value") == review.group("value")
+    assert (
+        gate.group("value")
+        == '{"agent": "claude-acp", "model": "claude-opus-4-8[1m]", "effort": "high"}'
+    )
 
 
 def test_the_gate_is_a_registered_acp_node_with_its_own_input_candidate() -> None:
