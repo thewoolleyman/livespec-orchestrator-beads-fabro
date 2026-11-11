@@ -1430,6 +1430,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a plan record's release rule applies to the release component that ships its artifact",
+    "work_item": "bd-ib-qpibvm",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused",
     "work_item": "bd-ib-z7ckf4",
     "first_seen": "2026-11-11"

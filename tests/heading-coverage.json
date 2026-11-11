@@ -3126,5 +3126,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-z7ckf4 adds cases in which the incident authority writer's drill-close action moves a recorded drill (every distinct carrier pr-bound in its latest snapshot, every bound pull request based on an incident-scratch/** branch, no landed or revert commit reachable from master) to incident phase drill-closed with lifecycle state done and no repayment outstanding; refuses a master-based or never-bound item with incident-not-a-recorded-drill and an unreadable forge read with incident-drill-evidence-unavailable, writing nothing; refuses a commit-transition naming a drill-closed successor with incident-drill-close-requires-action; and refuses a recovery request against a drill-closed item with incident-reopen-not-eligible. bd-ib-z7ckf4 owns it.",
     "work_item": "bd-ib-z7ckf4"
+  },
+  {
+    "heading": "## Scenario: a plan record's release rule applies to the release component that ships its artifact",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-qpibvm adds cases in which the plan archive gate, for a governed repository whose committed dispatcher.release_components declares a component owning a release tag, accepts a captured plan Proof of Done record stating release none whose artifact paths line names only paths under no released component; rejects one whose artifact paths lie under a released component, naming the missing release identity and that component; keeps the repository-wide rule, naming the release repository, when a release tag matches no declared component or the record names no artifact paths; and, for a malformed dispatcher.release_components array, emits a configuration finding naming that key and rejects every record. bd-ib-qpibvm owns it.",
+    "work_item": "bd-ib-qpibvm"
   }
 ]
