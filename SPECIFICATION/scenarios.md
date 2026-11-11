@@ -14059,3 +14059,23 @@ Feature: CI's factory-graph gate installs the pinned fabro asset for the runner'
     Then it exits non-zero with a message naming that architecture
     And no fabro binary is installed
 ```
+
+## Scenario 341 — proof_capture's git launcher refuses writes to the run's checkout and to network remotes, and lets a scratch repository push to a local bare repository under the temporary directory
+
+```gherkin
+Feature: proof_capture is read-only on the run's checkout but can exercise a local git fixture
+  Scenario: A scratch repository pushes to a bare repository under the temporary directory
+    Given the proof_capture git launcher with LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT naming the run's checkout
+    And a scratch repository and a bare repository both created under the system temporary directory
+    When the launcher runs push from the scratch repository to the bare repository by path or by a configured remote name
+    Then the pushed ref arrives in the bare repository
+  Scenario: A push from the run's checkout is refused
+    Given the same launcher
+    When it runs push from the protected checkout, from a linked worktree of it, or through a -C or --git-dir route to either
+    Then it prints a LIVESPEC_PROOF_CAPTURE_READ_ONLY line and exits non-zero
+    And the remote is unchanged
+  Scenario: A push to a network remote or outside the temporary directory is refused
+    Given a scratch repository under the system temporary directory
+    When the launcher runs push to an https, ssh, git or file URL, to an scp-style host:path remote, to a path outside the temporary directory, or with --receive-pack or --exec
+    Then it prints a LIVESPEC_PROOF_CAPTURE_READ_ONLY line and exits non-zero
+```
