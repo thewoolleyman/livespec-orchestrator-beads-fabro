@@ -2458,6 +2458,13 @@ hand-formats one; it MUST compute the publishing identity itself — the
 invoking agent session's id, or the forge login for a human — never
 accept it as a caller-supplied string, and MUST refuse a `verified` post
 whose computed identity equals that of the `captured` record it replays.
+The primitive MUST accept, with the build identity it is given, an
+optional `artifact_paths` array of repository-relative paths. When that
+array is present and non-empty it MUST render it as the record's
+`artifact paths:` line, naming every path in the order given, and when
+it is absent it MUST NOT render that line. It MUST refuse a value that
+is not an array of non-empty strings, naming the field, and post
+nothing.
 A `verified` record whose identity equals its `captured` record's
 identity, however it was posted, is not evidence. The archive
 consequence of these records is the proof leg of §"Archive on
