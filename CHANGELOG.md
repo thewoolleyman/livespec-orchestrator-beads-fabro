@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.316.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.315.1...v0.316.0) (2026-11-11)
+
+
+### Features
+
+* **dispatcher:** materialize every overlay prepare step as a graph setup node ([42d7a13](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/42d7a133d4792f7cc6b5472a66e6588ae8d17550))
+* **dispatcher:** setup steps as explicit run_prepare_N command nodes ([23b044f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/23b044fbd6b7746acfa6cce246dcbdf7aeb4ff8b))
+* serialize proof-stage check aggregates ([ce6d4d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ce6d4d602de71eab720b2e1e69d9d508e6e61fda))
+* serialize replayed check aggregates ([edfb7cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/edfb7cfe2756058779b4eddc4395aec9ece0dd06))
+
 ## [0.315.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.315.0...v0.315.1) (2026-11-10)
 
 
