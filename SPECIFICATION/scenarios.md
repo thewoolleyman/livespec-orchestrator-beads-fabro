@@ -13132,6 +13132,25 @@ Feature: The ledger says where a lost run's work is
     Given the forge refuses the Dispatcher's listing of the run's work-in-progress refs
     When the Dispatcher records the run's ending
     Then W carries a livespec-preserved-tree ledger comment stating that the preservation could not be determined
+
+  Scenario: a needs-human ending with no capture names its needs-human ref and its diff
+    Given a run of work item W that ended at needs_human with no work-in-progress ref
+    And the ending published refs/heads/needs-human/<run-id> at commit N whose diff against its merge-base with the default branch, excluding .fabro, is 2 files with 153 insertions and 12 deletions
+    When the Dispatcher records the run's ending
+    Then W's livespec-preserved-tree ledger comment names refs/heads/needs-human/<run-id>, commit N, and 2 files, 153 insertions and 12 deletions
+    And the comment does not consist only of the statement that the run has no work-in-progress ref
+
+  Scenario: a needs-human ref with an empty diff is named with that empty diff
+    Given a run of work item W that ended at needs_human with no work-in-progress ref
+    And the ending published a needs-human ref whose diff against its merge-base, excluding .fabro, is empty
+    When the Dispatcher records the run's ending
+    Then W's livespec-preserved-tree ledger comment names that ref with 0 files changed
+
+  Scenario: an unmeasurable needs-human diff is not reported as empty
+    Given a run of work item W whose ending published a needs-human ref
+    And the merge-base diff of that ref cannot be measured
+    When the Dispatcher records the run's ending
+    Then W's livespec-preserved-tree ledger comment names that ref and says its diff could not be determined
 ```
 
 ## Scenario 319 — A re-dispatch starts from the latest run's latest preserved capture
