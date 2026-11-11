@@ -454,13 +454,8 @@ def test_a_newer_dispatch_or_an_unrelated_terminal_does_not_release_recovery() -
     assert routing.released_for_recovery(records=unrelated, work_item_id=_ITEM_ID) is False
 
 
-def test_a_recapture_cap_ending_is_not_a_recovery_release() -> None:
-    """The recapture-cap terminal carries a needs-human kind yet is never released.
-
-    Its blocked outcome is a stage failure whose detail and reason name the
-    recapture-cap marker, so a human returning it to ready must not route it as
-    recovery.
-    """
+def test_a_recapture_cap_ending_is_a_recovery_release() -> None:
+    """The recapture-cap terminal returns to recovery routing for a safe hold."""
     reason = f"{RECAPTURE_EXHAUSTED_MARKER}: recapture cap reached"
     records = _terminal_history(
         outcome={
@@ -474,7 +469,7 @@ def test_a_recapture_cap_ending_is_not_a_recovery_release() -> None:
         }
     )
 
-    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is False
+    assert routing.released_for_recovery(records=records, work_item_id=_ITEM_ID) is True
 
 
 def test_an_unreadable_terminal_payload_is_not_a_recovery_release() -> None:
