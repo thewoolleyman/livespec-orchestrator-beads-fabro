@@ -79,10 +79,11 @@ def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
                     succeeded=False,
                 )
             )
-        stages = {
-            stage[4:]: {"first_event_seq": int(stage[:3]), "diff": payload}
-            for stage, payload in runner.stage_diffs.items()
-        }
+        stages: dict[str, dict[str, str | None]] = {}
+        for stage, payload in sorted(runner.stage_diffs.items()):
+            for position in range(len(stages) + 1, int(stage[:3])):
+                stages[f"stage-{position:03d}@1"] = {"diff": None}
+            stages[stage[4:]] = {"diff": payload}
         return _StateApi(
             result=FabroHttpResult(
                 status=200,

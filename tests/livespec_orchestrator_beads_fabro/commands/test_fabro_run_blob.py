@@ -22,8 +22,6 @@ def test_blob_references_write_the_addressed_bytes_only_after_their_digest_verif
         run_state={
             "stages": {
                 "implement@1": {
-                    "first_event_seq": 239551,
-                    "dump_ordinal": 55,
                     "diff": f"blob://sha256/{digest}",
                 }
             }
@@ -54,8 +52,6 @@ def test_blob_references_without_a_readable_address_yield_no_artifact(
             run_state={
                 "stages": {
                     "implement@1": {
-                        "first_event_seq": 1,
-                        "dump_ordinal": 1,
                         "diff": diff,
                     }
                 }
