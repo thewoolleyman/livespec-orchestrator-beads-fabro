@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast, get_args
 
@@ -55,6 +56,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candid
 from livespec_orchestrator_beads_fabro.effects import FloatParseFailure, parse_float
 
 if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
+        CandidateChainResult,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
 __all__: list[str] = [
@@ -90,6 +94,7 @@ def drift_judge(
     caller: str,
     payload_root: Path | None = None,
     reply: ReplyShape = "verdict",
+    on_chain: Callable[[CandidateChainResult], None] | None = None,
 ) -> spec_stated.ModelRunner:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
 
@@ -119,6 +124,7 @@ def drift_judge(
         runner=runner,
         reply=reply,
         caller=caller,
+        on_chain=on_chain,
     )
 
 
@@ -129,6 +135,7 @@ def _judged(
     runner: CommandRunner,
     reply: ReplyShape,
     caller: str,
+    on_chain: Callable[[CandidateChainResult], None] | None,
 ) -> str:
     """One prompt through the shared chain, or no reply when every candidate fails.
 
@@ -147,6 +154,8 @@ def _judged(
     )
     for ran in chain.attempts:
         _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")
+    if on_chain is not None:
+        on_chain(chain)
     return chain.reply or ""
 
 

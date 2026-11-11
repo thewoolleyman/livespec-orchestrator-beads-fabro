@@ -273,7 +273,8 @@ def test_filing_displays_the_parse_the_modes_the_capabilities_and_the_finding(
     assert lines[2] == "sandbox-capabilities: terminal, headless_browser"
     assert lines[3].startswith("definition-of-done finding (advisory):")
     assert "tests prove" in lines[3]
-    assert len(lines) == 4
+    assert lines[4] == "definition-of-done findings: judgement unavailable"
+    assert len(lines) == 5
 
 
 # --------------------------------------------------------------------------
@@ -391,7 +392,7 @@ def test_a_carrier_bullet_is_a_finding_while_the_same_prose_above_the_heading_is
     carrier_findings = [line for line in inside_lines if "carrier map" in line]
     assert len(carrier_findings) == 1
     assert carrier_findings[0].startswith("definition-of-done finding (advisory):")
-    assert "definition-of-done findings: none" in above_lines
+    assert "definition-of-done findings: judgement unavailable" in above_lines
 
 
 # --------------------------------------------------------------------------
