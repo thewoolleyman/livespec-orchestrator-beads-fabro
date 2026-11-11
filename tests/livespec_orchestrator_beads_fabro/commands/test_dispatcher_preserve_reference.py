@@ -86,10 +86,7 @@ def run_state_replaces_the_legacy_dump_transport(monkeypatch: pytest.MonkeyPatch
                 )
         else:
             stage_diffs = {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
-        stages = {
-            stage[4:]: {"first_event_seq": int(stage[:3]), "diff": diff}
-            for stage, diff in stage_diffs.items()
-        }
+        stages = _stages_in_dump_order(stage_diffs=stage_diffs)
         return _StateApi(
             result=FabroHttpResult(
                 status=200,
@@ -138,11 +135,10 @@ def test_preserve_pointer_reads_and_validates_each_referenced_blob(
                 error=None,
                 payload={
                     "stages": {
+                        **{f"stage-{ordinal:03d}@1": {"diff": None} for ordinal in range(1, 55)},
                         "implement@1": {
-                            "first_event_seq": 239551,
-                            "dump_ordinal": 55,
                             "diff": f"blob://sha256/{digest}",
-                        }
+                        },
                     }
                 },
                 succeeded=True,
@@ -199,6 +195,17 @@ def _module() -> ModuleType:
     return importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference"
     )
+
+
+def _stages_in_dump_order(*, stage_diffs: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    """Build a `/state` projection whose positions match its dump paths."""
+    stages: dict[str, dict[str, str | None]] = {}
+    for dump_stage, diff in sorted(stage_diffs.items()):
+        ordinal = int(dump_stage[:3])
+        for position in range(len(stages) + 1, ordinal):
+            stages[f"stage-{position:03d}@1"] = {"diff": None}
+        stages[dump_stage[4:]] = {"diff": diff}
+    return stages
 
 
 def _config() -> StoreConfig:
