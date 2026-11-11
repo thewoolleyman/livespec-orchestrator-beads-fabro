@@ -79,6 +79,71 @@ merge_in_progress=false
 if git rev-parse -q --verify MERGE_HEAD >/dev/null 2>&1; then
     merge_in_progress=true
 fi
+run_full_aggregate() {
+    echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
+    aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
+    staged_tree=$(git write-tree)
+    set +e
+    just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}" 2>&1 | tee "$aggregate_log"
+    aggregate_status=${PIPESTATUS[0]}
+    set -e
+    # The local aggregate reads the working tree, so it can certify the staged tree
+    # only when both trees are identical and no untracked file could have affected
+    # its result. Capture the staged tree before the aggregate and confirm it again
+    # afterwards so an index mutation cannot receive evidence for an untested tree.
+    if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
+        && [[ -z "$(git ls-files --others --exclude-standard)" ]] \
+        && [[ "$(git write-tree)" == "$staged_tree" ]]; then
+        run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
+        output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
+        uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"
+    fi
+    rm -f "$aggregate_log"
+    return "$aggregate_status"
+}
+
+# A Red commit is deliberately a failing test, so it keeps the existing
+# Red-mode fast path. Its Green amend reaches the fix-turn gate below.
+if [[ "$merge_in_progress" == false ]] && [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
+    echo ":: Red-mode shape detected: $test_staged"
+    echo ":: skipping coverage gates and same-repo live TUI picker gate in pre-commit"
+    # check-check-coverage-incremental belongs in this skip list even though it
+    # is vacuous on a FRESH branch: on a branch that already carries impl
+    # commits, its incremental scope includes those impl files, so it RUNS the
+    # branch's tests — the staged Red test among them. That test fails BY
+    # DESIGN, which is the whole point of a Red commit, so leaving the gate
+    # armed here refuses the ritual's own first step (work-item bd-ib-c4sfpr).
+    # No coverage is lost: the Green amend, pre-push, and CI each run the full
+    # aggregate on the final commit, which is the load-bearing net.
+    just check-skipping \
+        check-coverage \
+        check-per-file-coverage \
+        check-check-coverage-incremental \
+        check-codex-skill-picker \
+        "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
+    exit $?
+fi
+
+# The Dispatcher owns this marker and the detached commit runner carries it to
+# the hook. A scopeable fix gets the fast affected-tests verdict; an unknown
+# scope returns 75 so the full aggregate remains the conservative fallback.
+if [[ "$merge_in_progress" == false ]] && [[ "${LIVESPEC_AGENT_STAGE:-}" == fix ]]; then
+    echo ":: fix-turn commit: running just check-changed before considering the full aggregate"
+    set +e
+    just check-changed
+    changed_status=$?
+    set -e
+    if [[ "$changed_status" -eq 0 ]]; then
+        exit 0
+    fi
+    if [[ "$changed_status" -ne 75 ]]; then
+        exit "$changed_status"
+    fi
+    echo ":: check-changed could not scope this fix-turn commit; running the full aggregate"
+    run_full_aggregate
+    exit $?
+fi
+
 if [[ "$merge_in_progress" == false ]] \
     && [[ -n "$green_amend_staged" ]] \
     && [[ -n "$red_test_staged" ]] \
@@ -107,25 +172,6 @@ if [[ -z "$py_staged" ]]; then
     just check-pre-commit-doc-only
     exit $?
 fi
-if [[ "$merge_in_progress" == false ]] && [[ "$test_count" -eq 1 ]] && [[ "$impl_count" -eq 0 ]]; then
-    echo ":: Red-mode shape detected: $test_staged"
-    echo ":: skipping coverage gates and same-repo live TUI picker gate in pre-commit"
-    # check-check-coverage-incremental belongs in this skip list even though it
-    # is vacuous on a FRESH branch: on a branch that already carries impl
-    # commits, its incremental scope includes those impl files, so it RUNS the
-    # branch's tests — the staged Red test among them. That test fails BY
-    # DESIGN, which is the whole point of a Red commit, so leaving the gate
-    # armed here refuses the ritual's own first step (work-item bd-ib-c4sfpr).
-    # No coverage is lost: the Green amend, pre-push, and CI each run the full
-    # aggregate on the final commit, which is the load-bearing net.
-    just check-skipping \
-        check-coverage \
-        check-per-file-coverage \
-        check-check-coverage-incremental \
-        check-codex-skill-picker \
-        "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
-    exit $?
-fi
 if [[ "$merge_in_progress" == false ]] \
     && [[ "$impl_count" -ge 1 ]] \
     && grep -q 'TDD-Red-Test-File-Checksum:' <<<"$head_msg" \
@@ -135,23 +181,5 @@ if [[ "$merge_in_progress" == false ]] \
     just check-skipping check-red-green-replay check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}"
     exit $?
 fi
-echo ":: pre-push: skipping same-repo live TUI picker gate; run just check-codex-skill-picker explicitly for live Codex picker acceptance"
-aggregate_log=$(mktemp "$(git rev-parse --git-path livespec-pre-commit-aggregate.XXXXXX)")
-staged_tree=$(git write-tree)
-set +e
-just check-skipping check-codex-skill-picker "${sandbox_skips[@]}" "${delegated_skip_targets[@]}" 2>&1 | tee "$aggregate_log"
-aggregate_status=${PIPESTATUS[0]}
-set -e
-# The local aggregate reads the working tree, so it can certify the staged tree
-# only when both trees are identical and no untracked file could have affected
-# its result. Capture the staged tree before the aggregate and confirm it again
-# afterwards so an index mutation cannot receive evidence for an untested tree.
-if [[ "$aggregate_status" -eq 0 ]] && git diff --quiet \
-    && [[ -z "$(git ls-files --others --exclude-standard)" ]] \
-    && [[ "$(git write-tree)" == "$staged_tree" ]]; then
-    run_id="pre-commit-aggregate:$(date -u +%Y%m%dT%H%M%SZ):${staged_tree}"
-    output_checksum="sha256:$(sha256sum "$aggregate_log" | awk '{print $1}')"
-    uv run python -m livespec_dev_tooling.green_token write-pre-commit "$run_id" "$output_checksum"
-fi
-rm -f "$aggregate_log"
-exit "$aggregate_status"
+run_full_aggregate
+exit $?
