@@ -50,13 +50,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut imp
     NODE_CUT_COMMIT_RUN_SENTINEL,
     NODE_CUT_HOOK_RUN_SENTINEL,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -72,7 +65,6 @@ __all__: list[str] = [
     "REPORT_OUTPUT_TAIL_KEY",
     "REPORT_RUN_ID_KEY",
     "REPORT_STATE_KEY",
-    "commit_runner_prepare_steps_block",
     "commit_runner_program_path_expansion",
     "commit_runner_program_source",
 ]
@@ -1348,18 +1340,3 @@ def commit_runner_program_source() -> str:
 def commit_runner_program_path_expansion() -> str:
     """The sandbox-local runner path shared by the prepare step and the prompts."""
     return f"{sandbox_plugins_root_expansion()}/{COMMIT_RUNNER_PROGRAM_FILENAME}"
-
-
-def commit_runner_prepare_steps_block() -> str:
-    """Render the prepare step that writes the runner before any ACP stage runs."""
-    root = sandbox_plugins_root_expansion()
-    path = commit_runner_program_path_expansion()
-    step = PrepareStep(
-        script=f'set -eu\nmkdir -p "{root}"\n'
-        + packed_payload_write_command(path_word=f'"{path}"'),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=commit_runner_program_source())},
-    )
-    return (
-        "\n# --- Dispatcher-materialized detached commit runner (bd-ib-atyefi) ---\n"
-        + render_prepare_step(step=step)
-    )

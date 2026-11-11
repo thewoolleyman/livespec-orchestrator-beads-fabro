@@ -89,14 +89,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate im
     plugin_gate_session_hook_declaration,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
     PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
     review_guard_hook_declaration,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    sandbox_plugins_root_expansion,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
@@ -337,7 +337,9 @@ def harness_settings_prepare_steps_block() -> str:
     a JSON document the sandbox may already carry and preserving its other keys
     is the whole difference between this and an overwrite. `python3` is already a
     hard dependency of this prepare chain -- the plugin-cache gate executes under
-    it -- so this adds no new one.
+    it -- so this adds no new one. The merge program is a helper program, written
+    below the plugins root by the helper-fetch setup step from the installed
+    build's own commit (`_dispatcher_helper_registry`); this step only runs it.
     """
     exclude = worktree_exclude_script(
         paths=(SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION,),
@@ -354,14 +356,10 @@ def harness_settings_prepare_steps_block() -> str:
         "fi\n"
         f'settings="$toplevel/{SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH}"\n'
         'mkdir -p "$(dirname "$settings")"\n'
-        'merge="$(mktemp)"\n'
-        f'{packed_payload_write_command(path_word=chr(34) + "$merge" + chr(34))}\n'
-        'python3 "$merge" "$settings"\n'
-        'rm -f "$merge"'
+        f'python3 "{sandbox_plugins_root_expansion()}/{HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME}"'
+        ' "$settings"'
     )
-    step = PrepareStep(
-        script=script, env={PAYLOAD_ENV_VAR: pack_payload(text=harness_settings_merge_program())}
-    )
+    step = PrepareStep(script=script)
     lines = [
         "",
         "# --- Dispatcher-materialized harness settings: the sandbox agent loads",

@@ -22,10 +22,9 @@ from typing import TypeVar
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
-    _dispatcher_commit_runner,
     _dispatcher_git_credential_helper,
     _dispatcher_harness_shell_policy,
-    _dispatcher_hook_limit_program,
+    _dispatcher_helper_fetch,
     _dispatcher_overlay,
     _dispatcher_plugin_cache_gate,
     _dispatcher_pyright_cache,
@@ -39,6 +38,7 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._config_credential_wrapper import (
     resolve_credential_wrapper,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_build import HelperSource
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     SandboxImageSource,
     sandbox_image_source,
@@ -51,6 +51,13 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig
 from returns.io import IOFailure, IOResult
 from returns.unsafe import unsafe_perform_io
 
+from tests.conftest import HERMETIC_HELPER_BUILD_COMMIT
+
+# The identity the suite-wide hermetic fixture answers for the installed build.
+_HERMETIC_SOURCE = HelperSource(
+    repository="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+    commit=HERMETIC_HELPER_BUILD_COMMIT,
+)
 _Value = TypeVar("_Value")
 
 
@@ -810,6 +817,11 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         _WORKFLOW_WITH_IMAGE.replace(
             'graph = "workflow.fabro"', f'graph = "{tmp_path / "workflow.fabro"}"'
         )
+        # The helper fetch, FIRST among the Dispatcher's own steps and rendered
+        # from its own module, against the hermetic build identity the suite-wide
+        # fixture answers: every helper program the steps below run is the copy
+        # this step fetched and verified.
+        + _dispatcher_helper_fetch.helper_fetch_prepare_steps_block(source=_HERMETIC_SOURCE)
         # Rendered from its own module rather than restated, for the same
         # reason the two blocks below are: since bd-ib-5qxa5q the socket root
         # is an exclude-then-create PAIR whose first step is the shared
@@ -835,8 +847,6 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # own block. `limit_seconds=None` is what this arm resolves — the
         # graph path these cases name does not exist on disk, so the limit is
         # WITHHELD and only the observer is materialized.
-        + _dispatcher_hook_limit_program.hook_limit_prepare_steps_block(limit_seconds=None)
-        + _dispatcher_commit_runner.commit_helpers_prepare_steps_block()
         + _dispatcher_pyright_cache.pyright_cache_prepare_steps_block()
         + "\n# --- Dispatcher-materialized run-scoped credential projection"
         + "\n# --- (UNCOMMITTED; mode 600; deleted when the run returns) ---\n"
@@ -876,18 +886,14 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     assert f'graph = "{tmp_path / "workflow.fabro"}"' in pre_env_table
     assert "[environments.livespec-ci.env]" in rendered
     assert "[environments.other-env.env]" not in rendered
-    # The committed `just bootstrap` step, the tmux socket root's
-    # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
-    # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
-    # (bd-ib-52zt3o), the plugin-cache gate and the SIX publication helpers
-    # the gate's block materializes beside it (v121: the publication-head
-    # reader and the exact-head push program; v138: the carry-forward
-    # decision; v156: the per-assertion proof grade, bd-ib-kcq6pu;
-    # bd-ib-ze7xxj: generated-record-file resolution and bd-ib-davaxq's
-    # record-file merger), plus the
-    # repository-hook limit observer (bd-ib-xi63mq) — the hostile value
-    # smuggled none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 19
+    # The helper fetch (bd-ib-jrawlp), the committed `just bootstrap` step,
+    # the tmux socket root's exclude-then-create PAIR (bd-ib-5qxa5q), the
+    # harness settings file's exclude-then-write PAIR (bd-ib-rv2jk4), the git
+    # credential helper (bd-ib-52zt3o) and the plugin-cache gate, whose
+    # publication helpers and the repository-hook limit observer are fetched
+    # helper programs with no step of their own -- the hostile value smuggled
+    # none of its own in.
+    assert rendered.count("[[run.prepare.steps]]") == 9
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table

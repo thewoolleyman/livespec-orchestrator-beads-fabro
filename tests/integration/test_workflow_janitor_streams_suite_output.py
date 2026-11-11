@@ -24,10 +24,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
-    plugin_cache_gate_prepare_step,
 )
 
-from tests.prepare_step_support import runnable_script
+from tests.prepare_step_support import plugin_gate_installer_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -88,9 +87,7 @@ def _environment(*, tmp_path: Path) -> dict[str, str]:
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
     }
     installer = tmp_path / "install-plugin-gate.sh"
-    _ = installer.write_text(
-        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
-    )
+    _ = installer.write_text(plugin_gate_installer_script(), encoding="utf-8")
     _ = subprocess.run(
         ["bash", str(installer)],
         check=True,

@@ -29,18 +29,13 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    pack_payload,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
     RECORD_FILE_MERGE_PROGRAM_FILENAME,
     record_file_merge_program_path_expansion,
-    record_file_merge_program_prepare_steps_block,
     record_file_merge_program_source,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import plugins_helper
 
 _COMMANDS = (
     Path(__file__).resolve().parents[3]
@@ -339,24 +334,20 @@ def test_the_program_carries_no_import_of_this_package(tmp_path: Path) -> None:
     assert "livespec_orchestrator_beads_fabro" not in record_file_merge_program_source()
 
 
-def test_the_prepare_step_lands_the_program_where_the_stage_resolves_it() -> None:
-    """One root, spelled once: the stage reads the path the prepare step wrote.
+def test_the_helper_fetch_lands_the_program_where_the_stage_resolves_it() -> None:
+    """One root, spelled once: the stage reads the path the fetch step wrote.
 
-    A node resolving a DIFFERENT root than the prepare pass would find no program
-    at all, and the refresh would then route every record-file conflict to repair
+    A node resolving a DIFFERENT root than the fetch would find no program at
+    all, and the refresh would then route every record-file conflict to repair
     while reporting the merger absent — a failure that reads as a Dispatcher that
-    never materialized one. The program rides the step's `env`, not its script, so
-    the shell expands nothing inside it.
+    never materialized one.
     """
     assert _MODULE_PATH.is_file()
-    block = record_file_merge_program_prepare_steps_block()
+    helper = plugins_helper(path=RECORD_FILE_MERGE_PROGRAM_FILENAME)
     expansion = record_file_merge_program_path_expansion()
-    [step] = steps_in(block=block)
 
-    assert expansion.endswith(f"/{RECORD_FILE_MERGE_PROGRAM_FILENAME}")
-    assert RECORD_FILE_MERGE_PROGRAM_FILENAME in step.script
-    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=record_file_merge_program_source())}
-    assert record_file_merge_program_source() not in step.script
+    assert expansion.endswith(f"/{helper.path}")
+    assert helper.compose() == record_file_merge_program_source().encode("utf-8")
 
 
 def test_a_generated_record_file_is_never_merged_as_text(

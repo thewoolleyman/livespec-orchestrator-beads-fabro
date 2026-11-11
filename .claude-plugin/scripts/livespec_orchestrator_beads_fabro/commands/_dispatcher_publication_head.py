@@ -78,13 +78,6 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_reader_fragment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
     VERDICT_CAPTURED,
     VERDICT_CARRIED_FORWARD,
@@ -99,7 +92,6 @@ __all__: list[str] = [
     "PROOF_HEAD_PROGRAM_FILENAME",
     "PROOF_HEAD_REQUIRED_VERDICTS",
     "proof_head_program_path_expansion",
-    "proof_head_program_prepare_steps_block",
     "proof_head_program_source",
 ]
 
@@ -393,26 +385,3 @@ def proof_head_program_path_expansion() -> str:
     Dispatcher that never materialized one.
     """
     return f"{sandbox_plugins_root_expansion()}/{PROOF_HEAD_PROGRAM_FILENAME}"
-
-
-def proof_head_program_prepare_steps_block() -> str:
-    """The prepare step that lands the program below the sandbox plugins root.
-
-    The program rides the step's `env` rather than its script, so the engine's
-    compact preamble does not re-send it on every agent request, and the shell
-    writes it with `printf %s` so it expands nothing inside the program: the
-    reader carries dollar-bearing, shell-looking text of its own.
-    """
-    root = sandbox_plugins_root_expansion()
-    step = PrepareStep(
-        script=(
-            f'set -eu\nmkdir -p "{root}"\n'
-            + packed_payload_write_command(path_word=f'"{root}/{PROOF_HEAD_PROGRAM_FILENAME}"')
-        ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=proof_head_program_source())},
-    )
-    header = (
-        "\n# --- Dispatcher-materialized publication-head program: the ONE reader of\n"
-        "# --- the Proof of Done record format the scripted pr stage may use ---\n"
-    )
-    return header + render_prepare_step(step=step)

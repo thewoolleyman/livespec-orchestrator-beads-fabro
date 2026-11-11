@@ -13,10 +13,6 @@ import base64
 import json
 from dataclasses import replace
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    pack_payload,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     PROOF_GRADE_ASSERTIONS_ENV_VAR,
     PROOF_GRADE_PROGRAM_FILENAME,
@@ -25,7 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program 
     factory_captured_assertions,
     proof_grade_assertions_env_lines,
     proof_grade_program_path_expansion,
-    proof_grade_program_prepare_steps_block,
+    proof_grade_program_source,
     proof_record_reader_sources,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -33,7 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import plugins_helper
 
 _MIXED_DEFINITION_OF_DONE = """## Definition of Done
 
@@ -138,43 +134,39 @@ def test_a_payload_over_its_bound_projects_nothing_rather_than_a_truncation() ->
     assert proof_grade_assertions_env_lines(item=item) == ""
 
 
-def test_the_node_and_the_prepare_step_resolve_one_root() -> None:
-    """A node resolving a different root than the prepare pass finds no program.
+def test_the_node_and_the_helper_fetch_resolve_one_root() -> None:
+    """A node resolving a different root than the fetch step finds no program.
 
     Both halves are asserted — the program's own path AND the reader directory it
-    imports from — because a step that wrote the reader somewhere the program does
-    not look fails at the import line, in a stage whose refusal then names the
-    grade rather than the preparation.
+    imports from — because a reader written somewhere the program does not look
+    fails at the import line, in a stage whose refusal then names the grade
+    rather than the preparation.
     """
     expansion = proof_grade_program_path_expansion()
-    block = proof_grade_program_prepare_steps_block().replace("\\", "")
-
     assert expansion == f"{sandbox_plugins_root_expansion()}/{PROOF_GRADE_PROGRAM_FILENAME}"
-    assert expansion in block
-    assert f"{sandbox_plugins_root_expansion()}/{PROOF_GRADE_READER_DIRECTORY}" in block
-    assert "[[run.prepare.steps]]" in block
+    assert plugins_helper(path=PROOF_GRADE_PROGRAM_FILENAME).compose() == (
+        proof_grade_program_source().encode("utf-8")
+    )
+    for name, source in proof_record_reader_sources():
+        reader = plugins_helper(path=f"{PROOF_GRADE_READER_DIRECTORY}/{name}")
+        assert reader.compose() == source.encode("utf-8")
 
 
 def test_the_reader_travels_as_the_packages_own_bytes_with_no_package_import_left() -> None:
     """The shipped sources ARE the reader, minus the one qualifier a sandbox lacks.
 
-    Each source is asserted CARRIED BY THE STEP'S ENV whole, rather than by a
-    needle, because the claim is that nothing but the package prefix changed — a
-    fragment that happened to carry the same function names would satisfy any
-    containment check on a needle. The prefix's ABSENCE is asserted too, since a
-    source still naming the package would raise `ModuleNotFoundError` inside the
-    sandbox, and each write is asserted free of shell expansion, since an
-    expanding one would substitute into a source whose regular expressions carry
-    `$` and backticks.
+    Each source is asserted to BE the helper the fetch step writes, whole, rather
+    than by a needle, because the claim is that nothing but the package prefix
+    changed — a fragment that happened to carry the same function names would
+    satisfy any containment check on a needle. The prefix's ABSENCE is asserted
+    too, since a source still naming the package would raise
+    `ModuleNotFoundError` inside the sandbox.
     """
     sources = proof_record_reader_sources()
-    [step] = steps_in(block=proof_grade_program_prepare_steps_block())
 
     assert [name for name, _ in sources] == list(PROOF_GRADE_READER_MODULES)
-    for index, (name, source) in enumerate(sources):
+    for name, source in sources:
         assert "livespec_orchestrator_beads_fabro" not in source, name
         assert source.strip() != "", name
-        var = f"{PAYLOAD_ENV_VAR}_{index}"
-        assert step.env[var] == pack_payload(text=source), name
-        assert f'printf %s "${var}" | python3 -c' in step.script
-        assert source not in step.script, name
+        reader = plugins_helper(path=f"{PROOF_GRADE_READER_DIRECTORY}/{name}")
+        assert reader.compose() == source.encode("utf-8"), name

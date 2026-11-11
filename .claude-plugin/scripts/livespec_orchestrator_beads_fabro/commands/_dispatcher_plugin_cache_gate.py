@@ -92,30 +92,9 @@ from __future__ import annotations
 
 import shlex
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
-    carry_forward_program_prepare_steps_block,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
     PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
     render_prepare_step,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
-    proof_grade_program_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
-    proof_head_program_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
-    publication_push_program_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
-    record_file_merge_program_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regeneration import (
-    record_file_program_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -440,32 +419,30 @@ def plugin_cache_gate_program_source() -> str:
 
 
 def plugin_cache_gate_prepare_step() -> PrepareStep:
-    """The prepare step: materialize the program, verify, then pin.
+    """The prepare step: verify every registered build, then pin.
 
-    The program rides the step's `env` and the script writes it with
-    `printf %s`, so the engine's compact preamble carries a few lines rather
-    than the whole gate on every agent request.
+    The gate program itself is a helper program: the helper-fetch setup step
+    writes it below the plugins root from the installed build's own commit,
+    digest-verified, before this step runs (`_dispatcher_helper_registry`). This
+    step only runs it.
 
     `set -eu` plus the `exec` means the gate's own exit code IS the step's, so
     an incomplete cache that could not be repaired aborts the run in setup —
     seconds of a prepare step instead of the hour of agent nodes the observed
     failure spent before surfacing the same fact.
 
-    The program is WRITTEN before it is run, rather than piped into `python3 -`,
-    because the refresh stage has to re-enter the same verification and a pipe
-    leaves nothing behind to re-enter.
+    The program is a FILE rather than piped into `python3 -`, because the
+    refresh stage has to re-enter the same verification and a pipe leaves
+    nothing behind to re-enter.
     """
     return PrepareStep(
         script="\n".join(
             [
                 "set -eu",
                 f'root="{sandbox_plugins_root_expansion()}"',
-                'mkdir -p "$root"',
-                packed_payload_write_command(path_word=f'"$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'),
                 f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"',
             ]
         ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=f"{_gate_program()}\n")},
     )
 
 
@@ -530,7 +507,7 @@ def plugin_gate_session_hook_declaration() -> dict[str, list[dict[str, object]]]
 
 
 def plugin_cache_gate_prepare_steps_block() -> str:
-    """Render the gate, and the three publication helpers, as prepare steps.
+    """Render the gate as a prepare step.
 
     Rendered unconditionally: the registry, the cache and the marketplace clones
     are properties of the sandbox rather than of the dispatch, so there is no
@@ -539,11 +516,9 @@ def plugin_cache_gate_prepare_steps_block() -> str:
 
     The publication-head reader, the exact-head push program, the carry-forward
     decision, the per-assertion proof grade and the generated-record-file
-    resolution ride the SAME block for the reason the module docstring records:
-    all six land below one root, and a sandbox given a subset fails closed at a
-    stage whose refusal would name the wrong seam. They follow the gate rather
-    than precede it so the cheapest refusal — an unrepairable plugin cache —
-    still aborts setup first.
+    programs used to ride this block as payload steps. They are helper programs
+    now, written with the gate by the one helper-fetch setup step, so a sandbox
+    is never handed a subset of them.
     """
     lines = [
         "",
@@ -552,14 +527,4 @@ def plugin_cache_gate_prepare_steps_block() -> str:
         "# --- required_paths, re-materialize an incomplete one, and pin the",
         "# --- build for the whole run (bd-ib-dbqb, bd-ib-bb41.9) ---",
     ]
-    return (
-        "\n".join(lines)
-        + "\n"
-        + render_prepare_step(step=plugin_cache_gate_prepare_step())
-        + proof_head_program_prepare_steps_block()
-        + publication_push_program_prepare_steps_block()
-        + carry_forward_program_prepare_steps_block()
-        + proof_grade_program_prepare_steps_block()
-        + record_file_program_prepare_steps_block()
-        + record_file_merge_program_prepare_steps_block()
-    )
+    return "\n".join(lines) + "\n" + render_prepare_step(step=plugin_cache_gate_prepare_step())

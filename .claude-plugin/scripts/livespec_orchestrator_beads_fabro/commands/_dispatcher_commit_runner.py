@@ -31,15 +31,8 @@ from typing import Protocol
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
     COMMIT_RUNNER_PROGRAM_FILENAME,
-    commit_runner_prepare_steps_block,
     commit_runner_program_path_expansion,
     commit_runner_program_source,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_implement_commit_programs import (
-    render_commit_program_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
-    review_guard_prepare_steps_block,
 )
 
 __all__: list[str] = [
@@ -51,8 +44,6 @@ __all__: list[str] = [
     "CommitProcess",
     "CommitRunResult",
     "DetachedCommitRunner",
-    "commit_helpers_prepare_steps_block",
-    "commit_runner_prepare_steps_block",
     "commit_runner_program_path_expansion",
     "commit_runner_program_source",
     "failed_targets",
@@ -61,15 +52,6 @@ __all__: list[str] = [
 
 RUNNING_STATE = "running"
 NO_VERDICT_STATE = "no-verdict"
-
-
-def commit_helpers_prepare_steps_block() -> str:
-    """Render every plugin-root program required by the commit command nodes."""
-    return (
-        render_commit_program_prepare_steps_block()
-        + commit_runner_prepare_steps_block()
-        + review_guard_prepare_steps_block()
-    )
 
 
 # The gate aggregate's own list of failed recipes: `Failed targets (1):` followed

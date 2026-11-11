@@ -62,7 +62,7 @@ from functools import partial
 from pathlib import Path
 from typing import IO, Protocol, cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [

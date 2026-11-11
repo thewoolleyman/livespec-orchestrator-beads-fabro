@@ -42,6 +42,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_subject imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import (
     render_workflow_graph,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_build import HelperSource
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    RELEASE_REPOSITORY_URL,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
 )
@@ -93,6 +97,10 @@ _DISPATCH_ID = "01M5ZZZZZZZZZZZZZZZZZZZZZZ"
 # The in-sandbox root the overlay clones siblings under, as `_dispatcher_sibling_clones`
 # projects it; only its length reaches the measurement.
 _SANDBOX_CLONES_ROOT = "/livespec-siblings"
+# The build the measured overlay's helper manifest names. Only its LENGTH reaches
+# the measurement, so a fixed full-length commit stands in for the installed one,
+# and the check reads no install record and no git state.
+_HELPER_SOURCE = HelperSource(repository=RELEASE_REPOSITORY_URL, commit="0" * 40)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -189,6 +197,7 @@ def _overlay(
         ),
         prepare_inputs=contract_prompt_variables(resolved=contract),
         provision_worktree_pack=fleet_toolchain_is_the_sandbox_gate_premise(resolved=contract),
+        helper_source=_HELPER_SOURCE,
         publication_metadata=publication_metadata_for(item=item),
         dod_gate_subject=(
             dod_gate_subject(item=item, repo=repository, comments=())

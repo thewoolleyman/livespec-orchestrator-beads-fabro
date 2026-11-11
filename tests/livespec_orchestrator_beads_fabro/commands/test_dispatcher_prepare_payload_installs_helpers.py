@@ -1,8 +1,12 @@
-"""Every helper a prepare step writes is still written, byte for byte (bd-ib-coxsfu).
+"""Every helper the overlay names still lands, byte for byte (bd-ib-coxsfu, bd-ib-jrawlp).
 
-Moving a payload out of a step's script and into its env must leave the sandbox
-with the SAME files at the SAME paths. This file renders the whole dispatch
-overlay, EXECUTES each payload-bearing step the way the engine's shell does
+Option D moved every helper program out of the rendered run configuration: the
+overlay carries a manifest naming each helper and its digest, and ONE setup step
+fetches the installed build and materializes every helper from it. That move must
+leave the sandbox with the SAME files at the SAME paths and modes. This file
+renders the whole dispatch overlay, materializes the manifest THAT OVERLAY
+carries (in-process, minus the forge fetch, so the composing tree is this one),
+EXECUTES each remaining payload-bearing step the way the engine's shell does
 (its script, with its own env) in a throwaway plugins root, and compares what
 landed against the owning module's source of record.
 """
@@ -21,6 +25,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
     COMMIT_RUNNER_PROGRAM_FILENAME,
     commit_runner_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    HELPER_MANIFEST_ENV,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_materialize import materialize
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    GH_REFRESH_ROOT,
+    LIVESPEC_ROOT,
+    PLUGINS_ROOT,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     HOOK_LIMIT_PROGRAM_FILENAME,
@@ -80,7 +93,7 @@ def _git_clone(*, root: Path) -> Path:
 
 @pytest.fixture(name="landed")
 def _landed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """The plugins root after every payload-bearing, directly runnable step ran."""
+    """The plugins root after the overlay's helper manifest and payload steps ran."""
     monkeypatch.setenv("GITHUB_APP_ID", "1")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "key")
     monkeypatch.setenv("GITHUB_APP_INSTALLATION_ID", "2")
@@ -94,17 +107,32 @@ def _landed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     )
     assert overlay is not None
     plugins_root = tmp_path / "plugins"
+    steps = steps_in(block=overlay)
+    [fetch] = [step for step in steps if HELPER_MANIFEST_ENV in step.env]
+    written = materialize(
+        manifest_text=fetch.env[HELPER_MANIFEST_ENV],
+        roots={
+            PLUGINS_ROOT: plugins_root,
+            GH_REFRESH_ROOT: tmp_path / "gh-refresh",
+            LIVESPEC_ROOT: tmp_path / "livespec",
+        },
+    )
+    assert isinstance(written, int), written
     clone = _git_clone(root=tmp_path / "clone")
     base = {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
         "HOME": str(tmp_path / "home"),
         SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins_root),
     }
-    payload_steps = [step for step in steps_in(block=overlay) if step.env]
-    # The gh-refresh chain writes under the fixed sandbox root and needs a real
-    # `gh` to wrap; `test_dispatcher_gh_refresh_worktree` executes that chain.
-    runnable = [step for step in payload_steps if ".livespec-gh-refresh" not in step.script]
-    assert len(runnable) >= 10
+    # The fetch step itself reaches the forge, and the gh-refresh chain needs a
+    # real `gh` to wrap; `test_helper_fetch_scenario336` and
+    # `test_dispatcher_gh_refresh_worktree` execute those.
+    runnable = [
+        step
+        for step in steps
+        if step.env and step is not fetch and ".livespec-gh-refresh" not in step.script
+    ]
+    assert runnable
     for step in runnable:
         completed = subprocess.run(
             ["sh", "-c", step.script],

@@ -7,8 +7,9 @@ its Dispatcher replay are covered fake-driven at the unit tier; these cases bind
 the runner sub-scenarios of `SPECIFICATION/scenarios.md` Scenario 179 against
 REAL processes:
 
-- the runner is materialized by EXECUTING the prepare step the plugin renders
-  (`commit_runner_prepare_steps_block`), not by writing its source by hand;
+- the runner is landed from the plugin's own helper registry, the bytes the
+  helper-fetch setup step writes (`_dispatcher_helper_registry`), not by writing
+  its source by hand;
 - the repository is a real `git init` clone whose real `pre-commit` and
   `commit-msg` hooks are shell scripts;
 - the slow hook waits for a release file rather than sleeping a fixed time, so
@@ -31,13 +32,13 @@ from typing import cast
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
     COMMIT_RUNNER_PROGRAM_FILENAME,
-    commit_runner_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
 )
 
-from tests.prepare_step_support import env_of, steps_in
+from tests.prepare_step_support import land_helpers
 
 _RELEASE = "release-hook"
 _TRAILERS = (("Hook-Trailer-One", "alpha"), ("Hook-Trailer-Two", "beta"))
@@ -120,17 +121,7 @@ def _sandbox(tmp_path: Path) -> Iterator[_Sandbox]:
     _ = (repo / "module.py").write_text("x = 0\n", encoding="utf-8")
     _ = _git(sandbox=sandbox, argv=["add", "module.py"])
     _ = _git(sandbox=sandbox, argv=["commit", "--quiet", "-m", "chore: baseline"])
-    steps = [step for step in steps_in(block=commit_runner_prepare_steps_block()) if step.env]
-    assert len(steps) == 1
-    materialized = subprocess.run(
-        ["sh", "-c", steps[0].script],
-        cwd=repo,
-        env=env_of(step=steps[0], base=env),
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert materialized.returncode == 0, materialized.stderr
+    _ = land_helpers(roots={PLUGINS_ROOT: plugins})
     assert sandbox.runner.is_file()
     _install_hook(repo=repo, name="pre-commit", body=_PRE_COMMIT)
     _install_hook(repo=repo, name="commit-msg", body=_COMMIT_MSG)

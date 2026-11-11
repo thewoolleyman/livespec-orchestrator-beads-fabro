@@ -25,9 +25,6 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
-    plugin_cache_gate_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
     publication_push_program_source,
@@ -45,7 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regenera
     record_file_program_source,
 )
 
-from tests.prepare_step_support import runnable_script
+from tests.prepare_step_support import plugin_gate_installer_script
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW = (
@@ -208,9 +205,7 @@ def _prepare_published(*, root: Path, clone: Path, plugins: Path) -> None:
     head = _git("rev-parse", "HEAD", cwd=clone).stdout.strip()
     _ = (state / PUBLISH_HEAD_STATE_FILENAME).write_text(head, encoding="utf-8")
     installer = root / "install-plugin-gate.sh"
-    _ = installer.write_text(
-        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
-    )
+    _ = installer.write_text(plugin_gate_installer_script(), encoding="utf-8")
     _ = subprocess.run(
         ["bash", str(installer)],
         check=True,

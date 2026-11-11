@@ -1,27 +1,22 @@
-"""Sandbox-local refreshing GitHub CLI wrapper projection for Dispatcher runs."""
+"""Sandbox-local refreshing GitHub CLI wrapper projection for Dispatcher runs.
+
+The bundle the wrapper needs is a set of helper programs the helper-fetch setup
+step writes under the bundle root (`_dispatcher_helper_registry`): the mint
+helper, the push helper, the wrapper's fixed tail, and the vendored GitHub-auth
+support files, each one its own digest-verified file. This module names those
+pieces and renders the one step that installs the wrapper over `gh`.
+"""
 
 from __future__ import annotations
 
-import base64
-import gzip
-import io
 import json
 import os
-import tarfile
 from collections.abc import Mapping
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
     PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    payload_write_command,
     render_prepare_step,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
-    worktree_exclude_script,
 )
 
 __all__: list[str] = [
@@ -47,21 +42,21 @@ _GITHUB_APP_ENV_KEYS = (
 # The in-sandbox bundle root the dispatcher materializes the refreshing `gh`
 # wrapper into. `/workspace` is the fabro sandbox's own mount, so this absolute
 # path is correct in production and WRONG anywhere else -- on a CI runner it
-# resolves to the runner's filesystem root, where `rm -rf` + `mkdir` either is
-# refused (uid 1000: `mkdir: Permission denied`) or, worse, succeeds under uid 0
-# and destroys a real /workspace. The lever below exists so a test can execute
-# the rendered script for real against a temporary root; production never sets
-# it. Mirrors `LIVESPEC_SANDBOX_OTEL_ENDPOINT` in `_dispatcher_projection`.
+# resolves to the runner's filesystem root, where a write either is refused
+# (uid 1000: `mkdir: Permission denied`) or, worse, succeeds under uid 0 and
+# lands in a real /workspace. The lever below exists so a test can execute the
+# rendered steps for real against a temporary root; production never sets it.
+# Mirrors `LIVESPEC_SANDBOX_OTEL_ENDPOINT` in `_dispatcher_projection`.
 SANDBOX_GH_REFRESH_ROOT_ENV_VAR = "LIVESPEC_SANDBOX_GH_REFRESH_ROOT"
 
-# Base64 chunk size. Each chunk rides one prepare step's own `env` value, which
-# `execve` bounds at MAX_ARG_STRLEN (131072 bytes) independently of the larger
-# total, so a big value fails with E2BIG and the run dies at launch, before any
-# work, leaving no branch. bd-ib-gnli: one 186KB step did exactly that to every
-# dispatch in two repos. `_dispatcher_prepare_payload.MAX_PAYLOAD_VALUE_BYTES`
-# enforces the cap; this chunk size stays well under it.
-_B64_CHUNK_CHARS = 48000
 DEFAULT_SANDBOX_GH_REFRESH_ROOT = "/workspace/.livespec-gh-refresh"
+
+# Where each fixed piece of the bundle lands, relative to the bundle root. The
+# helper-fetch setup step writes them (`_dispatcher_helper_registry`); the
+# wrapper-install step below only reads them.
+GH_MINT_HELPER_RELPATH = "bin/mint_app_token.py"
+GH_PUSH_HELPER_RELPATH = "bin/push_origin"
+GH_WRAPPER_TAIL_RELPATH = "bin/gh-wrapper-tail.sh"
 
 
 def resolve_sandbox_gh_refresh_root(*, environ: Mapping[str, str]) -> str:
@@ -217,70 +212,6 @@ fi
 """
 
 
-def refreshing_gh_prepare_steps_block() -> str:
-    """Install a sandbox-local refreshing `gh` wrapper when App inputs exist.
-
-    The support bundle is streamed to a file inside the sandbox across SEVERAL
-    prepare steps rather than embedded in one. Fabro executes each step as
-    `bash -c <script>`, so a step is a single argv argument and is bounded by
-    MAX_ARG_STRLEN, not by the much larger ARG_MAX total (bd-ib-gnli).
-
-    The FIRST step hides the bundle from the run's git worktree, and its
-    position is load-bearing: the Petri-era engine runs each prepare step as a
-    graph node and checkpoints after it, so a step that writes a byte of the
-    bundle before the exclusion is in place is a step whose checkpoint commits
-    it (bd-ib-dud2ww).
-
-    BOTH bundle paths are excluded, and the payload is not an afterthought: the
-    chunk steps stream the base64 archive to `<bundle_root>.b64` and only the
-    unpack step deletes it, so on a per-node-checkpointing engine every chunk
-    step's own checkpoint commits that file. Excluding the unpacked tree alone
-    leaves the same defect one path over.
-    """
-    if not github_app_env_present():
-        return ""
-    bundle_root = resolve_sandbox_gh_refresh_root(environ=os.environ)
-    mint_helper = f"{bundle_root}/bin/mint_app_token.py"
-    payload_path = f"{bundle_root}.b64"
-    exclude = PrepareStep(
-        script=worktree_exclude_script(
-            paths=(bundle_root, payload_path),
-            label="livespec-gh-refresh",
-        )
-    )
-    steps = [
-        exclude,
-        *_payload_chunk_steps(payload_path=payload_path),
-        _unpack_step(bundle_root=bundle_root, mint_helper=mint_helper, payload_path=payload_path),
-    ]
-    return "\n# --- Dispatcher-materialized livespec-refreshing-gh-wrapper ---\n" + "".join(
-        render_prepare_step(step=step) for step in steps
-    )
-
-
-def _payload_chunk_steps(*, payload_path: str) -> list[PrepareStep]:
-    """Stream the base64 support bundle into a sandbox file, chunk by chunk.
-
-    Each chunk rides its step's `env`, not its script, so the engine's compact
-    preamble does not re-send 185k characters of base64 on every agent request.
-    """
-    archive_b64 = github_auth_support_archive_b64()
-    steps: list[PrepareStep] = []
-    for index in range(0, len(archive_b64), _B64_CHUNK_CHARS):
-        chunk = archive_b64[index : index + _B64_CHUNK_CHARS]
-        write = payload_write_command(path_word=f'"{payload_path}"', append=index > 0)
-        steps.append(
-            PrepareStep(
-                script=f'set -eu\nmkdir -p "$(dirname "{payload_path}")"\n{write}',
-                env={PAYLOAD_ENV_VAR: chunk},
-            )
-        )
-    return steps
-
-
-_MINT_VAR = f"{PAYLOAD_ENV_VAR}_MINT"
-_PUSH_VAR = f"{PAYLOAD_ENV_VAR}_PUSH"
-_WRAPPER_TAIL_VAR = f"{PAYLOAD_ENV_VAR}_WRAPPER_TAIL"
 _WRAPPER_TAIL = (
     _AGENT_PUBLICATION_GUARD_SOURCE
     + """token="$(python3 "$mint")"
@@ -289,36 +220,35 @@ export GITHUB_TOKEN="$token"
 exec "$real_gh" "$@"
 """
 )
-_EXTRACT_PROGRAM = """import base64, io, pathlib, sys, tarfile
-payload = base64.b64decode(pathlib.Path(sys.argv[1]).read_text())
-with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-    archive.extractall(sys.argv[2])"""
 
 
-def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> PrepareStep:
-    """Unpack the streamed bundle and install the refreshing `gh` wrapper.
+def refreshing_gh_prepare_steps_block() -> str:
+    """Install the sandbox-local refreshing `gh` wrapper when App inputs exist.
 
-    The three helper sources (the mint helper, the push helper and the wrapper's
-    fixed tail) ride the step's `env`; the script only writes them.
+    The bundle the wrapper runs -- the mint helper, the push helper, the wrapper's
+    fixed tail and the vendored GitHub-auth support files -- is no longer carried
+    here. The helper-fetch setup step writes it under the bundle root, from the
+    installed build's own commit, digest-verified and hidden from the run's git
+    worktree file by file (`_dispatcher_helper_fetch`, `_dispatcher_helper_registry`).
+    So this step only installs the wrapper over `gh`: it moves the real binary
+    aside once, writes the wrapper's two variable lines, and appends the fixed
+    tail the fetch step landed.
     """
-    push_helper = f"{bundle_root}/bin/push_origin"
-    write_mint = packed_payload_write_command(path_word='"$mint"', var=_MINT_VAR)
-    write_push = packed_payload_write_command(path_word=f'"{push_helper}"', var=_PUSH_VAR)
-    write_tail = packed_payload_write_command(
-        path_word='"$real_gh"', var=_WRAPPER_TAIL_VAR, append=True
+    if not github_app_env_present():
+        return ""
+    bundle_root = resolve_sandbox_gh_refresh_root(environ=os.environ)
+    step = PrepareStep(script=_install_script(bundle_root=bundle_root))
+    return "\n# --- Dispatcher-materialized livespec-refreshing-gh-wrapper ---\n" + (
+        render_prepare_step(step=step)
     )
-    script = (
+
+
+def _install_script(*, bundle_root: str) -> str:
+    """Move the real `gh` aside once and write the wrapper that mints before every call."""
+    return (
         "set -eu\n"
-        f'bundle_root="{bundle_root}"\n'
-        f'mint="{mint_helper}"\n'
-        'rm -rf "$bundle_root"\n'
-        'mkdir -p "$bundle_root/bin"\n'
-        f'python3 -c \'{_EXTRACT_PROGRAM}\' "{payload_path}" "$bundle_root"\n'
-        f'rm -f "{payload_path}"\n'
-        f"{write_mint}\n"
-        f"{write_push}\n"
-        f'chmod 755 "{push_helper}"\n'
-        'chmod 755 "$mint"\n'
+        f'mint="{bundle_root}/{GH_MINT_HELPER_RELPATH}"\n'
+        f'tail_file="{bundle_root}/{GH_WRAPPER_TAIL_RELPATH}"\n'
         'real_gh="$(command -v gh)"\n'
         'case "$real_gh" in\n'
         "  /*) ;;\n"
@@ -328,25 +258,9 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
         'if [ ! -x "$wrapped_gh" ]; then mv "$real_gh" "$wrapped_gh"; fi\n'
         "printf '%s\\n' '#!/usr/bin/env bash' 'set -euo pipefail'"
         ' "mint=\\"$mint\\"" "real_gh=\\"$wrapped_gh\\"" > "$real_gh"\n'
-        f"{write_tail}\n"
+        'cat "$tail_file" >> "$real_gh"\n'
         'chmod 755 "$real_gh"'
     )
-    return PrepareStep(
-        script=script,
-        env={
-            _MINT_VAR: pack_payload(text=_MINT_HELPER_SOURCE),
-            _PUSH_VAR: pack_payload(text=PUSH_ORIGIN_SOURCE),
-            _WRAPPER_TAIL_VAR: pack_payload(text=_WRAPPER_TAIL),
-        },
-    )
-
-
-# Where each fixed piece of the bundle lands, relative to the bundle root. The
-# helper-fetch setup step writes them (`_dispatcher_helper_registry`); the
-# wrapper-install step below only reads them.
-GH_MINT_HELPER_RELPATH = "bin/mint_app_token.py"
-GH_PUSH_HELPER_RELPATH = "bin/push_origin"
-GH_WRAPPER_TAIL_RELPATH = "bin/gh-wrapper-tail.sh"
 
 
 def gh_mint_helper_source() -> str:
@@ -390,22 +304,3 @@ def refreshing_gh_env_lines() -> str:
 def github_app_env_present() -> bool:
     """Whether the minimum GitHub App inputs are present."""
     return all(os.environ.get(key) not in (None, "") for key in _GITHUB_APP_ENV_KEYS[:2])
-
-
-def github_auth_support_archive_b64(*, scripts_root: Path | None = None) -> str:
-    """Return the dispatching plugin build's minimal GitHub auth support bundle."""
-    root = scripts_root if scripts_root is not None else Path(__file__).resolve().parents[2]
-    buffer = io.BytesIO()
-    # Fix only the gzip header clock; tar members retain their source metadata.
-    with (
-        gzip.GzipFile(fileobj=buffer, mode="wb", mtime=0) as compressed,
-        tarfile.open(fileobj=compressed, mode="w") as archive,
-    ):
-        for relpath in _SUPPORT_ARCHIVE_RELPATHS:
-            source = root / relpath
-            if source.is_dir():
-                for child in sorted(source.rglob("*.py")):
-                    archive.add(child, arcname=str(child.relative_to(root)))
-            else:
-                archive.add(source, arcname=str(relpath))
-    return base64.b64encode(buffer.getvalue()).decode("ascii")

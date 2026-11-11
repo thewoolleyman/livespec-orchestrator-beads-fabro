@@ -41,13 +41,6 @@ repository and carries no copy of this package -- the same reason
 
 from __future__ import annotations
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -60,7 +53,6 @@ __all__: list[str] = [
     "REVIEW_GUARD_REFUSED_MARKER",
     "REVIEW_GUARD_STAGE",
     "review_guard_hook_declaration",
-    "review_guard_prepare_steps_block",
     "review_guard_program_source",
 ]
 
@@ -349,16 +341,3 @@ def review_guard_hook_declaration() -> dict[str, list[dict[str, object]]]:
             }
         ]
     }
-
-
-def review_guard_prepare_steps_block() -> str:
-    """Render the prepare step that writes the guard before any ACP stage runs."""
-    root = sandbox_plugins_root_expansion()
-    step = PrepareStep(
-        script=f'set -eu\nmkdir -p "{root}"\n'
-        + packed_payload_write_command(path_word=f'"{_program_path_expansion()}"'),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=review_guard_program_source())},
-    )
-    return "\n# --- Dispatcher-materialized review-turn guard (bd-ib-azxvoo) ---\n" + (
-        render_prepare_step(step=step)
-    )

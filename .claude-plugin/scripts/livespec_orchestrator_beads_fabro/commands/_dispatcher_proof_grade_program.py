@@ -87,13 +87,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     FACTORY_RUN_ID_MARKER,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
 )
@@ -114,7 +107,6 @@ __all__: list[str] = [
     "factory_captured_assertions",
     "proof_grade_assertions_env_lines",
     "proof_grade_program_path_expansion",
-    "proof_grade_program_prepare_steps_block",
     "proof_grade_program_source",
     "proof_record_reader_sources",
 ]
@@ -514,36 +506,3 @@ def proof_grade_program_path_expansion() -> str:
     materialized one.
     """
     return f"{sandbox_plugins_root_expansion()}/{PROOF_GRADE_PROGRAM_FILENAME}"
-
-
-def proof_grade_program_prepare_steps_block() -> str:
-    """The prepare step that lands the program and its reader inside the sandbox.
-
-    Every file rides the step's `env` and is written with `printf %s`, so the
-    shell expands nothing inside sources that legitimately carry dollar-bearing,
-    shell-looking text -- the reader's own regular expressions contain `$` and
-    backticks, and an expanding write would substitute them away while the step
-    still succeeded.
-
-    The reader lands BEFORE the program, which is a requirement rather than a
-    preference: a sandbox given the program alone fails at its import line, in a
-    stage whose refusal would then name the grade rather than the preparation.
-    """
-    root = sandbox_plugins_root_expansion()
-    reader = f"{root}/{PROOF_GRADE_READER_DIRECTORY}"
-    lines = [f'set -eu\nmkdir -p "{reader}"']
-    env: dict[str, str] = {}
-    destinations = [(f"{reader}/{name}", source) for name, source in proof_record_reader_sources()]
-    destinations.append((f"{root}/{PROOF_GRADE_PROGRAM_FILENAME}", proof_grade_program_source()))
-    for index, (destination, source) in enumerate(destinations):
-        var = f"{PAYLOAD_ENV_VAR}_{index}"
-        env[var] = pack_payload(text=source)
-        lines.append(packed_payload_write_command(path_word=f'"{destination}"', var=var))
-    step = PrepareStep(script=chr(10).join(lines), env=env)
-    header = (
-        "\n# --- Dispatcher-materialized per-assertion Proof of Done grade: the\n"
-        "# --- acceptance pass's OWN record reader, shipped verbatim, so the grade\n"
-        "# --- the run advances on and the grade the pass takes cannot disagree\n"
-        "# --- (bd-ib-kcq6pu) ---\n"
-    )
-    return header + render_prepare_step(step=step)

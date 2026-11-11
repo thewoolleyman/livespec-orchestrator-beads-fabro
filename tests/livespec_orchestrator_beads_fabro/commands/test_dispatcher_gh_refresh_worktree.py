@@ -32,10 +32,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    GH_REFRESH_ROOT,
+    LIVESPEC_ROOT,
+    PLUGINS_ROOT,
+)
 
-from tests.prepare_step_support import runnable_script, steps_in
+from tests.prepare_step_support import fetch_helpers, runnable_script, steps_in
 
 _BUNDLE_DIRNAME = ".livespec-gh-refresh"
+# The helper-fetch setup step, which writes the bundle; run in-process.
+_FETCH = "<helper-fetch>"
 _DEFAULT_BRANCH = "master"
 _RUN_BRANCH = "fabro/run/01M4Q45S5AGK"
 
@@ -95,32 +102,27 @@ def test_no_checkpoint_of_the_prepare_chain_can_stage_a_bundle_file(
     """Every prepare step is a checkpoint, so EVERY step must be covered.
 
     The engine checkpoints after each graph node, not once at the end of
-    the chain, and the chain's own intermediate artifact -- the base64
-    payload the chunk steps stream out before the unpack step consumes
-    and deletes it -- is as committable as the unpacked bundle. Staging
-    is therefore measured after every step rather than after the last.
+    the chain, so staging is measured after every step rather than after
+    the last: after the helper fetch that writes the bundle file by file,
+    and after the step that installs the wrapper over `gh`.
     """
     repo = _git_repo(root=tmp_path / "clone")
     bundle_root = repo / _BUNDLE_DIRNAME
-    payload = repo / f"{_BUNDLE_DIRNAME}.b64"
     scripts = _rendered_prepare_scripts(monkeypatch=monkeypatch, bundle_root=bundle_root)
     bin_dir = _stub_path_dir(root=tmp_path / "bin", capture=tmp_path / "gh-calls.txt")
     _git("checkout", "-b", _RUN_BRANCH, repo=repo)
 
-    payload_was_on_disk = False
     for index, script in enumerate(scripts):
         _run_prepare_step(script=script, index=index, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
         _git("add", "-A", repo=repo)
 
         assert _bundle_paths(_git_stdout("diff", "--cached", "--name-only", repo=repo)) == []
 
-        payload_was_on_disk = payload_was_on_disk or payload.exists()
         _git("commit", "--allow-empty", "-m", f"fabro checkpoint run_prepare_{index}", repo=repo)
 
     # Positive controls: the staging instrument was pointed at a worktree
-    # where BOTH bundle paths really did exist, so the empty results above
-    # are measurements rather than a vacuously clean fixture.
-    assert payload_was_on_disk
+    # where the bundle really did exist, so the empty results above are
+    # measurements rather than a vacuously clean fixture.
     assert (bundle_root / "bin" / "mint_app_token.py").is_file()
     assert _bundle_paths(_git_stdout("ls-files", repo=repo)) == []
 
@@ -181,8 +183,8 @@ def test_the_installed_gh_wrapper_still_runs_the_bundles_mint_helper(
 
     _run_prepare_chain(scripts=scripts, repo=repo, bin_dir=bin_dir, tmp_path=tmp_path)
 
-    # Only now: the unpack step needs the REAL python3 to extract the
-    # archive, so the logging stub cannot be on PATH before the chain.
+    # Only now: the helper fetch writes the bundle through the REAL python3,
+    # so the logging stub cannot be on PATH before the chain.
     mint_log = tmp_path / "mint-args.txt"
     _write_executable(
         path=bin_dir / "python3",
@@ -497,7 +499,9 @@ def _rendered_prepare_scripts(
         runnable_script(step=step) for step in steps_in(block=refreshing_gh_prepare_steps_block())
     ]
     assert found
-    return found
+    # The bundle is written by the helper fetch, which runs first among the
+    # Dispatcher's steps; `_run_prepare_step` runs its materializer for this entry.
+    return [f"{_FETCH}{bundle_root}", *found]
 
 
 def _git_repo(*, root: Path) -> Path:
@@ -534,9 +538,8 @@ def _git_stdout(*argv: str, repo: Path) -> str:
 def _bundle_paths(listing: str) -> list[str]:
     """The listed worktree-relative paths that belong to the bundle.
 
-    Keyed on the first path SEGMENT so both of the chain's paths are
-    caught by one predicate -- the unpacked `.livespec-gh-refresh/` tree
-    and the sibling `.livespec-gh-refresh.b64` payload.
+    Keyed on the first path SEGMENT, so a sibling path the chain might
+    write beside the `.livespec-gh-refresh/` tree is caught as well.
     """
     return [path for path in listing.splitlines() if path.split("/")[0].startswith(_BUNDLE_DIRNAME)]
 
@@ -550,7 +553,7 @@ def _commit_file(*, repo: Path, name: str, body: str) -> None:
 def _stub_path_dir(*, root: Path, capture: Path) -> Path:
     """A PATH directory whose `gh` records how it was called.
 
-    The unpack step MOVES the `gh` it finds on PATH aside and writes the
+    The install step MOVES the `gh` it finds on PATH aside and writes the
     wrapper over it, so this stub becomes `gh.livespec-real` and is what
     the wrapper execs.
     """
@@ -605,6 +608,15 @@ def _run_prepare_step(
     tmp_path: Path,
 ) -> None:
     """Execute ONE rendered prepare step the way fabro does: `bash <script>`."""
+    if script.startswith(_FETCH):
+        _ = fetch_helpers(
+            roots={
+                GH_REFRESH_ROOT: Path(script.removeprefix(_FETCH)),
+                PLUGINS_ROOT: tmp_path / "plugins",
+                LIVESPEC_ROOT: tmp_path / "livespec-root",
+            }
+        )
+        return
     step = tmp_path / f"prepare-{index}.sh"
     step.write_text(script, encoding="utf-8")
     subprocess.run(

@@ -30,9 +30,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_progra
     REPORT_OUTPUT_TAIL_KEY,
     REPORT_RUN_ID_KEY,
     REPORT_STATE_KEY,
-    commit_runner_prepare_steps_block,
     commit_runner_program_path_expansion,
     commit_runner_program_source,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_build import HelperSource
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    helper_fetch_prepare_steps_block,
 )
 
 _RUN_ID = "commit-00000000000000000000000000000001"
@@ -128,16 +131,28 @@ def _last_report(capsys: pytest.CaptureFixture[str]) -> dict[str, object]:
     return json.loads(capsys.readouterr().out.strip().splitlines()[-1])
 
 
-def test_the_source_and_prepare_step_carry_no_template_opener_and_no_privileged_write() -> None:
-    """The overlay passes through a template engine and the sandbox user may not be root."""
+def test_the_source_and_fetch_step_carry_no_template_opener_and_no_privileged_write() -> None:
+    """The overlay passes through a template engine and the sandbox user may not be root.
+
+    The runner is a fetched helper program, so the overlay text that carries it is
+    the helper-fetch step: its manifest names the runner, and its script is what
+    the sandbox runs to write it.
+    """
     source = commit_runner_program_source()
-    block = commit_runner_prepare_steps_block()
+    block = helper_fetch_prepare_steps_block(
+        source=HelperSource(
+            repository="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+            commit="0123456789abcdef0123456789abcdef01234567",
+        )
+    )
+    assert block is not None
 
     for opener in ("{" + "{", "{" + "%", "{" + "#"):
         assert opener not in source
         assert opener not in block
     assert "\nLIVESPEC_COMMIT_RUNNER\n" not in source
     assert "[[run.prepare.steps]]" in block
+    assert f'\\"path\\":\\"{COMMIT_RUNNER_PROGRAM_FILENAME}\\"' in block
     assert commit_runner_program_path_expansion().endswith("/livespec-commit-runner.py")
     assert "/usr/local/bin" not in block
     assert "__HOOK_BANNER__" not in source

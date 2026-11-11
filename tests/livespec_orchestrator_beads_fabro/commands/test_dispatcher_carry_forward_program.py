@@ -19,16 +19,15 @@ from types import ModuleType
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
     CARRY_FORWARD_PROGRAM_FILENAME,
     carry_forward_program_path_expansion,
-    carry_forward_program_prepare_steps_block,
     carry_forward_program_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_reader_fragment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    pack_payload,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    default_helper_roots,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
     proof_head_program_source,
 )
@@ -36,7 +35,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
     sandbox_plugins_root_expansion,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import plugins_helper
 
 
 def _materialized(*, tmp_path: Path) -> ModuleType:
@@ -98,28 +97,24 @@ def test_the_two_materialized_programs_share_one_record_reader() -> None:
     assert shared in proof_head_program_source()
 
 
-def test_the_prepare_step_carries_the_program_in_env_and_writes_it_without_expansion() -> None:
-    """The shell must substitute nothing into a source carrying `$` and a backtick.
+def test_the_helper_fetch_lands_the_program_byte_for_byte() -> None:
+    """The fetch step writes the registry's exact bytes, so nothing is expanded.
 
-    The decision's forbidden-character set is a literal containing both, so an
-    EXPANDING write would have the shell expand them away while the step still
-    succeeded — leaving a grammar that admits the substitutions it exists to
-    exclude. The program rides the step's env, so its script is a short write.
+    The decision's forbidden-character set is a literal containing `$` and a
+    backtick, so an EXPANDING write would have the shell expand them away while
+    the step still succeeded. The program is a helper program, composed from the
+    registry and written as bytes, never through a shell.
     """
-    block = carry_forward_program_prepare_steps_block()
-
-    assert "[[run.prepare.steps]]" in block
-    [step] = steps_in(block=block)
-    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=carry_forward_program_source())}
-    assert 'printf %s "$LIVESPEC_PREPARE_PAYLOAD"' in step.script
-    assert carry_forward_program_source() not in step.script
-    assert CARRY_FORWARD_PROGRAM_FILENAME in block
+    helper = plugins_helper(path=CARRY_FORWARD_PROGRAM_FILENAME)
+    assert helper.compose() == carry_forward_program_source().encode("utf-8")
+    assert carry_forward_program_path_expansion().endswith(f"/{helper.path}")
 
 
-def test_the_node_and_the_prepare_step_resolve_one_root() -> None:
-    """A node resolving a different root than the prepare pass finds no program."""
+def test_the_node_and_the_helper_fetch_resolve_one_root() -> None:
+    """A node resolving a different root than the helper fetch finds no program."""
     expansion = carry_forward_program_path_expansion()
 
     assert expansion.startswith(sandbox_plugins_root_expansion())
     assert expansion.endswith(f"/{CARRY_FORWARD_PROGRAM_FILENAME}")
-    assert expansion in carry_forward_program_prepare_steps_block().replace("\\", "")
+    helper = plugins_helper(path=CARRY_FORWARD_PROGRAM_FILENAME)
+    assert expansion == f"{default_helper_roots()[PLUGINS_ROOT]}/{helper.path}"

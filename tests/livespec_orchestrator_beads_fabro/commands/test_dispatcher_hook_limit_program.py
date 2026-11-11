@@ -43,7 +43,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     hook_over_limit_from_text,
 )
 
-from tests.prepare_step_support import readable_block
+from tests.prepare_step_support import plugins_helper, readable_block
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _GRAPH = (
@@ -354,25 +354,23 @@ def test_the_limit_is_read_off_the_graph_and_withheld_when_it_cannot_be(
     assert publish_draft_limit_from_graph(graph=unparseable) is None
 
 
-def test_the_prepare_step_lands_the_program_and_withholds_unknown_figures() -> None:
-    """The program is always materialized; the figures only when they are known."""
+def test_the_prepare_step_lands_the_figures_and_withholds_unknown_ones() -> None:
+    """The program is a fetched helper; the figures land only when they are known."""
     known = readable_block(block=hook_limit_prepare_steps_block(limit_seconds=3600))
+    program = plugins_helper(path=HOOK_LIMIT_PROGRAM_FILENAME).compose().decode("utf-8")
 
-    assert HOOK_LIMIT_PROGRAM_FILENAME in known
+    assert program == hook_limit_program_source()
     assert HOOK_LIMIT_LIMITS_FILENAME in known
     assert "LIVESPEC_PUBLISH_DRAFT_LIMIT_SECONDS=3600" in known
     assert "LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS=3480" in known
     # The sentinel reaches the sandbox as ONE spelling, substituted rather than
     # typed: a program carrying `__SENTINEL__` would print a line the host
     # parser cannot match, and the event would be observed and then lost.
-    assert HOOK_OVER_LIMIT_SENTINEL in known
-    assert "__SENTINEL__" not in known
+    assert HOOK_OVER_LIMIT_SENTINEL in program
+    assert "__SENTINEL__" not in program
+    assert program not in known
 
-    withheld = readable_block(block=hook_limit_prepare_steps_block(limit_seconds=None))
-
-    assert HOOK_LIMIT_PROGRAM_FILENAME in withheld
-    assert HOOK_LIMIT_LIMITS_FILENAME not in withheld
-    assert "LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS" not in withheld
+    assert hook_limit_prepare_steps_block(limit_seconds=None) == ""
 
 
 def test_the_node_and_the_prepare_step_resolve_one_root() -> None:

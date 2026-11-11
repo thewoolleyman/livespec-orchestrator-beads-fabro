@@ -1,16 +1,20 @@
-"""The auth bundle and its overlay must not depend on the gzip header clock."""
+"""The gh-refresh support files are copied one by one, and the overlay is clock-independent.
+
+The support bundle used to ride the overlay as a gzip tarball whose header clock
+had to be pinned. It is now a set of helper programs the helper-fetch setup step
+copies from the installed build's checkout, each file its own digest-verified
+helper, so what is asserted is the set of files and that the overlay carrying
+the wrapper step still renders identically when only the wall clock moves.
+"""
 
 from __future__ import annotations
 
-import base64
-import io
-import tarfile
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
-    github_auth_support_archive_b64,
+    github_auth_support_relpaths,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
@@ -32,24 +36,21 @@ def _support_tree(*, root: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
     (root / "_vendor/returns/ignored.txt").write_text("not Python", encoding="utf-8")
+    (root / "_vendor/returns/__pycache__").mkdir()
+    (root / "_vendor/returns/__pycache__/x.cpython-313.pyc").write_bytes(b"\0")
 
 
-def test_support_archive_is_byte_identical_across_seconds(*, tmp_path: Path) -> None:
-    """Move the clock explicitly so the regression cannot pass by lucky timing."""
+def test_the_support_files_are_every_python_file_under_the_bundle_paths(*, tmp_path: Path) -> None:
+    """Directories contribute their `.py` files, sorted; nothing else rides along."""
     _support_tree(root=tmp_path)
-    with patch("time.time", return_value=1_800_000_000):
-        first = github_auth_support_archive_b64(scripts_root=tmp_path)
-    with patch("time.time", return_value=1_800_000_002):
-        second = github_auth_support_archive_b64(scripts_root=tmp_path)
-
-    identical = first == second
-    assert identical, "output changed when only the wall clock advanced"
+    relpaths = github_auth_support_relpaths(scripts_root=tmp_path)
+    assert [path.as_posix() for path in relpaths] == list(_SUPPORT_FILES)
 
 
 def test_no_work_item_overlay_is_byte_identical_across_seconds(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Force the real auth bundle into the overlay, independent of ambient secrets."""
+    """Force the wrapper step into the overlay, independent of ambient secrets."""
     monkeypatch.setenv("GITHUB_APP_ID", "archive-test-app")
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "archive-test-placeholder")
     workflow = '[workflow]\ngraph = "workflow.fabro"\n\n[run.environment]\nid = "sandbox"\n'
@@ -75,23 +76,3 @@ def test_no_work_item_overlay_is_byte_identical_across_seconds(
     assert "livespec-refreshing-gh-wrapper" in first
     identical = first == second
     assert identical, "output changed when only the wall clock advanced"
-
-
-def test_support_archive_extracts_the_same_paths_and_contents(*, tmp_path: Path) -> None:
-    """Exercise the sandbox's tar.gz extraction with files and nested packages."""
-    root = tmp_path / "scripts"
-    _support_tree(root=root)
-    payload = base64.b64decode(github_auth_support_archive_b64(scripts_root=root))
-    destination = tmp_path / "sandbox"
-    with tarfile.open(fileobj=io.BytesIO(payload), mode="r:gz") as archive:
-        assert archive.getnames() == list(_SUPPORT_FILES)
-        for member in archive.getmembers():
-            assert member.mtime == (root / member.name).stat().st_mtime
-        archive.extractall(destination, filter="data")
-
-    extracted = {
-        str(path.relative_to(destination)): path.read_bytes()
-        for path in destination.rglob("*")
-        if path.is_file()
-    }
-    assert extracted == _SUPPORT_FILES

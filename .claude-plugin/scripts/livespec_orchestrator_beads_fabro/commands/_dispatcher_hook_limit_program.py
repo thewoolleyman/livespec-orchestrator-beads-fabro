@@ -92,10 +92,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     HOOK_OVER_LIMIT_SENTINEL,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
     PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -440,7 +437,7 @@ def hook_limit_program_source() -> str:
 def hook_limit_prepare_steps_block(
     *, limit_seconds: int | None, needs_human_limit_seconds: int | None = None
 ) -> str:
-    """Land the observer and this dispatch's resolved figures in the sandbox.
+    """Land this dispatch's resolved figures beside the observer in the sandbox.
 
     The two figures travel as a SOURCEABLE FILE rather than as overlay env keys
     because they have exactly one consumer -- the `publish_draft` script -- and
@@ -448,16 +445,15 @@ def hook_limit_prepare_steps_block(
     for the observation to be possible at all. One mechanism carrying both cannot
     land the program without the limit it must be invoked with.
 
-    A WITHHELD limit renders the program and NO figures file, which is what makes
-    the degradation safe rather than merely quiet: the script's own guard reads
-    the absent file and pushes unbounded, exactly as it did before this existed.
-    Rendering the program anyway costs nothing and keeps the two prepare steps
-    from having to agree about a condition.
+    A WITHHELD limit renders NO figures file, which is what makes the degradation
+    safe rather than merely quiet: the script's own guard reads the absent file
+    and pushes unbounded, exactly as it did before this existed. With no figure
+    at all this renders no step.
 
-    The program rides the step's `env` and `printf %s` writes it, so the shell
-    expands nothing inside it: the observer carries dollar-bearing,
-    shell-looking text of its own. The figures are short assignments, not a
-    payload, so they stay in the script.
+    The observer program itself is a helper program: the helper-fetch setup step
+    writes it from the installed build's own commit (`_dispatcher_helper_registry`).
+    The figures are per-dispatch data, short assignments, so they stay in the
+    script.
 
     A THIRD FIGURE, `LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS`, is the `needs_human`
     node's own rendered timeout (Scenario 192). Its consumer is that node, which
@@ -474,20 +470,13 @@ def hook_limit_prepare_steps_block(
         lines.append(f"LIVESPEC_PUBLISH_DRAFT_PUSH_BUDGET_SECONDS={budget}")
     if needs_human_limit_seconds is not None:
         lines.append(f"LIVESPEC_NEEDS_HUMAN_LIMIT_SECONDS={needs_human_limit_seconds}")
+    if not lines:
+        return ""
     quoted = " ".join(f"'{line}'" for line in lines)
-    figures = (
-        f"\nprintf '%s\\n' {quoted} > \"{root}/{HOOK_LIMIT_LIMITS_FILENAME}\"" if lines else ""
-    )
-    step = PrepareStep(
-        script=(
-            f'set -eu\nmkdir -p "{root}"\n'
-            + packed_payload_write_command(path_word=f'"{root}/{HOOK_LIMIT_PROGRAM_FILENAME}"')
-            + figures
-        ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=hook_limit_program_source())},
-    )
+    figures = f"printf '%s\\n' {quoted} > \"{root}/{HOOK_LIMIT_LIMITS_FILENAME}\""
+    step = PrepareStep(script=f'set -eu\nmkdir -p "{root}"\n{figures}')
     header = (
-        "\n# --- Dispatcher-materialized repository-hook limit observer: the ONE\n"
+        "\n# --- Dispatcher-materialized repository-hook limit figures for the ONE\n"
         "# --- reader of a hook run's processes at the moment a command node's\n"
         "# --- resolved timeout ends its push (bd-ib-xi63mq, Scenario 177) ---\n"
     )
