@@ -60,3 +60,52 @@ def test_a_seeded_run_consumes_its_ruling_on_the_ledger_and_in_the_journal() -> 
             "run_id": _RUN,
         }
     ]
+
+
+def test_reconciliation_backfills_a_missing_consumed_comment_from_the_runs_seed_record() -> None:
+    """The matched ruling is the one with the seed record's ref and immutable SHA."""
+    module = importlib.import_module(_MODULE)
+    comments = [
+        "\n".join(
+            (
+                "livespec-seed-ruling",
+                f"work-item: {_ITEM}",
+                f"preservation-ref: {_REF}",
+                f"commit-sha: {_SHA}",
+                "invoker: coordinator",
+                "reason: keep the checked tree",
+                f"instant: {_INSTANT}",
+            )
+        )
+    ]
+    written_comments: list[str] = []
+    written_records: list[dict[str, object]] = []
+    records = (
+        {
+            "stage": "dispatch-id",
+            "work_item_id": _ITEM,
+            "dispatch_id": _DISPATCH,
+        },
+        {
+            "stage": "recovery-route",
+            "work_item_id": _ITEM,
+            "route": "seeded",
+            "preservation_ref": _REF,
+            "commit_sha": _SHA,
+        },
+        {"stage": "fabro-run", "work_item_id": _ITEM, "run_id": _RUN},
+    )
+
+    assert hasattr(module, "backfill_seed_ruling_consumptions")
+    module.backfill_seed_ruling_consumptions(
+        records=records,
+        comments_for_item=lambda item: comments if item == _ITEM else [],
+        append_comment=lambda item, body: written_comments.append(f"{item}:{body}"),
+        append_journal=written_records.append,
+    )
+
+    assert written_comments == [
+        f"{_ITEM}:livespec-seed-ruling-consumed\nruling-instant: {_INSTANT}"
+        f"\ndispatch-id: {_DISPATCH}\nrun-id: {_RUN}"
+    ]
+    assert written_records[0]["stage"] == "seed-ruling-consumed"
