@@ -14343,3 +14343,29 @@ Feature: a hand commit's passing delegated pre-commit verdict stands in at the p
     When the pre-push gate runs for that push
     Then it MUST gate the push exactly as it does with no such evidence
 ```
+
+## Scenario: a ledger comment that quotes specification text carries each goal-template opener in bracket form
+
+Governing clause: `contracts.md` §"Dispatcher policy settings" → "A goal-template opener is neutralized in a comment and refused in a field".
+
+```gherkin
+Feature: a ledger comment that quotes specification text carries each goal-template opener in bracket form
+
+  Scenario: a governing-heading finding quotes a clause that carries an opener
+    Given a specification clause K whose body carries a goal-template opening delimiter
+    And a work item W whose Definition of Done judgement names K's heading as governing and omitted
+    When the finding that quotes K is appended to W as a ledger comment
+    Then the comment carries K's quoted text whole and untruncated with every opening curly brace of each delimiter replaced by an opening square bracket
+    And the comment carries no goal-template opening delimiter
+
+  Scenario: a clause record and a dod_gate refusal comment quote the same clause
+    Given a specification clause K whose body carries a goal-template opening delimiter
+    When a Definition-of-Done clause record quoting K and a comment recording a dod_gate refusal that quotes K are each appended to a work item
+    Then each comment carries the quote in bracket form and no goal-template opening delimiter
+    And the clause digest carried by each record that carries one equals the digest of K as read from the specification
+
+  Scenario: a clause with no opener is quoted verbatim
+    Given a specification clause Q whose body carries no goal-template opening delimiter
+    When a ledger comment quoting Q is appended to a work item
+    Then the quoted text in the comment is byte-for-byte Q's text
+```

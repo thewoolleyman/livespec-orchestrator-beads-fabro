@@ -8442,6 +8442,40 @@ and the human answer route's poison preflight, which refuses an answer
 carrying an opener before its comment is written, is unchanged. Scenario
 333 in `scenarios.md` exercises this paragraph.
 
+**A writer that quotes specification text writes the bracket form.** Every
+orchestrator writer that appends a ledger comment quoting text read from a
+specification tree MUST pass each quoted span through the goal-template opener
+rewrite defined above before the write, so no quoted span in the comment it
+appends carries a goal-template opening delimiter. The quoted text covered is
+clause bodies, heading text and scenario text, whether read from the live
+specification files or from a `history/` snapshot. The writers covered include
+the Definition-of-Done finding that names a governing heading, the
+Definition-of-Done clause record, the spec-stated judgement records that carry
+a selected or named clause, and the comment that records a `dod_gate` refusal.
+The obligation is on the class, so a writer added later that quotes
+specification text is covered without being listed here. Every such writer MUST
+call ONE shared function for the rewrite, the same function the goal render
+uses, and MUST NOT carry a rewrite of its own. The rewrite MUST leave a quote
+that carries no goal-template opening delimiter byte-for-byte unchanged, and
+MUST NOT strip, truncate, bound or escape the quoted text. A writer that this
+specification elsewhere requires to pass its text through
+`comment_safe_external_text` is unchanged by this paragraph: that function
+already rewrites every opener, and its stripping and bounding stand. A digest
+that a record carries over clause text MUST be computed over the text as read
+from the specification, before the rewrite, so the rewrite never changes a
+verdict-reuse key. A reader that compares a recorded quote against the
+specification MUST compare it against the specification text passed through the
+same rewrite, so a record whose quote was rewritten still matches the clause it
+quotes. A reader MUST NOT derive a clause digest from a recorded quote; it uses
+the digest the record carries. This obligation governs the text of a comment
+not yet written and never rewrites a stored comment, so it does not alter the
+ledger comment the goal render reads. It is defence in depth beside the goal
+render's own rewrite: the render keeps a comment from refusing a dispatch, and
+the writer keeps the delimiter off the ledger record, where every other reader
+of the ledger would otherwise inherit it. The scenario "a ledger comment that
+quotes specification text carries each goal-template opener in bracket form" in
+`scenarios.md` exercises this paragraph.
+
 **The supersede verb.** A comment-poisoned item dispatches, because the goal
 render neutralizes its comments. An operator or a delegated coordinator who
 wants a successor whose ledger is free of openers MAY still replace such an

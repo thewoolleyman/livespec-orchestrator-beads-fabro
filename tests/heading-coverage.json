@@ -3149,5 +3149,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-3k3xh7 adds cases in which this repository's pre-push gate, given recorded delegated pre-commit evidence naming gate Job J and tree T for a clean worktree whose HEAD tree is T, submits no pre-push gate Job and runs no local fall-through aggregate, runs only the check-set members the evidence does not name as passed plus every world-reading and authorization-reading member, and prints J, T, each member it ran and the skipped count; and in which a dirty worktree or a different HEAD tree gates the push as if no evidence existed. bd-ib-3k3xh7 owns it.",
     "work_item": "bd-ib-3k3xh7"
+  },
+  {
+    "heading": "## Scenario: a ledger comment that quotes specification text carries each goal-template opener in bracket form",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-engf4h adds cases in which a governing-heading finding, a Definition-of-Done clause record and a dod_gate refusal comment that quote a specification clause carrying a goal-template opening delimiter are each appended as a ledger comment carrying the quote whole in bracket form, with the clause digest a record carries equal to the digest of the clause as read from the specification, and in which a clause with no opening delimiter is quoted byte-for-byte. bd-ib-engf4h owns it.",
+    "work_item": "bd-ib-engf4h"
   }
 ]
