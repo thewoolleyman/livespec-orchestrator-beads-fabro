@@ -17,12 +17,14 @@ _TARGET_EXTRACTOR = _REPO_ROOT / "dev-tooling" / "aggregate-targets.sh"
 # A liveness guard against a hung harness, never a duration budget for its verdict.
 _HARNESS_HANG_GUARD_SECONDS = 600
 
-# The startup delay injected into every dispatch-dual.sh launcher. The harness
-# polls each launcher every HARNESS_POLL_S (0.01 s) with no startup budget, only
-# its hang guard, so two seconds is about 200 polls it must wait through. A
-# longer delay proves nothing more: each of the six launchers pays it, and
-# 30 s per launcher made this one test take about three minutes.
-_INJECTED_LAUNCHER_DELAY_SECONDS = 2
+# The startup delay injected into each OLDER dispatch-dual.sh launcher
+# (bd-ib-older, bd-ib-stale-older, bd-ib-failing-older). daa36563c removed the
+# fixed 10 s preflight budget those three waits had (`wait_for_preflight <item>
+# 1 10`), so the delay must exceed 10 s, or the test would still pass with that
+# budget back. The younger launchers' old budget was 60 s, which no affordable
+# delay exceeds, so they run undelayed; delaying all six by 30 s made this one
+# test take about three minutes.
+_INJECTED_OLDER_LAUNCHER_DELAY_SECONDS = 11
 
 
 def _run(
@@ -55,10 +57,11 @@ def test_scenario297_queued_preflight_harness_runs_from_the_check_aggregate() ->
     """The shipped check tolerates delayed preflights while proving FIFO behavior."""
     temporary_directory = TemporaryDirectory()
     delayed_launcher_startup = Path(temporary_directory.name) / "delayed-launcher-startup.sh"
-    delayed_launcher_startup.write_text(
-        f'[ "${{0##*/}}" = "dispatch-dual.sh" ] && sleep {_INJECTED_LAUNCHER_DELAY_SECONDS}\n',
-        encoding="utf-8",
+    older_launcher_delay = (
+        f'case "${{0##*/}}:${{1:-}}" in dispatch-dual.sh:*-older) '
+        f"sleep {_INJECTED_OLDER_LAUNCHER_DELAY_SECONDS} ;; esac\n"
     )
+    _ = delayed_launcher_startup.write_text(older_launcher_delay, encoding="utf-8")
     environment = {**os.environ, "BASH_ENV": str(delayed_launcher_startup)}
 
     targets = _run(argv=["bash", str(_TARGET_EXTRACTOR)], environment=environment)
