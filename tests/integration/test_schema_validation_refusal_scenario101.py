@@ -24,6 +24,17 @@ discriminates by JOURNAL STAGE rather than by exit code: the refused run records
 admitted one records `master-ci-preflight` and no `schema-validation` at all. An
 exit code alone could not tell the two apart, since every pre-dispatch
 precondition error shares one.
+
+THE CONTROL SCRIPTS THE FORGE AND ZEROES THE WAIT. Reaching the master-CI
+preflight means reaching its forge reads and its bounded wait, and left alone
+those are the PATH `gh` stand-in and the production 1800-second wait on the real
+clock. The stand-in's default answer names the fleet-default aggregate job, so
+the adopter -- which declares its own -- read as a run carrying no verdict and
+the control sat out the whole bound (1800.1 s, bd-ib-fgblbv). So the control
+answers every `gh` read itself, green at the pipeline each fixture actually
+resolves; hands the step a zero bound whose sleep returns at once, so a reading
+that ever does pend defers instead of waiting; and asserts the specific journaled
+pass and that the PATH `gh` was never spawned.
 """
 
 from __future__ import annotations
@@ -31,11 +42,20 @@ from __future__ import annotations
 import json
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_step_gate
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusals import (
+    STAGE as MASTER_CI_STAGE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
+    MasterCiWait,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
     declaration_from_config_text,
@@ -48,13 +68,20 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_schema i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_validation import (
     SCHEMA_VALIDATION_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
+    ShellCommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 
+from tests.conftest import ScriptedGh
 from tests.integration.governed_repo_fixtures import GovernedRepo, over_both_fixtures
 
 _EXIT_PRECONDITION_ERROR = 3
-_MASTER_CI_STAGE = "master-ci-preflight"
 _ITEM_ID = "bd-ib-scenario101"
+# The scripted forge's answers. The branch is deliberately not the temp root's
+# own `master`, so a pass proves the lookup used the RESOLVED default branch.
+_FORGE_BRANCH = "trunk"
+_GREEN_RUN_ID = "101"
 
 _COMMITTED_WORKFLOW_TOML = (
     '[workflow]\ngraph = "graph.toml"\n\n[run.environment]\nid = "fabro-sandbox"\n'
@@ -98,6 +125,66 @@ def _hermetic_dispatch_env(
     reset_fake_singleton()
     yield
     reset_fake_singleton()
+
+
+@dataclass(kw_only=True)
+class _ScriptedForgeRunner:
+    """The master-CI read seam: every `gh` read answered here, every `git` read real.
+
+    Only the forge is scripted. The source-checkout preflight's `git` reads still
+    run for real against the hermetic temp-root checkout, so the control keeps
+    exercising every step it reaches on the way to the master-CI preflight. The
+    forge answers green ONLY for the workflow, branch and aggregate job the
+    fixture resolves; any other `gh` argv is recorded and answered unscripted.
+    """
+
+    workflow: str
+    job: str
+    delegate: ShellCommandRunner = field(default_factory=ShellCommandRunner)
+    gh_calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: Mapping[str, str | None] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        if argv[:1] != ["gh"]:
+            return self.delegate.run(
+                argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env, stdin=stdin
+            )
+        self.gh_calls.append(tuple(argv))
+        return self._forge(argv=tuple(argv[1:]))
+
+    def _forge(self, *, argv: tuple[str, ...]) -> CommandResult:
+        listing = (
+            "run",
+            "list",
+            "--branch",
+            _FORGE_BRANCH,
+            "--limit",
+            "1",
+            "--workflow",
+            self.workflow,
+            "--json",
+            "status,conclusion,databaseId",
+        )
+        if argv[:2] == ("repo", "view") and "defaultBranchRef" in argv:
+            return _ok(stdout=f"{_FORGE_BRANCH}\n")
+        if argv == listing:
+            run = {"status": "completed", "conclusion": "success", "databaseId": _GREEN_RUN_ID}
+            return _ok(stdout=json.dumps([run]))
+        if argv == ("run", "view", _GREEN_RUN_ID, "--json", "jobs"):
+            job = {"name": self.job, "status": "completed", "conclusion": "success"}
+            return _ok(stdout=json.dumps({"jobs": [job]}))
+        return CommandResult(exit_code=1, stdout="", stderr="unscripted forge read")
+
+
+def _ok(*, stdout: str) -> CommandResult:
+    return CommandResult(exit_code=0, stdout=stdout, stderr="")
 
 
 def _config_text(*, governed: GovernedRepo, defective: bool) -> str:
@@ -151,12 +238,16 @@ def _journal_stages(*, repo: Path) -> list[str]:
     return [str(record["stage"]) for record in records]
 
 
-def _schema_record(*, repo: Path) -> dict[str, object]:
+def _stage_record(*, repo: Path, stage: str) -> dict[str, object]:
     path = repo / "tmp" / "fabro-dispatch-journal.jsonl"
     records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
-    graded = [record for record in records if record["stage"] == SCHEMA_VALIDATION_STAGE]
+    graded = [record for record in records if record["stage"] == stage]
     assert len(graded) == 1
     return cast("dict[str, object]", graded[0])
+
+
+def _schema_record(*, repo: Path) -> dict[str, object]:
+    return _stage_record(repo=repo, stage=SCHEMA_VALIDATION_STAGE)
 
 
 @over_both_fixtures
@@ -192,19 +283,51 @@ def test_the_committed_declaration_passes_the_same_grading_unchanged(
     governed: GovernedRepo,
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    scripted_gh: ScriptedGh,
 ) -> None:
     """The control: the pass admits what the two fixtures actually declare.
 
     Discriminated by journal STAGE, not by exit code: the dispatch stops later
     for want of a seeded work-item, and the point being proved is that it got
     PAST the grading -- reaching the master-CI preflight, and recording no
-    schema-validation refusal on the way.
+    schema-validation refusal on the way. The preflight it reaches reads a
+    scripted forge under a zero wait bound, and its journaled pass names the
+    pipeline this fixture resolves.
     """
     repo, workflow = _target_repo(tmp_path=tmp_path, governed=governed, defective=False)
+    declared_workflow, declared_job = governed.master_ci
+    forge = _ScriptedForgeRunner(workflow=declared_workflow, job=declared_job)
+    pauses: list[float] = []
+    waits: list[bool] = []
+
+    def _zero_wait(*, waived: bool) -> MasterCiWait:
+        waits.append(waived)
+        return MasterCiWait(sleep=pauses.append, bound_seconds=0.0)
+
+    monkeypatch.setattr(_dispatcher_step_gate, "ShellCommandRunner", lambda: forge)
+    monkeypatch.setattr(_dispatcher_step_gate, "master_ci_wait", _zero_wait)
 
     _ = _dispatch(repo=repo, workflow=workflow)
 
     assert "ERROR: refusing to dispatch" not in capsys.readouterr().err
     stages = _journal_stages(repo=repo)
     assert SCHEMA_VALIDATION_STAGE not in stages
-    assert _MASTER_CI_STAGE in stages
+    assert MASTER_CI_STAGE in stages
+    master_ci = _stage_record(repo=repo, stage=MASTER_CI_STAGE)
+    assert master_ci["status"] == "passed"
+    assert master_ci["reason"] == "master-ci-green"
+    assert master_ci["workflow"] == declared_workflow
+    assert master_ci["aggregate_job"] == declared_job
+    assert master_ci["branch"] == _FORGE_BRANCH
+    assert master_ci["run_database_id"] == _GREEN_RUN_ID
+    # The zero-bound wait was the one the step used, and it never paused.
+    assert waits == [False]
+    assert pauses == []
+    # The run reads went through the scripted seam, once each, and no `gh`
+    # process was spawned for them or for anything else.
+    assert [call[1:3] for call in forge.gh_calls if call[1] == "run"] == [
+        ("run", "list"),
+        ("run", "view"),
+    ]
+    assert scripted_gh.argv_lines() == []
