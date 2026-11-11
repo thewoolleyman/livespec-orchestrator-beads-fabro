@@ -28,6 +28,17 @@ each node that checks a refreshed tree. The program is therefore one idempotent
 `ensure` over every planned repository, run at prepare time and again before every
 declared check suite.
 
+THE PROGRAM IS A FETCHED HELPER; THE PLAN IS DISPATCH DATA (bd-ib-jrawlp). The
+program's bytes are a pure function of this plugin's tree, so the helper-fetch setup
+step lands it below the plugins root from the installed build's own commit, digest
+verified, with every other helper program (`_dispatcher_helper_registry`). What a
+dispatch decides -- which repositories, from which forge owner, under which root --
+is the PLAN, a short JSON document this module's prepare step writes beside the
+program from its own `env`. The program reads the plan from beside itself on every
+run, so the nodes that re-run it need nothing but the file. A dispatch that plans no
+repository writes no plan, and the program, present in every sandbox now, then has
+nothing to clone and exits 0 without a word.
+
 WHY THE PROGRAM HOLDS ITS OWN PIN READER. The sandbox clone is the GOVERNED
 repository, which carries no copy of this plugin, so the program is stdlib-only and
 reads the declaration itself. It reads the same key this plugin's own contract reads
@@ -76,10 +87,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings imp
     sibling_clone_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
     PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
+    payload_guard_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -89,6 +98,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 __all__: list[str] = [
     "RUN_FROM_CLONES_ROOT",
     "RUN_FROM_FAILED_MARKER",
+    "RUN_FROM_PLAN_ENV",
+    "RUN_FROM_PLAN_FILENAME",
     "RUN_FROM_PROGRAM_FILENAME",
     "RUN_FROM_READ_ONLY_MARKER",
     "RUN_FROM_REPOS",
@@ -96,6 +107,7 @@ __all__: list[str] = [
     "SandboxCloneFragments",
     "run_from_clone_steps_block",
     "run_from_clones_env_line",
+    "run_from_plan_text",
     "run_from_program_source",
     "run_from_repos",
     "sandbox_clone_fragments",
@@ -121,6 +133,11 @@ RUN_FROM_REPOS: tuple[str, ...] = ("livespec",)
 # nodes that run it must agree on one name.
 RUN_FROM_PROGRAM_FILENAME = "livespec-run-from-clones.py"
 
+# The dispatch's plan, written beside the program by the prepare step and read by
+# every run of it; and the step env key that carries the plan to that step.
+RUN_FROM_PLAN_FILENAME = "livespec-run-from-plan.json"
+RUN_FROM_PLAN_ENV = "LIVESPEC_RUN_FROM_PLAN"
+
 # The named conditions the program reports on stderr, constants for the reason the
 # plugin-cache gate's are: the sandbox emits them, the graph nodes report them and
 # the tests prove them, and a signature nobody can grep for is not one.
@@ -135,8 +152,8 @@ _DECLARED_RELEASE_KEYS = {"livespec": "pinned"}
 
 # Stdlib-only and free of any livespec import, for the reason the module docstring
 # gives. Every diagnostic goes to stderr so it lands in the run's setup log. The
-# `@@...@@` tokens are substituted at render time; the program has no other
-# deployment-time input.
+# `@@...@@` tokens are this module's own constants, substituted when the program is
+# composed; the plan is read at run time from beside the program.
 _PROGRAM_SOURCE = r"""
 import json
 import os
@@ -146,7 +163,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-PLAN = json.loads(@@PLAN@@)
+PLAN_PATH = Path(__file__).with_name("@@PLAN_FILENAME@@")
 FAILED = "@@FAILED@@"
 READ_ONLY = "@@READ_ONLY@@"
 WRITABLE = "@@WRITABLE@@"
@@ -330,6 +347,9 @@ def ensure(repo, project):
     return reclone(repo, url, release, dest)
 
 
+if not PLAN_PATH.is_file():
+    raise SystemExit(0)
+PLAN = json.loads(PLAN_PATH.read_text(encoding="utf-8"))
 project = project_root()
 status = 0
 for repo in PLAN["repos"]:
@@ -351,16 +371,11 @@ def run_from_repos(*, siblings: SiblingClones | None) -> tuple[str, ...]:
     return tuple(repo for repo in RUN_FROM_REPOS if repo in siblings.repos)
 
 
-def run_from_program_source(*, url_base: str, root: str, repos: tuple[str, ...]) -> str:
-    """The program, with this dispatch's plan substituted in.
-
-    `url_base` is everything before `/<repo>.git`, so a test can point the one
-    program at a local bare repository instead of the forge.
-    """
-    plan = json.dumps({"url_base": url_base, "root": root, "repos": list(repos)})
+def run_from_program_source() -> str:
+    """The program, a fetched helper: a pure function of this plugin's tree."""
     program = _PROGRAM_SOURCE
     for token, value in (
-        ("@@PLAN@@", repr(plan)),
+        ("@@PLAN_FILENAME@@", RUN_FROM_PLAN_FILENAME),
         ("@@DECLARED_KEYS@@", repr(json.dumps(_DECLARED_RELEASE_KEYS))),
         ("@@FAILED@@", RUN_FROM_FAILED_MARKER),
         ("@@READ_ONLY@@", RUN_FROM_READ_ONLY_MARKER),
@@ -371,22 +386,32 @@ def run_from_program_source(*, url_base: str, root: str, repos: tuple[str, ...])
     return program.strip() + "\n"
 
 
+def run_from_plan_text(*, url_base: str, root: str, repos: tuple[str, ...]) -> str:
+    """This dispatch's plan, the JSON the program reads from beside itself.
+
+    `url_base` is everything before `/<repo>.git`, so a test can point the one
+    program at a local bare repository instead of the forge.
+    """
+    return json.dumps({"url_base": url_base, "root": root, "repos": list(repos)})
+
+
 def run_from_clone_steps_block(
     *,
     siblings: SiblingClones,
     remote_base: str = "https://github.com",
     run_from_root: str = RUN_FROM_CLONES_ROOT,
 ) -> str:
-    """The prepare step that materializes the program and takes the run-from clones.
+    """The prepare step that writes this dispatch's plan and takes the run-from clones.
 
     Empty when nothing is planned: a target that IS livespec, or a fleet with no
-    livespec among its members, has no tool to run from another checkout, and the
-    program is then not materialized at all -- which is why the refreshing nodes
-    run it only when it exists. The program rides the step's `env`, written with
-    `printf %s`, and is written BEFORE it is run so the nodes that check a refreshed
-    tree have something on disk to re-enter. `exec` makes its exit code the step's,
-    so a declared release that cannot be satisfied stops the run in setup rather
-    than after the hour of agent nodes the incident spent.
+    livespec among its members, has no tool to run from another checkout, so no plan
+    is written and the fetched program, run by a refreshing node, has nothing to do.
+    The plan rides the step's `env` as plain JSON, written with `printf %s` so the
+    shell expands nothing in it, and is written BEFORE the program runs so the nodes
+    that check a refreshed tree have it on disk to re-read. The program itself is a
+    helper program the helper-fetch step landed. `exec` makes its exit code the
+    step's, so a declared release that cannot be satisfied stops the run in setup
+    rather than after the hour of agent nodes the incident spent.
 
     `remote_base` and `run_from_root` default to the forge and the sandbox's own
     path; they exist so a test can run the rendered step for real against a local
@@ -395,15 +420,16 @@ def run_from_clone_steps_block(
     repos = run_from_repos(siblings=siblings)
     if not repos:
         return ""
-    program = run_from_program_source(
+    plan = run_from_plan_text(
         url_base=f"{remote_base}/{siblings.owner}", root=run_from_root, repos=repos
     )
     script = "\n".join(
         [
             "set -eu",
+            payload_guard_command(var=RUN_FROM_PLAN_ENV),
             f'root="{sandbox_plugins_root_expansion()}"',
             'mkdir -p "$root"',
-            packed_payload_write_command(path_word=f'"$root/{RUN_FROM_PROGRAM_FILENAME}"'),
+            f'printf %s "${RUN_FROM_PLAN_ENV}" > "$root/{RUN_FROM_PLAN_FILENAME}"',
             f'exec python3 "$root/{RUN_FROM_PROGRAM_FILENAME}"',
         ]
     )
@@ -413,7 +439,7 @@ def run_from_clone_steps_block(
         f" governed tree pins, under {run_from_root} ---\n"
     )
     return header + render_prepare_step(
-        step=PrepareStep(script=script, env={PAYLOAD_ENV_VAR: pack_payload(text=program)})
+        step=PrepareStep(script=script, env={RUN_FROM_PLAN_ENV: plan})
     )
 
 

@@ -5,13 +5,27 @@ program against local repositories; this file covers what that tier does not
 discriminate: that every deployment-time token is substituted, that the rendered
 program is a program, which repositories are planned, and the shape of the prepare
 step and env line a dispatch renders.
+
+The program is a fetched helper program (bd-ib-jrawlp, research note 004
+decision 6): the helper-fetch setup step lands it below the plugins root from the
+installed build's own commit, so its bytes are a pure function of the plugin tree
+and carry no dispatch input. The dispatch's PLAN -- which repositories, from
+where, under which root -- is per-dispatch data: the prepare step writes it beside
+the program as a JSON file, and every run of the program reads it from there.
 """
 
 from __future__ import annotations
 
-import ast
 import json
+import runpy
+from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_run_from_clones as run_from
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    PLUGINS_ROOT,
+    helper_registry,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings import (
     SiblingClones,
 )
@@ -21,12 +35,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones impo
     RUN_FROM_REPOS,
     run_from_clone_steps_block,
     run_from_clones_env_line,
-    run_from_program_source,
     run_from_repos,
     sandbox_clone_fragments,
 )
 
-from tests.prepare_step_support import steps_in, unpacked
+from tests.prepare_step_support import plugins_helper, steps_in
 
 
 def _siblings(*, repos: tuple[str, ...]) -> SiblingClones:
@@ -48,37 +61,69 @@ def test_only_planned_members_get_a_run_from_clone() -> None:
     )
 
 
-def test_the_rendered_program_has_no_unsubstituted_token_and_compiles() -> None:
+def test_the_program_is_a_fetched_helper_landed_below_the_plugins_root() -> None:
+    """The helper fetch composes the program; no prepare step carries its bytes."""
+    landed = {(helper.root, helper.path) for helper in helper_registry()}
+    assert (PLUGINS_ROOT, RUN_FROM_PROGRAM_FILENAME) in landed
+
+    helper = plugins_helper(path=RUN_FROM_PROGRAM_FILENAME)
+
+    assert helper.compose() == run_from.run_from_program_source().encode("utf-8")
+    assert helper.mode == 0o644
+
+
+def test_the_program_has_no_unsubstituted_token_compiles_and_carries_no_plan() -> None:
     """A token left in the program is a literal the sandbox would run, not a value."""
-    source = run_from_program_source(
-        url_base="https://github.com/thewoolleyman", root="/livespec-run-from", repos=("livespec",)
-    )
+    source = run_from.run_from_program_source()
 
     assert "@@" not in source
     assert source.endswith("\n")
-    compile(source, "livespec-run-from-clones.py", "exec")
-    assert '"url_base": "https://github.com/thewoolleyman"' in source
+    compile(source, RUN_FROM_PROGRAM_FILENAME, "exec")
+    assert "url_base" in source
+    assert "https://github.com" not in source
+    assert RUN_FROM_CLONES_ROOT not in source
+    assert run_from.RUN_FROM_PLAN_FILENAME in source
 
 
 def test_the_plan_is_carried_as_data_not_spliced_into_code() -> None:
     """A hostile root or base is a JSON string the program parses, never code it runs."""
     hostile = 'x"; import os; os.system("true") #'
-    source = run_from_program_source(url_base=hostile, root=hostile, repos=("livespec",))
+    plan = run_from.run_from_plan_text(url_base=hostile, root=hostile, repos=("livespec",))
 
-    plan_line = next(line for line in source.splitlines() if line.startswith("PLAN = "))
-    literal = ast.literal_eval(plan_line.removeprefix("PLAN = json.loads(").removesuffix(")"))
-    assert json.loads(literal) == {"url_base": hostile, "root": hostile, "repos": ["livespec"]}
+    assert json.loads(plan) == {"url_base": hostile, "root": hostile, "repos": ["livespec"]}
 
 
-def test_the_prepare_step_writes_the_program_by_payload_and_runs_it() -> None:
-    """The bytes ride the step's env; the script writes them where the nodes re-enter."""
+def test_the_prepare_step_writes_the_plan_beside_the_fetched_program_and_runs_it() -> None:
+    """The plan rides the step's env as plain data; the script writes it, then runs."""
     block = run_from_clone_steps_block(siblings=_siblings(repos=("livespec",)))
 
     (step,) = steps_in(block=block)
-    assert RUN_FROM_PROGRAM_FILENAME in step.script
-    assert step.script.splitlines()[-1].startswith("exec python3 ")
+    assert step.env == {
+        run_from.RUN_FROM_PLAN_ENV: run_from.run_from_plan_text(
+            url_base="https://github.com/thewoolleyman",
+            root=RUN_FROM_CLONES_ROOT,
+            repos=("livespec",),
+        )
+    }
+    assert f'"$root/{run_from.RUN_FROM_PLAN_FILENAME}"' in step.script
+    assert step.script.splitlines()[-1] == f'exec python3 "$root/{RUN_FROM_PROGRAM_FILENAME}"'
     assert "git clone" not in step.script
-    assert RUN_FROM_CLONES_ROOT in unpacked(value=next(iter(step.env.values())))
+    assert "def ensure" not in step.script
+
+
+def test_the_program_with_no_plan_beside_it_has_nothing_to_clone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Every refreshing node runs the fetched program; a dispatch that planned none is a no-op."""
+    program = tmp_path / RUN_FROM_PROGRAM_FILENAME
+    program.write_text(run_from.run_from_program_source(), encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit) as exited:
+        runpy.run_path(str(program), run_name="__main__")
+
+    assert (exited.value.code, capsys.readouterr().err) == (0, "")
+    assert sorted(path.name for path in tmp_path.iterdir()) == [RUN_FROM_PROGRAM_FILENAME]
 
 
 def test_nothing_planned_renders_nothing() -> None:
