@@ -2414,14 +2414,39 @@ the governed repository, of a named release repository, or of whether a
 bare `<repository>` exists — fails in any other way, the archive gate
 MUST reject the record, naming the repository it tried to read and the
 failure, and MUST NOT fall back to the governed repository. Where a
-release applies to the plan's work — the release repository carries at
-least one release tag — a `captured` record taken against an unreleased
-tree is not evidence: the steps MUST run against the released artifact
-installed through its normal installation path, and the archive gate
-MUST reject a record that states `release: none` for such a repository,
-or names, as its first release tag, a tag the release repository does
-not carry, naming the missing release identity and the release
-repository it judged. The gate MUST NOT accept a tag merely because some
+release applies to the plan's work, a `captured` record taken against an
+unreleased tree is not evidence: the steps MUST run against the released
+artifact installed through its normal installation path, and the archive
+gate MUST reject a record that states `release: none` where a release
+applies, or names, as its first release tag, a tag the release
+repository does not carry, naming the missing release identity and the
+release repository it judged. Whether a release applies is decided per
+repository unless the release repository is the governed repository and
+that repository declares release components. A repository declares them
+in its committed `.livespec.jsonc` as a committed-only
+`dispatcher.release_components` array, each entry carrying a `name`, a
+`tag_prefix` and a non-empty `paths` array of repository-relative path
+prefixes. A malformed array MUST be refused with a configuration finding
+naming the offending key, and the archive gate MUST then reject every
+record of that repository rather than fall back to either rule. Without
+that declaration a release applies when the release repository carries
+at least one release tag. With it, each release tag belongs to the
+declared component whose `tag_prefix` it begins with, and a record MUST
+name, beside the default-branch commit, the repository paths of each
+artifact its steps ran from that tree, on an `artifact paths:` line in
+its build identity. A release then applies to the plan's work exactly
+when one of those paths lies under a `paths` entry of a component that
+owns at least one release tag, and only that component's tags satisfy
+the rule for that artifact. A record stating `release: none` whose
+artifact paths lie under no such component is evidence on this leg. A
+record stating `release: none` that names no artifact paths is judged as
+if the repository declared no components. A release tag owned by no
+declared component makes a release apply to the whole repository,
+exactly as if it declared none. Artifact paths are recorded, not
+verified, beyond their placement in the declared components; the
+replaying party of a `verified` record is the one who checks that the
+steps ran what the record names. The gate MUST NOT accept a tag merely
+because some
 repository carries it: the tag MUST be carried by the record's release
 repository. The installed build identifier is recorded, not verified,
 save for the repository name the release rule reads from it. A

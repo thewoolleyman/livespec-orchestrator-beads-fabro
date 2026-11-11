@@ -14222,3 +14222,44 @@ Feature: The spec-change hold covers every classification and follows the item's
     Then it appends one new record from a fresh judgement
     And when that record is a held spec-change tier the item is held
 ```
+
+## Scenario: a plan record's release rule applies to the release component that ships its artifact
+
+```gherkin
+Feature: a plan record's release rule applies to the release component that ships its artifact
+
+  Background:
+    Given a governed repository that is the plan's release repository
+    And its committed configuration declares release component shared-credentials with tag prefix shared-credentials-v and path tools/shared_credentials/
+    And its forge carries the release tag shared-credentials-v0.2.0
+
+  Scenario: an artifact no released component ships states release none
+    Given a captured plan Proof of Done record stating release none with the default-branch commit
+    And its artifact paths line names tools/shared_credentials_provisioning/ only
+    When the archive gate evaluates the proof leg
+    Then the record is not rejected for its release identity
+
+  Scenario: an artifact a released component ships needs that component's release
+    Given a captured plan Proof of Done record stating release none with the default-branch commit
+    And its artifact paths line names tools/shared_credentials/seal.py
+    When the archive gate evaluates the proof leg
+    Then the record is rejected naming the missing release identity and the component shared-credentials
+
+  Scenario: a release tag no declared component owns keeps the repository-wide rule
+    Given the forge also carries the release tag state-backend-v0.1.0 and no declared component's tag prefix matches it
+    And a captured plan Proof of Done record stating release none whose artifact paths line names tools/shared_credentials_provisioning/ only
+    When the archive gate evaluates the proof leg
+    Then the record is rejected naming the missing release identity and the release repository
+
+  Scenario: a record naming no artifact paths keeps the repository-wide rule
+    Given a captured plan Proof of Done record stating release none with no artifact paths line
+    When the archive gate evaluates the proof leg
+    Then the record is rejected naming the missing release identity and the release repository
+
+  Scenario: a malformed release component declaration rejects every record of the repository
+    Given the committed configuration's dispatcher.release_components entry for shared-credentials has an empty paths array
+    And a captured plan Proof of Done record stating release none whose artifact paths line names tools/shared_credentials_provisioning/ only
+    When the archive gate evaluates the proof leg
+    Then a configuration finding names dispatcher.release_components
+    And the record is rejected
+```
