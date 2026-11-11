@@ -266,8 +266,12 @@ def _start_guarded_fixture(
     os.mkfifo(armed_fifo)
     os.mkfifo(ready_fifo)
     os.mkfifo(release_fifo)
-    armed_fd = os.open(armed_fifo, os.O_RDONLY | os.O_NONBLOCK)
-    ready_fd = os.open(ready_fifo, os.O_RDONLY | os.O_NONBLOCK)
+    # Read-write, not read-only: a FIFO with no writer is readable as EOF, so a
+    # read end alone can report "nothing will ever arrive" before the reaper or
+    # the child has opened its side. Holding a writer here makes the descriptor
+    # readable only once an announcement has actually been written.
+    armed_fd = os.open(armed_fifo, os.O_RDWR | os.O_NONBLOCK)
+    ready_fd = os.open(ready_fifo, os.O_RDWR | os.O_NONBLOCK)
     release_fd = os.open(release_fifo, os.O_RDWR | os.O_NONBLOCK)
     bin_dir, clock = _controlled_clock(
         tmp_path=tmp_path,
@@ -304,7 +308,11 @@ def _start_guarded_fixture(
 
 
 def _await_event(*, fd: int, expected: bytes, what: str) -> None:
-    """Block until the FIFO `fd` delivers `expected`; the budget only bounds a hang."""
+    """Block until the FIFO `fd` delivers `expected`; the budget only bounds a hang.
+
+    `fd` is opened read-write, so it holds its own writer and cannot report a
+    pre-writer EOF: it becomes readable only when the announcement is written.
+    """
     readable, _, _ = select.select([fd], [], [], _SETTLE_SECONDS)
     assert readable, f"{what} never arrived"
     assert os.read(fd, len(expected)) == expected
