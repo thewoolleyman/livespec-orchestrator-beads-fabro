@@ -264,6 +264,16 @@ def _assert_scratch_push_to_relative_bare_path_is_allowed(
         environment=environment,
     )
     assert through_c.returncode == 0, through_c.stderr
+    nested = scratch / "sub" / "nested.git"
+    _ = _git("init", "--bare", str(nested), repo=scratch, environment=None)
+    marker.unlink(missing_ok=True)
+    through_nested = _git(
+        "push", "sub/nested.git", "HEAD:refs/heads/by-nested", repo=scratch, environment=environment
+    )
+    assert through_nested.returncode == 0, through_nested.stderr
+    nested_arrival = _git("rev-parse", "refs/heads/by-nested", repo=nested, environment=None)
+    assert nested_arrival.returncode == 0, nested_arrival.stderr
+    _ = marker.unlink()
     unresolved = _git(
         "push", "missing.git", "HEAD:refs/heads/nowhere", repo=scratch, environment=environment
     )
