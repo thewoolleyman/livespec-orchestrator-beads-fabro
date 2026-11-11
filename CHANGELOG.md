@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.317.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.316.1...v0.317.0) (2026-11-11)
+
+
+### Features
+
+* recovery routing seeds a released item from its current seed ruling ([9959db6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9959db6d915c389b88aea0ed1b4f7136f459a05e))
+
+
+### Bug Fixes
+
+* a re-entered turn's Green amend through the commit runner amends the open Red under engine checkpoints (bd-ib-gisyvv) ([38c637d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/38c637d783d203042f331cc14ed328845c7be7ed))
+* an unmappable ledger comments read holds recovery under seed-ruling-comments ([b56f608](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b56f608d2d2412b382f69061d27c44bfa7fb9095))
+* bound janitor refresh repairs ([7c72d77](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7c72d77e9c5fe9f4e6d7c76f3243a49c70874567))
+* **fleet-launch:** order case 20e's stub admission before the launcher re-read by rendezvous ([49d602c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/49d602c41fc822ebc4dadbdf7711d177a9c08201))
+* **fleet-launch:** report case 20e's admission order on every failure path ([9732f91](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9732f91f7ac1ae5d27c3e0db9f72017a4b6ff0d8))
+* **fleet-launch:** synchronize stopped-drive admission test ([30db688](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/30db6884ff0f72807f7ab0c4be30a7231ad6a5d7))
+* reconcile-merged --regrade writes the Proof of Done pointer for the pull request it graded ([6b037a1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6b037a193ccc6c3c7be4022b4c3471836820248f))
+* reconcile-merged --regrade writes the Proof of Done pointer only after its claim check passes ([02803d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/02803d3d3b3da1c787cf3825ad221fbda447d395))
+* refuse a commit run whose message has no authored subject line (bd-ib-7cixf3) ([8023b10](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8023b10343c08e20e154757292f834f525e10d7a))
+* the committed groom-work-item graph validates on the Petri-era engine (bd-ib-ttrjvj) ([fb63f7a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fb63f7ac86aca81cfef583ddca0aab0b688044bc))
+
 ## [0.316.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.316.0...v0.316.1) (2026-11-11)
 
 
