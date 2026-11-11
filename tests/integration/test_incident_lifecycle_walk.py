@@ -46,11 +46,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from livespec_dev_tooling import (
-    _incident_original_run_ports,
-    incident_observer_authority,
-    incident_original_run_entry,
-)
+from livespec_dev_tooling import incident_original_run_entry
 from livespec_dev_tooling._incident_inverse_types import (
     InversePublishRequest,
     InversePublishResult,
@@ -538,30 +534,34 @@ def _tenant() -> FakeBeadsClient:
     return client
 
 
+_REAL_SUBPROCESS_RUN = subprocess.run
+
+
 def _cross_the_process_boundaries(monkeypatch: pytest.MonkeyPatch, walk: _Walk) -> None:
-    """Each subprocess hop into the reader or authority becomes a call of the same `main`."""
+    """Each subprocess hop into the reader or authority becomes a call of the same `main`.
 
-    def read_reply(*, argv: list[str], cwd: Path) -> object:
-        assert cwd == walk.root
-        code, reply = walk.process(argv[1:])
-        return reply if code == 0 else None
+    The hops are replaced at the public `subprocess.run` seam, never at a private
+    dev-tooling helper: dev-tooling is free to reroute its calls between releases
+    (v1.190.1 moved every authority call onto `incident_authority_client`), and a
+    patch naming a private symbol breaks every pin bump past the release that
+    removed it (bd-ib-elrodm). Every other argv, such as git, runs for real.
+    """
 
-    def ports_run(
-        *, argv: list[str], cwd: Path, env: dict[str, str], stdin: bytes = b"", check: bool = True
-    ) -> subprocess.CompletedProcess[bytes]:
-        assert cwd == walk.root
-        if argv[0] == "git":
-            return subprocess.run(
-                argv, cwd=cwd, env=env, input=stdin, capture_output=True, check=check
-            )
+    def run(argv: Any, *args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        if not isinstance(argv, list | tuple) or not argv or argv[0] not in {"bd", "reader"}:
+            return _REAL_SUBPROCESS_RUN(argv, *args, **kwargs)
+        assert Path(kwargs["cwd"]) == walk.root
         if argv[0] == "bd":
-            assert env["BEADS_DOLT_PASSWORD"] == "tenant-credential"
-            stdout = _bd(walk.client, argv[1:])
-            return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout)
-        assert argv[0] == "reader"
-        code, reply = walk.process(list(argv[1:]))
-        stdout = json.dumps(reply).encode()
-        return subprocess.CompletedProcess(args=argv, returncode=code, stdout=stdout)
+            assert kwargs["env"]["BEADS_DOLT_PASSWORD"] == "tenant-credential"
+            code, stdout = 0, _bd(walk.client, list(argv[1:]))
+        else:
+            code, reply = walk.process(list(argv[1:]))
+            stdout = json.dumps(reply).encode()
+        if kwargs.get("text"):
+            return subprocess.CompletedProcess(
+                args=argv, returncode=code, stdout=stdout.decode(), stderr=""
+            )
+        return subprocess.CompletedProcess(args=argv, returncode=code, stdout=stdout, stderr=b"")
 
     def installed(**_: object) -> ControllerInstallation:
         return walk.installation()
@@ -569,8 +569,7 @@ def _cross_the_process_boundaries(monkeypatch: pytest.MonkeyPatch, walk: _Walk) 
     def forge_reads(**_: object) -> Any:
         return walk.forge.api
 
-    monkeypatch.setattr(incident_observer_authority, "_read_reply", read_reply)
-    monkeypatch.setattr(_incident_original_run_ports, "_run", ports_run)
+    monkeypatch.setattr(subprocess, "run", run)
     # The protected configuration's own validation is the host's; this walk owns the rest.
     monkeypatch.setattr(ControllerInstallation, "load", staticmethod(installed))
     # The recovery App's read-only token: every forge GET goes to `_Forge.api`.
