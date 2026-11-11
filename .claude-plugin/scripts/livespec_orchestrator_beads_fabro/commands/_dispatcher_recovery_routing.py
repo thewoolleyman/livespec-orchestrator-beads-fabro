@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
+    protected_resume_seed,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
     ROUTE_HELD,
@@ -92,6 +95,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
     ResumeGather,
     gather_resume,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_preserved_descendant import (
+    PreservedDescendantUnobservable,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
 from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling import SeedRuling
@@ -361,7 +367,10 @@ def _released_route(
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
         return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
-    return RecoveryRoute(
+    protected = _resume_protection(
+        gather=gather, item=item, repo=repo, runner=runner, journal=journal
+    )
+    return protected or RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_RESUME,
         resume=RecoveryResume(
@@ -372,6 +381,38 @@ def _released_route(
             source=anchor.source,
             workflow_name=gather.workflow_name,
         ),
+    )
+
+
+def _resume_protection(
+    *,
+    gather: ResumeGather,
+    item: WorkItem,
+    repo: Path,
+    runner: CommandRunner,
+    journal: JournalFile,
+) -> RecoveryRoute | None:
+    """Divert a clean resume only when its preserved ref contains newer work."""
+    protected = protected_resume_seed(
+        gather=gather, item=item, repo=repo, runner=runner, journal=journal
+    )
+    if isinstance(protected, PreservedDescendantUnobservable):
+        return _held_route(
+            item=item,
+            journal=journal,
+            hold=RecoveryHold(
+                measurements=(
+                    RecoveryMeasurement(name="preserved-descendant", detail=protected.detail),
+                )
+            ),
+        )
+    if protected is None:
+        return None
+    return RecoveryRoute(
+        work_item_id=item.id,
+        route=ROUTE_SEEDED,
+        seed=protected,
+        preserved_work=PRESERVED_WORK_VERIFIED,
     )
 
 

@@ -108,15 +108,33 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCpuProfile,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
+    PreservedWorkAbsent,
+    PreservedWorkUnobservable,
+    verified_preserved_seed,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age import (
+    published_head_relation,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_args import resumed_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
+    ResumeGather,
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_prelaunch import (
     prepare_resume_prelaunch,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_preserved_descendant import (
+    PreservedDescendant,
+    PreservedDescendantUnobservable,
+    descending_preservation_refusal,
+    preserved_descendant,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_reporting import (
@@ -132,6 +150,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "add_resume_arguments",
+    "preserved_descendant_refusal",
     "resume_refusal_report",
     "run_resume_command",
 ]
@@ -216,7 +235,10 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     )
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
-    refusals = resume_refusals(observation=gather.observation)
+    refusals = (
+        *resume_refusals(observation=gather.observation),
+        *preserved_descendant_refusal(gather=gather, item=item, repo=repo, journal=journal),
+    )
     if refusals or anchor is None or pull_request is None:
         _ = write_stderr(
             text=resume_refusal_report(
@@ -263,6 +285,56 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     # The SAME post-verdict tail the single dispatch runs, so the resume journals
     # exactly as a dispatch does and its outcome maps to the same exit codes.
     return dispatch_tail_exit(args=resumed, repo=repo, outcome=outcome, journal=journal)
+
+
+def preserved_descendant_refusal(
+    *, gather: ResumeGather, item: WorkItem, repo: Path, journal: JournalFile
+) -> tuple[str, ...]:
+    """Return the extra refusal that stops a resume from dropping preserved commits.
+
+    Only a published factory record can attribute the head to a run.  Without one
+    this is not the same-run-or-later case, so the ordinary resume ladder remains
+    the sole decision maker.
+    """
+    if not gather.publications:
+        return ()
+    head = gather.observation.pull_request_head
+    if head is None:
+        return ()
+    journaled = read_journal_records(journal_path=journal.path)
+    preserved = verified_preserved_seed(
+        runner=ShellCommandRunner(),
+        repo=repo,
+        work_item_id=item.id,
+        earlier_run_ids=gather.earlier_run_ids,
+        journal_records=journaled,
+        publications=gather.publications,
+    )
+    if isinstance(preserved, PreservedWorkAbsent | PreservedWorkUnobservable):
+        return ()
+    comparison = preserved_descendant(
+        runner=ShellCommandRunner(),
+        repo=repo,
+        preservation=preserved,
+        published_head=head,
+        head_is_later=published_head_relation(
+            records=journaled,
+            preserved_run_id=preserved.source_run_id,
+            published_head=head,
+            publications=gather.publications,
+        ),
+    )
+    if isinstance(comparison, PreservedDescendant):
+        return (
+            descending_preservation_refusal(
+                preservation_ref=comparison.preservation_ref,
+                preservation_tip=comparison.preservation_tip,
+                published_head=comparison.published_head,
+            ),
+        )
+    if isinstance(comparison, PreservedDescendantUnobservable):
+        return (comparison.detail,)
+    return ()
 
 
 def _resume_target_or_exit(
