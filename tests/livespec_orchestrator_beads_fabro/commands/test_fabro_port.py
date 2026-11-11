@@ -263,7 +263,16 @@ def test_fabro_port_json_operations_parse_payloads_and_run_summaries(tmp_path: P
     assert validate.payload == {"valid": True}
     assert [call.argv for call in runner.calls] == [
         ["fabro", "inspect", "01RUN", "--json", "--server", "http://factory"],
-        ["fabro", "events", "01RUN", "--json", "--server", "http://factory"],
+        [
+            "fabro",
+            "events",
+            "01RUN",
+            "--json",
+            "--tail",
+            "200",
+            "--server",
+            "http://factory",
+        ],
         ["fabro", "ps", "-a", "--json", "--server", "http://factory"],
         ["fabro", "validate", str(tmp_path / "workflow.toml"), "--json"],
     ]

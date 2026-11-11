@@ -1319,6 +1319,8 @@ def test_fabro_argv_builders_place_server_after_their_subcommand(tmp_path: Path)
             "events",
             "01RUNID",
             "--json",
+            "--tail",
+            "200",
             "--server",
             "https://factory.example.test",
         ],

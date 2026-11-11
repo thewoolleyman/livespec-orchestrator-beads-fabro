@@ -165,10 +165,24 @@ class FabroPort:
     def events(
         self, *, run_id: str, timeout_seconds: float, since: str | None = None
     ) -> FabroEventsResult:
-        """Read one run's events, optionally after an already-observed instant."""
+        """Read one bounded suffix of a run's events.
+
+        A caller that has a cursor supplies ``since``; a first read uses the
+        fixed trailing window so no Dispatcher caller asks the CLI for an
+        unbounded history.
+        """
         since_args = [] if since is None else ["--since", since]
         command = self._run(
-            argv=[self.fabro_bin, "events", run_id, "--json", *since_args, *self._server_suffix()],
+            argv=[
+                self.fabro_bin,
+                "events",
+                run_id,
+                "--json",
+                "--tail",
+                "200",
+                *since_args,
+                *self._server_suffix(),
+            ],
             timeout_seconds=timeout_seconds,
         )
         return FabroEventsResult(command=command, payload=fabro_events_payload(command=command))

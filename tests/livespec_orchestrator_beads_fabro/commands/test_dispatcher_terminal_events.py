@@ -136,7 +136,7 @@ def test_preserved_ref_is_read_from_the_terminal_stage_event(*, tmp_path: Path) 
 
     assert _REF in outcome.detail
     assert outcome.status == "blocked"
-    assert ["fabro", "events", _RUN, "--json", "--server", _SERVER] in runner.calls
+    assert ["fabro", "events", _RUN, "--json", "--tail", "200", "--server", _SERVER] in runner.calls
 
 
 def test_routing_stage_message_replaces_the_terminal_routing_failure(*, tmp_path: Path) -> None:
