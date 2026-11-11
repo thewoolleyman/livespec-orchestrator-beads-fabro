@@ -956,6 +956,30 @@ def test_settle_stops_a_run_still_live_at_its_bound_and_briefs_no_verdict(
     assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "no-verdict"
 
 
+def test_settle_keeps_a_verdict_the_run_reaches_while_the_stop_is_performed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A verdict recorded between the running snapshot and the stop is not overwritten."""
+    program = _settle_program(tmp_path)
+    program["group_alive"] = _alive
+    path = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, 4242)
+    verdict: dict[str, object] = {"state": "passed", "exit_code": 0, "head": "abc"}
+
+    def stop_run(run_path: Path, proc_root: str) -> bool:
+        del proc_root
+        _ = run_path.write_text(json.dumps(verdict), encoding="utf-8")
+        return True
+
+    program["stop_run"] = stop_run
+    brief = tmp_path / "brief"
+
+    assert program["settle"](0, str(brief)) == 0
+
+    assert json.loads(path.read_text(encoding="utf-8")) == verdict
+    assert brief.read_text(encoding="utf-8").splitlines()[0] == "passed"
+    assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "passed"
+
+
 def test_settle_does_not_record_a_stop_it_could_not_perform_in_the_launch_window(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

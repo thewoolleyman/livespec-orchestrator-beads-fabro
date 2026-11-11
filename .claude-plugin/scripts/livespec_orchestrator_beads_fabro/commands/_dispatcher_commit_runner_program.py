@@ -713,6 +713,21 @@ def restore_starting_head(path, record):
     git_output("reset", "--soft", start_head)
 
 
+def record_stopped_run(path, record):
+    """The record and state of a run just stopped, keeping a verdict it reached itself.
+
+    The running snapshot that led to the stop is stale by now: a worker that recorded
+    passed or failed before it was stopped keeps that verdict, and only a run still
+    recorded as running or as having ended without one is recorded as stopped.
+    """
+    fresh = read_record(path) or record
+    if recorded_state(fresh) in ("passed", "failed"):
+        return fresh, recorded_state(fresh)
+    stopped = {"state": NO_VERDICT, "stopped": True}
+    write_record(path, stopped)
+    return stopped, NO_VERDICT
+
+
 def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
     """Wait live runs and brief the latest terminal hook refusal exactly once.
 
@@ -767,9 +782,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
                 break
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
         if state == RUNNING and stop_run(path, "/proc"):
-            record = {"state": NO_VERDICT, "stopped": True}
-            write_record(path, record)
-            state = NO_VERDICT
+            record, state = record_stopped_run(path, record)
         elif state == NO_VERDICT:
             # Recorded, so a later settle does not brief this dead run a second time.
             write_record(path, {"state": NO_VERDICT})
