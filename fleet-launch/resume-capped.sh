@@ -143,7 +143,12 @@ cleanup() {
   local rc=$? cause=""
   trap - EXIT
   if [ "$resume_started" = 0 ] && [ "$terminal_written" = 0 ]; then
-    cause=${exit_cause:-exit rc=$rc before its resume started}
+    case "$rc" in
+      143) cause=${exit_cause:-"signal TERM (this exit was not a run ending)"} ;;
+      130) cause=${exit_cause:-"signal INT (this exit was not a run ending)"} ;;
+      129) cause=${exit_cause:-"signal HUP (this exit was not a run ending)"} ;;
+      *) cause=${exit_cause:-"exit rc=$rc before its resume started"} ;;
+    esac
     write_terminal "$cause"
   fi
   drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"
@@ -151,10 +156,6 @@ cleanup() {
   return 0
 }
 trap cleanup EXIT
-on_signal() { exit_cause="signal $1 (this exit was not a run ending)"; exit "$2"; }
-trap 'on_signal TERM 143' TERM
-trap 'on_signal INT 130' INT
-trap 'on_signal HUP 129' HUP
 
 read_fleet_cap() {
   FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null)
@@ -269,6 +270,10 @@ fi
 while :; do
   reexec_on_script_change
   [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit_cause="resume gave up: no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s"; exit 75; }
+  # TERM uses bash's default action because bash 5.2 can fail to parse a TERM
+  # trap while a command substitution is active.  Preserve TERM's non-run
+  # description for EXIT cleanup across the repository-hold read and wait.
+  exit_cause="signal TERM (this exit was not a run ending)"
   if repository_hold_applies resume; then
     yield_ticket repository-hold
     log_repository_hold

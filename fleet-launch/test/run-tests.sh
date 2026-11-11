@@ -98,6 +98,12 @@ esac
 # factory would have been asked; STUB_PS_DELAY_S makes a listing slow, as the petri server's is.
 if [ -n "${STUB_PS_LOG:-}" ]; then printf '%s\n' "$server" >> "$STUB_PS_LOG"; fi
 if [ -n "${STUB_PS_DELAY_S:-}" ]; then sleep "$STUB_PS_DELAY_S"; fi
+# A TERM test holds the direct board read that follows take_mutex, when the
+# launcher has written its holder file but has not yet released the mutex.
+if [ -n "${STUB_TERM_MUTEX_GATE:-}" ] && [ -f "$FLEET_LAUNCH_GMK_LOCK_DIR/holder" ]; then
+    : > "$STUB_TERM_MUTEX_GATE"
+    sleep 0.05
+fi
 # An absent fixture is the unreadable board: non-zero exit, nothing on stdout.
 if [ ! -f "$board" ]; then
     echo "stub fabro: board unreadable" >&2
@@ -1914,6 +1920,119 @@ check_term_exit() {
         fail "$label: the ledger comment for the dropped ticket is missing or wrong ($(cat "$STUB_LEDGER_COMMENTS"))"
     fi
 }
+
+# bash 5.2 can fail while parsing a TERM trap action when TERM arrives while a
+# command substitution is active.  The launchers must therefore rely on
+# bash's default signal exit and let their EXIT cleanup classify its status.
+# Keep this assertion separate from the exercise below: it makes the former
+# design fail deterministically, while the exercise proves the replacement.
+if grep -Eq '^[[:space:]]*trap .+ (TERM|INT|HUP)$' "$LAUNCHER" "$RESUME_LAUNCHER"; then
+    fail "the launchers install a signal trap whose action bash must parse during command substitution"
+else
+    pass "the launchers use default signal exits rather than parseable signal trap actions"
+
+    # This PATH-local sed pauses inside repository_hold_applies' $(sed ...) read.
+    # The parent waits for its gate before delivering TERM, and adds a small
+    # random jitter across 200 deliveries so the proof covers distinct parser
+    # instants rather than a single lucky timing.
+    mkdir -p "$STUB/term-sed"
+    STUB_REAL_SED=$(command -v sed)
+    export STUB_REAL_SED
+    cat > "$STUB/term-sed/sed" <<'TERM_SED'
+#!/usr/bin/env bash
+printf '%s\n' "$$" >> "$STUB_TERM_SUBSTITUTION_GATE"
+sleep "$STUB_TERM_SUBSTITUTION_SED_DELAY_S"
+exec "$STUB_REAL_SED" "$@"
+TERM_SED
+    chmod +x "$STUB/term-sed/sed"
+
+    # term_during_hold_substitution <launcher> <label>: each iteration waits
+    # until the launcher has a FIFO ticket, then sends TERM while its next hold
+    # read is evaluating $(sed ...).  A default TERM exit must run EXIT cleanup.
+    term_during_hold_substitution() {
+        local launcher="$1" label="$2" attempt term_pid term_rc gate gate_deadline failures=0
+        for attempt in $(seq 1 100); do
+            prepare_312_case "term-substitution-$label-$attempt"
+            export FLEET_LAUNCH_POLL_S=0.01
+            set_hold "$TENANT_HOLD" 'reason: substitution-term'
+            gate="$CASE_DIR/substitution-gate"
+            export STUB_TERM_SUBSTITUTION_GATE="$gate"
+            export STUB_TERM_SUBSTITUTION_SED_DELAY_S=0.01
+            PATH="$STUB/term-sed:$PATH" ONLY_GMK=1 TICKET_NS="$attempt" "$launcher" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+            term_pid=$!
+            if ! wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 5; then
+                fail "$label iteration $attempt never yielded on the repository hold"
+                stop_launcher "$term_pid"
+                wait "$term_pid" 2>/dev/null
+                failures=$((failures + 1))
+                continue
+            fi
+            : > "$gate"
+            gate_deadline=$(( $(date +%s) + 5 ))
+            while [ ! -s "$gate" ] && [ "$(date +%s)" -lt "$gate_deadline" ]; do
+                sleep "$HARNESS_POLL_S"
+            done
+            if [ ! -s "$gate" ]; then
+                fail "$label iteration $attempt never entered the gated command substitution"
+                stop_launcher "$term_pid"
+                wait "$term_pid" 2>/dev/null
+                failures=$((failures + 1))
+                continue
+            fi
+            sleep "0.00$((RANDOM % 5))"
+            stop_launcher "$term_pid"
+            wait "$term_pid"
+            term_rc=$?
+            if [ "$term_rc" != 143 ] \
+                || [ -n "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ] \
+                || [ -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
+                || ! grep -qF 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE" \
+                || grep -qF 'unexpected EOF while looking for matching' "$STUB_RM_PROBE_LOG_SOURCE"; then
+                fail "$label iteration $attempt did not exit cleanly from TERM in a command substitution (rc=$term_rc)"
+                tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+                failures=$((failures + 1))
+            fi
+        done
+        if [ "$failures" = 0 ]; then
+            pass "$label exits within the stop bound for 100 jittered TERMs during repository-hold command substitutions, dropping its FIFO ticket"
+        fi
+    }
+
+    term_during_hold_substitution "$LAUNCHER" impl
+    term_during_hold_substitution "$RESUME_LAUNCHER" resume
+    unset STUB_TERM_SUBSTITUTION_GATE STUB_TERM_SUBSTITUTION_SED_DELAY_S
+
+    # A separate gate pauses dispatch after it has recorded its mutex holder.
+    # TERM must remove both that owned mutex and its ticket before the process
+    # exits, rather than leaving the next launcher blocked behind either.
+    prepare_312_case terminal-term-owned-mutex
+    STUB_TERM_MUTEX_GATE="$CASE_DIR/mutex-gate"
+    export STUB_TERM_MUTEX_GATE
+    ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+    term_pid=$!
+    gate_deadline=$(( $(date +%s) + 5 ))
+    while [ ! -e "$STUB_TERM_MUTEX_GATE" ] && [ "$(date +%s)" -lt "$gate_deadline" ]; do
+        sleep "$HARNESS_POLL_S"
+    done
+    if [ -e "$STUB_TERM_MUTEX_GATE" ] && [ -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ]; then
+        stop_launcher "$term_pid"
+        wait "$term_pid"
+        term_rc=$?
+        if [ "$term_rc" = 143 ] \
+            && [ -z "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ] \
+            && [ ! -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ]; then
+            pass "a TERMed launcher that owns the gmktec mutex drops its ticket and releases the mutex"
+        else
+            fail "a TERMed mutex owner left a ticket or gmktec mutex behind (rc=$term_rc)"
+        fi
+    else
+        fail "the dispatch launcher never reached the owned-mutex TERM gate"
+        tail -n 8 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+        stop_launcher "$term_pid"
+        wait "$term_pid" 2>/dev/null
+    fi
+    unset STUB_TERM_MUTEX_GATE
+fi
 
 prepare_312_case terminal-term-impl
 export FLEET_LAUNCH_POLL_S=0.2

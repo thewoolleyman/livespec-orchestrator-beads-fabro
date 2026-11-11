@@ -188,7 +188,12 @@ on_exit() {
   local rc=$? cause=""
   trap - EXIT
   if [ "$run_listed" = 0 ] && [ "$terminal_written" = 0 ]; then
-    cause=${exit_cause:-exit rc=$rc before its run listed}
+    case "$rc" in
+      143) cause=${exit_cause:-"signal TERM (this exit was not a run ending)"} ;;
+      130) cause=${exit_cause:-"signal INT (this exit was not a run ending)"} ;;
+      129) cause=${exit_cause:-"signal HUP (this exit was not a run ending)"} ;;
+      *) cause=${exit_cause:-"exit rc=$rc before its run listed"} ;;
+    esac
     write_terminal "$cause"
   fi
   drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"
@@ -196,10 +201,6 @@ on_exit() {
   return 0
 }
 trap on_exit EXIT
-on_signal() { exit_cause="signal $1 (this exit was not a run ending)"; exit "$2"; }
-trap 'on_signal TERM 143' TERM
-trap 'on_signal INT 130' INT
-trap 'on_signal HUP 129' HUP
 
 read_fleet_cap() { FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null); FLEET_CAP=${FLEET_CAP:-0}; }
 
@@ -373,8 +374,11 @@ if [ -n "${ONLY_GMK:-}" ] || [ -n "${ONLY_HL:-}" ]; then
   ensure_ticket
 fi
 while :; do
+  # See the repository-hold loop below: default TERM can reach EXIT cleanup
+  # with a zero child status, so retain its cause while this retry waits too.
+  exit_cause="signal TERM (this exit was not a run ending)"
   rcout=$(ready_check); rcrc=$?; echo "$(date -u +%FT%TZ) $rcout"
-  [ $rcrc = 0 ] && break
+  if [ $rcrc = 0 ]; then exit_cause=""; break; fi
   ready_refused "$rcout"
   sleep "$FLEET_LAUNCH_POLL_S"
 done
@@ -453,6 +457,11 @@ while :; do
   target=""; drive_stopped=0; drive_admitted=0
   while [ -z "$target" ]; do
     reexec_on_script_change
+    # TERM uses bash's default action because bash 5.2 can fail to parse a
+    # TERM trap while a command substitution is active.  Arm the non-run exit
+    # description before the hold read so EXIT cleanup still records TERM when
+    # bash reports a successful interrupted child wait to that cleanup.
+    exit_cause="signal TERM (this exit was not a run ending)"
     if repository_hold_applies dispatch; then
       ensure_ticket
       yield_ticket repository-hold
