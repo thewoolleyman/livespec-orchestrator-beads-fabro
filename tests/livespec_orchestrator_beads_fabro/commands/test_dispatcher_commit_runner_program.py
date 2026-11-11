@@ -15,6 +15,7 @@ start of a commit that skips its hooks.
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -937,8 +938,9 @@ def test_settle_stops_a_run_still_live_at_its_bound_and_briefs_no_verdict(
     path = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, 4242)
     stopped: list[tuple[Path, str]] = []
 
-    def stop_run(run_path: Path, proc_root: str) -> None:
+    def stop_run(run_path: Path, proc_root: str) -> bool:
         stopped.append((run_path, proc_root))
+        return True
 
     program["stop_run"] = stop_run
     brief = tmp_path / "brief"
@@ -952,6 +954,58 @@ def test_settle_stops_a_run_still_live_at_its_bound_and_briefs_no_verdict(
     assert _OTHER_RUN_ID in "\n".join(lines[1:])
     assert "ended without a verdict" in "\n".join(lines[1:])
     assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "no-verdict"
+
+
+def test_settle_does_not_record_a_stop_it_could_not_perform_in_the_launch_window(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A run with no pid file and no worker process is not recorded as stopped."""
+    program = _settle_program(tmp_path)
+
+    def process_table(proc_root: str) -> dict[int, tuple[str, int, int, int, int]]:
+        del proc_root
+        return {}
+
+    program["process_table"] = process_table
+    path = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, None)
+    brief = tmp_path / "brief"
+
+    assert program["settle"](0, str(brief)) == 0
+
+    lines = brief.read_text(encoding="utf-8").splitlines()
+    assert json.loads(path.read_text(encoding="utf-8")) == {"state": "running"}
+    assert lines[0] == "running"
+    assert json.loads(capsys.readouterr().out)["settled"][0][REPORT_STATE_KEY] == "running"
+
+
+def test_stop_run_ends_the_worker_of_a_run_whose_pid_file_is_not_written_yet(
+    tmp_path: Path,
+) -> None:
+    """The launch window: the worker is found by its own argv and every process of it ends."""
+    program = _settle_program(tmp_path)
+    proc = tmp_path / "proc"
+    for pid, ppid, argv in (
+        (77, 1, ["python3", "runner.py", "worker", _OTHER_RUN_ID]),
+        (78, 77, ["git", "commit"]),
+        (79, 1, ["python3", "runner.py", "worker", _RUN_ID]),
+    ):
+        (proc / str(pid)).mkdir(parents=True)
+        fields = ["S", str(ppid), str(pid), str(pid)] + ["0"] * 16
+        _ = (proc / str(pid) / "stat").write_text(f"{pid} (x) {' '.join(fields)}", encoding="utf-8")
+        _ = (proc / str(pid) / "cmdline").write_bytes(b"\0".join(a.encode() for a in argv) + b"\0")
+    sent: list[int] = []
+
+    def terminate(pid: int, signal_number: int) -> None:
+        del signal_number
+        sent.append(pid)
+        shutil.rmtree(proc / str(pid))
+
+    program["terminate"] = terminate
+    path = _record(tmp_path, _OTHER_RUN_ID, {"state": "running"}, None)
+
+    assert program["stop_run"](path, str(proc)) is True
+    assert sorted(set(sent)) == [77, 78]
+    assert program["stop_run"](path, str(proc)) is False
 
 
 def test_main_routes_the_settle_operation_with_its_bound_and_brief_file(

@@ -766,8 +766,7 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
             if state != RUNNING or time.monotonic() >= deadline:
                 break
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
-        if state == RUNNING:
-            stop_run(path, "/proc")
+        if state == RUNNING and stop_run(path, "/proc"):
             record = {"state": NO_VERDICT, "stopped": True}
             write_record(path, record)
             state = NO_VERDICT
@@ -998,19 +997,38 @@ def reap(proc_root, pids):
             return
 
 
+def launch_window_group(table, proc_root, run_id):
+    """The pid of a live worker of `run_id` found by its own argv, or None.
+
+    `start` writes the pid file only after it launches the worker, so a run read in that
+    window has a worker and no pid file; the worker's argv still names its run.
+    """
+    for pid, entry in table.items():
+        if entry[0] != "Z" and argv_of(proc_root, pid)[-2:] == ["worker", run_id]:
+            return pid
+    return None
+
+
 def stop_run(path, proc_root):
-    """Stop every process of one commit run: its session, its group and its descendants."""
+    """Stop every process of one commit run: its session, its group and its descendants.
+
+    Returns True when it found a process to stop and False when it had no target, so the
+    caller never records a stop that was not performed.
+    """
+    table = process_table(proc_root)
     try:
         group = int(path.with_suffix(".pid").read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
-        return
-    table = process_table(proc_root)
+        group = launch_window_group(table, proc_root, path.stem)
+        if group is None:
+            return False
     members = {
         pid for pid, entry in table.items() if entry[0] != "Z" and group in (entry[2], entry[3])
     }
     if group in table:
         members.update(descendants(table, group))
     reap(proc_root, sorted(members))
+    return True
 
 
 def in_scope(proc_root, pid, scope):
