@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal, cast, get_args
 
@@ -60,6 +61,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS",
     "DRIFT_JUDGE_TIMEOUT_ENV",
+    "DriftJudge",
     "drift_judge",
     "resolve_drift_judge_timeout_seconds",
 ]
@@ -68,6 +70,28 @@ ReplyShape = Literal["verdict", "item_class"]
 
 DRIFT_JUDGE_TIMEOUT_ENV = "LIVESPEC_DRIFT_JUDGE_TIMEOUT_SECONDS"
 DEFAULT_DRIFT_JUDGE_TIMEOUT_SECONDS = 600.0
+
+
+@dataclass(kw_only=True)
+class DriftJudge:
+    """One resolved host-judge chain and the cause of its latest no-reply run."""
+
+    project_root: Path
+    runner: CommandRunner
+    reply: ReplyShape
+    caller: str
+    cause: str = ""
+
+    def __call__(self, prompt: str) -> str:
+        """Run one prompt and retain the chain cause when it produces no reply."""
+        response, self.cause = _judged(
+            prompt=prompt,
+            cwd=self.project_root,
+            runner=self.runner,
+            reply=self.reply,
+            caller=self.caller,
+        )
+        return response
 
 
 def resolve_drift_judge_timeout_seconds(*, environ: dict[str, str]) -> float:
@@ -90,7 +114,7 @@ def drift_judge(
     caller: str,
     payload_root: Path | None = None,
     reply: ReplyShape = "verdict",
-) -> spec_stated.ModelRunner:
+) -> DriftJudge:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
 
     `caller` is REQUIRED, with no default, because a default would attribute
@@ -103,19 +127,16 @@ def drift_judge(
     classification with one bare item-class word, so a runner built for one
     shape discards every reply of the other as unparseable.
 
-    Returned as a closure rather than a class so that the model, the time box
-    and the credential are resolved ONCE per pass: a pass over ten merges must
-    not re-read the environment ten times, where two readings of one variable
-    could disagree while both looked healthy.
+    Returned as one callable object so that the model, the time box and the
+    credential are resolved ONCE per pass: a pass over ten merges must not
+    re-read the environment ten times, where two readings of one variable
+    could disagree while both looked healthy. The object also keeps the last
+    candidate-chain cause so callers that record failed classifications retain
+    the reason rather than reducing every no-reply result to empty text.
     """
     del payload_root
-    # A LAMBDA over a keyword-only helper, because `ModelRunner` is the shared
-    # runtime's own type and `spec_stated.judge` calls it POSITIONALLY: the one
-    # positional parameter here is fixed by a caller outside this repository,
-    # and everything this module itself defines stays keyword-only.
-    return lambda prompt: _judged(
-        prompt=prompt,
-        cwd=project_root,
+    return DriftJudge(
+        project_root=project_root,
         runner=runner,
         reply=reply,
         caller=caller,
@@ -129,7 +150,7 @@ def _judged(
     runner: CommandRunner,
     reply: ReplyShape,
     caller: str,
-) -> str:
+) -> tuple[str, str]:
     """One prompt through the shared chain, or no reply when every candidate fails.
 
     Each candidate the chain ran is reported on standard error, because a drift
@@ -147,7 +168,7 @@ def _judged(
     )
     for ran in chain.attempts:
         _ = sys.stderr.write(f"{candidate_report(attempt=ran)}\n")
-    return chain.reply or ""
+    return chain.reply or "", chain.cause
 
 
 def _looks_like_item_class(*, text: str) -> bool:

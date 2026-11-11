@@ -132,3 +132,20 @@ def test_a_judgement_that_cannot_be_obtained_exits_non_zero_and_writes_nothing(
 
     assert _bodies(repo=repo) == []
     assert "classification did not run" in capsys.readouterr().err
+
+
+def test_no_eligible_classifier_reports_its_distinct_cause(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}, '
+        '"dispatcher": {}}}',
+        encoding="utf-8",
+    )
+    append_work_item(path=_config(repo=repo), item=_item())
+
+    assert dispatcher.main(argv=["classify-tier", "--repo", str(repo), "--item", _ITEM]) != 0
+
+    assert _bodies(repo=repo) == []
+    assert "classification did not run (no-eligible-model); no write" in capsys.readouterr().err

@@ -17,7 +17,8 @@ an `--input` name its own workflow does not declare, which fabro rejects.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from argparse import Namespace
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -31,7 +32,6 @@ from livespec_orchestrator_beads_fabro.commands._acp_factory_capabilities import
     factory_capability_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import (
-    NODE_INPUT_CANDIDATES,
     AcpNodeOverlay,
     overlay_from_string,
 )
@@ -52,15 +52,11 @@ from livespec_orchestrator_beads_fabro.commands._acp_structured_text import (
     is_structured_text,
     rendered_structured_text,
 )
-from livespec_orchestrator_beads_fabro.commands._acp_workflow_defaults import (
-    rendered_workflow_defaults,
-)
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget, dispatcher_block
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_chain_attachment import (
     resolve_chains,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_publication_policy import (
-    GROOM_ONLY_ACP_NODES,
     scoped_repository_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import (
@@ -71,14 +67,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_selection_journal import (
     append_acp_node_selection,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
-    workflow_declared_inputs,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_workflow import (
+    workflow_adapter_inputs,
+    workflow_configuration,
+    workflow_layer,
 )
-from livespec_orchestrator_beads_fabro.commands._workflow_variant_kind import (
-    WORKFLOW_KIND_IMPLEMENT,
-    declared_workflow_kind,
-)
-from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflow_toml
+from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
@@ -87,40 +82,13 @@ __all__: list[str] = [
     "ACP_NODES_STAGE",
     "acp_override_refusal",
     "dispatch_acp_overlays",
+    "host_dod_gate_resolution",
     "prepare_acp_nodes",
     "workflow_adapter_inputs",
     "workflow_layer",
 ]
 
 ACP_NODES_STAGE = "acp-nodes"
-
-# Every adapter input name any node can ride, so the `[run.inputs]` scan
-# picks up adapter declarations and ignores the per-item policy inputs
-# (`review_fix_visit_cap`, `merge_on_review_cap_outcome`, `merge_hold`)
-# sharing the table.
-_ADAPTER_INPUT_NAMES: frozenset[str] = frozenset(
-    name for candidates in NODE_INPUT_CANDIDATES.values() for name in candidates
-)
-
-
-def workflow_adapter_inputs(*, committed_text: str) -> Mapping[str, str]:
-    """The adapter inputs a committed run config declares, with their defaults.
-
-    An absent `[run.inputs]` table yields an empty mapping rather than a
-    refusal: the refusal belongs to `resolve_node_inputs`, which can name
-    the NODE that ended up without an adapter input instead of reporting a
-    missing table the operator would still have to map back to a node.
-
-    The `[run.inputs]` scan itself is SHARED with the integration-contract
-    projection, which asks the same question about its own input names; two
-    copies of that scan is how the two would come to disagree about what one
-    payload declares.
-    """
-    return {
-        key: value
-        for key, value in workflow_declared_inputs(committed_text=committed_text).items()
-        if key in _ADAPTER_INPUT_NAMES
-    }
 
 
 def dispatch_acp_overlays(
@@ -222,7 +190,7 @@ def prepare_acp_nodes(  # noqa: PLR0913 — kw-only dispatch inputs; each is one
     layered = _layered_acp_nodes(repo=repo, committed=committed, overrides=overrides)
     if isinstance(layered, str):
         return layered
-    resolution, chains, not_applied = layered
+    resolution, chains, not_applied, _workflow_agents = layered
     selected = _select_and_gate(
         resolution=resolution, chains=chains, verdict=verdict, factory=factory
     )
@@ -275,19 +243,57 @@ def acp_override_refusal(*, repo: Path, committed: Path, overrides: tuple[str, .
     return layered if isinstance(layered, str) else None
 
 
+def host_dod_gate_resolution(
+    *,
+    repo: Path,
+    catalog_resolver: Callable[..., AcpCatalogs | str] = resolve_acp_catalogs,
+) -> tuple[AcpNodeResolution, AcpChainResolution, Mapping[str, str]] | None:
+    """The host judge's dispatch-equivalent resolution with no override layer."""
+    committed = workflow_toml(args=Namespace(repo=str(repo), workflow=None))
+    try:
+        layered = _layered_acp_nodes(
+            repo=repo,
+            committed=committed,
+            overrides=(),
+            catalog_resolver=catalog_resolver,
+        )
+    except LivespecConfigUnreadableError:
+        return None
+    if isinstance(layered, str):
+        return None
+    resolution, chains, _not_applied, workflow_agents = layered
+    return resolution, chains, workflow_agents
+
+
 def _layered_acp_nodes(
-    *, repo: Path, committed: Path, overrides: tuple[str, ...]
-) -> tuple[AcpNodeResolution, AcpChainResolution, tuple[dict[str, str], ...]] | str:
+    *,
+    repo: Path,
+    committed: Path,
+    overrides: tuple[str, ...],
+    catalog_resolver: Callable[..., AcpCatalogs | str] | None = None,
+) -> (
+    tuple[
+        AcpNodeResolution,
+        AcpChainResolution,
+        tuple[dict[str, str], ...],
+        Mapping[str, str],
+    ]
+    | str
+):
     """The three-layer resolution and its attached chains, or the first refusal.
 
     Shared by the claim-time resolution and the pre-claim override check, so the
     two cannot disagree about which override the grammar refuses.
     """
     block = dispatcher_block(cwd=repo)
-    configured = _dispatch_workflow_configuration(block=block, committed=committed)
+    configured = _dispatch_workflow_configuration(
+        block=block,
+        committed=committed,
+        catalog_resolver=resolve_acp_catalogs if catalog_resolver is None else catalog_resolver,
+    )
     if isinstance(configured, str):
         return configured
-    catalogs, workflow_inputs, workflow_kind = configured
+    catalogs, workflow_inputs, workflow_kind, workflow_agents = configured
     scoped_block, not_applied = scoped_repository_block(block=block, workflow_kind=workflow_kind)
     layers = _overlay_layers(block=scoped_block, catalogs=catalogs, overrides=overrides)
     if isinstance(layers, str):
@@ -309,7 +315,7 @@ def _layered_acp_nodes(
     )
     if isinstance(chains, str):
         return chains
-    return resolution, chains, not_applied
+    return resolution, chains, not_applied, workflow_agents
 
 
 def _overlay_layers(
@@ -334,8 +340,11 @@ def _overlay_layers(
 
 
 def _dispatch_workflow_configuration(
-    *, block: dict[str, object], committed: Path
-) -> tuple[AcpCatalogs, Mapping[str, str], str] | str:
+    *,
+    block: dict[str, object],
+    committed: Path,
+    catalog_resolver: Callable[..., AcpCatalogs | str],
+) -> tuple[AcpCatalogs, Mapping[str, str], str, Mapping[str, str]] | str:
     """Catalogs and rendered workflow defaults, from ONE read of each source.
 
     The catalogs come back WITH the workflow layer because the chain reader
@@ -345,66 +354,14 @@ def _dispatch_workflow_configuration(
     defaults are, and a second read of that file cannot be proven to agree with
     the first.
     """
-    catalogs = resolve_acp_catalogs(block=block)
+    catalogs = catalog_resolver(block=block)
     if isinstance(catalogs, str):
         return catalogs
-    configured = _workflow_configuration(committed=committed, catalogs=catalogs)
+    configured = workflow_configuration(committed=committed, catalogs=catalogs)
     if isinstance(configured, str):
         return configured
-    workflow_inputs, workflow_kind = configured
-    return catalogs, workflow_inputs, workflow_kind
-
-
-def workflow_layer(*, committed: Path, catalogs: AcpCatalogs) -> Mapping[str, str] | str:
-    """The workflow layer's adapter inputs, read and RENDERED, or a refusal.
-
-    Reading the committed text and rendering its structured entries is ONE
-    concern -- "what does the least specific layer declare" -- so they live
-    together and every caller gets the rendered answer or a refusal, never the
-    raw text to render for itself.
-
-    The render happens HERE, as the inputs are read, because section "ACP node
-    adapter configuration" requires a structured entry rendered into the manual
-    form "before any layer merge, journal, digest or run input". It also keeps
-    the built-in identity table honest: that table keys on EXACT RENDERED BYTES,
-    so raw structured JSON reaching it would key on text no resolved node can
-    equal, and every built-in identity would silently stop attaching.
-    """
-    configured = _workflow_configuration(committed=committed, catalogs=catalogs)
-    return configured if isinstance(configured, str) else configured[0]
-
-
-def _workflow_configuration(
-    *, committed: Path, catalogs: AcpCatalogs
-) -> tuple[Mapping[str, str], str] | str:
-    """The rendered adapter defaults AND the workflow kind, from one read.
-
-    THE KIND IS WHAT RETIRES AN ADAPTER INPUT RATHER THAN THE INPUT'S ABSENCE.
-    A groom-kind workflow legitimately declares `pr_adapter`, and an
-    implementation workflow must render none -- so an implementation payload
-    that still declared one (a variant copied from the groom directory, say)
-    would otherwise have it rendered and merged, giving a command stage an
-    adapter nothing reads. Dropping every GROOM-ONLY node's input candidates
-    here, by kind, is what makes the retirement a property of the ratified cut
-    instead of a property of what each payload happens to declare.
-
-    An unreadable or absent kind declaration reads as the IMPLEMENT kind, which
-    is the direction `variant_kind` defaults in and for the same reason: the
-    kind that unlocks a door is the one that has to be said.
-    """
-    committed_text = attempt(
-        action=lambda: committed.read_text(encoding="utf-8"),
-        exceptions=(OSError,),
-    )
-    if isinstance(committed_text, AttemptFailure):
-        return f"workflow config {committed} is unreadable: {committed_text.error}"
-    kind = declared_workflow_kind(committed_text=committed_text) or WORKFLOW_KIND_IMPLEMENT
-    declared = workflow_adapter_inputs(committed_text=committed_text)
-    if kind == WORKFLOW_KIND_IMPLEMENT:
-        retired = {name for node in GROOM_ONLY_ACP_NODES for name in NODE_INPUT_CANDIDATES[node]}
-        declared = {name: value for name, value in declared.items() if name not in retired}
-    rendered = rendered_workflow_defaults(declared=declared, catalogs=catalogs)
-    return rendered if isinstance(rendered, str) else (rendered, kind)
+    workflow_inputs, workflow_kind, workflow_agents = configured
+    return catalogs, workflow_inputs, workflow_kind, workflow_agents
 
 
 def _select_and_gate(

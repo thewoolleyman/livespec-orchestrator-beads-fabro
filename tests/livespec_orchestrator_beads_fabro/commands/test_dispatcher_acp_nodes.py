@@ -42,6 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acp_nodes import (
     dispatch_acp_overlays,
     prepare_acp_nodes,
     workflow_adapter_inputs,
+    workflow_configuration,
     workflow_layer,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_materialize import (
@@ -402,6 +403,23 @@ def test_workflow_layer_returns_rendered_defaults_or_an_unreadable_refusal(
     refusal = workflow_layer(committed=tmp_path / "absent.toml", catalogs=catalogs)
     assert isinstance(refusal, str)
     assert "unreadable" in refusal
+
+
+def test_a_retired_malformed_structured_entry_does_not_hide_a_valid_workflow_agent(
+    tmp_path: Path,
+) -> None:
+    workflow = tmp_path / "workflow.toml"
+    _ = workflow.write_text(
+        "[run.inputs]\n"
+        'dod_gate_adapter = \'{"agent": "claude-acp", "model": "claude-opus-5"}\'\n'
+        "pr_adapter = '{}'\n",
+        encoding="utf-8",
+    )
+
+    configured = workflow_configuration(committed=workflow, catalogs=builtin_catalogs())
+
+    assert not isinstance(configured, str), configured
+    assert configured[2] == {"dod_gate_adapter": "claude-acp"}
 
 
 def test_prepare_routes_catalog_and_chain_refusals(
