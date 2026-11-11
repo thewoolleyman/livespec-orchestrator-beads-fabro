@@ -139,6 +139,9 @@ class _Origin:
             return CommandResult(exit_code=0, stdout=json.dumps({"comments": []}), stderr="")
         if "ps -a --json" in joined:
             return CommandResult(exit_code=0, stdout="[]", stderr="")
+        if argv[:4] == ["git", "rev-parse", "--verify", "--quiet"] and argv[4].endswith("^{tree}"):
+            # Every commit has a tree of its own, so no two refs read as identical.
+            return CommandResult(exit_code=0, stdout=f"tree-of-{argv[4]}\n", stderr="")
         message = f"unscripted command reached the shell seam: {joined}"
         raise AssertionError(message)
 

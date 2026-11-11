@@ -178,3 +178,83 @@ def test_a_preservation_without_a_tip_sha_remains_unobservable() -> None:
     )
     assert isinstance(outcome, PublishedHeadUnobservable)
     assert outcome.measurement == "publishing-run-unobservable"
+
+
+def _terminal() -> RecoverySeed:
+    return RecoverySeed(
+        source_run_id="older",
+        remote="origin",
+        commit_sha="base",
+        preservation_ref=_TERMINAL_REF,
+        preservation_tip_sha=_TERMINAL,
+    )
+
+
+def test_an_identical_tree_is_equivalent_when_the_journal_says_the_ref_is_the_publishing_run() -> (
+    None
+):
+    outcome = newer_published_head_seed(
+        runner=_SameTreeRunner(),
+        repo=Path("/repo"),
+        work_item_id=_ITEM,
+        terminal=_terminal(),
+        history=RecoveryPublicationHistory(
+            records=({"work_item_id": _ITEM, "run_id": "older"},),
+            publications=((_HEAD, "older"),),
+            earlier_run_ids=("older",),
+        ),
+    )
+    assert isinstance(outcome, PublishedHeadEquivalent)
+    assert outcome.seed.commit_sha == _HEAD
+    assert outcome.competing_ref == _TERMINAL_REF
+
+
+def test_an_identical_tree_is_equivalent_when_the_journal_says_the_head_is_newer() -> None:
+    outcome = newer_published_head_seed(
+        runner=_SameTreeRunner(),
+        repo=Path("/repo"),
+        work_item_id=_ITEM,
+        terminal=_terminal(),
+        history=RecoveryPublicationHistory(
+            records=(
+                {"work_item_id": _ITEM, "run_id": "older"},
+                {"work_item_id": _ITEM, "run_id": "newer", "published_head": _HEAD},
+            ),
+            publications=(),
+            earlier_run_ids=("older", "newer"),
+        ),
+    )
+    assert isinstance(outcome, PublishedHeadEquivalent)
+    assert outcome.seed.commit_sha == _HEAD
+
+
+def test_a_different_tree_still_keeps_the_terminal_ref_when_the_journal_says_the_ref_published() -> (
+    None
+):
+    outcome = newer_published_head_seed(
+        runner=_Runner(),
+        repo=Path("/repo"),
+        work_item_id=_ITEM,
+        terminal=_terminal(),
+        history=RecoveryPublicationHistory(
+            records=({"work_item_id": _ITEM, "run_id": "older"},),
+            publications=((_HEAD, "older"),),
+            earlier_run_ids=("older",),
+        ),
+    )
+    assert outcome is None
+
+
+def test_an_unreadable_tree_does_not_override_an_attributable_relation() -> None:
+    outcome = newer_published_head_seed(
+        runner=_UnavailableTreeRunner(),
+        repo=Path("/repo"),
+        work_item_id=_ITEM,
+        terminal=_terminal(),
+        history=RecoveryPublicationHistory(
+            records=({"work_item_id": _ITEM, "run_id": "older"},),
+            publications=((_HEAD, "older"),),
+            earlier_run_ids=("older",),
+        ),
+    )
+    assert outcome is None

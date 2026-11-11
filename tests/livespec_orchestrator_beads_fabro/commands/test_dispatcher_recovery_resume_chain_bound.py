@@ -183,6 +183,12 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
         f"ls-remote {SEED_REMOTE} {NEEDS_HUMAN_REF_PREFIX}/": CommandResult(
             exit_code=0, stdout=f"{_PRESERVED_COMMIT}\t{_PRESERVED_REF}\n", stderr=""
         ),
+        f"{_PRESERVED_COMMIT}^{{tree}}": CommandResult(
+            exit_code=0, stdout=f"{'1' * 40}\n", stderr=""
+        ),
+        f"{_PUBLISHED_HEAD}^{{tree}}": CommandResult(
+            exit_code=0, stdout=f"{'2' * 40}\n", stderr=""
+        ),
     }
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)

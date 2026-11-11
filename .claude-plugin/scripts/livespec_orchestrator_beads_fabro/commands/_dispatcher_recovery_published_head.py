@@ -117,10 +117,10 @@ def newer_published_head_seed(
         published_head=published.commit_sha,
         publications=history.publications,
     )
+    identical = _same_tip_tree(runner=runner, repo=repo, terminal=terminal, published=published)
+    if identical is True:
+        return PublishedHeadEquivalent(seed=published, competing_ref=terminal.preservation_ref)
     if relation is None:
-        identical = _same_tip_tree(runner=runner, repo=repo, terminal=terminal, published=published)
-        if identical is True:
-            return PublishedHeadEquivalent(seed=published, competing_ref=terminal.preservation_ref)
         if identical is None:
             return PublishedHeadUnobservable(
                 measurement=MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE,
