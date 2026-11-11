@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import RECAPTURE_EXHAUSTED_MARKER
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch import (
+    journal_recovery_route,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
     ROUTE_HELD,
@@ -358,6 +361,57 @@ def test_a_current_fresh_ruling_routes_fresh_past_a_resumable_release(
     assert route.seed is None
 
 
+def test_a_current_fresh_ruling_passes_over_needs_human_without_moving_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh ruling records every preserved ref it deliberately leaves untouched."""
+    fresh = fresh_ruling_comment_body(
+        work_item_id=_ITEM,
+        invoker="coordinator",
+        reason="start from the default branch",
+        instant=_SECOND,
+    )
+    world = _World(refs=_TREES)
+
+    route, _, journal = _route(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=world,
+        comments=(fresh,),
+    )
+
+    assert route.route == ROUTE_FRESH
+    journal_recovery_route(route=route, journal=journal)
+    row = _rows(journal=journal, stage="recovery-route")[-1]
+    assert row["fresh_ruling_instant"] == _SECOND
+    assert row["passed_over_needs_human"] == [
+        {"ref": _NH_REF, "commit": _NH_COMMIT, "reason": "not-taken"}
+    ]
+    assert world.refs[_NH_REF] == _NH_COMMIT
+
+
+def test_an_unreadable_needs_human_listing_holds_a_fresh_ruled_item(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fresh = fresh_ruling_comment_body(
+        work_item_id=_ITEM,
+        invoker="coordinator",
+        reason="start from the default branch",
+        instant=_SECOND,
+    )
+
+    route, _, journal = _route(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=_World(refs=_TREES, failing_ls_remote="refs/heads/needs-human/*"),
+        comments=(fresh,),
+    )
+
+    assert route.route == ROUTE_HELD
+    held = _rows(journal=journal, stage="recovery-held")
+    assert held[0]["measurements"] == ["preserved-work"]
+
+
 @pytest.mark.parametrize(
     ("refs", "observed"),
     [
@@ -484,7 +538,11 @@ def test_a_consumed_or_replaced_seed_ruling_no_longer_governs_the_route(
         comments=comments,
     )
 
-    assert route.route == ROUTE_SEEDED
+    replaced_by_fresh = comments[-1].startswith("livespec-fresh-ruling")
+    assert route.route == (ROUTE_FRESH if replaced_by_fresh else ROUTE_SEEDED)
+    if replaced_by_fresh:
+        assert route.seed is None
+        return
     assert route.seed is not None
     assert route.seed.preservation_ref == _NH_REF
 
