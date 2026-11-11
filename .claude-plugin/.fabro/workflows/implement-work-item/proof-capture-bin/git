@@ -5,38 +5,38 @@ set -u
 readonly_message="LIVESPEC_PROOF_CAPTURE_READ_ONLY: proof_capture is read-only on the repository tree; git commit and git push are refused before repository hooks run. End this turn with preferred_label=fix when a code change is needed."
 
 refuse() {
-    echo "$readonly_message" >&2
-    exit 1
+ echo "$readonly_message" >&2
+ exit 1
 }
 
 common_dir_of() {
-    resolved=$(/usr/bin/git "$@" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
-    (cd "$resolved" 2>/dev/null && pwd -P) || true
+ resolved=$(/usr/bin/git "$@" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 0
+ (cd "$resolved" 2>/dev/null && pwd -P) || true
 }
 
 target_common_dir() {
-    count=$# index=0
-    while [ "$index" -lt "$count" ]; do
-        argument="$1"
-        shift
-        [ "$index" -lt "$before_subcommand" ] && set -- "$@" "$argument"
-        index=$((index + 1))
-    done
-    common_dir_of "$@"
+ count=$# index=0
+ while [ "$index" -lt "$count" ]; do
+  argument="$1"
+  shift
+  [ "$index" -lt "$before_subcommand" ] && set -- "$@" "$argument"
+  index=$((index + 1))
+ done
+ common_dir_of "$@"
 }
 
 protected_target() {
-    checkout="${LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT:-}"
-    [ -n "$checkout" ] || return 1
-    protected=$(unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_NAMESPACE; common_dir_of -C "$checkout")
-    target=$(target_common_dir "$@")
-    [ -n "$protected" ] && [ -n "$target" ] && [ "$target" != "$protected" ]
+ checkout="${LIVESPEC_PROOF_CAPTURE_PROTECTED_CHECKOUT:-}"
+ [ -n "$checkout" ] || return 1
+ protected=$(unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_NAMESPACE; common_dir_of -C "$checkout")
+ target=$(target_common_dir "$@")
+ [ -n "$protected" ] && [ -n "$target" ] && [ "$target" != "$protected" ]
 }
 
 drop_private_hooks_path() {
-    if [ "${GIT_CONFIG_COUNT:-}" = 1 ] && [ "${GIT_CONFIG_KEY_0:-}" = core.hooksPath ]; then
-        case "${GIT_CONFIG_VALUE_0:-}" in */proof-capture-hooks) unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 ;; esac
-    fi
+ if [ "${GIT_CONFIG_COUNT:-}" = 1 ] && [ "${GIT_CONFIG_KEY_0:-}" = core.hooksPath ]; then
+  case "${GIT_CONFIG_VALUE_0:-}" in */proof-capture-hooks) unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 ;; esac
+ fi
 }
 
 subcommand=""
@@ -45,80 +45,80 @@ expects_value=0
 before_subcommand=0
 
 for argument in "$@"; do
-    if [ "$options" -eq 0 ]; then
-        subcommand="$argument"
-        break
-    fi
-    if [ "$expects_value" -eq 1 ]; then
-        expects_value=0
-        before_subcommand=$((before_subcommand + 1))
-        continue
-    fi
-    case "$argument" in
-        --)
-            options=0
-            ;;
-        -c|-C|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--exec-path)
-            expects_value=1
-            ;;
-        --config-env=*|--git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*|--exec-path=*)
-            ;;
-        -*)
-            ;;
-        *)
-            subcommand="$argument"
-            break
-            ;;
-    esac
-    before_subcommand=$((before_subcommand + 1))
+ if [ "$options" -eq 0 ]; then
+  subcommand="$argument"
+  break
+ fi
+ if [ "$expects_value" -eq 1 ]; then
+  expects_value=0
+  before_subcommand=$((before_subcommand + 1))
+  continue
+ fi
+ case "$argument" in
+  --)
+   options=0
+   ;;
+  -c|-C|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--exec-path)
+   expects_value=1
+   ;;
+  --config-env=*|--git-dir=*|--work-tree=*|--namespace=*|--super-prefix=*|--exec-path=*)
+   ;;
+  -*)
+   ;;
+  *)
+   subcommand="$argument"
+   break
+   ;;
+ esac
+ before_subcommand=$((before_subcommand + 1))
 done
 
 case "$subcommand" in
-    push)
-        protected_target "$@" || refuse
-        for argument in "$@"; do
-            case "$argument" in --receive-pack|--exec|--receive-pack=*|--exec=*) refuse ;; esac
-        done
-        remote=""
-        after_push=0
-        for argument in "$@"; do
-            if [ "$after_push" -eq 0 ]; then
-                if [ "$argument" = push ]; then
-                    after_push=1
-                fi
-                continue
-            fi
-            case "$argument" in
-                -*) ;;
-                *)
-                    remote="$argument"
-                    break
-                    ;;
-            esac
-        done
-        [ -n "$remote" ] || refuse
-        case "$remote" in
-            /*|./*|../*)
-                remote_url="$remote"
-                ;;
-            *) remote_url=$(/usr/bin/git -C "$target" remote get-url "$remote" 2>/dev/null) || refuse ;;
-        esac
-        temporary_root=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || refuse
-        remote_path=$(cd "$remote_url" 2>/dev/null && pwd -P) || refuse
-        case "$remote_path" in
-            "$temporary_root"/*) ;;
-            *) refuse ;;
-        esac
-        bare=$(/usr/bin/git -C "$remote_path" rev-parse --is-bare-repository 2>/dev/null) || refuse
-        [ "$bare" = true ] || refuse
-        remote_common=$(common_dir_of -C "$remote_path")
-        [ -n "$remote_common" ] && [ "$remote_common" != "$protected" ] || refuse
-        drop_private_hooks_path
-        ;;
-    commit)
-        protected_target "$@" || refuse
-        drop_private_hooks_path
-        ;;
+ push)
+  protected_target "$@" || refuse
+  for argument in "$@"; do
+   case "$argument" in --receive-pack|--exec|--receive-pack=*|--exec=*) refuse ;; esac
+  done
+  remote=""
+  after_push=0
+  for argument in "$@"; do
+   if [ "$after_push" -eq 0 ]; then
+    if [ "$argument" = push ]; then
+     after_push=1
+    fi
+    continue
+   fi
+   case "$argument" in
+    -*) ;;
+    *)
+     remote="$argument"
+     break
+     ;;
+   esac
+  done
+  [ -n "$remote" ] || refuse
+  case "$remote" in
+   /*|./*|../*)
+    remote_url="$remote"
+    ;;
+   *) remote_url=$(/usr/bin/git -C "$target" remote get-url "$remote" 2>/dev/null) || refuse ;;
+  esac
+  temporary_root=$(cd "${TMPDIR:-/tmp}" 2>/dev/null && pwd -P) || refuse
+  remote_path=$(cd "$remote_url" 2>/dev/null && pwd -P) || refuse
+  case "$remote_path" in
+   "$temporary_root"/*) ;;
+   *) refuse ;;
+  esac
+  bare=$(/usr/bin/git -C "$remote_path" rev-parse --is-bare-repository 2>/dev/null) || refuse
+  [ "$bare" = true ] || refuse
+  remote_common=$(common_dir_of -C "$remote_path")
+  [ -n "$remote_common" ] && [ "$remote_common" != "$protected" ] || refuse
+  drop_private_hooks_path
+  ;;
+ commit)
+  protected_target "$@" || refuse
+  drop_private_hooks_path
+  ;;
 esac
 
 exec /usr/bin/git "$@"
