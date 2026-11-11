@@ -329,6 +329,22 @@ def test_is_host_only_item_true_when_a_fence_precedes_a_separate_positive_edit(l
     assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "This item ships no files under .github/workflows/, but updates .github/workflows/ci.yml.",
+        "Ships no files in .github/workflows/ and also rewrites .github/workflows/release.yml.",
+        "No files under .github/workflows/ are touched, yet this item edits .github/workflows/ci.yml.",
+    ],
+)
+def test_is_host_only_item_true_when_a_files_fence_shares_a_line_with_a_positive_edit(
+    line: str,
+) -> None:
+    item = _item(description=line)
+    assert is_host_only_item(item=item) is True
+    assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
+
+
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
