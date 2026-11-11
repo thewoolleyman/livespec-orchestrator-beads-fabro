@@ -54,6 +54,7 @@ from livespec_dev_tooling._incident_inverse_types import (
 )
 from livespec_dev_tooling._incident_observer_types import JobCallback, RecoveryIntent
 from livespec_dev_tooling._incident_recovery_git import LandedGit
+from livespec_dev_tooling.config import derive_source_prefixes, load_config
 from livespec_dev_tooling.incident_controller_installation import ControllerInstallation
 from livespec_dev_tooling.incident_execution import (
     Invocation,
@@ -91,7 +92,12 @@ from livespec_orchestrator_beads_fabro.incident_completion import read_incident_
 REPOSITORY = "owner/repository"
 ITEM = "test-incident"
 OWNER = "operator:alice"
-APP = "app.py"
+SOURCE_TREE = "src"
+APP = f"{SOURCE_TREE}/app.py"
+# The committed configuration at the base and at every attempt head. From dev-tooling
+# v1.195.0 (livespec-dev-tooling-6ou5m2) `/arm` reads it at the target ref and at the head
+# to derive the source prefixes, and refuses a record that omits a changed product file.
+PYPROJECT_SOURCE = f'[tool.livespec_dev_tooling]\nsource_trees = ["{SOURCE_TREE}"]\n'
 WORKFLOW = ".github/workflows/ci.yml"
 # The workflow at the merge, from which dev-tooling derives the expected job graph of an
 # original run (livespec-dev-tooling-zapgpu, v1.192.x): one block-style job per JOBS entry.
@@ -425,6 +431,16 @@ class _Walk:
         code, reply = self.process(["read-current", "--repo", str(self.root), *_flags(attempt)])
         assert code == 0, reply
         evidence = self.record_focused_evidence(attempt)
+        # The arm is judged over a real changed product file: the attempt touches APP,
+        # which lies under the source prefixes the committed configuration declares, and
+        # the record names it executable with a coverage row, so the focused-evidence
+        # comparison of `/arm` has a product file to compare.
+        prefixes = derive_source_prefixes(config=load_config(repo_root=self.root))
+        changed = self.git("diff", "--name-only", attempt.base, attempt.head).splitlines()
+        assert [path for path in changed if path.startswith(prefixes)] == [APP], changed
+        recorded = json.loads(evidence["results"][0]["output"])
+        assert recorded["paths"][APP] == "executable", recorded
+        assert APP in recorded["coverage"], recorded
         receipt = _canonical(reply["result"]["attempt"]).encode().hex()
         payload = {
             "repository": REPOSITORY,
@@ -633,6 +649,8 @@ def _clone(*, tmp_path: Path) -> tuple[Path, Path]:
     _ = (tmp_path / "reader.env").write_text("BEADS_DOLT_PASSWORD=tenant-credential\n")
     (root / ".github/workflows").mkdir(parents=True)
     _ = (root / WORKFLOW).write_text(WORKFLOW_SOURCE)
+    _ = (root / "pyproject.toml").write_text(PYPROJECT_SOURCE)
+    (root / SOURCE_TREE).mkdir()
     _ = (root / APP).write_text("VALUE = 'broken'\n")
     config = {"livespec-orchestrator-beads-fabro": {"dispatcher": {"claim_tokens": True}}}
     _ = (root / ".livespec.jsonc").write_text(json.dumps(config))
