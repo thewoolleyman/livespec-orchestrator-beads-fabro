@@ -45,16 +45,14 @@ def _module() -> ModuleType:
     )
 
 
-def _stages_in_dump_order(*, payloads: dict[str, str]) -> dict[str, dict[str, str | None]]:
-    """Build a `/state` projection whose positions match its dump paths."""
-    stages: dict[str, dict[str, str | None]] = {}
+def _stages_in_dump_order(*, payloads: dict[str, str]) -> dict[str, dict[str, int | str]]:
+    """Build a `/state` projection whose event sequences match its dump paths."""
+    stages: dict[str, dict[str, int | str]] = {}
     for relative, payload in sorted(payloads.items()):
         stage_directory = Path(relative).parts[1]
         ordinal_text, stage_name = stage_directory.split("-", 1)
         ordinal = int(ordinal_text)
-        for position in range(len(stages) + 1, ordinal):
-            stages[f"stage-{position:03d}@1"] = {"diff": None}
-        stages[stage_name] = {"diff": payload}
+        stages[stage_name] = {"first_event_seq": ordinal, "diff": payload}
     return stages
 
 
@@ -120,8 +118,9 @@ def test_a_blob_backed_pointer_verifies_the_addressed_bytes(
                 error=None,
                 payload={
                     "stages": {
-                        "prepare@1": {"diff": None},
+                        "prepare@1": {"first_event_seq": 1, "diff": None},
                         "implement@1": {
+                            "first_event_seq": 2,
                             "diff": f"blob://sha256/{digest}",
                         },
                     }

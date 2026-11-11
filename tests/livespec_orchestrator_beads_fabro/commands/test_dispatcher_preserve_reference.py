@@ -137,6 +137,7 @@ def test_preserve_pointer_reads_and_validates_each_referenced_blob(
                     "stages": {
                         **{f"stage-{ordinal:03d}@1": {"diff": None} for ordinal in range(1, 55)},
                         "implement@1": {
+                            "first_event_seq": 55,
                             "diff": f"blob://sha256/{digest}",
                         },
                     }
@@ -197,14 +198,12 @@ def _module() -> ModuleType:
     )
 
 
-def _stages_in_dump_order(*, stage_diffs: dict[str, str]) -> dict[str, dict[str, str | None]]:
-    """Build a `/state` projection whose positions match its dump paths."""
-    stages: dict[str, dict[str, str | None]] = {}
+def _stages_in_dump_order(*, stage_diffs: dict[str, str]) -> dict[str, dict[str, int | str]]:
+    """Build a `/state` projection whose event sequences match its dump paths."""
+    stages: dict[str, dict[str, int | str]] = {}
     for dump_stage, diff in sorted(stage_diffs.items()):
-        ordinal = int(dump_stage[:3])
-        for position in range(len(stages) + 1, ordinal):
-            stages[f"stage-{position:03d}@1"] = {"diff": None}
-        stages[dump_stage[4:]] = {"diff": diff}
+        ordinal_text, stage_name = dump_stage.split("-", 1)
+        stages[stage_name] = {"first_event_seq": int(ordinal_text), "diff": diff}
     return stages
 
 
