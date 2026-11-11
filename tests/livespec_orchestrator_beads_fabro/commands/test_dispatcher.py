@@ -4539,6 +4539,7 @@ def test_dispatch_green_closes_item_and_journals(
         "acp-node-override",
         "session-headroom-screen",
         "app-reach",
+        "helper-build-reach",
         "fabro-currency",
         "pre-dispatch-criteria",
         "dod-judgement",

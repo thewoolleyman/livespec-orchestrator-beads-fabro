@@ -21,6 +21,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_registry import (
     PluginInstallRecord,
+    installed_build_commit,
     plugin_install_records,
 )
 
@@ -148,3 +149,54 @@ def test_a_registry_that_cannot_be_read_reads_as_no_records(tmp_path: Path) -> N
 def test_an_absent_registry_reads_as_no_records(tmp_path: Path) -> None:
     """A host with no registry governs no repositories through it."""
     assert plugin_install_records(install_record=tmp_path / "absent.json") == ()
+
+
+def test_the_build_commit_is_the_record_whose_install_path_is_a_named_root(
+    tmp_path: Path,
+) -> None:
+    """Every shape that names no usable commit is passed over, beside the one that does."""
+    ours = tmp_path / "cache" / "ours"
+    ours.mkdir(parents=True)
+    registry = _registry(
+        path=tmp_path / "installed_plugins.json",
+        document={
+            "plugins": {
+                _OTHER_PLUGIN_KEY: [{"installPath": str(ours), "gitCommitSha": "other"}],
+                _SECOND_MARKETPLACE_KEY: "not-a-list",
+                _PLUGIN_KEY: [
+                    "not-an-object",
+                    {"installPath": str(ours)},
+                    {"installPath": str(ours), "gitCommitSha": ""},
+                    {"installPath": "", "gitCommitSha": "empty-path"},
+                    {"installPath": "/cache/elsewhere", "gitCommitSha": "elsewhere"},
+                    {"installPath": str(ours / ".." / "ours"), "gitCommitSha": "abc123"},
+                ],
+            }
+        },
+    )
+
+    assert (
+        installed_build_commit(
+            install_roots=(tmp_path / "unregistered", ours), install_record=registry
+        )
+        == "abc123"
+    )
+
+
+def test_no_build_commit_is_named_by_a_registry_without_plugins(tmp_path: Path) -> None:
+    registry = _registry(path=tmp_path / "installed_plugins.json", document={"plugins": []})
+
+    assert installed_build_commit(install_roots=(tmp_path,), install_record=registry) is None
+    assert (
+        installed_build_commit(install_roots=(tmp_path,), install_record=tmp_path / "absent.json")
+        is None
+    )
+
+
+def test_no_build_commit_is_named_when_no_record_names_the_root(tmp_path: Path) -> None:
+    registry = _registry(
+        path=tmp_path / "installed_plugins.json",
+        document={"plugins": {_PLUGIN_KEY: [{"installPath": "/cache/x", "gitCommitSha": "x"}]}},
+    )
+
+    assert installed_build_commit(install_roots=(tmp_path,), install_record=registry) is None

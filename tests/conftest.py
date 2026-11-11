@@ -375,6 +375,50 @@ def _hermetic_definition_of_done_workflow_shape(
     )
 
 
+# The commit every hermetic dispatch reads as its installed build's identity. Forty
+# hexadecimal characters, so it has the shape of a real commit everywhere it is
+# rendered, and a value no forge serves, so nothing could fetch it by accident.
+HERMETIC_HELPER_BUILD_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_helper_build_identity_and_reach(
+    monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
+) -> None:
+    """Keep every dispatch off the forge's helper-build reachability probe.
+
+    The pre-dispatch wall reads the installed build's commit and asks the forge for
+    it (`_dispatcher_helper_build`), and the overlay reads the same identity for the
+    helper manifest. Left ambient, every dispatch test would spawn `git` against
+    the host's install registry and checkout and then fetch from github.com: the
+    factory's first attempt at this change ran its Green hook for more than two
+    hours because the overlay tests reached an unstubbed forge probe (bd-ib-jrawlp,
+    run 01M74SVXDEMF). So the identity is a fixed commit and the probe answers
+    reachable, which is the state of every healthy production dispatch.
+
+    The probe's own module is explicitly left unpatched: it is the suite's
+    assertion that the identity read and the probe do what they say, and it hands
+    both a runner of its own, so it touches no network either.
+    """
+    if request.node.path.name == "test_dispatcher_helper_build.py":
+        return
+    from livespec_orchestrator_beads_fabro.commands import _dispatcher_helper_build as build
+
+    source = build.HelperSource(
+        repository="https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git",
+        commit=HERMETIC_HELPER_BUILD_COMMIT,
+    )
+
+    def hermetic_source(**_kwargs: object) -> build.HelperSource:
+        return source
+
+    def hermetic_probe(**_kwargs: object) -> build.BuildReachReading:
+        return build.BuildReachReading(reachable=True, detail="")
+
+    monkeypatch.setattr(build, "read_helper_source", hermetic_source)
+    monkeypatch.setattr(build, "probe_build_commit", hermetic_probe)
+
+
 def _fresh_codex_auth_json() -> str:
     """A host Codex `auth.json` whose access-token JWT `exp` is a century out.
 
