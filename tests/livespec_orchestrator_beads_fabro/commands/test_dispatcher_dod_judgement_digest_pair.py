@@ -333,6 +333,44 @@ def test_a_dispatch_under_a_different_rubric_judges_again_and_appends_one_record
     assert len(ledger.bodies) == 2
 
 
+def test_a_dispatch_with_a_different_recorded_spec_identity_judges_again(
+    tmp_path: Path,
+) -> None:
+    """A matching subject and rubric cannot reuse a different spec identity."""
+    repo = _connected_repo(tmp_path=tmp_path)
+    payload = _payload(tmp_path=tmp_path, name="build-one", rubric="# gate one\n")
+    ledger = _Ledger()
+    preflight_runner = _Runner(result=CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr=""))
+
+    _ = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage="repository-preflight",
+        comments=tuple(ledger.bodies),
+        append=ledger.append,
+        runner=preflight_runner,
+        payload_root=payload,
+        governing_heading=unjudged_governing_heading,
+    )
+    recorded = ledger.bodies[0].replace("spec-identity: tree:", "spec-identity: clauses:")
+    dispatch_runner = _Runner(result=CommandResult(exit_code=0, stdout=_PASS_REPLY, stderr=""))
+
+    dispatch = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=(recorded,),
+        append=ledger.append,
+        runner=dispatch_runner,
+        payload_root=payload,
+        governing_heading=unjudged_governing_heading,
+    )
+
+    assert dispatch.reused is False
+    assert dispatch_runner.calls == 1
+    assert len(ledger.bodies) == 2
+
+
 def test_a_drain_excludes_a_refused_item_only_while_both_digests_still_match(
     tmp_path: Path,
 ) -> None:

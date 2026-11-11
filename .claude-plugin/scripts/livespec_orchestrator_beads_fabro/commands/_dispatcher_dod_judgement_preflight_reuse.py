@@ -11,6 +11,10 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    RecordedJudgement,
+    reusable_verdict,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
     SpecIdentity,
     spec_identity_for_governing,
@@ -25,7 +29,11 @@ if TYPE_CHECKING:
     )
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
-__all__: list[str] = ["identity_for_dod_taking", "released_spec_change_tier"]
+__all__: list[str] = [
+    "identity_for_dod_taking",
+    "released_spec_change_tier",
+    "reusable_verdict_for_identity",
+]
 
 _SPEC_CHANGE_TIER_MARKER = "livespec-spec-change-tier"
 _TIER_PREFIX = "tier: "
@@ -67,6 +75,22 @@ def released_spec_change_tier(*, comments: Sequence[str]) -> bool:
         elif tier == _SPEC_CHANGE_TIER:
             return released
     return False
+
+
+def reusable_verdict_for_identity(
+    *,
+    comments: Sequence[str],
+    digest: str,
+    rubric_digest: str,
+    identity: SpecIdentity,
+) -> RecordedJudgement | None:
+    """Read the verdict a taking may share with the repository preflight."""
+    return reusable_verdict(
+        comments=comments,
+        digest=digest,
+        rubric_digest=rubric_digest,
+        spec_identity=identity,
+    )
 
 
 def _tier_from(*, body: str) -> str | None:

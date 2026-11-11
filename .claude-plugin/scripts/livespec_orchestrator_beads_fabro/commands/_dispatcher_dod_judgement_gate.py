@@ -54,12 +54,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
     identity_for_dod_taking,
+    reusable_verdict_for_identity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
     did_not_run_comment,
     recorded_did_not_run_causes,
-    reusable_verdict,
     verdict_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -205,7 +205,9 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     digest = judgement_subject_digest(
         item=item, cwd=repo, comments=comments, spec_identity=identity.value
     )
-    reused = reusable_verdict(comments=comments, digest=digest, rubric_digest=rubric_bytes_digest)
+    reused = reusable_verdict_for_identity(
+        comments=comments, digest=digest, rubric_digest=rubric_bytes_digest, identity=identity
+    )
     if reused is not None:
         return DodJudgementDecision(
             work_item_id=item.id,

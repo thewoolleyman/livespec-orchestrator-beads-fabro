@@ -77,6 +77,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity im
     SpecIdentity,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity_record import (
+    recorded_spec_identity,
     spec_identity_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
@@ -282,7 +283,11 @@ def recorded_governing_heading(*, comments: Sequence[str]) -> GoverningHeadingVe
 
 
 def reusable_verdict(
-    *, comments: Sequence[str], digest: str, rubric_digest: str
+    *,
+    comments: Sequence[str],
+    digest: str,
+    rubric_digest: str,
+    spec_identity: SpecIdentity | None = None,
 ) -> RecordedJudgement | None:
     """The EARLIEST TAKEN verdict whose two digests both equal these.
 
@@ -322,6 +327,13 @@ def reusable_verdict(
         if recorded is None or recorded_rubric is None or outcome is None:
             continue
         if (recorded, recorded_rubric) != (digest, rubric_digest):
+            continue
+        recorded_identity = recorded_spec_identity(comments=(body,))
+        if spec_identity is not None and (
+            recorded_identity is None
+            or (recorded_identity.form, recorded_identity.value)
+            != (spec_identity.form, spec_identity.value)
+        ):
             continue
         return RecordedJudgement(
             outcome=outcome,
