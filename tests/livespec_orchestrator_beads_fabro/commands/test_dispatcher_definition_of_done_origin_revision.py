@@ -65,27 +65,27 @@ def _run(*args: str, cwd: Path) -> None:
     )
 
 
-def _publish(*, seed: Path, headings: tuple[str, ...]) -> None:
+def _publish(*, seed: Path, headings: tuple[str, ...], branch: str = "master") -> None:
     spec = seed / "SPECIFICATION"
     spec.mkdir(exist_ok=True)
     body = "# Scenarios\n\n" + "".join(f"{heading}\n\nProse.\n\n" for heading in headings)
     _ = (spec / "scenarios.md").write_text(body, encoding="utf-8")
     _run("add", "-A", cwd=seed)
     _run("commit", "-m", "revise", cwd=seed)
-    _run("push", "origin", "HEAD:refs/heads/master", cwd=seed)
+    _run("push", "origin", f"HEAD:refs/heads/{branch}", cwd=seed)
 
 
-def _lagging_primary(*, tmp_path: Path) -> Path:
+def _lagging_primary(*, tmp_path: Path, branch: str = "master") -> Path:
     """A primary checkout one revise behind its origin, the way a merge burst leaves it."""
     origin = tmp_path / "origin.git"
     seed = tmp_path / "seed"
     primary = tmp_path / "primary"
-    _run("init", "--bare", "-b", "master", str(origin), cwd=tmp_path)
-    _run("init", "-b", "master", str(seed), cwd=tmp_path)
+    _run("init", "--bare", "-b", branch, str(origin), cwd=tmp_path)
+    _run("init", "-b", branch, str(seed), cwd=tmp_path)
     _run("remote", "add", "origin", str(origin), cwd=seed)
-    _publish(seed=seed, headings=(_OLD_HEADING,))
+    _publish(seed=seed, headings=(_OLD_HEADING,), branch=branch)
     _run("clone", str(origin), str(primary), cwd=tmp_path)
-    _publish(seed=seed, headings=(_OLD_HEADING, _NEW_HEADING))
+    _publish(seed=seed, headings=(_OLD_HEADING, _NEW_HEADING), branch=branch)
     return primary
 
 
@@ -167,6 +167,49 @@ def test_the_filing_display_and_the_wall_resolve_against_the_same_revision(
     mechanical = [line for line in shown.splitlines() if line.startswith(MECHANICAL_FINDING_PREFIX)]
     assert mechanical == []
     assert wall.findings == ()
+
+
+def test_filing_against_a_configured_main_default_has_no_master_unreadable_finding(
+    tmp_path: Path,
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path, branch="main")
+    _ = (primary / ".livespec.jsonc").write_text('{"canonical_branch": "main"}\n', encoding="utf-8")
+    item = _item(references=_NEW_HEADING)
+
+    shown = filing_display(item=item, cwd=primary, governing=unjudged_governing_heading)
+    wall = acceptance_eligibility(item=item, cwd=primary)
+
+    mechanical = [line for line in shown.splitlines() if line.startswith(MECHANICAL_FINDING_PREFIX)]
+    assert mechanical == []
+    assert wall.findings == ()
+
+
+def test_filing_without_a_canonical_branch_uses_origin_head_for_main(
+    tmp_path: Path,
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path, branch="main")
+    item = _item(references=_NEW_HEADING)
+
+    shown = filing_display(item=item, cwd=primary, governing=unjudged_governing_heading)
+    wall = acceptance_eligibility(item=item, cwd=primary)
+
+    mechanical = [line for line in shown.splitlines() if line.startswith(MECHANICAL_FINDING_PREFIX)]
+    assert mechanical == []
+    assert wall.findings == ()
+
+
+def test_an_unreadable_configured_main_origin_names_the_resolved_revision(
+    tmp_path: Path,
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path, branch="main")
+    _ = (primary / ".livespec.jsonc").write_text('{"canonical_branch": "main"}\n', encoding="utf-8")
+    _run("remote", "set-url", "origin", str(tmp_path / "gone.git"), cwd=primary)
+
+    findings = definition_of_done_findings(item=_item(references=_OLD_HEADING), cwd=primary)
+
+    assert len(findings) == 1
+    assert "origin/main" in findings[0]
+    assert "origin/master" not in findings[0]
 
 
 def test_an_unreadable_origin_refuses_and_names_the_remote_revision(tmp_path: Path) -> None:

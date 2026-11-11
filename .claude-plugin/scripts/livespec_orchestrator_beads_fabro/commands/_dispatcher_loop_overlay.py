@@ -70,6 +70,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     resume_checkout_for,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import (
+    carried_comment_bodies,
+    prior_claim_instant,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_pack import (
     fleet_toolchain_is_the_sandbox_gate_premise,
 )
@@ -134,6 +138,9 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         # rather than from the committed default a bare `fabro run` would see.
         review_fix_visit_cap=plan.review_fix_visit_cap,
         graph_override=overlay.recorded.payload.graph,
+        # The node timeouts that graph was rendered with, so the setup nodes the
+        # overlay adds to it take their durations from the same resolution.
+        node_timeouts=overlay.recorded.payload.timeouts,
         # The client build the record MEASURED for this plan's factory binary,
         # which decides how the written config may name that graph: a Petri-era
         # client collects the package the config sits in, and refuses an
@@ -212,7 +219,16 @@ def materialize_dispatch_overlay(*, overlay: DispatchOverlay) -> str | None:
         dod_gate_subject=dod_gate_subject(
             item=overlay.item,
             repo=overlay.repo,
-            comments=tuple(comment.text for comment in overlay.recorded.comments),
+            # The CARRIED bodies, bounded at the claim this dispatch follows, so the
+            # node grades the subject a host taking computed its digest over.
+            comments=carried_comment_bodies(
+                comments=overlay.recorded.comments,
+                claim_at=prior_claim_instant(
+                    journal_path=overlay.journal.path,
+                    item_id=overlay.item.id,
+                    own_dispatch_id=overlay.dispatch_id,
+                ),
+            ),
         ),
         # The item's `factory_captured` assertions, for the sandbox's own
         # per-assertion grade of the verified record. Rendered HERE for the same

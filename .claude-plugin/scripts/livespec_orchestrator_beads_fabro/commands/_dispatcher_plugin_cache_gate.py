@@ -98,7 +98,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
@@ -454,11 +455,11 @@ def plugin_cache_gate_prepare_step() -> PrepareStep:
                 "set -eu",
                 f'root="{sandbox_plugins_root_expansion()}"',
                 'mkdir -p "$root"',
-                payload_write_command(path_word=f'"$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'),
+                packed_payload_write_command(path_word=f'"$root/{PLUGIN_GATE_PROGRAM_FILENAME}"'),
                 f'exec python3 "$root/{PLUGIN_GATE_PROGRAM_FILENAME}"',
             ]
         ),
-        env={PAYLOAD_ENV_VAR: f"{_gate_program()}\n"},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=f"{_gate_program()}\n")},
     )
 
 

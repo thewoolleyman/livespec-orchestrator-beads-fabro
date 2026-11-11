@@ -88,6 +88,15 @@ def test_a_tree_with_no_spec_directory_reads_as_an_empty_set(tmp_path: Path) -> 
     assert origin_spec.origin_spec_h2_headings(repo=clone) == frozenset()
 
 
+def test_a_non_object_canonical_branch_config_falls_back_to_origin_head(tmp_path: Path) -> None:
+    clone = _clone_of_origin_carrying(
+        tmp_path=tmp_path, files={"SPECIFICATION/contracts.md": "## Clause\n"}
+    )
+    _ = (clone / ".livespec.jsonc").write_text("[]\n", encoding="utf-8")
+
+    assert origin_spec.origin_spec_h2_headings(repo=clone) == frozenset({"## Clause"})
+
+
 def test_the_read_ignores_an_ambient_git_dir_pointing_elsewhere(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -30,9 +30,16 @@ QUEUE=$FLEET_LAUNCH_GMK_QUEUE_DIR
 LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
 ticket=""
+ticket_number=""
 lock=""
 marker=""
+plugin=""
 FLEET_CAP=0
+# Non-run exit accounting (Scenario 312): a resume launcher that exits before its resume client starts
+# writes one terminal line and, when its item still reads ready, one ledger comment naming the dropped ticket.
+resume_started=0
+terminal_written=0
+exit_cause=""
 gmk_live=U
 hl_live=U
 markers=U
@@ -50,7 +57,7 @@ START_VERSION=$(script_version "/proc/$$/fd/255")
 [ -n "$START_VERSION" ] || START_VERSION=$(script_version "$SELF")
 bad_version=""
 if [ "${FLEET_LAUNCH_REEXEC_PID:-}" = "$$" ]; then
-  [ -f "${FLEET_LAUNCH_REEXEC_TICKET:-}" ] && grep -q "pid=$$ " "$FLEET_LAUNCH_REEXEC_TICKET" && ticket=$FLEET_LAUNCH_REEXEC_TICKET
+  [ -f "${FLEET_LAUNCH_REEXEC_TICKET:-}" ] && grep -q "pid=$$ " "$FLEET_LAUNCH_REEXEC_TICKET" && { ticket=$FLEET_LAUNCH_REEXEC_TICKET; ticket_number=${ticket##*/}; ticket_number=${ticket_number%%-*}; }
   case ${FLEET_LAUNCH_REEXEC_DEADLINE:-} in ''|*[!0-9]*) ;; *) deadline=$FLEET_LAUNCH_REEXEC_DEADLINE ;; esac
   echo "$(date -u +%FT%TZ) launcher re-executed on script version $START_VERSION: keeping ticket ${ticket##*/}"
 fi
@@ -105,9 +112,49 @@ release_lock() {
   fi
   lock=""
 }
-cleanup() { drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"; }
+installed_build() {
+  python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print([e["version"] for e in d["plugins"][sys.argv[2]] if e.get("projectPath")==sys.argv[3]][0])' \
+    "$FLEET_LAUNCH_PLUGIN_REGISTRY" "$FLEET_LAUNCH_PLUGIN_KEY" "$REPO" 2>/dev/null
+}
+item_status() {
+  local out
+  out=$(cd "$REPO" && "${WRAPPER:-$FLEET_LAUNCH_DEFAULT_WRAPPER}" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" status "$plugin" "$REPO" "$ITEM" 2>/dev/null) || return 1
+  out=$(printf '%s\n' "$out" | sed -n 's/^LEDGER-STATUS //p' | tail -n 1)
+  [ -n "$out" ] && printf '%s' "$out"
+}
+# write_terminal <cause>: the one terminal line of a launcher that exits without a run.
+write_terminal() {
+  echo "$(date -u +%FT%TZ) terminal: item=$ITEM ticket=${ticket_number:-none} cause=$1"
+  terminal_written=1
+}
+# report_dropped_ticket <cause>: one ledger comment naming the dropped ticket and the cause, when the item still
+# reads ready. The ticket is not re-taken: this launcher is exiting.
+report_dropped_ticket() {
+  local status body
+  [ -n "$plugin" ] || plugin="$FLEET_LAUNCH_PLUGIN_CACHE/$(installed_build)"
+  status=$(item_status) || status=unreadable
+  [ "$status" = ready ] || return 0
+  body="Fleet launcher $SEAT exited for $ITEM before its resume started: ticket ${ticket_number:-none} was dropped and not re-taken (cause: $1). This exit was not a run ending, and the item read $status. Remedy: launch the resume again."
+  (cd "$REPO" && "${WRAPPER:-$FLEET_LAUNCH_DEFAULT_WRAPPER}" -- python3 "$FLEET_LAUNCH_DIR/ledger-item.py" comment "$plugin" "$REPO" "$ITEM" "$body") >/dev/null 2>&1 \
+    || echo "$(date -u +%FT%TZ) ledger comment for $ITEM failed: the dropped ticket ${ticket_number:-none} was not recorded"
+}
+# cleanup: every exit. The terminal line is written before the ticket file is removed.
+cleanup() {
+  local rc=$? cause=""
+  trap - EXIT
+  if [ "$resume_started" = 0 ] && [ "$terminal_written" = 0 ]; then
+    cause=${exit_cause:-exit rc=$rc before its resume started}
+    write_terminal "$cause"
+  fi
+  drop_ticket; release_lock; [ -n "$marker" ] && rm -f "$marker"
+  [ -n "$cause" ] && report_dropped_ticket "$cause"
+  return 0
+}
 trap cleanup EXIT
-trap 'exit 143' TERM INT
+on_signal() { exit_cause="signal $1 (this exit was not a run ending)"; exit "$2"; }
+trap 'on_signal TERM 143' TERM
+trap 'on_signal INT 130' INT
+trap 'on_signal HUP 129' HUP
 
 read_fleet_cap() {
   FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null)
@@ -162,6 +209,14 @@ read_boards() {
   markers=$(unlisted_markers "$snapshot" "$(printf '%s\n%s\n' "$gmk_rows" "$hl_rows")")
   if [ "$markers" = U ]; then fleet=U; else fleet=$((gmk_live + hl_live + markers)); fi
 }
+# report_stall <ticket-file> <pid>: a queue reader met a ticket whose launcher is no longer alive. Written to
+# stderr, because the reader runs in a command substitution, and before the ticket is removed.
+report_stall() {
+  local f="$1" it name
+  name=${f##*/}
+  it=$(grep -oE 'item=[^ ]+' "$f" 2>/dev/null | head -1 | cut -d= -f2)
+  echo "$(date -u +%FT%TZ) stall: item=${it:-unknown} ticket=${name%%-*} dead-pid=${2:-none}: the launcher for ticket file $name is gone"
+} >&2
 oldest_live_ticket() {
   local f pid
   for f in $(command ls -1 "$QUEUE" 2>/dev/null | sort); do
@@ -170,6 +225,7 @@ oldest_live_ticket() {
       grep -q '^held=' "$QUEUE/$f" && continue
       echo "$QUEUE/$f"; return
     fi
+    report_stall "$QUEUE/$f" "$pid"
     rm -f "$QUEUE/$f"
   done
 }
@@ -204,14 +260,15 @@ wait_for_listing() {
 }
 
 if [ -z "$ticket" ]; then
-  ticket="$QUEUE/$(date +%s%N)-$SEAT"
+  ticket_number=$(date +%s%N)
+  ticket="$QUEUE/$ticket_number-$SEAT"
   echo "owner=$SEAT pid=$$ item=$ITEM" > "$ticket"
   echo "$(date -u +%FT%TZ) gmktec FIFO ticket taken at start: ${ticket##*/}"
 fi
 
 while :; do
   reexec_on_script_change
-  [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit 75; }
+  [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit_cause="resume gave up: no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s"; exit 75; }
   if repository_hold_applies resume; then
     yield_ticket repository-hold
     log_repository_hold
@@ -263,6 +320,7 @@ while :; do
   fi
   drop_ticket
   release_lock
+  resume_started=1
   echo "$(date -u +%FT%TZ) resume marker written and mutex released: item=$ITEM"
   "$FLEET_LAUNCH_RESUME_WRAPPER" -- "$FLEET_LAUNCH_RESUME_COMMAND" --item "$ITEM" > "$OUT/$ITEM-resume.out" 2> "$OUT/$ITEM-resume.err" &
   resume_pid=$!

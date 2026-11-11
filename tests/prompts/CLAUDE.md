@@ -221,6 +221,14 @@ instead.
   Scenario 179's registry binding, can ship the runner without contradicting
   this prose.
 
+- `test_proof_check_aggregate_serialization.py` — bd-ib-oldlnx: the
+  proof-capture prompt limits the sandbox to one repository check aggregate
+  and explicitly rejects both a trailing `&` inside one tool call and parallel
+  tool calls; proof-verify applies the same ceiling while replaying a record
+  whose steps started several aggregates. The prompt paths are derived from
+  the proof ACP nodes in the workflow graph, with a control that fails if the
+  graph no longer resolves exactly the two proof-stage prompts.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine

@@ -414,7 +414,7 @@ create_and_seed_repo() {
     _seed_desc="$(cat <<'SEED_DESC'
 ## Definition of Done
 
-References: Scenario 1 - Greeting one supplied name
+References: ## Scenario 1 - Greeting one supplied name
 
 - `greet("Ada")` from `src/greeting/greet.py` returns exactly `Hello, Ada!`.
 - For any supplied name, `greet(name)` returns exactly `Hello, <name>!`.

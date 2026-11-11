@@ -165,6 +165,10 @@ _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
 # single fallthrough, closes no cycle and is reached once, so it moves no other
 # node's count.
 _DOD_GATE_GUARD_ADDED = {"dod_gate_mutation_guard"}
+# The sandbox setup, as explicit command nodes (work-item bd-ib-dpsiwz): the nine
+# committed steps and the terminal node a failed one routes to. Upstream Fabro
+# refuses the run-config prepare table, so these are graph nodes now.
+_SETUP_ADDED = {f"run_prepare_{index}" for index in range(1, 10)} | {"setup_failed"}
 _IMPLEMENT_AMENDMENT_ROUTE_LOOP = _IMPLEMENT_AMENDMENT_ROUTE_ADDED | {
     "implement",
     "implement_completion",
@@ -773,6 +777,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REVIEW_FIX_OPEN_RED_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _SETUP_ADDED
     )
     assert set(pre_port.node_visits) - set(ported.node_visits) == set()
 
@@ -805,6 +810,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _REVIEW_FIX_OPEN_RED_ROUTE_ADDED
         | _REVIEW_FIX_ADMISSION_ADDED
         | _DOD_GATE_GUARD_ADDED
+        | _SETUP_ADDED
     )
     assert moved <= reachable, sorted(moved - reachable)
     # And the direction is the honest one: the graph grew, so the allowance grew.

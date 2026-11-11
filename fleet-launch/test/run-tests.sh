@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario242|scenario297|scenario316|scenario330|launcher-reexec) ;;
+    all|scenario242|scenario297|scenario312|scenario316|scenario330|launcher-reexec) ;;
     *)
-        echo "usage: run-tests.sh [scenario242|scenario297|scenario316|scenario330|launcher-reexec]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario312|scenario316|scenario330|launcher-reexec]" >&2
         exit 2
         ;;
 esac
@@ -142,6 +142,21 @@ if [ "${1:-}" = -- ]; then shift; fi
 for argument in "$@"; do
     case ${argument##*/} in
         ready-set-check.py)
+            if [ -n "${STUB_READY_REFUSALS:-}" ]; then
+                # Refuse the first STUB_READY_REFUSALS calls with STUB_READY_REASON and record what the
+                # launcher held at each call: its FIFO ticket, the launch mutex and an in-flight marker.
+                count=$(( $(cat "$STUB_READY_COUNTER" 2>/dev/null || echo 0) + 1 ))
+                printf '%s\n' "$count" > "$STUB_READY_COUNTER"
+                ticket_state=none; lock_state=none; marker_state=none
+                if find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit | grep . >/dev/null; then ticket_state=present; fi
+                if [ -d "$STUB_LOCK_DIR" ]; then lock_state=held; fi
+                if find "$STUB_INFLIGHT_DIR" -type f -print -quit | grep . >/dev/null; then marker_state=present; fi
+                printf 'call=%s ticket=%s mutex=%s marker=%s\n' "$count" "$ticket_state" "$lock_state" "$marker_state" >> "$STUB_READY_OBSERVATIONS"
+                if [ "$count" -le "$STUB_READY_REFUSALS" ]; then
+                    printf 'READY-CHECK stub: NOT in the ready set (%s)\n' "$STUB_READY_REASON"
+                    exit 3
+                fi
+            fi
             printf 'READY-CHECK stub: in the ready set\n'
             exit "${STUB_READY_EXIT:-0}"
             ;;
@@ -390,6 +405,10 @@ new_case() {
     export STUB_PS_LOG="$PS_LOG"
     unset STUB_PS_DELAY_S
     export STUB_READY_EXIT=0
+    unset STUB_READY_REFUSALS STUB_READY_REASON
+    export STUB_READY_COUNTER="$CASE_DIR/ready-counter"
+    export STUB_READY_OBSERVATIONS="$CASE_DIR/ready-observations"
+    : > "$STUB_READY_OBSERVATIONS"
     export STUB_PREFLIGHT_EXIT=0
     unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
     export STUB_PREFLIGHT_RELEASE="$CASE_DIR/release-held-preflight"
@@ -564,6 +583,24 @@ wait_for_line() {
     done
 }
 
+# line_has_all <log> <needle>...: some single line of the log holds every needle.
+line_has_all() {
+    local log="$1" line needle all
+    shift
+    while IFS= read -r line; do
+        all=1
+        for needle in "$@"; do
+            case $line in *"$needle"*) ;; *) all=0; break ;; esac
+        done
+        [ "$all" = 1 ] && return 0
+    done < "$log"
+    return 1
+}
+# set_hold <path> <text>: create a hold file whole in one step, so a launcher polling the path never reads it half written.
+set_hold() {
+    printf '%b\n' "$2" > "$1.new"
+    mv "$1.new" "$1"
+}
 echo "=== fleet-launch hermetic harness"
 
 if [ "$HARNESS_SLICE" = all ]; then
@@ -1457,24 +1494,6 @@ wait_for_item_status() {
         sleep "$HARNESS_POLL_S"
     done
 }
-# line_has_all <log> <needle>...: some single line of the log holds every needle.
-line_has_all() {
-    local log="$1" line needle all
-    shift
-    while IFS= read -r line; do
-        all=1
-        for needle in "$@"; do
-            case $line in *"$needle"*) ;; *) all=0; break ;; esac
-        done
-        [ "$all" = 1 ] && return 0
-    done < "$log"
-    return 1
-}
-# set_hold <path> <text>: create a hold file whole in one step, so a launcher polling the path never reads it half written.
-set_hold() {
-    printf '%b\n' "$2" > "$1.new"
-    mv "$1.new" "$1"
-}
 # drive_gone: no stub drive process is left running for this case.
 drive_gone() {
     local pid
@@ -1622,6 +1641,277 @@ for after_stop in admitted unreadable; do
         wait "$stop_pid" 2>/dev/null
     fi
 done
+fi
+
+# --- 23. a launcher that exits without a run leaves a terminal line ---------
+# Scenario 312. The cases below stop, refuse or starve a launcher before its run lists and read what
+# it leaves behind: one terminal line in its sequence log, written before its ticket file is removed,
+# and one ledger comment on the item when the item still reads ready. Each refusal is contrasted
+# with a launch that leaves neither.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario312 ]; then
+echo "--- 23. a launcher that exits without a run leaves a terminal line and a ledger comment"
+
+# make_rm_probe: a PATH directory whose `rm` records, for each queue ticket it removes, whether the
+# launcher's own log already carried a terminal line and a stall line at that moment.
+make_rm_probe() {
+    mkdir -p "$STUB/rm-probe"
+    cat > "$STUB/rm-probe/rm" <<'RM_PROBE'
+#!/usr/bin/env bash
+for argument in "$@"; do
+    case $argument in
+        "$FLEET_LAUNCH_GMK_QUEUE_DIR"/*)
+            terminal=no
+            stall=no
+            if grep -qF 'terminal:' "$STUB_RM_PROBE_LOG_SOURCE" 2>/dev/null; then terminal=yes; fi
+            if grep -qF 'stall:' "$STUB_RM_PROBE_LOG_SOURCE" 2>/dev/null; then stall=yes; fi
+            printf '%s terminal=%s stall=%s\n' "${argument##*/}" "$terminal" "$stall" >> "$STUB_RM_PROBE_OUT"
+            ;;
+    esac
+done
+exec "$STUB_REAL_RM" "$@"
+RM_PROBE
+    chmod +x "$STUB/rm-probe/rm"
+}
+make_rm_probe
+STUB_REAL_RM=$(command -v rm)
+export STUB_REAL_RM
+
+# prepare_312_case <name>: a fresh case with empty boards, headroom and a tenant repository hold path.
+prepare_312_case() {
+    new_case "$1"
+    export FLEET_LAUNCH_MAX_WAIT_S=120
+    : > "$BOARD_GMK"
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+    TENANT_HOLD="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
+    export STUB_RM_PROBE_OUT="$CASE_DIR/rm-probe-out"
+    : > "$STUB_RM_PROBE_OUT"
+    export STUB_RM_PROBE_LOG_SOURCE="$CASE_DIR/probed.log"
+    : > "$STUB_RM_PROBE_LOG_SOURCE"
+}
+count_matching() { grep -cF -- "$2" "$1" 2>/dev/null || true; }
+# queue_ticket_number: the number of the one ticket in the case's queue directory.
+queue_ticket_number() {
+    local file
+    file=$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)
+    file=${file##*/}
+    printf '%s' "${file%%-*}"
+}
+# check_term_exit <label> <ticket-number>: the terminal line and the ledger comment a TERMed launcher leaves.
+check_term_exit() {
+    local label="$1" number="$2" probe last_line
+    probe=$(cat "$STUB_RM_PROBE_OUT")
+    last_line=$(tail -n 1 "$STUB_RM_PROBE_LOG_SOURCE")
+    if [ "$term_rc" = 143 ] \
+        && [ "$(count_matching "$STUB_RM_PROBE_LOG_SOURCE" 'terminal:')" = 1 ] \
+        && line_has_all "$STUB_RM_PROBE_LOG_SOURCE" 'terminal:' 'item=bd-ib-term' "ticket=$number" 'TERM' \
+        && case $last_line in *'terminal:'*) true ;; *) false ;; esac \
+        && [ -z "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ] \
+        && case $probe in *"$number-"*" terminal=yes"*) true ;; *) false ;; esac; then
+        pass "$label: a TERM leaves one last terminal line naming the item, the ticket number and TERM, written before the ticket file is removed"
+    else
+        fail "$label: the TERMed launcher did not leave its terminal line first (rc=$term_rc; ticket probe: ${probe:-none})"
+        tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+    fi
+    if [ "$(wc -l < "$STUB_LEDGER_COMMENTS")" = 1 ] \
+        && grep -qF "ticket $number" "$STUB_LEDGER_COMMENTS" \
+        && grep -qF 'TERM' "$STUB_LEDGER_COMMENTS" \
+        && grep -qF 'not a run ending' "$STUB_LEDGER_COMMENTS" \
+        && ! grep -qF 'held by its owner' "$STUB_LEDGER_COMMENTS"; then
+        pass "$label: the dropped ticket is reported in one ledger comment naming the number, TERM and that the exit was not a run ending"
+    else
+        fail "$label: the ledger comment for the dropped ticket is missing or wrong ($(cat "$STUB_LEDGER_COMMENTS"))"
+    fi
+}
+
+prepare_312_case terminal-term-impl
+export FLEET_LAUNCH_POLL_S=0.2
+set_hold "$TENANT_HOLD" 'reason: harness'
+PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+term_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 10; then
+    stop_launcher "$term_pid"
+    wait "$term_pid"
+    term_rc=$?
+    check_term_exit 'impl launcher yielding on a repository hold' 100
+else
+    fail "the impl launcher never yielded on the repository hold"
+    stop_launcher "$term_pid"
+    wait "$term_pid" 2>/dev/null
+fi
+
+prepare_312_case terminal-term-resume
+export FLEET_LAUNCH_POLL_S=0.2
+set_hold "$TENANT_HOLD" 'reason: harness'
+PATH="$STUB/rm-probe:$PATH" "$RESUME_LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+term_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 10; then
+    resume_number=$(queue_ticket_number)
+    stop_launcher "$term_pid"
+    wait "$term_pid"
+    term_rc=$?
+    check_term_exit 'resume launcher yielding on a repository hold' "$resume_number"
+else
+    fail "the resume launcher never yielded on the repository hold"
+    stop_launcher "$term_pid"
+    wait "$term_pid" 2>/dev/null
+fi
+
+# A TERM that lands while the launcher retries a refused ready-set check, before the launcher has
+# reached the later parts of its script, must still leave the terminal line and the ledger comment:
+# the exit path may not depend on a helper defined below the point the signal interrupts.
+prepare_312_case terminal-term-ready-retry
+export FLEET_LAUNCH_POLL_S=0.2
+export FLEET_LAUNCH_READY_RETRY_POLLS=99
+export STUB_READY_REFUSALS=99
+export STUB_READY_REASON='open blockers: bd-ib-dep=active'
+PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+term_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'ready-set check refused' 10; then
+    stop_launcher "$term_pid"
+    wait "$term_pid"
+    term_rc=$?
+    check_term_exit 'impl launcher retrying a refused ready-set check' 100
+    if grep -qF 'command not found' "$STUB_RM_PROBE_LOG_SOURCE"; then
+        fail "the TERMed ready-set retry called a helper that was not yet defined ($(grep -m 1 -F 'command not found' "$STUB_RM_PROBE_LOG_SOURCE"))"
+    else
+        pass "a TERM during the ready-set retry calls no helper that is not yet defined"
+    fi
+else
+    fail "the impl launcher never logged a refused ready-set check"
+    stop_launcher "$term_pid"
+    wait "$term_pid" 2>/dev/null
+fi
+unset FLEET_LAUNCH_READY_RETRY_POLLS STUB_READY_REFUSALS STUB_READY_REASON
+
+prepare_312_case terminal-control-launch
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-term > "$CASE_LOG" 2>&1
+control_rc=$?
+if [ "$control_rc" = 0 ] && [ "$(drive_log_items)" = bd-ib-term ] \
+    && [ "$(count_matching "$CASE_LOG" 'terminal:')" = 0 ] && [ ! -s "$STUB_LEDGER_COMMENTS" ]; then
+    pass "control: a launcher whose run lists leaves no terminal line and no ledger comment"
+else
+    fail "control: a launching launcher wrote a terminal line or a comment (rc=$control_rc)"
+    tail -n 4 "$CASE_LOG" >&2
+fi
+
+prepare_312_case ready-refusal-clears
+export FLEET_LAUNCH_READY_RETRY_POLLS=3
+export STUB_READY_REFUSALS=2
+export STUB_READY_REASON='open blockers: bd-ib-dep=active'
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-ready > "$CASE_LOG" 2>&1
+ready_rc=$?
+first_poll=$(sed -n 1p "$STUB_READY_OBSERVATIONS")
+second_poll=$(sed -n 2p "$STUB_READY_OBSERVATIONS")
+if [ "$ready_rc" = 0 ] && [ "$(drive_log_items)" = bd-ib-ready ] \
+    && [ "$first_poll" = 'call=1 ticket=present mutex=none marker=none' ] \
+    && [ "$second_poll" = 'call=2 ticket=present mutex=none marker=none' ] \
+    && [ "$(count_matching "$CASE_LOG" 'terminal:')" = 0 ] && [ ! -s "$STUB_LEDGER_COMMENTS" ]; then
+    pass "a ready-set refusal that clears within the retry bound keeps the ticket, holds no mutex or marker, and launches"
+else
+    fail "a ready-set refusal that clears within the retry bound did not keep the ticket and launch (rc=$ready_rc; polls: $first_poll / $second_poll)"
+    tail -n 6 "$CASE_LOG" >&2
+fi
+
+prepare_312_case ready-refusal-exhausts
+export FLEET_LAUNCH_READY_RETRY_POLLS=3
+export STUB_READY_REFUSALS=99
+export STUB_READY_REASON='open blockers: bd-ib-dep=active'
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-ready > "$CASE_LOG" 2>&1
+ready_rc=$?
+if [ "$ready_rc" = 3 ] && [ "$(cat "$STUB_READY_COUNTER")" = 3 ] && [ ! -s "$DRIVE_LOG" ] \
+    && line_has_all "$CASE_LOG" 'terminal:' 'item=bd-ib-ready' 'ticket=100' 'open blockers: bd-ib-dep=active' '3 polls tried' \
+    && [ -z "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ]; then
+    pass "a ready-set refusal that outlasts the retry bound ends after exactly the bound with a terminal line naming the reason and the polls tried"
+else
+    fail "a persistent ready-set refusal did not end with the bounded terminal line (rc=$ready_rc, polls=$(cat "$STUB_READY_COUNTER"))"
+    tail -n 6 "$CASE_LOG" >&2
+fi
+if [ "$(wc -l < "$STUB_LEDGER_COMMENTS")" = 1 ] \
+    && grep -qF 'ticket 100' "$STUB_LEDGER_COMMENTS" \
+    && grep -qF 'open blockers: bd-ib-dep=active' "$STUB_LEDGER_COMMENTS" \
+    && grep -qF '3 polls tried' "$STUB_LEDGER_COMMENTS"; then
+    pass "the persistent ready-set refusal is recorded in one ledger comment naming the ticket, the reason and the polls tried"
+else
+    fail "the persistent ready-set refusal left no correct ledger comment ($(cat "$STUB_LEDGER_COMMENTS"))"
+fi
+
+prepare_312_case give-up
+export FLEET_LAUNCH_MAX_WAIT_S=1
+printf '0\n' > "$CAP_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-giveup > "$CASE_LOG" 2>&1
+giveup_rc=$?
+if [ "$giveup_rc" = 75 ] \
+    && line_has_all "$CASE_LOG" 'terminal:' 'item=bd-ib-giveup' 'ticket=100' 'no slot within 1s' \
+    && [ "$(wc -l < "$STUB_LEDGER_COMMENTS")" = 1 ] \
+    && grep -qF 'ticket 100' "$STUB_LEDGER_COMMENTS" \
+    && grep -qF 'no slot within 1s' "$STUB_LEDGER_COMMENTS"; then
+    pass "a launcher that gives up for want of a slot leaves a terminal line and reports its dropped ticket while the item reads ready"
+else
+    fail "the give-up exit left no terminal line or ledger comment (rc=$giveup_rc)"
+    tail -n 4 "$CASE_LOG" >&2
+fi
+
+# check_stall <label> <log>: the stall line a queue reader writes for a ticket whose launcher is dead.
+check_stall() {
+    local label="$1" log="$2" probe
+    probe=$(cat "$STUB_RM_PROBE_OUT")
+    if [ "$(count_matching "$log" 'stall:')" = 1 ] \
+        && line_has_all "$log" 'stall:' 'item=bd-ib-dead' 'ticket=100' "dead-pid=$dead_pid" \
+        && case $probe in *"100-other-seat terminal=no stall=yes"*) true ;; *) false ;; esac \
+        && [ ! -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-other-seat" ]; then
+        pass "$label: a dead-pid ticket is reported as one stall line naming item, ticket number and pid before it is removed"
+    else
+        fail "$label: the dead-pid ticket was not reported as a stall (probe: ${probe:-none})"
+        tail -n 6 "$log" >&2
+    fi
+    if line_has_all "$log" 'stall:' 'bd-ib-live'; then
+        fail "$label: a ticket with a live launcher was reported as a stall"
+    else
+        pass "$label: control: a ticket whose launcher is alive is not reported"
+    fi
+}
+# seed_queue: a dead-pid ticket 100 for bd-ib-dead and a live-pid ticket 150 for bd-ib-live.
+seed_queue() {
+    mkdir -p "$FLEET_LAUNCH_GMK_QUEUE_DIR"
+    sleep 0 &
+    dead_pid=$!
+    wait "$dead_pid"
+    sleep 600 &
+    live_pid=$!
+    printf 'owner=other-seat pid=%s item=bd-ib-dead\n' "$dead_pid" > "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-other-seat"
+    printf 'owner=live-seat pid=%s item=bd-ib-live\n' "$live_pid" > "$FLEET_LAUNCH_GMK_QUEUE_DIR/150-live-seat"
+}
+
+prepare_312_case stall-impl
+printf '0\n' > "$CAP_FILE"
+seed_queue
+PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-reader > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+reader_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'stall:' 10 && wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'queued behind' 10; then
+    check_stall 'impl launcher reading the queue' "$STUB_RM_PROBE_LOG_SOURCE"
+else
+    fail "the impl launcher never reported the dead-pid ticket"
+fi
+stop_launcher "$reader_pid"
+wait "$reader_pid" 2>/dev/null
+kill "$live_pid" 2>/dev/null
+wait "$live_pid" 2>/dev/null
+
+prepare_312_case stall-resume
+printf '0\n' > "$CAP_FILE"
+seed_queue
+PATH="$STUB/rm-probe:$PATH" "$RESUME_LAUNCHER" bd-ib-reader > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+reader_pid=$!
+if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'stall:' 10 && wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'queued behind' 10; then
+    check_stall 'resume launcher reading the queue' "$STUB_RM_PROBE_LOG_SOURCE"
+else
+    fail "the resume launcher never reported the dead-pid ticket"
+fi
+stop_launcher "$reader_pid"
+wait "$reader_pid" 2>/dev/null
+kill "$live_pid" 2>/dev/null
+wait "$live_pid" 2>/dev/null
 fi
 
 # --- 21. a running launcher follows its script on disk ------------------------

@@ -17,6 +17,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
     DispatchJournalIdentity,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
+    dispatch_lock_path,
+    live_dispatch_lock,
+    write_dispatch_lock,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_span import (
     emit_dispatch_span,
 )
@@ -60,6 +65,7 @@ __all__: list[str] = [
     "DispatchRunContext",
     "dispatch_factory_name",
     "dispatch_id_for_launch",
+    "dispatch_lock_for",
     "run_dispatch_with_watchdog",
 ]
 
@@ -87,6 +93,24 @@ def dispatch_id_for_launch(*, context: DispatchLaunchContext, mint_id: Callable[
         if context.prelaunch_profile is not None
         else mint_id()
     )
+
+
+def dispatch_lock_for(
+    *, repo: Path, work_item_id: str, context: DispatchLaunchContext, mint_id: Callable[[], str]
+) -> tuple[str, Path]:
+    """The dispatch id this launch runs under and the lock file that names it.
+
+    An admission that already holds the item's live lock hands its dispatch id on,
+    so the id the claim was journaled under (`ledger-admit`) is the id the launch
+    runs under; only a launch with no live lock to inherit mints one and writes it.
+    """
+    lock = live_dispatch_lock(repo=repo, work_item_id=work_item_id)
+    if lock is None or lock.dispatch_id is None:
+        dispatch_id = dispatch_id_for_launch(context=context, mint_id=mint_id)
+        return dispatch_id, write_dispatch_lock(
+            repo=repo, work_item_id=work_item_id, dispatch_id=dispatch_id
+        )
+    return lock.dispatch_id, dispatch_lock_path(repo=repo, work_item_id=work_item_id)
 
 
 def dispatch_factory_name(*, args: argparse.Namespace) -> str | None:

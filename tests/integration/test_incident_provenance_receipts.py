@@ -346,8 +346,11 @@ def test_historical_receipt_verification_remains_available_after_labels_and_envi
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("LIVESPEC_INCIDENT_CONTEXT", json.dumps(_attempt()))
-    for name in [n for n in os.environ if n.startswith(("LIVESPEC_INCIDENT", "GITHUB_"))]:
+    _ = [
         monkeypatch.delenv(name)
+        for name in list(os.environ)
+        if name.startswith(("LIVESPEC_INCIDENT", "GITHUB_"))
+    ]
     assert "LIVESPEC_INCIDENT_CONTEXT" not in os.environ
     _ = _seed_chain(
         attempts=[

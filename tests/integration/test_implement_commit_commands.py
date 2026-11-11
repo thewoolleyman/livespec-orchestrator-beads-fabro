@@ -12,6 +12,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import pack_payload
 
 _ROOT = Path(__file__).parents[2]
 _RED = _ROOT / "dev-tooling" / "commit-red.sh"
@@ -92,7 +93,7 @@ def test_commit_command_scripts_materialize_and_run_the_plugin_root_programs(
         (programs.commit_red_program_source(), programs.COMMIT_RED_PROGRAM_FILENAME),
         (programs.commit_green_program_source(), programs.COMMIT_GREEN_PROGRAM_FILENAME),
     ):
-        environment["LIVESPEC_PREPARE_PAYLOAD"] = source
+        environment["LIVESPEC_PREPARE_PAYLOAD"] = pack_payload(text=source)
         completed = subprocess.run(
             ["sh", "-c", prepare[filename]],
             check=False,

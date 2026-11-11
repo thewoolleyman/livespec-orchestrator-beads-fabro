@@ -45,7 +45,7 @@ from livespec_orchestrator_beads_fabro._store_comments import append_work_item_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     live_dispatch_lock,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile

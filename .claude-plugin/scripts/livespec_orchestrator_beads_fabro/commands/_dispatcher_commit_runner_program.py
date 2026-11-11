@@ -48,7 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -759,6 +760,21 @@ def restore_starting_head(path, record):
     git_output("reset", "--soft", start_head)
 
 
+def record_stopped_run(path, record):
+    """The record and state of a run just stopped, keeping a verdict it reached itself.
+
+    The running snapshot that led to the stop is stale by now: a worker that recorded
+    passed or failed before it was stopped keeps that verdict, and only a run still
+    recorded as running or as having ended without one is recorded as stopped.
+    """
+    fresh = read_record(path) or record
+    if recorded_state(fresh) in ("passed", "failed"):
+        return fresh, recorded_state(fresh)
+    stopped = {"state": NO_VERDICT, "stopped": True}
+    write_record(path, stopped)
+    return stopped, NO_VERDICT
+
+
 def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
     """Wait live runs and brief the latest terminal hook refusal exactly once.
 
@@ -812,7 +828,9 @@ def settle_runs(timeout_seconds, brief_file, restore_head_before_wait, stage):
             if state != RUNNING or time.monotonic() >= deadline:
                 break
             time.sleep(min(1.0, max(0.0, deadline - time.monotonic())))
-        if state == NO_VERDICT:
+        if state == RUNNING and stop_run(path, "/proc"):
+            record, state = record_stopped_run(path, record)
+        elif state == NO_VERDICT:
             # Recorded, so a later settle does not brief this dead run a second time.
             write_record(path, {"state": NO_VERDICT})
         outcomes.append((path, record, state))
@@ -1039,19 +1057,38 @@ def reap(proc_root, pids):
             return
 
 
+def launch_window_group(table, proc_root, run_id):
+    """The pid of a live worker of `run_id` found by its own argv, or None.
+
+    `start` writes the pid file only after it launches the worker, so a run read in that
+    window has a worker and no pid file; the worker's argv still names its run.
+    """
+    for pid, entry in table.items():
+        if entry[0] != "Z" and argv_of(proc_root, pid)[-2:] == ["worker", run_id]:
+            return pid
+    return None
+
+
 def stop_run(path, proc_root):
-    """Stop every process of one commit run: its session, its group and its descendants."""
+    """Stop every process of one commit run: its session, its group and its descendants.
+
+    Returns True when it found a process to stop and False when it had no target, so the
+    caller never records a stop that was not performed.
+    """
+    table = process_table(proc_root)
     try:
         group = int(path.with_suffix(".pid").read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
-        return
-    table = process_table(proc_root)
+        group = launch_window_group(table, proc_root, path.stem)
+        if group is None:
+            return False
     members = {
         pid for pid, entry in table.items() if entry[0] != "Z" and group in (entry[2], entry[3])
     }
     if group in table:
         members.update(descendants(table, group))
     reap(proc_root, sorted(members))
+    return True
 
 
 def in_scope(proc_root, pid, scope):
@@ -1183,8 +1220,9 @@ def commit_runner_prepare_steps_block() -> str:
     root = sandbox_plugins_root_expansion()
     path = commit_runner_program_path_expansion()
     step = PrepareStep(
-        script=f'set -eu\nmkdir -p "{root}"\n' + payload_write_command(path_word=f'"{path}"'),
-        env={PAYLOAD_ENV_VAR: commit_runner_program_source()},
+        script=f'set -eu\nmkdir -p "{root}"\n'
+        + packed_payload_write_command(path_word=f'"{path}"'),
+        env={PAYLOAD_ENV_VAR: pack_payload(text=commit_runner_program_source())},
     )
     return (
         "\n# --- Dispatcher-materialized detached commit runner (bd-ib-atyefi) ---\n"

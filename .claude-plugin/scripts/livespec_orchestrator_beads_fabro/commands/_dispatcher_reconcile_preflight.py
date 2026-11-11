@@ -142,7 +142,12 @@ def reconcile_preflight(*, args: argparse.Namespace, repo: Path) -> ReconcilePre
     if item is None:
         _ = write_stderr(text=f"ERROR: work-item {args.item} not found\n")
         return EXIT_PRECONDITION_ERROR
-    item_refusal = _item_precondition_refusal(item=item, repo=repo, regrade=args.regrade)
+    item_refusal = _item_precondition_refusal(
+        item=item,
+        repo=repo,
+        regrade=args.regrade,
+        handed_off_rework=getattr(args, "handed_off_rework", False),
+    )
     if item_refusal is not None:
         _ = write_stderr(text=item_refusal)
         return EXIT_PRECONDITION_ERROR
@@ -181,7 +186,9 @@ def _janitor_preflight(
     return janitor, None
 
 
-def _item_precondition_refusal(*, item: WorkItem, repo: Path, regrade: bool) -> str | None:
+def _item_precondition_refusal(
+    *, item: WorkItem, repo: Path, regrade: bool, handed_off_rework: bool
+) -> str | None:
     """The refusals decided by the item's own ledger state, in order.
 
     Rework-pending is checked FIRST because it binds WHATEVER the item's
@@ -197,6 +204,13 @@ def _item_precondition_refusal(*, item: WorkItem, repo: Path, regrade: bool) -> 
     for the mirror-image reason — its acceptance never failed, so there is no
     verdict to revisit and the ordinary valve is the route.
 
+    A HANDED-OFF REWORK is the one other marked item admitted, and only through
+    the stranded-claim pass, which sets `handed_off_rework` after reading the
+    journal: that rework's disposition is still OWED (its merge wait was handed off
+    rather than ended), and the merged pull request is its fix-forward, so the
+    ordinary arm's completion moves it to `acceptance` and clears the marker. No
+    command-line flag sets it, so an operator cannot reach past the refusal.
+
     `ACCEPTANCE_STATUS` is in the admitted set rather than refused: an item
     resting there has its own arm, which re-runs only the acceptance pass. The
     statuses still refused are the ones no arm serves: a closed item has nothing
@@ -206,7 +220,7 @@ def _item_precondition_refusal(*, item: WorkItem, repo: Path, regrade: bool) -> 
     merged pull request must then identify it by head ref or title, which
     `resolve_merged_pr` enforces.
     """
-    if item.rework_pending and not regrade:
+    if item.rework_pending and not regrade and not handed_off_rework:
         return _REWORK_PENDING_REFUSAL.format(item_id=item.id, repo=repo)
     if regrade and not item.rework_pending:
         return _REGRADE_UNMARKED_REFUSAL.format(item_id=item.id)

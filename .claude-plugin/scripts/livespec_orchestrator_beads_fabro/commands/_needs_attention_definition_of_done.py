@@ -53,7 +53,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_a
     advisory_definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
-    item_comment_bodies,
+    judgement_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     held_judgement,
@@ -133,7 +133,7 @@ def held_definition_of_done_items(
     for item in items:
         if item.status not in _HELDABLE_STATUSES or item.id not in judged:
             continue
-        bodies = item_comment_bodies(path=config, work_item_id=item.id)
+        bodies = judgement_comment_bodies(path=config, work_item_id=item.id, repo=project_root)
         recorded = (
             None
             if bodies is None

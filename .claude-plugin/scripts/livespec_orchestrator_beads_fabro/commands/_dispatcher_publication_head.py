@@ -81,7 +81,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -406,9 +407,9 @@ def proof_head_program_prepare_steps_block() -> str:
     step = PrepareStep(
         script=(
             f'set -eu\nmkdir -p "{root}"\n'
-            + payload_write_command(path_word=f'"{root}/{PROOF_HEAD_PROGRAM_FILENAME}"')
+            + packed_payload_write_command(path_word=f'"{root}/{PROOF_HEAD_PROGRAM_FILENAME}"')
         ),
-        env={PAYLOAD_ENV_VAR: proof_head_program_source()},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=proof_head_program_source())},
     )
     header = (
         "\n# --- Dispatcher-materialized publication-head program: the ONE reader of\n"

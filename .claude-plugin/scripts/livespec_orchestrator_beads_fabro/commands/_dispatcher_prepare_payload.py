@@ -34,19 +34,45 @@ per-string exec limit (`MAX_ARG_STRLEN`, 128 KiB), independently of the larger
 total. A value over it makes `execve` fail with `E2BIG` and kills the run at
 launch with no branch (`bd-ib-gnli`). The cap is deliberately under the limit,
 the same margin the gh-refresh chunking already used.
+
+WHY EVERY PLAIN-TEXT PAYLOAD IS PACKED. The overlay these steps render into is
+collected as the run's `workflow.toml`, and the engine caps that ONE file at
+524,288 bytes (Fabro `MAX_WORKFLOW_VERSION_FILE_BYTES`, per file, not per
+package). Helper programs carried as plain text pay that budget twice: once for
+their bytes and again for the JSON escaping every newline and quote takes in a
+TOML basic string. After v0.312.3 the livespec-dev-tooling overlay measured
+524,343 bytes and every dispatch there was refused before listing
+(bd-ib-p5e32s); about 185 KB of it was plain helper source, while the one payload
+already packed, the gh-refresh bundle, cost a third of its raw size. So a
+plain-text payload rides `pack_payload` -- gzip, then base64, one line with
+nothing to escape -- and its step decodes it with `packed_payload_write_command`.
+The decoder is `python3`, which the prepare chain already requires (the
+gh-refresh unpack and the plugin-cache gate run under it), rather than
+`base64 -d | gunzip`, which the sandbox image does not promise.
+
+`payload_write_command` stays for a value that is ALREADY packed -- the
+gh-refresh archive chunks are base64 of a gzip tarball, and packing them again
+would only add bytes.
 """
 
 from __future__ import annotations
 
+import base64
+import gzip
 import json
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 __all__: list[str] = [
+    "DECODE_FAILED_CAUSE",
+    "MAX_PACKABLE_CHUNK_BYTES",
     "MAX_PAYLOAD_VALUE_BYTES",
     "PAYLOAD_ENV_VAR",
     "PrepareStep",
+    "env_table_line",
+    "pack_payload",
+    "packed_payload_write_command",
     "payload_guard_command",
     "payload_write_command",
     "render_prepare_step",
@@ -54,6 +80,33 @@ __all__: list[str] = [
 
 PAYLOAD_ENV_VAR = "LIVESPEC_PREPARE_PAYLOAD"
 MAX_PAYLOAD_VALUE_BYTES = 96000
+# The largest plain-text piece whose PACKED form still fits one env value. Base64
+# grows its input by 4/3 and gzip can grow incompressible input by a few bytes per
+# block, so a piece of three quarters of the cap, less a margin for the gzip
+# framing, packs under `MAX_PAYLOAD_VALUE_BYTES` whatever its content.
+MAX_PACKABLE_CHUNK_BYTES = MAX_PAYLOAD_VALUE_BYTES // 4 * 3 - 1024
+# The decoder every packed step runs. It reads the packed value on stdin and
+# lands the decoded bytes at argv[1] (appending when argv[2] is "1"). It FAILS
+# CLOSED: a base64 or gzip error (gzip checks its CRC32 and length) exits
+# non-zero naming `DECODE_FAILED_CAUSE`, the file and the reason, and the bytes
+# go to a temporary file in the target's directory that is renamed into place
+# only after the whole value decoded, so no partial helper is ever left where a
+# later stage would run it. The target keeps the mode a shell redirect gives it:
+# its own when it exists, the umask's otherwise. It is terse on purpose: it rides
+# in every packed step's script, inside the very file whose size it protects, and
+# no single quote may appear in it because it sits in a single-quoted shell word.
+DECODE_FAILED_CAUSE = "LIVESPEC_PREPARE_PAYLOAD_DECODE_FAILED"
+_DECODE_PROGRAM = (
+    "import base64 as b,gzip as g,os,sys,tempfile as t\n"
+    "p,a=sys.argv[1:3]\n"
+    "try:d=g.decompress(b.b64decode(sys.stdin.buffer.read(),validate=1))\n"
+    f'except Exception as e:sys.exit("{DECODE_FAILED_CAUSE}: %s: %s"%(p,e))\n'
+    "x=os.path.exists(p)\n"
+    'if a=="1"and x:d=open(p,"rb").read()+d\n'
+    "u=os.umask(0);os.umask(u)\n"
+    'f,n=t.mkstemp(dir=os.path.dirname(p)or".");o=os.fdopen(f,"wb");o.write(d);o.close()\n'
+    "os.chmod(n,os.stat(p).st_mode&4095 if x else 438&~u);os.replace(n,p)"
+)
 _ENV_NAME = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 
 
@@ -83,28 +136,70 @@ def payload_write_command(
     return f'{payload_guard_command(var=var)}\nprintf %s "${var}" {redirect} {path_word}'
 
 
+def pack_payload(*, text: str) -> str:
+    """`text` as one line of gzip+base64, the form a plain-text payload rides in.
+
+    The gzip header's clock is fixed, so the same text always packs to the same
+    value and the rendered overlay stays deterministic.
+    """
+    packed = gzip.compress(text.encode("utf-8"), compresslevel=9, mtime=0)
+    return base64.b64encode(packed).decode("ascii")
+
+
+def packed_payload_write_command(
+    *, path_word: str, var: str = PAYLOAD_ENV_VAR, append: bool = False
+) -> str:
+    """The shell lines that decode one packed payload into `path_word`.
+
+    `path_word` is a complete, already-quoted shell word, as for
+    `payload_write_command`; it reaches the decoder as an argument, so the
+    decoder, not a shell redirect, creates the file. A payload that does not
+    decode fails the step whether or not `set -e` is on, because the pipeline's
+    status is the decoder's and the step's last command is that pipeline or a
+    `set -e` script line.
+    """
+    mode = "1" if append else "0"
+    return (
+        f"{payload_guard_command(var=var)}\n"
+        f"printf %s \"${var}\" | python3 -c '{_DECODE_PROGRAM}' {path_word} {mode}"
+    )
+
+
 def _toml_string(*, value: str) -> str:
     """One TOML basic string, with no surrogate-pair escapes."""
     return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _env_entry(*, name: str, value: str) -> str:
+    """One `NAME = "value"` TOML assignment, refusing a name or payload the kernel would reject."""
+    if _ENV_NAME.match(name) is None:
+        msg = f"prepare-step env name {name!r} is not an upper-case shell variable name"
+        raise ValueError(msg)
+    size = len(value.encode())
+    if size > MAX_PAYLOAD_VALUE_BYTES:
+        msg = (
+            f"prepare-step env value {name} is {size} bytes, over the "
+            f"{MAX_PAYLOAD_VALUE_BYTES}-byte limit; it would fail execve "
+            "with 'argument list too long' and destroy the run"
+        )
+        raise ValueError(msg)
+    return f"{name} = {_toml_string(value=value)}"
+
+
+def env_table_line(*, name: str, value: str) -> str:
+    """One assignment line for a TOML environment table, newline included.
+
+    The line a setup step's payload takes when it is hoisted into the run's
+    environment table (`_dispatcher_setup_nodes`), with the same name and size
+    refusals the per-step `env` table carries.
+    """
+    return _env_entry(name=name, value=value) + "\n"
 
 
 def render_prepare_step(*, step: PrepareStep) -> str:
     """Render one step as TOML text, refusing a payload the kernel would reject."""
     lines = ["[[run.prepare.steps]]", f"script = {_toml_string(value=step.script)}"]
     if step.env:
-        entries: list[str] = []
-        for name in sorted(step.env):
-            if _ENV_NAME.match(name) is None:
-                msg = f"prepare-step env name {name!r} is not an upper-case shell variable name"
-                raise ValueError(msg)
-            size = len(step.env[name].encode())
-            if size > MAX_PAYLOAD_VALUE_BYTES:
-                msg = (
-                    f"prepare-step env value {name} is {size} bytes, over the "
-                    f"{MAX_PAYLOAD_VALUE_BYTES}-byte limit; it would fail execve "
-                    "with 'argument list too long' and destroy the run"
-                )
-                raise ValueError(msg)
-            entries.append(f"{name} = {_toml_string(value=step.env[name])}")
+        entries = [_env_entry(name=name, value=step.env[name]) for name in sorted(step.env)]
         lines.append("env = { " + ", ".join(entries) + " }")
     return "\n".join(lines) + "\n"

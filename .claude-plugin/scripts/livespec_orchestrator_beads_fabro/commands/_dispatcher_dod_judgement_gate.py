@@ -45,7 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     rubric_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
-    item_comment_bodies,
+    judgement_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     GoverningHeadingReceipt,
@@ -284,7 +284,7 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
         append_work_item_comment(path=path, work_item_id=item.id, body=body)
         stamp_judged_if_able(mark=mark_work_item_dod_judgement_recorded, path=path, item_id=item.id)
 
-    bodies = item_comment_bodies(path=path, work_item_id=item.id)
+    bodies = judgement_comment_bodies(path=path, work_item_id=item.id, repo=repo)
     if bodies is None:
         return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)
     decision = judge_definition_of_done(

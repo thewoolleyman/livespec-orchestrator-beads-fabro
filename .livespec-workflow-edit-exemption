@@ -1,11 +1,10 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: .github/workflows/ci.yml gains a top-level B' concurrency block
-# (livespec-dev-tooling v182 SPECIFICATION/constraints.md §"CI matrix shape",
-# livespec-dev-tooling#4010 at b060f7d8), in the same shape as
-# livespec-dev-tooling#4019 (livespec-dev-tooling-qzw2gf). Add-only by line count,
-# but MAINTAINER tier, because dropping superseded pending master runs yields fewer
-# master verdicts. No job, step, trigger, permission or required check changes;
-# runner-minutes go down.
-work_item=bd-ib-5o5ibo
-reason=Master pushes share one concurrency group with cancel-in-progress false, so the in-progress run completes and only the newest pending run is kept. Pull requests, release commits, principal reverts and Factory-Override commits group by run_id and are never held. Approved by the maintainer 2026-11-09 ~19:3xZ, verbatim "OK B'" (recorded on livespec-dev-tooling-6tgd2z at 19:35:10Z); v182 names livespec-orchestrator-beads-fabro as an adopting member.
+# The change: one NEW file, .github/workflows/disarm-on-hold-label.yml,
+# rendered by copier from livespec's orchestrator-plugin template at v0.47.3
+# (livespec v240). It turns a pull request's auto-merge off when do-not-merge
+# is added to it. No existing workflow line is deleted or modified.
+work_item=bd-ib-jdaawy
+change=additive
+ci_runtime=no-significant-increase
+reason=ADDITIVE tier (approval:workflow-edit-additive, set under legacy-coordinator-agent's delegation, ruling ~00:2xZ 2026-11-11, recorded on bd-ib-jdaawy). Adds the hold-label disarm workflow that livespec non-functional-requirements.md §"Shared content sync — copier template" makes fleet policy, inherited here via constraints.md ## Inherited from livespec. It runs only on pull_request labeled events for do-not-merge (one short job), so CI runtime does not grow measurably. actionlint exit 0. Plan ci-runtime-and-cost (livespec-dev-tooling-ib3oe3).

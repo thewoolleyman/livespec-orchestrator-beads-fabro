@@ -40,6 +40,11 @@ def substitute_input_tokens(*, text: str, prepare_inputs: Mapping[str, str] | No
     conformance premises that way since the typed-integration-contract change,
     which made every dispatch through it unrunnable.
 
+    The BUNDLED payloads no longer carry a prepare step at all: their setup is
+    `run_prepare_<N>` command nodes, whose attributes the engine renders itself
+    (work-item bd-ib-dpsiwz). This substitution survives for a dispatch target's
+    OWN run configuration, which may still declare templated prepare steps.
+
     Substituting here rather than asking the engine to change keeps the values
     on the one already-resolved `ResolvedIntegrationContract` the `--input`
     pairs are rendered from, so the run config and the run's bound inputs cannot

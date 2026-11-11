@@ -10,6 +10,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import (
+    carried_comment_bodies,
+    prior_claim_instant,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -19,9 +23,19 @@ from livespec_orchestrator_beads_fabro.errors import (
 )
 
 if TYPE_CHECKING:
+    from pathlib import Path
+
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
-__all__: list[str] = ["item_comment_bodies"]
+__all__: list[str] = ["item_comment_bodies", "judgement_comment_bodies"]
+
+_JOURNAL_SUBPATH = ("tmp", "fabro-dispatch-journal.jsonl")
+_LEDGER_READ_ERRORS = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 
 
 def item_comment_bodies(*, path: StoreConfig, work_item_id: str) -> tuple[str, ...] | None:
@@ -33,13 +47,37 @@ def item_comment_bodies(*, path: StoreConfig, work_item_id: str) -> tuple[str, .
     """
     read = attempt(
         action=lambda: read_work_item_comments(path=path, work_item_id=work_item_id),
-        exceptions=(
-            BeadsCommandError,
-            BeadsConnectionError,
-            BeadsMappingError,
-            BeadsTenantMissingError,
-        ),
+        exceptions=_LEDGER_READ_ERRORS,
     )
     if isinstance(read, AttemptFailure):
         return None
     return tuple(comment.text for comment in read)
+
+
+def judgement_comment_bodies(
+    *, path: StoreConfig, work_item_id: str, repo: Path
+) -> tuple[str, ...] | None:
+    """The comment bodies a judgement subject is computed from, or `None` when unreadable.
+
+    `item_comment_bodies` less every rider the goal would not carry: the subject
+    carries "only the carried riders", so a rider appended before the item's most
+    recent dispatch claim that is neither standing nor stage-scoped leaves the
+    digest unchanged and a cache-eligible verdict taken after that claim is reused
+    without a judge. Receipts stay, because the reuse read finds the recorded
+    verdict among them.
+
+    The claim is read from `repo`'s default dispatch journal, the path every
+    lifecycle reader without a namespace resolves. This is the HOST taking's bound,
+    so no dispatch id is excluded: the in-run `dod_gate` subject excludes its own
+    dispatch's claim and so reaches the same bound.
+    """
+    read = attempt(
+        action=lambda: read_work_item_comments(path=path, work_item_id=work_item_id),
+        exceptions=_LEDGER_READ_ERRORS,
+    )
+    if isinstance(read, AttemptFailure):
+        return None
+    claim_at = prior_claim_instant(
+        journal_path=repo.joinpath(*_JOURNAL_SUBPATH), item_id=work_item_id
+    )
+    return carried_comment_bodies(comments=read, claim_at=claim_at)

@@ -40,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import WorkflowPayload
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import pack_payload
 from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel import VaultSecret
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeouts
 from livespec_orchestrator_beads_fabro.store import WorkItemComment
@@ -79,7 +80,8 @@ def test_the_overlay_materializes_the_subject_it_is_handed(tmp_path: Path) -> No
     rendered = _render(tmp_path=tmp_path, dod_gate_subject="A subject for the node.\n")
 
     assert rendered.count(DOD_GATE_SUBJECT_MARKER) == 1
-    assert 'LIVESPEC_PREPARE_PAYLOAD = "A subject for the node.\\n"' in rendered
+    packed = pack_payload(text="A subject for the node.\n")
+    assert f'LIVESPEC_PREPARE_PAYLOAD = "{packed}"' in rendered
 
 
 def test_a_caller_handing_no_subject_renders_none(tmp_path: Path) -> None:
