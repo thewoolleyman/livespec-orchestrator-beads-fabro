@@ -46,7 +46,7 @@ def test_each_completed_prelaunch_phase_is_journalled_with_its_drive_tree_cpu() 
     result = profile.phase(name="record-dispatch", action=lambda: "recorded")
 
     assert result == "recorded"
-    assert journal.records == [
+    assert [record for record in journal.records if record["stage"] == "pre-launch-cpu"] == [
         {
             "stage": "pre-launch-cpu",
             "work_item_id": "bd-ib-5d5aue",
@@ -153,10 +153,11 @@ def test_the_drive_launch_profile_charges_startup_from_zero_cpu(
     profile = module.PrelaunchCpuProfile.for_drive_launch(dispatch_id="dispatch-3")
     profile.bind(journal=journal, work_item_id="bd-ib-5d5aue")
 
-    assert [(record["phase"], record["cpu_seconds"]) for record in journal.records] == [
+    rows = [record for record in journal.records if record["stage"] == "pre-launch-cpu"]
+    assert [(record["phase"], record["cpu_seconds"]) for record in rows] == [
         ("drive-startup", 3.25)
     ]
-    assert journal.records[0]["dispatch_id"] == "dispatch-3"
+    assert rows[0]["dispatch_id"] == "dispatch-3"
 
 
 def test_a_forked_profile_restates_every_row_so_far_under_its_own_dispatch() -> None:

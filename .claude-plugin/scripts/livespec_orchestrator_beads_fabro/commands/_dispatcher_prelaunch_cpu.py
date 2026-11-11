@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable, Iterator
 from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, TypeVar
+from typing import Protocol, TypeVar, runtime_checkable
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import utc_now_iso
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
@@ -15,6 +16,8 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 __all__: list[str] = [
     "PrelaunchCheckpoint",
     "PrelaunchCpuProfile",
+    "PrelaunchStep",
+    "PrelaunchStepJournal",
     "drive_tree_cpu_seconds",
     "ignore_prelaunch_checkpoint",
     "prelaunch_phase",
@@ -31,6 +34,24 @@ class PrelaunchCheckpoint(Protocol):
         """Close the named pre-launch phase."""
 
 
+@runtime_checkable
+class PrelaunchStepJournal(Protocol):
+    """Journals the start and end of a pre-launch step."""
+
+    def step_started(self, *, name: str) -> None:
+        """Journal that the named step has started."""
+
+    def step_ended(self, *, name: str, outcome: str) -> None:
+        """Journal that the named step has ended."""
+
+
+@dataclass(kw_only=True)
+class PrelaunchStep:
+    """A step outcome, completed unless the body reports otherwise."""
+
+    outcome: str = "completed"
+
+
 class _Journal(Protocol):
     def append(self, *, record: dict[str, object]) -> None:
         """Append one dispatch-journal record."""
@@ -45,7 +66,11 @@ class PrelaunchCpuProfile:
     journal: _Journal | None = None
     work_item_id: str | None = None
     baseline_cpu_seconds: float | None = None
+    pass_id: str | None = None
+    clock: Callable[[], float] = time.monotonic
+    checkpoint: _ProfileCheckpoint = field(init=False)
     _last_cpu_seconds: float = field(init=False)
+    _open_steps: dict[str, float] = field(init=False, default_factory=dict)
     _held: list[dict[str, object]] = field(init=False, default_factory=list)
     _history: list[dict[str, object]] = field(init=False, default_factory=list)
 
@@ -81,6 +106,8 @@ class PrelaunchCpuProfile:
         self._last_cpu_seconds = (
             self.cpu_seconds() if self.baseline_cpu_seconds is None else self.baseline_cpu_seconds
         )
+        self.pass_id = self.dispatch_id if self.pass_id is None else self.pass_id
+        self.checkpoint = _ProfileCheckpoint(profile=self)
 
     def bind(self, *, journal: _Journal, work_item_id: str) -> None:
         """Name the journal and work item, then append every row held so far."""
@@ -97,7 +124,12 @@ class PrelaunchCpuProfile:
         names its journal and work item, so a dispatch the drive launches after
         the first still shows the pre-admission phases it waited behind.
         """
-        forked = PrelaunchCpuProfile(dispatch_id=dispatch_id, cpu_seconds=self.cpu_seconds)
+        forked = PrelaunchCpuProfile(
+            dispatch_id=dispatch_id,
+            cpu_seconds=self.cpu_seconds,
+            pass_id=self.pass_id,
+            clock=self.clock,
+        )
         forked.restate(rows=self._history)
         return forked
 
@@ -110,11 +142,49 @@ class PrelaunchCpuProfile:
         with self.during(name=name):
             return action()
 
-    def during(self, *, name: str) -> AbstractContextManager[None]:
-        """Bracket one phase so its row is appended whether it returns or raises."""
+    def during(self, *, name: str) -> AbstractContextManager[PrelaunchStep]:
+        """Bracket one phase so its rows are appended whether it returns or raises."""
         return prelaunch_phase(checkpoint=self.checkpoint, name=name)
 
-    def checkpoint(self, *, name: str) -> None:
+    def step_started(self, *, name: str) -> None:
+        """Journal the start of a named pre-launch step."""
+        self._open_steps[name] = self.clock()
+        self.record_step(event="start", name=name)
+
+    def step_ended(self, *, name: str, outcome: str) -> None:
+        """Journal an end record with its wall-clock elapsed seconds."""
+        elapsed = max(0.0, self.clock() - self._open_steps.pop(name))
+        self.record_step(event="end", name=name, elapsed_seconds=round(elapsed, 6), outcome=outcome)
+
+    def record_step(
+        self,
+        *,
+        event: str,
+        name: str,
+        elapsed_seconds: float | None = None,
+        outcome: str | None = None,
+        at: str | None = None,
+    ) -> None:
+        """Append a pre-launch step boundary, holding it until its item is known."""
+        record: dict[str, object] = {
+            "stage": "pre-launch-step",
+            "event": event,
+            "step": name,
+            "dispatch_id": self.dispatch_id,
+            "pass_id": self.pass_id,
+        }
+        if elapsed_seconds is not None:
+            record["elapsed_seconds"] = elapsed_seconds
+        if outcome is not None:
+            record["outcome"] = outcome
+        stamped: dict[str, object] = {**record, "at": at or utc_now_iso()}
+        self._history.append(stamped)
+        if self.journal is None or self.work_item_id is None:
+            self._held.append(stamped)
+        else:
+            self.journal.append(record={**record, "work_item_id": self.work_item_id})
+
+    def close_phase(self, *, name: str) -> None:
         """Record CPU since the preceding pre-launch phase boundary."""
         current = self.cpu_seconds()
         record: dict[str, object] = {
@@ -132,13 +202,44 @@ class PrelaunchCpuProfile:
             self.journal.append(record={**record, "work_item_id": self.work_item_id})
 
 
+class _ProfileCheckpoint:
+    """The profile adapter that combines CPU and boundary telemetry."""
+
+    def __init__(self, *, profile: PrelaunchCpuProfile) -> None:
+        self._profile = profile
+
+    def __call__(self, *, name: str) -> None:
+        """Close the named phase's CPU interval."""
+        self._profile.close_phase(name=name)
+
+    def step_started(self, *, name: str) -> None:
+        """Journal the named step start."""
+        self._profile.step_started(name=name)
+
+    def step_ended(self, *, name: str, outcome: str) -> None:
+        """Journal the named step end."""
+        self._profile.step_ended(name=name, outcome=outcome)
+
+
 @contextmanager
-def prelaunch_phase(*, checkpoint: PrelaunchCheckpoint, name: str) -> Iterator[None]:
-    """Close the named phase's row when the body returns or raises."""
+def prelaunch_phase(*, checkpoint: PrelaunchCheckpoint, name: str) -> Iterator[PrelaunchStep]:
+    """Journal a step's start, CPU interval and final outcome."""
+    step = PrelaunchStep()
+    steps = checkpoint if isinstance(checkpoint, PrelaunchStepJournal) else None
+    if steps is not None:
+        steps.step_started(name=name)
+    returned = False
     try:
-        yield
+        yield step
+        returned = True
     finally:
-        checkpoint(name=name)
+        if not returned:
+            step.outcome = "failed"
+        try:
+            checkpoint(name=name)
+        finally:
+            if steps is not None:
+                steps.step_ended(name=name, outcome=step.outcome)
 
 
 def ignore_prelaunch_checkpoint(*, name: str) -> None:
