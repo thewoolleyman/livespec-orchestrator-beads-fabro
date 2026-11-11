@@ -72,6 +72,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy
     harness_settings_prepare_steps_block,
     harness_shell_env_lines,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_manifest import (
+    HelperSource,
+    helper_fetch_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_graph_prepare_steps_block,
 )
@@ -181,6 +185,10 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # here; False for a direct caller, which renders exactly the overlay it did
     # before the step existed (bd-ib-tlmq3m).
     provision_worktree_pack: bool = False,
+    # The installed dispatcher build whose helper composers the sandbox fetches.
+    # Direct renderer tests deliberately leave this absent and retain the legacy
+    # inline shape; every real dispatch supplies it through materialize_overlay.
+    helper_source: HelperSource | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -316,7 +324,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # repository's committed project settings, whose `env` overrides the process
     # environment it inherits (bd-ib-rv2jk4).
     harness_settings_steps = harness_settings_prepare_steps_block()
-    gh_refresh_steps = refreshing_gh_prepare_steps_block()
+    gh_refresh_steps = "" if helper_source is not None else refreshing_gh_prepare_steps_block()
     gh_refresh_env_lines = refreshing_gh_env_lines()
     # Rendered immediately after the wrapper it routes to, and unconditionally:
     # the Petri-era runner performs no Git operations of its own, so without this
@@ -336,12 +344,17 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # and for a package-era client that name is relative to a directory this
     # process is not standing in.
     plugin_cache_steps = (
-        plugin_cache_gate_prepare_steps_block()
+        ""
+        if helper_source is not None
+        else plugin_cache_gate_prepare_steps_block()
         + hook_limit_graph_prepare_steps_block(
             graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
         )
     )
-    commit_runner_steps = commit_helpers_prepare_steps_block()
+    commit_runner_steps = "" if helper_source is not None else commit_helpers_prepare_steps_block()
+    helper_fetch_steps = (
+        "" if helper_source is None else helper_fetch_prepare_steps_block(source=helper_source)
+    )
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
     # Rendered FIRST among the Dispatcher-materialized steps, which puts it
     # immediately after the committed `git fetch --unshallow` whose single-branch
@@ -393,6 +406,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + git_credential_helper_steps
         + codex_steps
         + codex_otel_steps
+        + helper_fetch_steps
         + plugin_cache_steps
         + commit_runner_steps
         + resume_checkout_steps

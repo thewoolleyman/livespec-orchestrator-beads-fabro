@@ -33,10 +33,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_routing import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_env import (
     check_credential_env,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_account_selector import (
     select_factory_credential,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_manifest import (
+    HelperSource,
+    dispatch_helper_source,
+    helper_source_is_reachable,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GITHUB_TOKEN_ENV_VAR,
     ShellCommandRunner,
@@ -92,6 +98,22 @@ __all__: list[str] = [
 ]
 
 _GITHUB_TOKEN_ENV = GITHUB_TOKEN_ENV_VAR  # single-sourced from _dispatcher_io
+
+
+def _helper_source_or_refusal(*, runner: CommandRunner) -> HelperSource | str:
+    """Read and forge-check the installed build before dispatch can claim work."""
+    source = dispatch_helper_source(runner=runner)
+    if source is None:
+        return (
+            "LIVESPEC_PREPARE_PAYLOAD_DIGEST_MISMATCH: helper-manifest: the installed "
+            "plugin build has no forge repository and commit"
+        )
+    if helper_source_is_reachable(source=source, runner=runner):
+        return source
+    return (
+        "LIVESPEC_PREPARE_PAYLOAD_DIGEST_MISMATCH: helper-manifest: installed plugin "
+        f"build commit {source.commit} is not reachable on the forge"
+    )
 
 
 def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materializer; each argument is an independent projection input, matching `render_run_config_overlay` it feeds, and each return is one PRE-LAUNCH REFUSAL (credential env, App token mint, sibling clones, Codex projection, proof-credential mint, unmaterializable config) that names its own cause to the operator; collapsing any two would report the wrong one.
@@ -208,6 +230,10 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     position from which an unrenewable credential can be reported without
     leaving an `active` row nobody is working.
     """
+    lease_runner = ShellCommandRunner()
+    helper_source = _helper_source_or_refusal(runner=lease_runner)
+    if isinstance(helper_source, str):
+        return helper_source
     # WHAT the written config NAMES its graph, as distinct from WHICH graph this
     # dispatch runs. `graph_override` itself stays absolute — the route check
     # below READS that file — so only the rendered TEXT moves. Projected here,
@@ -302,7 +328,6 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # Minted LAST among the steps that can still refuse, so a refusal above this
     # line never leaves a live provider credential behind. The scope is the
     # dispatch id, which is also what the run-teardown revoke is handed.
-    lease_runner = ShellCommandRunner()
     minted = mint_proof_credentials(repo=repo, scope=dispatch_id, runner=lease_runner)
     if isinstance(minted, str):
         return minted
@@ -368,6 +393,7 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
         # The pack-provisioning premise, forwarded unchanged: it was decided from
         # the same resolved contract the inputs above come from.
         provision_worktree_pack=provision_worktree_pack,
+        helper_source=helper_source,
         # The publish branch the `publish_draft` command node pushes, plus this
         # repository's resolved proof asset store. The branch and the tag are
         # resolved HERE, from the single shared derivation and the committed
