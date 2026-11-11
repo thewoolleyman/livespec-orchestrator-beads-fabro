@@ -40,6 +40,7 @@ _WORKFLOW = (
 )
 _CHECK_SUITE_TOKEN = "{{ inputs.sandbox_check_suite }}"
 _DEFAULT_BRANCH_TOKEN = "{{ inputs.default_branch }}"
+_CONFORMANCE_HOOK_INSTALL_TOKEN = "{{ inputs.conformance_hook_install }}"
 _SUITE_LINE = "suite-line-printed-before-the-kill"
 _WAIT_SECONDS = 8.0
 
@@ -48,7 +49,11 @@ def _janitor_script(*, check_suite: str) -> str:
     graph = parse_dot_graph(text=_WORKFLOW.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     script: str = graph.nodes["janitor"]["script"]
-    return script.replace(_DEFAULT_BRANCH_TOKEN, "master").replace(_CHECK_SUITE_TOKEN, check_suite)
+    return (
+        script.replace(_DEFAULT_BRANCH_TOKEN, "master")
+        .replace(_CHECK_SUITE_TOKEN, check_suite)
+        .replace(_CONFORMANCE_HOOK_INSTALL_TOKEN, "")
+    )
 
 
 def _suite(*, tmp_path: Path, body: str) -> Path:
