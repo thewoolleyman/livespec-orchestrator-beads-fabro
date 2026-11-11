@@ -76,6 +76,7 @@ class DispatchLaunchContext:
 
     janitor: tuple[str, ...] | None = None
     prelaunch_profile: PrelaunchCpuProfile | None = None
+    resume: Callable[..., DispatchOutcome] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -84,6 +85,7 @@ class DispatchLifetime:
 
     identity: DispatchJournalIdentity
     cleanup: ExitStack
+    resume: Callable[..., DispatchOutcome] | None = None
 
 
 def dispatch_id_for_launch(*, context: DispatchLaunchContext, mint_id: Callable[[], str]) -> str:

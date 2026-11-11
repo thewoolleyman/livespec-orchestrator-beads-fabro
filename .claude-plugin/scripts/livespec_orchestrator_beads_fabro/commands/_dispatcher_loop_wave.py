@@ -57,6 +57,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_launch impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing import (
     route_recovery,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_command import (
+    overtaken_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
     screened_verdict_of,
@@ -261,6 +264,7 @@ def _admit_and_dispatch_loop_wave(  # noqa: PLR0913 — see `dispatch_loop_wave`
                 launch=DispatchLaunchContext(
                     janitor=janitor,
                     prelaunch_profile=profiles.get(item.id, profile),
+                    resume=overtaken_resume(args=args, repo=repo, journal=journal, janitor=janitor),
                 ),
                 # The valve's OWN evaluation, so each launch selects its
                 # per-node ACP candidate from the read that admitted the item.

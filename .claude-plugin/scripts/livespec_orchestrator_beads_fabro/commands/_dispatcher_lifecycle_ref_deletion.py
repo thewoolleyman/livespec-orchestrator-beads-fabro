@@ -47,8 +47,10 @@ def delete_refs_after_lifecycle_write(
     runner: CommandRunner | None = None,
 ) -> None:
     """Delete `item_id`'s preservation refs when a ledger write landed it closed."""
+    if status not in _CLOSED_STATUSES:
+        return
     repo = path.repo_root
-    if status not in _CLOSED_STATUSES or repo is None:
+    if repo is None:
         return
     # The journal append is the one operation that can raise here (the runner maps a
     # launch failure to a non-zero result), and it must not fail the ledger write.
