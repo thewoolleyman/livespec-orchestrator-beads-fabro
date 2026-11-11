@@ -1112,6 +1112,52 @@ else
     tail -8 "$DIRECT_RELEASE_LOG" >&2
 fi
 
+# --- 10b. a held direct release counts as one in-flight launch --------------
+# While the direct release's drive runs and before its run lists, the marker it
+# kept must count against the cap for a queued second launcher: with one slot
+# free on the board, the held release fills it, so the second launcher sees the
+# fleet at the cap and starts no drive of its own.
+echo "--- 10b. a queued launcher counts a held direct release as in flight"
+new_case direct-release-inflight-counted
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_READY_BLOCKED_UNTIL_RELEASE=1
+export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
+write_board "$BOARD_GMK" 7 gmk
+: > "$BOARD_HL"
+printf '8\n' > "$CAP_FILE"
+DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
+RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
+held_release_pid=$!
+held_deadline=$(( $(date +%s) + 60 ))
+while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
+    sleep "$HARNESS_POLL_S"
+done
+if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
+    && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
+    && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+    pass "the direct release holds its in-flight marker while its drive runs and before its run lists"
+else
+    fail "the direct release did not hold a marker during its drive (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
+    tail -8 "$DIRECT_RELEASE_LOG" >&2
+fi
+SECOND_LOG="$CASE_DIR/second-launcher.log"
+FLEET_LAUNCH_MAX_WAIT_S=4 ONLY_GMK=1 "$LAUNCHER" bd-ib-second > "$SECOND_LOG" 2>&1; second_rc=$?
+if [ "$second_rc" = 75 ] && log_has "$SECOND_LOG" "fleet=8 cap=8" \
+    && ! grep -qx 'bd-ib-second' "$DRIVE_LOG"; then
+    pass "a queued launcher counts the held direct release against the cap and starts no drive"
+else
+    fail "a queued launcher did not count the held direct release (rc=$second_rc drives=$(drive_log_items))"
+    tail -6 "$SECOND_LOG" >&2
+fi
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+wait "$held_release_pid"; held_release_rc=$?
+if [ "$held_release_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+    pass "the direct release drops its marker once its run lists"
+else
+    fail "the direct release did not finish cleanly (rc=$held_release_rc)"
+    tail -8 "$DIRECT_RELEASE_LOG" >&2
+fi
+
 # --- 11. a resume marker stays counted until the board lists the run --------
 # The resume client returns at once, before the run lists on the board.  The
 # launcher must keep its in-flight marker so concurrent launchers still count
