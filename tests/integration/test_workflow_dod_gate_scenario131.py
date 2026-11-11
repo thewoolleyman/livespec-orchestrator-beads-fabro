@@ -58,6 +58,11 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 _VARIANT = Path(".fabro/workflows/groom-work-item")
 _GATE = "dod_gate"
+# The groom variant's reserved nodes are entered only through one edge from `start`
+# guarded by a context key the graph never sets: Petri's validator walks edges
+# without reading conditions and refuses an unreachable node, and the guard keeps
+# every run off the node (bd-ib-ttrjvj).
+_NEVER_ENTERED = 'condition="context.livespec_groom_reserved_entry=never"'
 _ADAPTER_INPUT = "dod_gate_adapter"
 _ACP_BACKEND = 'backend="acp"'
 # A DOT node declaration: a name at the start of a line followed by its
@@ -262,9 +267,15 @@ def test_the_variant_leaves_the_gate_unreached_by_its_edges() -> None:
     an adjudication turn on a graph whose purpose is to produce Definitions of
     Done rather than to grade one.
     """
-    edges = _edges(text=_dot(payload=_VARIANT))
+    dot = _dot(payload=_VARIANT)
+    edges = [edge for edge in _edges(text=dot) if _GATE in edge]
 
-    assert not any(_GATE in edge for edge in edges)
+    assert len(edges) == 1, edges
+    assert edges[0].startswith(f"start -> {_GATE}")
+    assert _NEVER_ENTERED in edges[0]
+    # The guard's key is one nothing in the graph sets: it occurs ONLY in the
+    # guard conditions themselves.
+    assert dot.count("livespec_groom_reserved_entry") == dot.count(_NEVER_ENTERED)
 
 
 def test_the_gate_prompt_verifies_all_four_definition_of_done_duties() -> None:

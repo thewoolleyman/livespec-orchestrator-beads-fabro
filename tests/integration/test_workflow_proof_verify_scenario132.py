@@ -57,6 +57,11 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
 _VARIANT = Path(".fabro/workflows/groom-work-item")
 _VERIFY = "proof_verify"
+# The groom variant's reserved nodes are entered only through one edge from `start`
+# guarded by a context key the graph never sets: Petri's validator walks edges
+# without reading conditions and refuses an unreachable node, and the guard keeps
+# every run off the node (bd-ib-ttrjvj).
+_NEVER_ENTERED = 'condition="context.livespec_groom_reserved_entry=never"'
 _VERIFY_ADAPTER_INPUT = "proof_verify_adapter"
 _VERIFY_PROMPT = "proof-verify.md"
 _ACP_BACKEND = 'backend="acp"'
@@ -280,7 +285,10 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
         _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
     )
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
-    assert not any(_VERIFY in edge for edge in _edges(text=_dot(payload=_VARIANT)))
+    edges = [edge for edge in _edges(text=_dot(payload=_VARIANT)) if _VERIFY in edge]
+    assert len(edges) == 1, edges
+    assert edges[0].startswith(f"start -> {_VERIFY}")
+    assert _NEVER_ENTERED in edges[0]
 
 
 def test_no_review_edge_reaches_pr_and_the_ship_on_cap_hatch_is_gone() -> None:

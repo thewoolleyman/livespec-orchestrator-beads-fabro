@@ -164,7 +164,7 @@ def test_groom_retains_its_acp_filing_plan_publisher() -> None:
 
 
 def test_groom_declares_an_unreachable_command_pr_refresh() -> None:
-    """Declared so the common timeout table resolves; unreachable by its edges.
+    """Declared so the common timeout table resolves; never entered by a run.
 
     The groom variant files slices and publishes no Git branch, so a reachable
     refresh would be meaningless; the DECLARATION is what the per-node timeout
@@ -177,7 +177,13 @@ def test_groom_declares_an_unreachable_command_pr_refresh() -> None:
     assert _COMMAND_SHAPE in body
     assert "script=" in body
     assert "timeout=" in body
-    assert _edge_sources(dot=dot, target="pr_refresh") == []
+    # Its one entry edge is guarded by a context key the graph never sets, so
+    # Petri's structural reachability rule is met and no run reaches it
+    # (bd-ib-ttrjvj).
+    assert _edge_sources(dot=dot, target="pr_refresh") == ["start"]
+    entry = re.findall(r"(?m)^[ \t]*start[ \t]*->[ \t]*pr_refresh\b.*$", dot)
+    assert len(entry) == 1, entry
+    assert 'condition="context.livespec_groom_reserved_entry=never"' in entry[0]
 
 
 def test_groom_pr_refresh_carries_the_reserved_command_and_input_references() -> None:
