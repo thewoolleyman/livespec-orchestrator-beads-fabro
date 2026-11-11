@@ -104,7 +104,11 @@ def test_a_newer_ref_of_another_run_outranks_the_pull_request_runs_older_ref() -
         times={_PR_COMMIT: _OLD, _OTHER_COMMIT: _NEW},
     )
 
-    assert _seed(runner=runner, journaled_run=_PR_RUN) == RecoverySeed(
+    seed = _seed(runner=runner, journaled_run=_PR_RUN)
+
+    assert isinstance(seed, RecoverySeed)
+    assert seed.source_run_id == _OTHER_RUN
+    assert seed == RecoverySeed(
         source_run_id=_OTHER_RUN,
         remote=SEED_REMOTE,
         commit_sha=_OTHER_COMMIT,

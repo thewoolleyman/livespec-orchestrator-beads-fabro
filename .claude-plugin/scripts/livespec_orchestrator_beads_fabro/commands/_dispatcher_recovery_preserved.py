@@ -13,7 +13,10 @@ tidy ranking: it is the clause's, and `test_dispatcher_recovery_seed_precedence`
 holds every pair of it in one table.
 
 1. A needs-human ref, or a checkpoint-failed preservation ref, of the LATEST run:
-   it carries the run's TERMINAL tree, which is everything the dying run had.
+   it carries the run's TERMINAL tree, which is everything the dying run had. When
+   the latest run holds a needs-human ref the choice ranges over the needs-human
+   refs of EVERY earlier-run identifier and takes the newest by committer time, so
+   a mid-run ref of the run the pull request names never outranks newer work.
 2. The latest run's highest-numbered work-in-progress ref: the run's latest
    settled capture, which "MUST be preferred over the observed published head and
    over every preservation ref of an earlier run of the item".
@@ -320,11 +323,18 @@ def _seed_in_order(
     """
     latest_tree = tree_row if tree_row is not None and tree_row[2] in latest_ids else None
     earlier_tree = tree_row if tree_row is not None and tree_row[2] not in latest_ids else None
+    latest_refs = [one for one in ranking.carrying if one.run_id in latest_ids]
+    # Once the latest run holds a needs-human ref the terminal tree is the answer,
+    # and which one is the newest by committer time across EVERY earlier-run
+    # identifier: the latest run's own ref may be an older mid-run preserve beside
+    # a newer ref another run (or its dispatch id) left. A latest run holding only
+    # a capture or a tree keeps the tiers below, so the capture still outranks an
+    # earlier run's ref.
     ranked = _ranked(
         ranking=ranking,
-        refs=[one for one in ranking.carrying if one.run_id in latest_ids],
+        refs=ranking.carrying if latest_refs else [],
         tree=latest_tree,
-        run_ids=latest_ids,
+        run_ids=run_ids if latest_refs else latest_ids,
     )
     if ranked is not None:
         return ranked
