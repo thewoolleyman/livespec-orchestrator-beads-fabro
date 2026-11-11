@@ -150,6 +150,65 @@ def test_this_repositorys_real_graphs_pass_an_engine_that_refuses_fork_only_sett
     assert found.findings == []
 
 
+def test_a_commit_settling_node_without_wip_capture_is_a_finding(
+    check: ModuleType, tmp_path: Path
+) -> None:
+    """Scenario 317: the graph gate names the exact settling node that omits capture."""
+    graph = """digraph Probe {
+    implement_commit_settle [script=\"echo settle\"]
+    fix_commit_settle [script=\"livespec-capture-wip\"]
+    review_fix_commit_settle [script=\"livespec-capture-wip\"]
+}
+"""
+    _seed_payload(root=tmp_path, graph=graph)
+
+    findings = check.wip_capture_findings(payloads=check.checked_payloads(repo_root=tmp_path))
+
+    assert len(findings) == 1
+    assert "implement_commit_settle" in findings[0]
+    assert "livespec-capture-wip" in findings[0]
+
+
+def test_a_wip_capture_check_ignores_settle_nodes_the_graph_does_not_declare(
+    check: ModuleType, tmp_path: Path
+) -> None:
+    """The WIP helper reports only settle nodes that actually exist in this graph."""
+    graph = """digraph Probe {
+    implement_commit_settle [script=\"livespec-capture-wip\"]
+}
+"""
+    _seed_payload(root=tmp_path, graph=graph)
+
+    findings = check.wip_capture_findings(payloads=check.checked_payloads(repo_root=tmp_path))
+
+    assert findings == []
+
+
+def test_the_wip_capture_check_skips_only_uncheckable_payload_shapes(
+    check: ModuleType, tmp_path: Path
+) -> None:
+    """Non-bundle, missing, malformed, and node-free payloads make no claim."""
+    helper = sys.modules[check.wip_capture_findings.__module__]
+    bundle_where = "/".join(helper.BUNDLE_RELPATH)
+    malformed = tmp_path / "malformed"
+    malformed.mkdir()
+    _ = (malformed / "workflow.fabro").write_text("not a graph", encoding="utf-8")
+    node_free = tmp_path / "node-free"
+    node_free.mkdir()
+    _ = (node_free / "workflow.fabro").write_text("digraph Probe {}", encoding="utf-8")
+
+    findings = check.wip_capture_findings(
+        payloads=[
+            helper.CheckedPayload(where="variant", directory=tmp_path / "variant"),
+            helper.CheckedPayload(where=bundle_where, directory=tmp_path / "missing"),
+            helper.CheckedPayload(where=bundle_where, directory=malformed),
+            helper.CheckedPayload(where=bundle_where, directory=node_free),
+        ]
+    )
+
+    assert findings == []
+
+
 def test_a_fork_only_setting_is_stripped_named_and_never_edited_in_place(
     check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
