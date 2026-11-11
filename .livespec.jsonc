@@ -141,14 +141,17 @@
   // §"Self-contained plugin dispatch" cites livespec-dev-tooling's
   // Orchestrator-build-adoption contract (its spec v155), which owns the
   // `just adopt-orchestrator-build` operator step this plugin names as its
-  // currency remedy.
+  // currency remedy. §"Pre-push gate refinements" (v354) cites
+  // livespec-dev-tooling's Delegated pre-push gate contract, whose Same-tree
+  // delegated pre-commit verdict bullet binds this repository's pre-push gate.
   "external_references": {
     "livespec": [
       "SPECIFICATION/contracts.md §\"Driver-shipped hooks\"",
       "SPECIFICATION/contracts.md §\"Plugin distribution\""
     ],
     "livespec-dev-tooling": [
-      "SPECIFICATION/contracts.md §\"Orchestrator build adoption\""
+      "SPECIFICATION/contracts.md §\"Orchestrator build adoption\"",
+      "SPECIFICATION/contracts.md §\"Delegated pre-push gate\""
     ]
   },
   // Planning/work-item-resolution registry. These targets are the repo slugs
