@@ -1485,6 +1485,13 @@
   },
   {
     "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario: the plan record posting primitive renders a record's artifact paths line",
+    "work_item": "bd-ib-sjxs4f",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
     "spec_file": "spec.md",
     "heading": "## Dispatcher policy settings",
     "work_item": "bd-ib-heat",

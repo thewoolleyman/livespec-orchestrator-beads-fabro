@@ -14298,3 +14298,26 @@ Feature: a plan record's release rule applies to the release component that ship
     Then a configuration finding names dispatcher.release_components
     And the record is rejected
 ```
+
+## Scenario: the plan record posting primitive renders a record's artifact paths line
+
+```gherkin
+Feature: the plan record posting primitive renders a record's artifact paths line
+
+  Scenario: a payload naming artifact paths renders the artifact paths line
+    Given a captured plan Proof of Done payload stating release none with the default-branch commit
+    And its build identity carries the artifact_paths array tools/shared_credentials_provisioning/ and infra/shared-credentials/write-secret.sh
+    When the posting primitive renders the record
+    Then the record's build identity carries an artifact paths line naming tools/shared_credentials_provisioning/ and infra/shared-credentials/write-secret.sh in that order
+
+  Scenario: a payload naming no artifact paths renders no artifact paths line
+    Given a captured plan Proof of Done payload whose build identity carries no artifact_paths array
+    When the posting primitive renders the record
+    Then the record carries no artifact paths line
+
+  Scenario: a malformed artifact paths value is refused and nothing is posted
+    Given a captured plan Proof of Done payload whose build identity carries an artifact_paths value that is not an array of non-empty strings
+    When the posting primitive is invoked
+    Then it refuses naming artifact_paths
+    And no record is posted
+```
