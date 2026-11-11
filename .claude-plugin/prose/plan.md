@@ -150,14 +150,14 @@ Done and Proof of Done").
   bullet inside the section. This is the rule a plan front-end trips most easily, because the carrier relation is exactly what
   the routing decision is about.
 
-After the child is filed, DISPLAY the filing through the one public display primitive every filing front-end uses:
+After the child is filed, DISPLAY the filing through the one public display primitive every filing front-end uses, passing the ledger as `path` so the display reads or records the same judgement the approve valve and the pre-dispatch wall reuse (a clean display is then evidence they will not refuse the child on a heading or proof mode it did not name):
 
 ```python
-from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
-    filing_display,
-)
+from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import filing_display
 
-filing_advice = filing_display(item=child, cwd=Path.cwd())
+config = resolve_store_config(cwd=Path.cwd(), work_items_arg=None)
+filing_advice = filing_display(item=child, cwd=Path.cwd(), path=config)
 ```
 
 Show every line. It carries the child's effective-criteria parse, each assertion with its proof mode, the resolved sandbox

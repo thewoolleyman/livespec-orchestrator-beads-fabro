@@ -51,6 +51,21 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_a
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
+    reusable_governing_heading_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    JUDGEMENT_UNAVAILABLE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
+    judgement_comment_bodies,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+    judge_item_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    STAGE_PRE_ADMISSION,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
     EffectiveCriteria,
     effective_criteria,
@@ -74,10 +89,13 @@ from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableErr
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+        DodJudgementDecision,
+    )
     from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
         GoverningHeadingVerdict,
     )
-    from livespec_orchestrator_beads_fabro.types import WorkItem
+    from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
     "ADVISORY_FINDING_PREFIX",
@@ -111,7 +129,11 @@ UNDECLARED_PROOF_MODE_REPORT = "undeclared"
 
 
 def filing_display(
-    *, item: WorkItem, cwd: Path, governing: GoverningHeadingReader | None = None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    governing: GoverningHeadingReader | None = None,
+    path: StoreConfig | None = None,
 ) -> str:
     """The whole pre-confirmation display for one item, as lines of text.
 
@@ -143,6 +165,17 @@ def filing_display(
     The hygiene listing, which grades every item in the tenant and must not
     turn one listing into a model call per item, does not reach here: it holds
     the advisory directly, through `advisory_definition_of_done_findings`.
+
+    `path` NAMES THE LEDGER A FILED ITEM LIVES IN, and it is what makes a clean
+    display evidence. Every front-end displays AFTER filing, so the item has a
+    ledger. With it the display goes through the decision the approve valve and
+    the pre-dispatch wall take: it reuses the item's recorded governing-heading
+    verdict, else takes one, and then reuses or takes AND RECORDS the pre-admission
+    judgement over that same verdict. Both later screens find the record and spend
+    nothing, so the governing-heading verdict and the proof-mode verdict they act
+    on are the ones this display showed, instead of second model readings of one
+    unchanged item that can differ (`bd-ib-e3vbbo`). Without it the display is the
+    ledger-free preview it always was, and it is no evidence of admissibility.
     """
     observer = JudgementObserver()
     reader = (
@@ -156,17 +189,55 @@ def filing_display(
     lines = [assertion_count_of(criteria=resolved).parse_display]
     lines.extend(_assertion_lines(criteria=resolved))
     lines.append(_capability_line(cwd=cwd))
-    verdict = reader(item=item, repo=cwd)
+    verdict, decision = _judged(item=item, cwd=cwd, path=path, reader=reader)
     lines.extend(
         _finding_lines(
             item=item,
             cwd=cwd,
             governing=verdict,
-            judgement_unavailable=verdict is None or observer.unavailable,
+            decision=decision,
+            judgement_unavailable=verdict is None
+            or observer.unavailable
+            or (decision is not None and decision.outcome == JUDGEMENT_UNAVAILABLE),
         )
     )
     lines.extend(observer.report_lines(item_id=item.id, cwd=cwd))
     return "\n".join(lines)
+
+
+def _judged(
+    *, item: WorkItem, cwd: Path, path: StoreConfig | None, reader: GoverningHeadingReader
+) -> tuple[GoverningHeadingVerdict | None, DodJudgementDecision | None]:
+    """The governing-heading verdict, and the recorded pre-admission decision over it.
+
+    The verdict is established ONCE and handed to the decision as a fixed reader, so
+    the verdict the display renders findings from is the verdict the recorded
+    judgement names. An unreadable ledger reads no recorded verdict and the decision
+    reports itself unavailable, recording nothing.
+    """
+    if path is None:
+        return reader(item=item, repo=cwd), None
+    comments = judgement_comment_bodies(path=path, work_item_id=item.id, repo=cwd)
+    recorded = (
+        None
+        if comments is None
+        else reusable_governing_heading_verdict(item=item, repo=cwd, comments=comments)
+    )
+    verdict = reader(item=item, repo=cwd) if recorded is None else recorded
+
+    def established(*, item: WorkItem, repo: Path) -> GoverningHeadingVerdict | None:
+        del item, repo
+        return verdict
+
+    decision = judge_item_definition_of_done(
+        item=item,
+        repo=cwd,
+        path=path,
+        stage=STAGE_PRE_ADMISSION,
+        runner=ShellCommandRunner(),
+        governing_heading=established,
+    )
+    return verdict, decision
 
 
 def _assertion_lines(*, criteria: EffectiveCriteria) -> list[str]:
@@ -226,13 +297,18 @@ def _finding_lines(
     item: WorkItem,
     cwd: Path,
     governing: GoverningHeadingVerdict | None,
+    decision: DodJudgementDecision | None,
     judgement_unavailable: bool,
 ) -> list[str]:
     """Every finding the host-side wall can detect, labelled by kind.
 
     The mechanical ones lead, because they are the ones that withhold `ready`: a
     filer reading top to bottom meets the blocking repair before the advisory one.
+    The recorded judgement's findings follow under the advisory leader, as the
+    governing-heading finding always has: they are the judgement's, not the
+    wall's, and a finding both name is rendered once.
     """
+    judged = () if decision is None else decision.findings
     lines = [
         f"{MECHANICAL_FINDING_PREFIX} {finding}"
         for finding in definition_of_done_findings(item=item, cwd=cwd)
@@ -240,7 +316,9 @@ def _finding_lines(
     lines.extend(
         f"{ADVISORY_FINDING_PREFIX} {finding}"
         for finding in advisory_definition_of_done_findings(item=item, cwd=cwd, governing=governing)
+        if finding not in judged
     )
+    lines.extend(f"{ADVISORY_FINDING_PREFIX} {finding}" for finding in judged)
     if judgement_unavailable:
         lines.append(JUDGEMENT_UNAVAILABLE_REPORT)
     if not lines:

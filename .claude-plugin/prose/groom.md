@@ -215,7 +215,7 @@ from livespec_orchestrator_beads_fabro.store import (
 
 filed = materialize_work_items(records=read_work_items(path=config))
 filing_advice = [
-    filing_display(item=filed[slice_id], cwd=Path.cwd())
+    filing_display(item=filed[slice_id], cwd=Path.cwd(), path=config)
     for slice_id in result.filed_slice_ids
 ]
 ```

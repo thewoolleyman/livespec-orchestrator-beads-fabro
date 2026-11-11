@@ -258,7 +258,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display impor
     filing_display,
 )
 
-filing_advice = filing_display(item=item, cwd=Path.cwd())
+filing_advice = filing_display(item=item, cwd=Path.cwd(), path=config)
 ```
 
 Show the user every line. It carries the effective-criteria parse, each

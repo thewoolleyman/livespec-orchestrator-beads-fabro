@@ -245,8 +245,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display impor
     filing_display,
 )
 
-filing_advice = filing_display(item=item, cwd=Path.cwd())
+filing_advice = filing_display(item=item, cwd=Path.cwd(), path=config)
 ```
+
+`path=config` hands the display the filed item's ledger, so it reuses or records the same pre-admission judgement the approve
+valve and the pre-dispatch wall reuse; a clean display is then evidence they will not refuse the item on a heading or a proof
+mode the display did not name.
 
 Show the user every line of `filing_advice`. It carries four things, and each
 is there because it answers a question the filer would otherwise have to go and
