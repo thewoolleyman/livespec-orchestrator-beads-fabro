@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_watchdog_observation
@@ -24,6 +24,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroPort,
     FabroTarget,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
 from livespec_orchestrator_beads_fabro.commands._run_attribution import GOAL_TEXT_ONLY
 
 _PS_ROW = (
@@ -87,12 +88,48 @@ class _Runner:
         )
 
 
+@dataclass(kw_only=True)
+class _HttpTransport:
+    result: FabroHttpResult
+    calls: list[dict[str, object]] = field(default_factory=list)
+
+    def send(
+        self,
+        *,
+        method: str,
+        url: str,
+        headers: dict[str, str],
+        body: bytes | None,
+        timeout_seconds: float,
+    ) -> FabroHttpResult:
+        self.calls.append(
+            {
+                "method": method,
+                "url": url,
+                "headers": headers,
+                "body": body,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
+        return self.result
+
+
 def _port(*, runner: _Runner) -> FabroPort:
     return FabroPort(
         fabro_bin="fabro",
         target=FabroTarget(server_url=None, dev_token=None, environment=None),
         runner=runner,
         cwd=Path("/tmp"),
+    )
+
+
+def _stages_port(*, runner: _Runner, transport: _HttpTransport) -> FabroPort:
+    return FabroPort(
+        fabro_bin="fabro",
+        target=FabroTarget(server_url="https://factory.example.test"),
+        runner=runner,
+        cwd=Path("/tmp"),
+        http=transport,
     )
 
 
@@ -152,46 +189,70 @@ def test_a_bound_poll_reads_its_run_and_issues_no_listing() -> None:
     that listed AND inspected would return exactly the same run — the whole
     defect is the call that was made, not the answer that came back.
     """
-    runner = _runner(stdout_by_verb={"inspect": _INSPECT_RECORD})
+    runner = _runner()
+    transport = _HttpTransport(
+        result=FabroHttpResult(
+            status=200,
+            body='{"data": [{"id": "implement@1", "handler": "agent", "status": "running"}]}',
+            error=None,
+            payload={"data": [{"id": "implement@1", "handler": "agent", "status": "running"}]},
+            succeeded=True,
+        )
+    )
     journal = _Journal(records=[])
 
     observed = observed_run(
         work_item_id="bd-ib-mine",
-        port=_port(runner=runner),
+        port=_stages_port(runner=runner, transport=transport),
         journal=journal,
         attribution=GOAL_TEXT_ONLY,
         bound_run_id="01BOUND",
     )
 
     run = observed.run
-    assert runner.verbs == ["inspect"]
+    assert runner.verbs == []
     assert "ps" not in runner.verbs
     # The per-run read carries its own record, which is what lets a caller read
     # a FIELD of the run without spending a second round trip on it.
     assert observed.record is not None
     assert run is not None
     assert run.run_id == "01BOUND"
+    assert [(call["method"], call["url"]) for call in transport.calls] == [
+        ("GET", "https://factory.example.test/api/v1/runs/01BOUND/stages")
+    ]
     assert [record["stage"] for record in journal.records] == [BOUND_POLL_JOURNAL_STAGE]
 
 
-def test_a_bound_poll_names_the_bound_run_in_the_command_it_issues() -> None:
+def test_a_bound_poll_names_the_bound_run_in_the_request_it_issues() -> None:
     """The read is addressed to the BOUND run, not to whatever the port defaults to.
 
     Read off the argv rather than off the answer: a port asked about the wrong
     run returns a perfectly well-formed record for that other run, and every
     assertion about the verdict passes on it.
     """
-    runner = _runner(stdout_by_verb={"inspect": _INSPECT_RECORD})
+    runner = _runner()
+    transport = _HttpTransport(
+        result=FabroHttpResult(
+            status=200,
+            body='{"data": [{"id": "implement@1", "status": "running"}]}',
+            error=None,
+            payload={"data": [{"id": "implement@1", "status": "running"}]},
+            succeeded=True,
+        )
+    )
 
     _ = observed_run(
         work_item_id="bd-ib-mine",
-        port=_port(runner=runner),
+        port=_stages_port(runner=runner, transport=transport),
         journal=_Journal(records=[]),
         attribution=GOAL_TEXT_ONLY,
         bound_run_id="01BOUND",
     )
 
-    assert runner.argvs == [["fabro", "inspect", "01BOUND", "--json"]]
+    assert runner.argvs == []
+    assert [call["url"] for call in transport.calls] == [
+        "https://factory.example.test/api/v1/runs/01BOUND/stages"
+    ]
 
 
 def test_classify_bound_poll_matches_a_running_run() -> None:
@@ -370,22 +431,31 @@ def test_journaled_bound_poll_records_a_run_the_factory_no_longer_holds() -> Non
 
 def test_a_bound_poll_whose_factory_holds_no_such_run_reports_it_through_the_port() -> None:
     """End to end through the real port: the engine's own refusal is read back."""
-    runner = _runner(
-        stderr_by_verb={"inspect": _NOT_FOUND_STDERR},
-        exit_code_by_verb={"inspect": 1},
+    runner = _runner()
+    transport = _HttpTransport(
+        result=FabroHttpResult(
+            status=404,
+            body=_NOT_FOUND_STDERR,
+            error="HTTP Error 404",
+            payload=None,
+            succeeded=False,
+        )
     )
     journal = _Journal(records=[])
 
     observed = observed_run(
         work_item_id="bd-ib-mine",
-        port=_port(runner=runner),
+        port=_stages_port(runner=runner, transport=transport),
         journal=journal,
         attribution=GOAL_TEXT_ONLY,
         bound_run_id="01BOUND",
     )
 
     assert observed.run is None
-    assert runner.verbs == ["inspect"]
+    assert runner.verbs == []
+    assert [call["url"] for call in transport.calls] == [
+        "https://factory.example.test/api/v1/runs/01BOUND/stages"
+    ]
     assert [record["reason"] for record in journal.records] == [_RUN_NOT_HELD]
 
 
@@ -467,19 +537,26 @@ def test_journaled_bound_poll_records_an_unobservable_read() -> None:
 
 def test_an_unreachable_factory_reports_unobservable_through_the_port() -> None:
     """End to end: a factory that cannot be reached has not lost the run."""
-    runner = _runner(
-        stderr_by_verb={"inspect": "error: connection refused"},
-        exit_code_by_verb={"inspect": 1},
+    runner = _runner()
+    transport = _HttpTransport(
+        result=FabroHttpResult(
+            status=0,
+            body="",
+            error="URLError: connection refused",
+            payload=None,
+            succeeded=False,
+        )
     )
     journal = _Journal(records=[])
 
     observed = observed_run(
         work_item_id="bd-ib-mine",
-        port=_port(runner=runner),
+        port=_stages_port(runner=runner, transport=transport),
         journal=journal,
         attribution=GOAL_TEXT_ONLY,
         bound_run_id="01BOUND",
     )
 
     assert observed.run is None
+    assert runner.verbs == []
     assert [record["reason"] for record in journal.records] == [_UNOBSERVABLE]
