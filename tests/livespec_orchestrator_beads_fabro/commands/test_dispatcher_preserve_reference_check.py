@@ -45,6 +45,19 @@ def _module() -> ModuleType:
     )
 
 
+def _stages_in_dump_order(*, payloads: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    """Build a `/state` projection whose positions match its dump paths."""
+    stages: dict[str, dict[str, str | None]] = {}
+    for relative, payload in sorted(payloads.items()):
+        stage_directory = Path(relative).parts[1]
+        ordinal_text, stage_name = stage_directory.split("-", 1)
+        ordinal = int(ordinal_text)
+        for position in range(len(stages) + 1, ordinal):
+            stages[f"stage-{position:03d}@1"] = {"diff": None}
+        stages[stage_name] = {"diff": payload}
+    return stages
+
+
 @dataclass(kw_only=True)
 class _ExportRunner:
     """Re-exports `payloads` into the requested output dir, then exits `exit_code`."""
@@ -77,13 +90,7 @@ def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
                     succeeded=False,
                 )
             )
-        stages = {
-            Path(relative).parts[1].split("-", 1)[1]: {
-                "first_event_seq": int(Path(relative).parts[1].split("-", 1)[0]),
-                "diff": payload,
-            }
-            for relative, payload in runner.payloads.items()
-        }
+        stages = _stages_in_dump_order(payloads=runner.payloads)
         return _StateApi(
             result=FabroHttpResult(
                 status=200,
@@ -113,11 +120,10 @@ def test_a_blob_backed_pointer_verifies_the_addressed_bytes(
                 error=None,
                 payload={
                     "stages": {
+                        "prepare@1": {"diff": None},
                         "implement@1": {
-                            "first_event_seq": 2,
-                            "dump_ordinal": 2,
                             "diff": f"blob://sha256/{digest}",
-                        }
+                        },
                     }
                 },
                 succeeded=True,
