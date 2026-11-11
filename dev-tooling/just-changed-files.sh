@@ -6,4 +6,6 @@ set -uo pipefail
 {
     git diff --name-only origin/master...HEAD
     git diff --cached --name-only --diff-filter=AM
-} | { grep -E '\.py$' || true; } | sort -u
+} | {
+    grep -E '^(\.claude-plugin/scripts/livespec_orchestrator_beads_fabro/|\.claude-plugin/scripts/bin/|dev-tooling/checks/|\.claude/hooks/|\.claude-plugin/hooks/).*\.py$' || true
+} | sort -u
