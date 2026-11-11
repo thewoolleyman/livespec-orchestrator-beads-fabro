@@ -45,8 +45,11 @@ _NEGATED_VERB_BEFORE_WORKFLOW_SCOPE = re.compile(
     rf"^\s+no\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}",
     re.IGNORECASE,
 )
+# "no [root] <path> edit": the negation governs only the verb that directly
+# follows the path. Any text between them (a clause boundary, a conjunction, a
+# second subject) ends the fence, so a later positive verb is not negated.
 _NEGATED_WORKFLOW_SCOPE_BEFORE_VERB = re.compile(
-    rf"\bno\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}[^\n]{{0,80}}$",
+    rf"\bno\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}\s*$",
     re.IGNORECASE,
 )
 
