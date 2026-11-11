@@ -165,3 +165,31 @@ def test_a_released_items_standing_preflight_refusal_is_visible_to_the_held_read
         held_judgement(item=_item(), repo=repo, comments=unreleased, payload_root=payload) is None
     )
     assert runner.calls == 1
+
+
+def test_a_record_naming_another_spec_identity_is_not_a_standing_refusal(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    payload = _payload(tmp_path=tmp_path)
+    bodies: list[str] = []
+
+    _ = judge_definition_of_done(
+        item=_item(),
+        repo=repo,
+        stage=STAGE_PRE_DISPATCH,
+        comments=tuple(bodies),
+        append=lambda *, body: bodies.append(body),
+        runner=_Runner(),
+        payload_root=payload,
+        governing_heading=_stated,
+        release_of_held_spec_tier=True,
+    )
+    other = tuple(
+        "spec-identity: tree:0000" if line.startswith("spec-identity: ") else line
+        for line in bodies[0].splitlines()
+    )
+    assert "spec-identity: tree:0000" in other
+
+    released = (_HOLD, _RELEASE, "\n".join(other))
+    assert held_judgement(item=_item(), repo=repo, comments=released, payload_root=payload) is None
