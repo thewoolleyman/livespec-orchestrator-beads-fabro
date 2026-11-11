@@ -323,6 +323,7 @@ def test_scenario305_the_route_sends_only_a_janitor_brief_to_refresh_repair(
     state = run / _STATE_DIRECTORY
     state.mkdir(parents=True)
     brief = state / "livespec-refresh-repair-brief"
+    _ = (state / "livespec-janitor-check-suite-verdict").write_text("1\n", encoding="utf-8")
 
     assert '"preferred_next_label":"fix"' in _route_label(run=run, plugins=plugins)
 
