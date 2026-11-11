@@ -290,6 +290,7 @@ chain = run_candidate_chain(
     runner=ShellCommandRunner(),
     is_verdict=lambda text: is_verdict(text=text),
     candidate_resolver=candidates,
+    bound_input=True,
     caller="dod_preflight",
     journal_spend=True,
 )
