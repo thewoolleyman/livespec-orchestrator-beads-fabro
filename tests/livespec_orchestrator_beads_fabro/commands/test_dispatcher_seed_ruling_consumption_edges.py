@@ -14,7 +14,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_consumpt
 )
 
 
-def _ruling(*, ref: str = "refs/seed", sha: str = "a" * 40) -> str:
+def _ruling(
+    *, ref: str = "refs/seed", sha: str = "a" * 40, instant: str = "2026-11-11T00:00:00Z"
+) -> str:
     return "\n".join(
         (
             "livespec-seed-ruling",
@@ -23,7 +25,7 @@ def _ruling(*, ref: str = "refs/seed", sha: str = "a" * 40) -> str:
             f"commit-sha: {sha}",
             "invoker: coordinator",
             "reason: preserve",
-            "instant: 2026-11-11T00:00:00Z",
+            f"instant: {instant}",
         )
     )
 
@@ -207,3 +209,23 @@ def test_inert_values_and_nonmatching_consumption_shapes_do_not_block_backfill()
         "livespec-seed-ruling-consumed\nruling-instant: 2026-11-11T00:00:00Z"
         "\ndispatch-id: d\nrun-id: r"
     ]
+
+
+def test_a_launch_consumes_the_latest_ruling_naming_its_seed() -> None:
+    """Two rulings for one preserved commit: the later one governs, so it is consumed."""
+    older, newer = "2026-11-11T00:00:00Z", "2026-11-11T01:00:00Z"
+    written_comments: list[str] = []
+
+    consume_seed_ruling_for_run(
+        comments=[_ruling(instant=older), _ruling(instant=newer)],
+        work_item_id="item",
+        preservation_ref="refs/seed",
+        commit_sha="a" * 40,
+        dispatch_id="dispatch",
+        run_id="run",
+        append_comment=written_comments.append,
+        append_journal=lambda _record: None,
+    )
+
+    assert len(written_comments) == 1
+    assert f"ruling-instant: {newer}" in written_comments[0]
