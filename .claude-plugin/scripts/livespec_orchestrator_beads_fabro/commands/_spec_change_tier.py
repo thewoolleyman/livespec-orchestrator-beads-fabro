@@ -57,8 +57,9 @@ from typing import TYPE_CHECKING, Literal
 from livespec_runtime.spec_stated import ItemClass, SpecStatedVerdict, StatedKind
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
-    REFERENCES_PREFIX,
-    definition_of_done,
+    PROOF_MODE_FACTORY_CAPTURED,
+    REASON_PREFIX,
+    declared_proof_mode,
     definition_of_done_source,
 )
 
@@ -104,6 +105,12 @@ SPEC_CHANGE_TIER = "spec-change"
 NO_TIER = "none"
 
 _FIELD_ABSENT = "(none recorded)"
+
+# The two line shapes the Definition of Done grammar keys on, spelled as the
+# section parse spells them so the rendering and the parse agree about which
+# lines are headings and bullets.
+_SUB_HEADING = re.compile(r"^#{1,6}\s+(.+?)\s*$")
+_BULLET_MARKER = re.compile(r"^\s*-\s+(?=\S)")
 
 # Judging guidance appended to the statement the model reads. A bullet asserting
 # that a repository configures a behaviour a ratified MAY or SHOULD clause
@@ -291,24 +298,97 @@ def proposal_topic_for(*, item: WorkItem) -> str:
 def _without_proof_mode_partition(*, text: str) -> str:
     """A description with its Definition of Done section stripped of its partition.
 
-    The section keeps its heading, its `References:` line and any stray line the
-    grammar does not admit, and carries each bullet ONCE in sorted order, with no
-    proof-mode sub-heading, no `Reason:` line and no bullet position. Sorting is
-    what makes a reorder invisible; the bullet text is the parse's own, so a
-    changed word still changes the statement. Everything outside the section is
+    The partition is exactly three things: a `Host-captured` or `Human-attested`
+    sub-heading line, the `Reason:` line (and its indented wrapping) under such a
+    sub-heading, and the order of the bullets. Those are removed, and every bullet
+    that sat in the default region or under such a sub-heading is carried ONCE, in
+    sorted order, after the lines that preceded the first sub-heading. Everything
+    else is kept as written and in place: the `References:` line, a stray line, any
+    other sub-heading (`### Context`) with whatever sits under it, and a `Reason:`
+    line that does not belong to a proof-mode sub-heading, because each of those is
+    something the judge reads. Blank lines are separators and are not kept. A bullet
+    under a non-proof-mode sub-heading stays under it. Text outside the section is
     kept verbatim, and a description with no section is returned as it came.
     """
     section = definition_of_done_source(description=text)
     if not section:
         return text
-    parsed = definition_of_done(description=text)
-    body = [
-        *([f"{REFERENCES_PREFIX} {', '.join(parsed.references)}"] if parsed.references else []),
-        *parsed.stray_lines,
-        *(f"- {bullet}" for bullet in sorted(one.text for one in parsed.assertions)),
-    ]
-    heading = section.splitlines()[0]
-    return text.replace(section, "\n\n".join([heading, *body]), 1)
+    heading, *body = section.splitlines()
+    before: list[str] = []
+    after: list[str] = []
+    bullets: list[str] = []
+    for sub_heading, lines in _sub_heading_segments(body=body):
+        title = _SUB_HEADING.match(sub_heading) if sub_heading else None
+        proof_mode = (
+            title is not None
+            and declared_proof_mode(sub_heading=title.group(1)) != PROOF_MODE_FACTORY_CAPTURED
+        )
+        kept, found = _segment_content(
+            lines=lines, pooled=sub_heading is None or proof_mode, proof_mode=proof_mode
+        )
+        bullets.extend(found)
+        if sub_heading is None:
+            before = kept
+        else:
+            after.extend([] if proof_mode else [sub_heading.rstrip()])
+            after.extend(kept)
+    rendered = [heading, *before, *(f"- {bullet}" for bullet in sorted(bullets)), *after]
+    return text.replace(section, "\n".join(rendered), 1)
+
+
+def _sub_heading_segments(*, body: list[str]) -> list[tuple[str | None, list[str]]]:
+    """The section body cut at its sub-headings, as (heading line, lines under it).
+
+    The first segment has no heading: it is the default region before any
+    sub-heading.
+    """
+    segments: list[tuple[str | None, list[str]]] = [(None, [])]
+    for raw in body:
+        if _SUB_HEADING.match(raw) is not None:
+            segments.append((raw, []))
+        else:
+            segments[-1][1].append(raw)
+    return segments
+
+
+def _segment_content(
+    *, lines: list[str], pooled: bool, proof_mode: bool
+) -> tuple[list[str], list[str]]:
+    """One segment's kept lines and, when `pooled`, the bullets it contributes.
+
+    A pooled segment (the default region or a proof-mode sub-heading) hands its
+    bullets over to be sorted; a proof-mode segment also loses its `Reason:` line
+    and that line's indented wrapping. Blank lines are separators and are dropped.
+    """
+    kept: list[str] = []
+    bullets: list[str] = []
+    pending: list[str] = []
+    in_reason = False
+    for raw in lines:
+        if not raw.strip():
+            _close_bullet(bullets=bullets, pending=pending)
+            in_reason = False
+        elif pooled and _BULLET_MARKER.match(raw) is not None:
+            _close_bullet(bullets=bullets, pending=pending)
+            pending.append(_BULLET_MARKER.sub("", raw, count=1).strip())
+        elif pending and raw[:1].isspace():
+            pending.append(raw.strip())
+        else:
+            _close_bullet(bullets=bullets, pending=pending)
+            if proof_mode and raw.strip().startswith(REASON_PREFIX):
+                in_reason = True
+            elif not (in_reason and raw[:1].isspace()):
+                in_reason = False
+                kept.append(raw.rstrip())
+    _close_bullet(bullets=bullets, pending=pending)
+    return kept, bullets
+
+
+def _close_bullet(*, bullets: list[str], pending: list[str]) -> None:
+    """Finish the open bullet, if any, joining its wrapped lines with a space."""
+    if pending:
+        bullets.append(" ".join(pending))
+        pending.clear()
 
 
 def _recorded(*, value: str | None) -> str:
