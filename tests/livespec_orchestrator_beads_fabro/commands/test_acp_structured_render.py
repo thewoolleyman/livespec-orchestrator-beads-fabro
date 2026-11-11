@@ -196,8 +196,8 @@ def test_a_structured_entry_without_effort_renders_only_the_model() -> None:
     assert "CLAUDE_CODE_EFFORT_LEVEL" not in rendered["implement"]
 
 
-def test_a_structured_entry_resolves_a_model_by_one_of_its_declared_aliases() -> None:
-    """An alias resolves to the canonical id, and the canonical id is what renders."""
+def test_a_structured_entry_preserves_a_model_alias_in_the_rendered_adapter() -> None:
+    """An alias resolves through its catalog entry while preserving its requested bytes."""
     rendered = _rendered(
         block={
             "model_catalog": {
@@ -210,9 +210,7 @@ def test_a_structured_entry_resolves_a_model_by_one_of_its_declared_aliases() ->
             "acp_nodes": {"implement": {"agent": "claude-acp", "model": "opus", "effort": "high"}},
         }
     )
-    assert rendered["implement"] == (
-        f"ANTHROPIC_MODEL=claude-opus-5-20260930 CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
-    )
+    assert rendered["implement"] == f"ANTHROPIC_MODEL=opus CLAUDE_CODE_EFFORT_LEVEL=high {_CLAUDE}"
 
 
 def test_a_multi_provider_agent_takes_a_provider_qualified_model() -> None:

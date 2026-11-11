@@ -110,6 +110,7 @@ NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
 # conservative (a shell-style identifier): the first token that is not one
 # ends the env prefix and begins the command.
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+_SHELL_TOKEN_SAFE_VALUE_RE = re.compile(r"^[A-Za-z0-9_@%+=:,./\[\]-]+$")
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -195,7 +196,8 @@ def render_adapter(*, adapter: AcpAdapter) -> str:
     commands regardless of which layer contributed which key, so a
     journaled string can be compared across runs.
 
-    Each VALUE is SHELL-QUOTED, because the string this returns is
+    Each VALUE is quoted when POSIX tokenization would otherwise alter it,
+    because the string this returns is
     POSIX-tokenized before it is executed and that tokenization CONSUMES
     quote characters: an unquoted JSON object arrives at its adapter with
     every quote stripped and fails to parse its own configuration (the
@@ -209,8 +211,18 @@ def render_adapter(*, adapter: AcpAdapter) -> str:
     `shlex.quote` is the standard-library answer to exactly that, and it
     leaves a value needing no quoting untouched.
     """
-    pairs = [f"{key}={shlex.quote(adapter.env[key])}" for key in sorted(adapter.env)]
+    pairs = [f"{key}={_quote_env_value(value=adapter.env[key])}" for key in sorted(adapter.env)]
     return " ".join([*pairs, adapter.command, *adapter.args])
+
+
+def _quote_env_value(*, value: str) -> str:
+    """Quote only values POSIX tokenization would otherwise alter.
+
+    Fabro tokenizes rather than evaluates the rendered command, so brackets are
+    safe token characters. Keeping them literal preserves the ratified 1M
+    Claude model spelling in the committed workflow default.
+    """
+    return value if _SHELL_TOKEN_SAFE_VALUE_RE.fullmatch(value) is not None else shlex.quote(value)
 
 
 def overlay_from_string(*, text: str, replaces_env: bool = False) -> AcpNodeOverlay:

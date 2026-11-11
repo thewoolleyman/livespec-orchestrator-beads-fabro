@@ -113,13 +113,9 @@ _ZAI_MODELS: tuple[tuple[str, str], ...] = (("glm-5.2", "GLM 5.2"),)
 # published fact written twice, drifting silently in the worst available
 # direction: two entries answering to one model, pricing an attempt two ways.
 #
-# KNOWN LIMIT, recorded rather than left to be rediscovered. An alias resolves
-# through `_acp_structured_render._lookup_model`, which renders the entry's
-# `canonical_id`, so a STRUCTURED entry written as `{"model":
-# "claude-opus-4-8[1m]"}` would reach the adapter as bare `claude-opus-4-8` --
-# the standard-context model. Nothing configures that spelling today; a
-# structured entry wanting the 1M window names it in the manual form, exactly as
-# the workflow's own defaults do.
+# A structured entry keeps an alias spelling when it renders the adapter. That
+# preserves the requested 1M-context variant while the catalog still uses the
+# canonical id for lookup and pricing.
 _MODEL_ALIASES: Mapping[str, tuple[str, ...]] = {
     "claude-opus-4-8": ("claude-opus-4-8[1m]",),
 }

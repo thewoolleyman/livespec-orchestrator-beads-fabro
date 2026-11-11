@@ -230,7 +230,9 @@ def _rendered(
 ) -> AcpResolvedStructured:
     """The launch distribution with the model and effort applied by its mechanism."""
     base = dict(agent.read_only_env if read_only and agent.read_only_env else agent.env)
-    settings = _settings(mechanism=agent.mechanism, model=model.canonical_id, effort=entry.effort)
+    requested_model = entry.model.rpartition("/")[2]
+    rendered_model = requested_model if requested_model in model.aliases else model.canonical_id
+    settings = _settings(mechanism=agent.mechanism, model=rendered_model, effort=entry.effort)
     env, args, options = _applied(
         mechanism=agent.mechanism, base=base, args=agent.args, settings=settings
     )
