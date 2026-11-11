@@ -41,6 +41,17 @@ _NEGATED_WORKFLOW_SCOPE = re.compile(
     rf"\bno\s+files?\s+(?:under|in)\s+{re.escape(_WORKFLOW_PREFIX)}",
     re.IGNORECASE,
 )
+_NEGATED_VERB_BEFORE_WORKFLOW_SCOPE = re.compile(
+    rf"^\s+no\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}",
+    re.IGNORECASE,
+)
+# "no [root] <path> edit": the negation governs only the verb that directly
+# follows the path. Any text between them (a clause boundary, a conjunction, a
+# second subject) ends the fence, so a later positive verb is not negated.
+_NEGATED_WORKFLOW_SCOPE_BEFORE_VERB = re.compile(
+    rf"\bno\s+(?:root\s+)?{re.escape(_WORKFLOW_PREFIX)}\s*$",
+    re.IGNORECASE,
+)
 
 
 def is_host_only_item(*, item: WorkItem, raw_labels: Sequence[str] = ()) -> bool:
@@ -72,7 +83,9 @@ def host_only_refusal_detail(*, item_id: str) -> str:
         "set the recorded override with "
         "`set-workflow-scope-override:<id>:citation-only`, or add an inline "
         "negation declaration stating that the item ships no files under "
-        ".github/workflows/, before retrying factory dispatch."
+        ".github/workflows/, before retrying factory dispatch. An unrecognised "
+        "negation cue does not relax this conservative gate; use that exact "
+        "declaration or the recorded override."
     )
 
 
@@ -89,10 +102,12 @@ def _scope_text_parts(*, item: WorkItem) -> tuple[str, ...]:
 
 def _text_declares_workflow_edit(*, text: str) -> bool:
     normalized = text.replace("`", "")
-    for line in normalized.splitlines() or (normalized,):
+    for raw_line in normalized.splitlines() or (normalized,):
+        # The "no files under|in <path>" fence governs only its own mention of
+        # the path, so remove that mention and judge what remains: a second,
+        # separate mention beside a positive edit verb still refuses.
+        line = _NEGATED_WORKFLOW_SCOPE.sub(" ", raw_line)
         if _WORKFLOW_PREFIX not in line.lower():
-            continue
-        if _NEGATED_WORKFLOW_SCOPE.search(line) is not None:
             continue
         if _line_has_unnegated_workflow_edit(line=line):
             return True
@@ -123,7 +138,12 @@ def _verb_near_workflow_prefix(*, line: str, verb: re.Match[str]) -> bool:
 
 def _verb_is_negated(*, line: str, verb: re.Match[str]) -> bool:
     preceding = line[: verb.start()]
+    following = line[verb.end() :]
     if _NEGATOR_BEFORE_VERB.search(preceding) is not None:
+        return True
+    if _NEGATED_VERB_BEFORE_WORKFLOW_SCOPE.match(following) is not None:
+        return True
+    if _NEGATED_WORKFLOW_SCOPE_BEFORE_VERB.search(preceding) is not None:
         return True
     return (
         _NOUN_NEGATOR_BEFORE_VERB.search(preceding) is not None

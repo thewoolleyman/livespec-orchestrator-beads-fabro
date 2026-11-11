@@ -270,6 +270,20 @@ def test_is_host_only_item_false_for_cite_only_workflow_mention() -> None:
 @pytest.mark.parametrize(
     "line",
     [
+        "factory-safe, touches no root .github/workflows/.",
+        (
+            "Scope is scripts/just/ and tests/ only, with NO .github/workflows/ edit, "
+            "so it is factory-eligible."
+        ),
+    ],
+)
+def test_is_host_only_item_false_for_live_inline_scope_fences(line: str) -> None:
+    assert is_host_only_item(item=_item(description=line)) is False
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
         "Does NOT touch `.github/workflows/`.",
         "This item never edits .github/workflows/ci.yml.",
         "This item doesn't modify .github/workflows/ci.yml.",
@@ -301,6 +315,36 @@ def test_is_host_only_item_true_for_unnegated_workflow_edit(line: str) -> None:
     assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Scope has no root .github/workflows/ edit; this item updates .github/workflows/ci.yml.",
+        "Scope has no root .github/workflows/ edit and this item updates .github/workflows/ci.yml.",
+        "With NO .github/workflows/ edit, we still rewrite .github/workflows/release.yml.",
+    ],
+)
+def test_is_host_only_item_true_when_a_fence_precedes_a_separate_positive_edit(line: str) -> None:
+    item = _item(description=line)
+    assert is_host_only_item(item=item) is True
+    assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "This item ships no files under .github/workflows/, but updates .github/workflows/ci.yml.",
+        "Ships no files in .github/workflows/ and also rewrites .github/workflows/release.yml.",
+        "No files under .github/workflows/ are touched, yet this item edits .github/workflows/ci.yml.",
+    ],
+)
+def test_is_host_only_item_true_when_a_files_fence_shares_a_line_with_a_positive_edit(
+    line: str,
+) -> None:
+    item = _item(description=line)
+    assert is_host_only_item(item=item) is True
+    assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
+
+
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
@@ -312,6 +356,15 @@ def test_host_only_refusal_detail_is_actionable() -> None:
     assert "sub-agent" in detail or "host-route" in detail
     assert "set-workflow-scope-override:<id>:citation-only" in detail
     assert "ships no files under .github/workflows/" in detail
+
+
+def test_host_only_refusal_detail_explains_unrecognised_negation_remedy() -> None:
+    item = _item(description="This item has no plans to update .github/workflows/ci.yml.")
+
+    assert is_host_only_item(item=item) is True
+    detail = host_only_refusal_detail(item_id=item.id)
+    assert "unrecognised negation" in detail
+    assert "set-workflow-scope-override:<id>:citation-only" in detail
 
 
 def test_host_only_refusal_clears_stale_signal_for_intrinsic_host_only(
