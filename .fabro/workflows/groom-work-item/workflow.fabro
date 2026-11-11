@@ -322,17 +322,20 @@ digraph GroomWorkItem {
     // Read-only triage of the reviewer's BLOCKING findings before any rework,
     // exactly as in the reserved workflow: accept in-scope correct findings,
     // reject out-of-scope, not-applicable, factually wrong or scope-expanding
-    // ones with a one-line rationale. `max_visits` is the ungraceful
-    // runaway-loop backstop and MUST exceed the largest supported
-    // `review_fix_visit_cap` override; the graceful bound is the review edge
-    // guard.
+    // ones with a one-line rationale. max_visits=3 IS THE BOUND for the
+    // review<->review_fix loop, as in the reserved workflow since its Petri port
+    // (bd-ib-hti4zf): the review edge's `review_fix_visit_cap` visit guard is
+    // gone because the Petri-era engine refuses an `inputs.*` token inside an
+    // edge condition at load (attractor.condition.syntax, bd-ib-ttrjvj). Three
+    // rounds is what that guard admitted at its default; a fourth fix verdict
+    // now fails the run at entry here instead of parking at `needs_human`.
     disposition [
         label="Disposition review findings"
         backend="acp"
         acp.command="{{ inputs.disposition_adapter }}"
         timeout="1800s"
         max_retries=1
-        max_visits=10
+        max_visits=3
         prompt="@prompts/disposition.md"
     ]
 
@@ -345,7 +348,7 @@ digraph GroomWorkItem {
         backend="acp"
         acp.command="{{ inputs.review_fix_adapter }}"
         timeout="1800s"
-        max_visits=10
+        max_visits=3
         prompt="@prompts/review-fix.md"
     ]
 
@@ -499,18 +502,17 @@ digraph GroomWorkItem {
     conformance -> non_converged [label="Exhausted (conformance loop cap)"]
     fix -> conformance
 
-    // Review routing. `review_fix_visit_cap` is one larger than the configured
-    // fix-round cap because the guard counts review VISITS including the first
-    // review, so the default cap of three rounds renders as `< 4`.
+    // Review routing, on `preferred_label` alone. The fix-round bound is
+    // `disposition.max_visits` and `review_fix.max_visits` (see `disposition`):
+    // the Petri-era engine refuses the `inputs.*` token the retired visit guard
+    // carried in this edge's condition.
     //
-    // NO SHIP-ON-CAP ESCAPE HATCH, deliberately, and this is where the groom
-    // variant's review discipline departs from the reserved workflow's. The
-    // bundle may ship a still-objected-to diff at the cap because a merged PR
-    // is revisable. A filed cut is not comparably cheap to undo -- it becomes
-    // the backlog other work is planned against -- so a cut the reviewer still
-    // objects to parks for a human instead.
+    // NO SHIP-ON-CAP ESCAPE HATCH, deliberately. A filed cut is not cheap to
+    // undo -- it becomes the backlog other work is planned against -- so a cut
+    // the reviewer still objects to after the bound never reaches `phase_gate`:
+    // the run fails at the visit limit and the item escalates for a human.
     review -> needs_human [label="Blocked", condition="outcome=failed", weight=100]
-    review -> disposition [label="fix", condition="preferred_label=fix && context.internal.node_visit_count < {{ inputs.review_fix_visit_cap }}"]
+    review -> disposition [label="fix", condition="preferred_label=fix"]
     review -> phase_gate [label="approve", condition="preferred_label=approve"]
     review -> needs_human [label="unmatched review outcome"]
 
