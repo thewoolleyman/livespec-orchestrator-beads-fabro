@@ -37,7 +37,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_run_age imp
 )
 
 __all__: list[str] = [
+    "PublishedHeadEquivalent",
     "PublishedHeadUnobservable",
+    "RecoveryPublicationHistory",
     "earlier_head_seed",
     "leading_identifier",
     "newer_published_head_seed",
@@ -61,15 +63,36 @@ class PublishedHeadUnobservable:
     measurement: str = MEASUREMENT_PRESERVED_WORK
 
 
+@dataclass(frozen=True, kw_only=True)
+class PublishedHeadEquivalent:
+    """A published head that has the same tree as the otherwise competing ref.
+
+    The caller removes ``competing_ref`` from its passed-over listing as well as
+    taking ``seed``: the route must be indistinguishable from one where that ref
+    was absent, rather than merely avoiding the attribution hold.
+    """
+
+    seed: RecoverySeed
+    competing_ref: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class RecoveryPublicationHistory:
+    """The one journal reading used to compare a preserved ref with a published head."""
+
+    records: tuple[dict[str, object], ...]
+    publications: tuple[tuple[str, str], ...]
+    earlier_run_ids: tuple[str, ...]
+
+
 def newer_published_head_seed(
     *,
     runner: CommandRunner,
     repo: Path,
     work_item_id: str,
     terminal: RecoverySeed,
-    records: tuple[dict[str, object], ...],
-    publications: tuple[tuple[str, str], ...],
-) -> RecoverySeed | PublishedHeadUnobservable | None:
+    history: RecoveryPublicationHistory,
+) -> RecoverySeed | PublishedHeadEquivalent | PublishedHeadUnobservable | None:
     """Return a head a later run published, or ``None`` when the terminal ref stands.
 
     A terminal ref normally wins because it is the complete tree the failed run
@@ -80,16 +103,33 @@ def newer_published_head_seed(
     whenever a head and a competing ref both exist and either run cannot be
     established, so the comparison runs for an ordinary published draft too.
     """
-    published = published_head_seed(runner=runner, repo=repo, work_item_id=work_item_id)
+    published = published_head_seed(
+        runner=runner,
+        repo=repo,
+        work_item_id=work_item_id,
+        earlier_run_ids=history.earlier_run_ids,
+    )
     if published is None or isinstance(published, PublishedHeadUnobservable):
         return None
     relation = published_head_relation(
-        records=records,
+        records=history.records,
         preserved_run_id=terminal.source_run_id,
         published_head=published.commit_sha,
-        publications=publications,
+        publications=history.publications,
     )
     if relation is None:
+        identical = _same_tip_tree(runner=runner, repo=repo, terminal=terminal, published=published)
+        if identical is True:
+            return PublishedHeadEquivalent(seed=published, competing_ref=terminal.preservation_ref)
+        if identical is None:
+            return PublishedHeadUnobservable(
+                measurement=MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE,
+                detail=(
+                    "publishing-run-unobservable: the tip tree of the preserved ref and"
+                    " observed published head could not be compared, so their identity could"
+                    " not be established"
+                ),
+            )
         return PublishedHeadUnobservable(
             measurement=MEASUREMENT_PUBLISHING_RUN_UNOBSERVABLE,
             detail=(
@@ -99,6 +139,36 @@ def newer_published_head_seed(
             ),
         )
     return published if relation else None
+
+
+def _same_tip_tree(
+    *, runner: CommandRunner, repo: Path, terminal: RecoverySeed, published: RecoverySeed
+) -> bool | None:
+    """Whether the two readable refs name the same whole tree, or ``None`` if unreadable."""
+    if terminal.preservation_tip_sha is None:
+        return None
+    terminal_tree = _tree(runner=runner, repo=repo, commit=terminal.preservation_tip_sha)
+    published_tree = _tree(runner=runner, repo=repo, commit=published.commit_sha)
+    if terminal_tree is None or published_tree is None:
+        return None
+    return terminal_tree == published_tree
+
+
+def _tree(*, runner: CommandRunner, repo: Path, commit: str) -> str | None:
+    """Read a commit tree, fetching the remote object when this clone lacks it."""
+    read = ["git", "rev-parse", "--verify", "--quiet", f"{commit}^{{tree}}"]
+    first = runner.run(argv=read, cwd=repo, timeout_seconds=_GIT_TIMEOUT_SECONDS)
+    if first.exit_code == 0 and first.stdout.strip():
+        return first.stdout.strip()
+    fetched = runner.run(
+        argv=["git", "fetch", "--quiet", _SEED_REMOTE, commit],
+        cwd=repo,
+        timeout_seconds=_GIT_TIMEOUT_SECONDS,
+    )
+    if fetched.exit_code != 0:
+        return None
+    second = runner.run(argv=read, cwd=repo, timeout_seconds=_GIT_TIMEOUT_SECONDS)
+    return second.stdout.strip() if second.exit_code == 0 and second.stdout.strip() else None
 
 
 def published_head_seed(
@@ -123,6 +193,7 @@ def published_head_seed(
         remote=_SEED_REMOTE,
         commit_sha=surviving.head,
         preservation_ref=preserved_publish_ref(work_item_id=work_item_id, head=surviving.head),
+        preservation_tip_sha=surviving.head,
     )
 
 
@@ -170,6 +241,7 @@ def earlier_head_seed(
         remote=_SEED_REMOTE,
         commit_sha=found[ref],
         preservation_ref=ref,
+        preservation_tip_sha=found[ref],
     )
 
 

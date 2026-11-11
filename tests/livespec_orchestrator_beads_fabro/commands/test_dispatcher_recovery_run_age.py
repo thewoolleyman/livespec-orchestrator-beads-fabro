@@ -114,6 +114,10 @@ class _TerminalRefAndSurvivingBranchRunner:
             return CommandResult(
                 exit_code=0, stdout="a" * 40 + "\trefs/heads/needs-human/older\n", stderr=""
             )
+        if f"{'a' * 40}^{{tree}}" in argv:
+            return CommandResult(exit_code=0, stdout="a" * 40 + "\n", stderr="")
+        if f"{'b' * 40}^{{tree}}" in argv:
+            return CommandResult(exit_code=0, stdout="b" * 40 + "\n", stderr="")
         return CommandResult(exit_code=0, stdout="b" * 40 + "\trefs/heads/feat/item\n", stderr="")
 
 

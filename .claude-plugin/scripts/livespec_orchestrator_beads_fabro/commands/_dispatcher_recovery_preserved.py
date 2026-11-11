@@ -252,6 +252,7 @@ def verified_preserved_seed(
         journal_records=journal_records,
         publications=publications,
         carrying=carrying,
+        earlier_run_ids=earlier_run_ids,
     )
     found = _seed_in_order(
         ranking=ranking,
