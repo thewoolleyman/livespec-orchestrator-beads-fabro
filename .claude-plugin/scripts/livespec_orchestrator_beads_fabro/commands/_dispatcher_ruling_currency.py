@@ -55,6 +55,7 @@ __all__: list[str] = [
     "SEED_RULING_CONSUMED_MARKER",
     "FreshRuling",
     "current_ruling",
+    "seed_ruling_matching",
 ]
 
 SEED_RULING_CONSUMED_MARKER = f"{SEED_RULING_MARKER}-consumed"
@@ -96,6 +97,20 @@ def current_ruling(*, comments: Sequence[str]) -> SeedRuling | FreshRuling | Non
     ):
         return None
     return latest
+
+
+def seed_ruling_matching(
+    *, comments: Sequence[str], preservation_ref: str, commit_sha: str
+) -> SeedRuling | None:
+    """The ledger seed ruling identified by a run's immutable seed record."""
+    matches = (
+        ruling
+        for text in comments
+        if (ruling := _seed_ruling(comment=text)) is not None
+        and ruling.preservation_ref == preservation_ref
+        and ruling.commit_sha == commit_sha
+    )
+    return next(matches, None)
 
 
 def _fields(*, comment: str, marker: str, required: tuple[str, ...]) -> dict[str, str] | None:
