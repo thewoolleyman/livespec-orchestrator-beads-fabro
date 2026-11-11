@@ -125,10 +125,11 @@ if [[ "$merge_in_progress" == false ]] && [[ "$test_count" -eq 1 ]] && [[ "$impl
 fi
 
 # The Dispatcher owns this marker and the detached commit runner carries it to
-# the hook. A scopeable fix gets the fast affected-tests verdict; an unknown
-# scope returns 75 so the full aggregate remains the conservative fallback.
-if [[ "$merge_in_progress" == false ]] && [[ "${LIVESPEC_AGENT_STAGE:-}" == fix ]]; then
-    echo ":: fix-turn commit: running just check-changed before considering the full aggregate"
+# the hook. A scopeable authoring turn gets the fast affected-tests verdict; an
+# unknown scope returns 75 so the full aggregate remains the conservative fallback.
+if [[ "$merge_in_progress" == false ]] \
+    && [[ "${LIVESPEC_AGENT_STAGE:-}" =~ ^(implement|fix|review_fix)$ ]]; then
+    echo ":: authoring-turn commit: running just check-changed before considering the full aggregate"
     set +e
     just check-changed
     changed_status=$?
