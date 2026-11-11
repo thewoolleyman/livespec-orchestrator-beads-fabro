@@ -13318,6 +13318,22 @@ Feature: Run-age-bounded recovery preference
     And the item holds no needs-human ref and no failed-checkpoint preservation ref
     When recovery routing grades the item
     Then the item is not routed held for publishing-run-unobservable
+
+  Scenario: a preserved ref whose tree is identical to the published head is not a competing ref
+    Given an item whose latest run published head H, whose run no record names, and whose pull request on the publish branch is open
+    And a needs-human ref N of the item whose name names no run and whose tip commit carries no run trailer
+    And N's tip commit's tree is identical to H's tree
+    When recovery routing grades the item
+    Then the item is not routed held for publishing-run-unobservable
+    And the route is the one recovery routing reads for the same item with N absent
+
+  Scenario: a preserved ref whose tree differs from the published head still holds when its run cannot be established
+    Given an item whose latest run published head H
+    And a needs-human ref N of the item whose name names no run and whose tip commit carries no run trailer
+    And N's tip commit's tree differs from H's tree
+    When recovery routing grades the item
+    Then the item is routed held and stays ready
+    And the recovery-held record names the measurement publishing-run-unobservable
 ```
 
 ## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention
