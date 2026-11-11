@@ -1428,6 +1428,55 @@ def test_a_rejected_leased_push_that_landed_is_named_as_landed_errored(
     assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
 
 
+def test_a_rejected_push_with_an_unreadable_origin_outcome_is_not_a_lease_failure(
+    tmp_path: Path,
+) -> None:
+    """The post-rejection read is a proof obligation, not an optional diagnostic.
+
+    This wrapper stays transparent until the real leased write has landed and
+    its helper reports the forge error.  It then makes the one required
+    follow-up origin read fail.  A stage that treats that failure as an ordinary
+    lease loss would erase the fact that the pushed head might now be live.
+    """
+    box = _build(root=tmp_path)
+    helper_root = tmp_path / "push-helper"
+    helper = helper_root / "bin" / "push_origin"
+    marker = tmp_path / "push-reported-error"
+    helper.parent.mkdir(parents=True)
+    _ = helper.write_text(
+        "#!/bin/sh\n"
+        '"$@"\n'
+        f'touch "{marker}"\n'
+        "printf '%s\\n' 'remote: fatal error in commit_refs' >&2\n"
+        "exit 1\n",
+        encoding="utf-8",
+    )
+    helper.chmod(0o700)
+    git_wrapper = box.bin_dir / "git"
+    _ = git_wrapper.write_text(
+        "#!/bin/sh\n"
+        f'if test "$1" = ls-remote && test "$2" = --heads && test "$4" = "refs/heads/{_BRANCH}" && test -f "{marker}"; then\n'
+        "    printf '%s\\n' 'simulated post-push origin outage' >&2\n"
+        "    exit 1\n"
+        "fi\n"
+        'exec /usr/bin/git "$@"\n',
+        encoding="utf-8",
+    )
+    git_wrapper.chmod(0o700)
+    _ = _advance_default(box=box)
+
+    result = _run(
+        box=box,
+        extra_env={"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(helper_root)},
+    )
+
+    assert result.returncode == 1, result.stdout
+    assert marker.is_file()
+    assert "LIVESPEC_PR_REFRESH_PUSH_OUTCOME_UNOBSERVABLE" in result.stderr
+    assert "fatal error in commit_refs" in result.stderr
+    assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
+
+
 def test_a_forge_server_error_retries_the_leased_push_while_origin_is_unchanged(
     tmp_path: Path,
 ) -> None:
