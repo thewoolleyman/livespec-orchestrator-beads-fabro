@@ -1923,13 +1923,13 @@ check_term_exit() {
 
 # bash 5.2 can fail while parsing a TERM trap action when TERM arrives while a
 # command substitution is active.  The launchers must therefore rely on
-# bash's default signal exit and let their EXIT cleanup classify its status.
+# bash's default TERM exit and let their EXIT cleanup describe it; INT and HUP keep their traps.
 # Keep this assertion separate from the exercise below: it makes the former
 # design fail deterministically, while the exercise proves the replacement.
-if grep -Eq '^[[:space:]]*trap .+ (TERM|INT|HUP)$' "$LAUNCHER" "$RESUME_LAUNCHER"; then
-    fail "the launchers install a signal trap whose action bash must parse during command substitution"
+if grep -Eq '^[[:space:]]*trap .+ TERM$' "$LAUNCHER" "$RESUME_LAUNCHER"; then
+    fail "the launchers install a TERM trap whose action bash must parse during command substitution"
 else
-    pass "the launchers use default signal exits rather than parseable signal trap actions"
+    pass "the launchers use the default TERM exit rather than a parseable TERM trap action"
 
     # This PATH-local sed pauses inside repository_hold_applies' $(sed ...) read.
     # The parent waits for its gate before delivering TERM, and adds a small
@@ -2009,6 +2009,47 @@ TERM_SED
     term_during_hold_substitution "$LAUNCHER" impl
     term_during_hold_substitution "$RESUME_LAUNCHER" resume
     unset STUB_TERM_SUBSTITUTION_GATE STUB_TERM_SUBSTITUTION_SED_DELAY_S
+
+    # signal_during_hold <launcher> <label> <signal> <rc> <expected cause>:
+    # an INT or HUP that lands in the repository-hold wait must be recorded as
+    # that signal, not as the TERM description the wait loop preloads.
+    signal_during_hold() {
+        local launcher="$1" label="$2" sig="$3" want_rc="$4" want_cause="$5" sig_pid sig_rc
+        prepare_312_case "signal-$sig-$label"
+        export FLEET_LAUNCH_POLL_S=0.01
+        set_hold "$TENANT_HOLD" "reason: signal-$sig"
+        # A background job of a non-interactive shell starts with INT ignored,
+        # and a script cannot take that back; restore the default first.  The
+        # launcher gets its own process group so the signal reaches its waiting
+        # child as a terminal's INT or HUP would; bash defers a signal until a
+        # foreground child that the signal did not touch has exited.
+        PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=7 python3 -c 'import os, signal, sys
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+os.setsid()
+os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+        sig_pid=$!
+        if ! wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 5; then
+            fail "$label never yielded on the repository hold before $sig"
+            stop_launcher "$sig_pid"
+            wait "$sig_pid" 2>/dev/null
+            return 0
+        fi
+        kill -"$sig" -- "-$sig_pid" 2>/dev/null
+        wait "$sig_pid"
+        sig_rc=$?
+        if [ "$sig_rc" = "$want_rc" ] \
+            && grep -qF -- "cause=$want_cause" "$STUB_RM_PROBE_LOG_SOURCE" \
+            && ! grep -qF -- 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE"; then
+            pass "$label records a $sig during the repository-hold wait as $want_cause, not as TERM"
+        else
+            fail "$label did not record $sig as $want_cause (rc=$sig_rc)"
+            tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+        fi
+    }
+    signal_during_hold "$LAUNCHER" impl INT 130 'signal INT'
+    signal_during_hold "$LAUNCHER" impl HUP 129 'signal HUP'
+    signal_during_hold "$RESUME_LAUNCHER" resume INT 130 'signal INT'
+    signal_during_hold "$RESUME_LAUNCHER" resume HUP 129 'signal HUP'
 
     # A separate gate pauses dispatch after it has recorded its mutex holder.
     # TERM must remove both that owned mutex and its ticket before the process
