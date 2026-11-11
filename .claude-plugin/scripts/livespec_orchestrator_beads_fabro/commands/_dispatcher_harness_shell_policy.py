@@ -104,6 +104,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exc
 
 __all__: list[str] = [
     "HARNESS_SETTINGS_MARKER",
+    "HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME",
     "SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION",
     "SANDBOX_HARNESS_SETTINGS_RELATIVE_PATH",
     "harness_settings_merge_program",
@@ -168,6 +169,9 @@ SANDBOX_HARNESS_SETTINGS_PATH_EXPRESSION = (
 # attributable to this projection rather than to whichever of the several
 # materialized steps happened to be running.
 HARNESS_SETTINGS_MARKER = "livespec-sandbox-harness-settings"
+# Where the merge program lands below the sandbox plugins root. The helper-fetch
+# setup step writes it (`_dispatcher_helper_registry`); the settings step runs it.
+HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME = "livespec-harness-settings-merge.py"
 
 _ENV_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_ENV_DECLARATION"
 _HOOKS_PLACEHOLDER = "LIVESPEC_HARNESS_SETTINGS_HOOKS_DECLARATION"

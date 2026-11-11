@@ -134,6 +134,7 @@ __all__: list[str] = [
     "SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR",
     "plugin_cache_gate_prepare_step",
     "plugin_cache_gate_prepare_steps_block",
+    "plugin_cache_gate_program_source",
     "plugin_gate_session_hook_declaration",
     "plugin_pin_gate_command",
 ]
@@ -431,6 +432,11 @@ def _gate_program() -> str:
     ):
         program = program.replace(token, value)
     return program.strip()
+
+
+def plugin_cache_gate_program_source() -> str:
+    """The gate program's exact bytes as the sandbox receives them, newline-terminated."""
+    return f"{_gate_program()}\n"
 
 
 def plugin_cache_gate_prepare_step() -> PrepareStep:
