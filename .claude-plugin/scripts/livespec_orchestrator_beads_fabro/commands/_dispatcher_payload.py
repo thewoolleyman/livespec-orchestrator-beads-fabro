@@ -56,6 +56,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     run_wall_budget_from_block,
     run_wall_budget_journal_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
+    substitute_setup_node_inputs,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
@@ -113,6 +116,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     journal: JournalWriter,
     work_item_id: str,
     adapters: Mapping[str, str],
+    prepare_inputs: Mapping[str, str] | None = None,
     entry_node: str | None = None,
     proof_only: bool = False,
     run_wall_budget_argument: str | None = None,
@@ -160,6 +164,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
         payload_dir=payload_dir,
         timeouts=timeouts,
         adapters=adapters,
+        prepare_inputs=prepare_inputs,
         entry_node=entry_node,
         proof_only=proof_only,
     )
@@ -184,12 +189,13 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     return payload
 
 
-def materialize_workflow_payload(
+def materialize_workflow_payload(  # noqa: PLR0913 — kw-only rendering inputs are independent projections.
     *,
     committed: Path,
     payload_dir: Path,
     timeouts: NodeTimeouts,
     adapters: Mapping[str, str],
+    prepare_inputs: Mapping[str, str] | None = None,
     entry_node: str | None = None,
     proof_only: bool = False,
 ) -> WorkflowPayload | str:
@@ -215,6 +221,7 @@ def materialize_workflow_payload(
         committed_graph=committed_graph,
         timeouts=timeouts,
         adapters=adapters,
+        prepare_inputs=prepare_inputs,
         entry_node=entry_node,
         proof_only=proof_only,
     )
@@ -255,6 +262,7 @@ def _rendered_graph(
     committed_graph: Path,
     timeouts: NodeTimeouts,
     adapters: Mapping[str, str],
+    prepare_inputs: Mapping[str, str] | None,
     entry_node: str | None,
     proof_only: bool,
 ) -> _RenderedGraph | str:
@@ -270,7 +278,12 @@ def _rendered_graph(
     )
     if isinstance(graph_text, AttemptFailure):
         return f"workflow graph {committed_graph} is unreadable: {graph_text.error}"
-    rendered = render_workflow_graph(committed_text=graph_text, timeouts=timeouts)
+    rendered = render_workflow_graph(
+        committed_text=substitute_setup_node_inputs(
+            graph_text=graph_text, prepare_inputs=prepare_inputs
+        ),
+        timeouts=timeouts,
+    )
     if isinstance(rendered, str):
         return rendered
     commands = render_acp_commands(

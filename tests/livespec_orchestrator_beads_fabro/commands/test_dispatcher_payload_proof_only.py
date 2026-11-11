@@ -15,6 +15,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     WorkflowPayload,
     materialize_workflow_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
+    is_setup_node,
+    setup_node_names,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import default_node_timeouts
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -127,4 +131,16 @@ def test_the_dispatch_materializer_reads_the_selector_off_the_invocation(
     assert not isinstance(materialized, MaterializationRefusal), materialized
     graph = parse_dot_graph(text=materialized.payload.graph.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
-    assert set(graph.nodes) == {"start", "exit", "proof_capture", "proof_verify", "proof_grade"}
+    # The arm keeps the setup chain in front of capture: its sandbox is set up like
+    # any other's, and the chain with its failure route is the only thing beside the
+    # three proof stages.
+    stages = {name for name in graph.nodes if not is_setup_node(name=name)}
+    assert stages == {
+        "start",
+        "exit",
+        "proof_capture",
+        "proof_verify",
+        "proof_grade",
+        "setup_failed",
+    }
+    assert setup_node_names(graph=graph)

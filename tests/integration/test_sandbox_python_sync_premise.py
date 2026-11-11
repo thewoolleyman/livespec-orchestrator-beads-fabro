@@ -69,23 +69,27 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import tomli
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     contract_prompt_variables,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_input_tokens import (
-    substitute_input_tokens,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
     resolve_repo_integration_contract,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import setup_node_names
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _BUNDLED_RUN_CONFIG = (
-    _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item" / "workflow.toml"
+    _REPO_ROOT
+    / ".claude-plugin"
+    / ".fabro"
+    / "workflows"
+    / "implement-work-item"
+    / "workflow.fabro"
 )
-_GROOM_RUN_CONFIG = _REPO_ROOT / ".fabro" / "workflows" / "groom-work-item" / "workflow.toml"
+_GROOM_RUN_CONFIG = _REPO_ROOT / ".fabro" / "workflows" / "groom-work-item" / "workflow.fabro"
 _MEMBER_CONFIG = _REPO_ROOT / ".livespec.jsonc"
+_INPUT_TOKEN = re.compile(r"\{\{\s*inputs\.(?P<name>[A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 # Every committed run config a dispatch of THIS repository can reach: the
 # bundled reserved workflow and the one variant it registers. Both carried the
@@ -208,32 +212,35 @@ class _Fixture:
 
 
 def _prepare_scripts(*, run_config: Path) -> tuple[str, ...]:
-    """Every `[[run.prepare.steps]]` script a committed run config declares.
+    """Every setup-node script a committed workflow graph declares, in chain order.
 
-    Parsed with `tomli` rather than grepped, for the reason
+    The setup chain is the graph's `run_prepare_<N>` command nodes (the run config's
+    prepare steps until work-item bd-ib-dpsiwz). Parsed through the shared graph
+    parser rather than grepped, for the reason
     `test_sandbox_history_preparation._history_preparation_script` records: the
     property under grade is the value the engine resolves, and a line-shaped
     read would happily return a commented-out declaration.
     """
-    document: dict[str, Any] = tomli.loads(run_config.read_text(encoding="utf-8"))
-    steps: list[dict[str, Any]] = document["run"]["prepare"]["steps"]
-    return tuple(str(step["script"]) for step in steps)
+    graph = parse_dot_graph(text=run_config.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    return tuple(str(graph.nodes[name]["script"]) for name in setup_node_names(graph=graph))
 
 
 def _resolved_python_sync_step(*, run_config: Path, config_text: str) -> str:
     """The Python-sync step as a dispatch of one declaration would RUN it.
 
-    Resolved through the production contract resolver and substituted through the
-    production overlay substituter, because the engine leaves `run.prepare`
-    verbatim and the Dispatcher renders those tokens host-side -- so this IS the
+    Resolved through the production contract resolver and substituted the way the
+    engine substitutes a node attribute, which is verbatim: the value the
+    projection renders replaces its token with no further escaping, so this IS the
     text that reaches the sandbox shell. The step is asserted to carry no
     unresolved token afterwards: one left standing would run as whatever the
     shell made of the literal rather than as what a dispatch runs.
     """
     resolved = resolve_repo_integration_contract(config_text=config_text, default_branch=None)
-    rendered = substitute_input_tokens(
-        text=_prepare_scripts(run_config=run_config)[_PYTHON_SYNC_STEP_INDEX],
-        prepare_inputs=contract_prompt_variables(resolved=resolved),
+    values = contract_prompt_variables(resolved=resolved)
+    rendered = _INPUT_TOKEN.sub(
+        lambda found: values[found.group("name")],
+        _prepare_scripts(run_config=run_config)[_PYTHON_SYNC_STEP_INDEX],
     )
     assert "inputs." not in rendered, rendered
     return rendered

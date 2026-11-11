@@ -35,7 +35,7 @@
 # THE CREDENTIAL CHANNEL IS THE BUNDLE'S, UNCHANGED. This committed file
 # carries no secret value and no `{{ env }}` interpolation; the Dispatcher
 # materializes the same uncommitted per-dispatch overlay over it that it
-# materializes over the bundle (absolute graph path, sibling-clone prepare
+# materializes over the bundle (absolute graph path, sibling-clone setup
 # steps, and the `[environments.livespec-ci.env]` table carrying the real
 # CLAUDE_CODE_OAUTH_TOKEN and a freshly minted GITHUB_TOKEN). See the bundled
 # `implement-work-item/workflow.toml` header for the full rationale, including
@@ -167,7 +167,7 @@ merge_hold = false
 # rendered here; this run config, the graph and the prompts read the SAME
 # `inputs.<name>` token. The defaults carry no fleet-toolchain premise, exactly
 # as the bundle's do not: the toolchain and conformance premises default to the
-# ratified explicit no-op (the empty word-list, whose prepare step runs
+# ratified explicit no-op (the empty word-list, whose setup node runs
 # nothing), and `sandbox_check_suite` defaults to a command that FAILS LOUDLY
 # naming the input so a bare `fabro run` of this file cannot read a value it was
 # never given as a real one.
@@ -230,7 +230,12 @@ exclude_globs = ["**/.venv/**", "**/node_modules/**", "**/.cache/**"]
 [run.pull_request]
 enabled = false
 
-# --- Prepare steps: the bundle's provisioning, unchanged.
+# --- Sandbox setup is NOT declared here: it is the `run_prepare_<N>` command
+# --- nodes of workflow.fabro (work-item bd-ib-dpsiwz), unchanged in content.
+#
+# Upstream Fabro refuses the run-config prepare table from v0.396.0-nightly.0, so
+# the bundle's provisioning runs as explicit command nodes between `start` and the
+# first stage, and a failed step routes to the terminal `setup_failed` node.
 #
 # A groom run is held to the SAME dispatch-time baseline conformance gate as an
 # implement run, and for a reason that is easy to get backwards: a groom run
@@ -242,50 +247,10 @@ enabled = false
 # make the groom variant the one dispatch path in this repository that runs
 # unconformant.
 #
-# Every premise below is a PROJECTION of the resolved integration contract, not
-# a literal: a premise the repository does not carry resolves to the ratified
-# explicit no-op and the step runs nothing, by construction rather than by a
-# silent skip. The `set --` idiom re-tokenizes the one shell word-list the
-# Dispatcher rendered with `shlex.join`, `test $# -eq 0` makes the empty no-op a
-# clean exit rather than a syntax error, and `"$@"` runs the argv with its
-# quoting intact.
-
-[[run.prepare.steps]]
-# Fabro's sandbox clone is hardcoded shallow; the conformance node below diffs
-# the default branch..HEAD, which needs that merge-base present.
-script = "git fetch --unshallow --quiet"
-
-[[run.prepare.steps]]
-# Toolchain premise #1 — the version-manager install.
-script = "set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Toolchain premise #2 — the Python dependency sync that populates the
-# sandbox's project environment; no-op for a repository that declares none.
-# A bare constant here assumed a `pyproject.toml` the governed repository may
-# not carry, which killed preparation before any agent turn (bd-ib-xti6q).
-# Its POSITION is unchanged: after the version-manager install that resolves
-# the sync tool, before the hook-manager install and the conformance gate that
-# both run through the environment it populates.
-script = "set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Toolchain premise #3 — the hook-manager install.
-script = "set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Conformance MECHANISM — install the canonical structural commit-refuse hook.
-script = "set -- {{ inputs.conformance_hook_install }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Declare the sandbox EXEMPT from the commit-refuse refuse branch. The marker
-# NAME is the resolved contract field, projected rather than spelled.
-script = "git config {{ inputs.sandbox_exempt_marker }} true"
-
-[[run.prepare.steps]]
-# Conformance Verifier #1 — the hook is actually present.
-script = "set -- {{ inputs.conformance_verify_commit_refuse_hook }}; test $# -eq 0 || \"$@\""
-
-[[run.prepare.steps]]
-# Conformance Verifier #2 — the declaration-integrity plugin-resolution check.
-script = "set -- {{ inputs.conformance_verify_plugin_resolution }}; test $# -eq 0 || \"$@\""
+# Every premise in the chain is a PROJECTION of the resolved integration
+# contract, not a literal: a premise the repository does not carry resolves to
+# the ratified explicit no-op and the node runs nothing, by construction rather
+# than by a silent skip. The `set --` idiom re-tokenizes the one shell word-list
+# the Dispatcher rendered with `shlex.join`, `test $# -eq 0` makes the empty
+# no-op a clean exit rather than a syntax error, and `"$@"` runs the argv with
+# its quoting intact.

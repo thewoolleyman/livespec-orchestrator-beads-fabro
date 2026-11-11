@@ -12,11 +12,14 @@ resolve its prompts nowhere), and every refusal happens BEFORE any run.
 from __future__ import annotations
 
 import json
+import shlex
 import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
     workflow_graph_path,
@@ -62,6 +65,18 @@ _GRAPH = (
 _TOKEN = "{" + "{ inputs.implement_adapter }" + "}"
 _ACP_NODE_ATTRS = f'        backend="acp"\n        acp.command="{_TOKEN}"\n'
 _ACP_NODE_ATTRS += '        timeout="14400s"\n'
+
+_SETUP_GRAPH = (
+    "digraph ImplementWorkItem {\n"
+    '    graph [stall_timeout="7200s"]\n'
+    '    start [shape=Mdiamond, label="Start"]\n'
+    '    run_prepare_2 [shape=parallelogram, timeout="1800s", '
+    'script="set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \\"$@\\""]\n'
+    '    dod_gate [shape=parallelogram, timeout="1800s", script="true"]\n'
+    "    start -> run_prepare_2\n"
+    "    run_prepare_2 -> dod_gate\n"
+    "}\n"
+)
 
 
 class _RecordingJournal:
@@ -318,6 +333,35 @@ def test_payload_renders_each_acp_node_command_as_a_literal(tmp_path: Path) -> N
         'acp.command="LIVESPEC_AGENT_STAGE=implement npx -y claude-agent-acp"'
         in payload.graph.read_text(encoding="utf-8")
     )
+
+
+def test_payload_executes_a_declared_toolchain_argv_as_separate_words(tmp_path: Path) -> None:
+    """A materialized setup node must not hand Petri one shell-quoted argv word."""
+    committed_graph = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "workflow.fabro"
+    )
+    assert "run_prepare_2" in committed_graph.read_text(encoding="utf-8")
+    marker = tmp_path / "toolchain-ran"
+    command = ("sh", "-c", f"printf succeeded > {shlex.quote(str(marker))}")
+    payload = materialize_workflow_payload(
+        committed=_committed_workflow(root=tmp_path, graph_text=_SETUP_GRAPH),
+        payload_dir=tmp_path / "payload",
+        timeouts=default_node_timeouts(),
+        adapters={},
+        prepare_inputs={"prepare_toolchain_mise": shlex.join(command)},
+    )
+    assert isinstance(payload, WorkflowPayload)
+    parsed = parse_dot_graph(text=payload.graph.read_text(encoding="utf-8"))
+    assert not isinstance(parsed, str), parsed
+    script = parsed.nodes["run_prepare_2"]["script"]
+    result = subprocess.run(["/bin/sh", "-c", script], check=False)
+    assert result.returncode == 0
+    assert marker.read_text(encoding="utf-8") == "succeeded"
 
 
 def test_payload_refuses_an_acp_node_whose_adapter_did_not_resolve(tmp_path: Path) -> None:
