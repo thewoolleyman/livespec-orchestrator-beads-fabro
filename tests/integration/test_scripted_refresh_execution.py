@@ -1421,10 +1421,11 @@ def test_a_rejected_leased_push_that_landed_is_named_as_landed_errored(
     pushed = box.local_head()
     assert result.returncode == 1, result.stdout
     assert box.remote_head(ref=_BRANCH) == pushed
+    assert box.remote_head(ref="refs/pull/184/head") == pushed
     assert "LIVESPEC_PR_REFRESH_PUSH_LANDED_ERRORED" in result.stderr
     assert "fatal error in commit_refs" in result.stderr
     assert pushed in result.stderr
-    assert "refs/pull/184/head" in result.stderr
+    assert f"pull request ref refs/pull/184/head head: {pushed}" in result.stderr
     assert "LIVESPEC_PR_REFRESH_LEASE_FAILED" not in result.stderr
 
 
