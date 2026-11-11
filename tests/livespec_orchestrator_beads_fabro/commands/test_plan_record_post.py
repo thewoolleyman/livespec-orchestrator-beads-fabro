@@ -280,6 +280,40 @@ def test_a_payload_artifact_paths_render_in_their_given_order(tmp_path: Path) ->
     ) in body
 
 
+def test_a_payload_without_artifact_paths_renders_no_artifact_paths_line(tmp_path: Path) -> None:
+    """An omitted optional artifact-paths array makes no claim about artifacts."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="no-artifact-path-record",
+        title="No artifact path record",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-11-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the released build has been run in a real session.",
+            assertions=(_ASSERTION,),
+        ),
+    )
+    emitted: list[str] = []
+
+    code = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=_payload(path=tmp_path / "no-artifact-paths.json", reproduced=None),
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert code == 0
+    body = str(_fake().list_comments(issue_id=created["epic_id"])[0]["text"])
+    assert "artifact paths:" not in body
+
+
 # ---------------------------------------------------------------------------
 # bd-ib-555xcd: the plan record is measured against the SAME declared budget,
 # and an over-budget record is refused rather than appended.

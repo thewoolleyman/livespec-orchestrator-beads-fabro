@@ -117,7 +117,7 @@ class BuildIdentity:
             (COMMIT_LABEL, self.commit),
             (
                 "artifact paths",
-                ", ".join(self.artifact_paths) if self.artifact_paths is not None else None,
+                ", ".join(self.artifact_paths) if self.artifact_paths else None,
             ),
         )
         lines = [f"## {BUILD_IDENTITY_HEADING}", ""]
