@@ -328,6 +328,15 @@ def test_host_only_refusal_detail_is_actionable() -> None:
     assert "ships no files under .github/workflows/" in detail
 
 
+def test_host_only_refusal_detail_explains_unrecognised_negation_remedy() -> None:
+    item = _item(description="This item has no plans to update .github/workflows/ci.yml.")
+
+    assert is_host_only_item(item=item) is True
+    detail = host_only_refusal_detail(item_id=item.id)
+    assert "unrecognised negation" in detail
+    assert "set-workflow-scope-override:<id>:citation-only" in detail
+
+
 def test_host_only_refusal_clears_stale_signal_for_intrinsic_host_only(
     tmp_path: Path,
 ) -> None:

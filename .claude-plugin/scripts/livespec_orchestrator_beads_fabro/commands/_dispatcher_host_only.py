@@ -80,7 +80,9 @@ def host_only_refusal_detail(*, item_id: str) -> str:
         "set the recorded override with "
         "`set-workflow-scope-override:<id>:citation-only`, or add an inline "
         "negation declaration stating that the item ships no files under "
-        ".github/workflows/, before retrying factory dispatch."
+        ".github/workflows/, before retrying factory dispatch. An unrecognised "
+        "negation cue does not relax this conservative gate; use that exact "
+        "declaration or the recorded override."
     )
 
 
