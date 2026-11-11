@@ -57,9 +57,12 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 __all__: list[str] = [
     "BASE_ADVANCED_MARKER",
     "MERGE_POLL_BUDGET_EXHAUSTED_MARKER",
+    "UNREPORTED",
     "base_advanced_comment_body",
     "merge_poll_budget_exhausted_comment_body",
+    "pr_number_line",
     "record_base_advanced_after_arming",
+    "write_comment",
 ]
 
 BASE_ADVANCED_MARKER = "livespec-base-advanced-after-arming"
@@ -73,7 +76,7 @@ _LEDGER_WRITE_ERRORS = (
     BeadsTenantMissingError,
 )
 
-_UNREPORTED = "(not reported by the forge view)"
+UNREPORTED = "(not reported by the forge view)"
 
 
 def record_base_advanced_after_arming(
@@ -118,12 +121,32 @@ def record_base_advanced_after_arming(
         body=body,
         failure=measured.conflict_measurement_failure,
     )
+    write_comment(
+        repo=repo,
+        work_item_id=item.id,
+        body=body,
+        pr_number=outcome.pr_number,
+        journal=journal,
+        cause=cause,
+    )
+
+
+def write_comment(
+    *,
+    repo: Path,
+    work_item_id: str,
+    body: str,
+    pr_number: int | None,
+    journal: JournalFile,
+    cause: str,
+) -> None:
+    """Run the detector, write the comment and journal the arm taken; raise nothing."""
     refusal = _detector_refusal(body=body)
     if refusal is not None:
         journal.append(
             record={
                 "stage": f"{cause}-refused",
-                "work_item_id": item.id,
+                "work_item_id": work_item_id,
                 "reason": refusal,
             }
         )
@@ -131,7 +154,7 @@ def record_base_advanced_after_arming(
     written = attempt(
         action=lambda: append_work_item_comment(
             path=store_config(repo=repo),
-            work_item_id=item.id,
+            work_item_id=work_item_id,
             body=body,
         ),
         exceptions=_LEDGER_WRITE_ERRORS,
@@ -140,7 +163,7 @@ def record_base_advanced_after_arming(
         journal.append(
             record={
                 "stage": f"{cause}-error",
-                "work_item_id": item.id,
+                "work_item_id": work_item_id,
                 "reason": type(written.error).__name__,
             }
         )
@@ -148,8 +171,8 @@ def record_base_advanced_after_arming(
     journal.append(
         record={
             "stage": f"{cause}-record",
-            "work_item_id": item.id,
-            "pr_number": outcome.pr_number,
+            "work_item_id": work_item_id,
+            "pr_number": pr_number,
         }
     )
 
@@ -215,7 +238,7 @@ def _comment_body(
     left_out = 0
     for label, value in zip(_NAME_LABELS, names, strict=True):
         if value is None:
-            rendered.append(f"{label}: {_UNREPORTED}")
+            rendered.append(f"{label}: {UNREPORTED}")
             continue
         if not is_identifier_shaped(value=value):
             left_out += 1
@@ -225,7 +248,7 @@ def _comment_body(
         marker,
         "",
         f"work-item: {work_item_id}",
-        f"pull request: {_pr_number_line(pr_number=pr_number)}",
+        f"pull request: {pr_number_line(pr_number=pr_number)}",
         *rendered,
         "",
         f"{left_out} names were left out for not being identifier-shaped.",
@@ -270,7 +293,7 @@ _EXHAUSTED_DECISION = (
 )
 
 
-def _pr_number_line(*, pr_number: int | None) -> str:
+def pr_number_line(*, pr_number: int | None) -> str:
     """A figure, or the statement that the ending recorded none.
 
     Rendered rather than omitted for the same reason an unreported name is:
@@ -279,7 +302,7 @@ def _pr_number_line(*, pr_number: int | None) -> str:
     "this record never carried the key".
     """
     if pr_number is None:
-        return _UNREPORTED
+        return UNREPORTED
     return str(pr_number)
 
 

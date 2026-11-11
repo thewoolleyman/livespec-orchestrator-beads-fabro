@@ -43,6 +43,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
     gather_resume,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusal_record import (
+    record_resume_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
 
 __all__: list[str] = ["bound_overtaken_resume", "resume_overtaken_item"]
@@ -90,9 +93,10 @@ def resume_overtaken_item(
 
     The ownership lock this invocation holds is released first, so the ladder's
     live-lock refusal does not read the invocation itself as a competing dispatch.
-    Every other refusal applies unchanged. A refusal rests the item at
-    `blocked` / `needs-human` and reports it, because the item was already
-    resolved to `ready` and must not be left claimable under a refused resume.
+    Every other refusal applies unchanged. A refusal records its ledger comment,
+    rests the item at `blocked` / `needs-human` and reports it, because the item
+    was already resolved to `ready` and must not be left claimable under a
+    refused resume.
     """
     release_dispatch_lock(path=dispatch_lock_path(repo=repo, work_item_id=work_item_id))
     items = load_items(repo=repo)
@@ -108,6 +112,17 @@ def resume_overtaken_item(
     pull_request = gather.observation.pull_request
     refusals = resume_refusals(observation=gather.observation)
     if refusals or anchor is None or pull_request is None:
+        # BEFORE the blocked transition, as the contract orders the cause comment,
+        # and fail-soft: the comment names the refusal the outcome detail names.
+        named = refusals or (_UNANCHORED_REFUSAL,)
+        record_resume_refusal(
+            repo=repo,
+            work_item_id=item.id,
+            pr_number=pull_request,
+            pr_head=anchor.head if anchor is not None else None,
+            refusals=named,
+            journal=journal,
+        )
         write_blocked_state_and_reconcile(
             repo=repo,
             item_id=item.id,
@@ -131,8 +146,7 @@ def resume_overtaken_item(
             pr_number=pull_request,
             merge_sha=None,
             detail=(
-                "base-advanced-after-arming: the automatic resume was refused: "
-                + "; ".join(refusals or (_UNANCHORED_REFUSAL,))
+                "base-advanced-after-arming: the automatic resume was refused: " + "; ".join(named)
             ),
         )
     journal.append(

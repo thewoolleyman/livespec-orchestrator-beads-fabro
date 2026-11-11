@@ -11,6 +11,7 @@ from typing import Any
 from unittest.mock import Mock
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_base_advance_record as record
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_lifecycle_writes as writes
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop as loop_module
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_selection as selection
@@ -338,6 +339,14 @@ def test_a_refused_resume_rests_the_item_at_needs_human_and_names_the_refusal(
 ) -> None:
     world = _ResumeWorld(refusals=refusals, anchored=anchored)
     _, admit = _install(monkeypatch=monkeypatch, world=world)
+    comments: list[tuple[str, str]] = []
+
+    def comment(*, work_item_id: str, body: str, **_: object) -> None:
+        world.events.append("comment")
+        comments.append((work_item_id, body))
+
+    monkeypatch.setattr(record, "store_config", lambda **_: object())
+    monkeypatch.setattr(record, "append_work_item_comment", comment)
     journal = _Journal()
 
     result = overtaken.bound_overtaken_resume(
@@ -348,13 +357,21 @@ def test_a_refused_resume_rests_the_item_at_needs_human_and_names_the_refusal(
         admit_and_dispatch=admit,
     )(work_item_id=_ITEM_ID)
 
-    assert world.events == ["write:blocked"]
+    refusal = refusals[0] if refusals else "nothing to resume from"
+    assert world.events == ["comment", "write:blocked"]
     assert result.status == "blocked"
     assert result.stage == "merge-poll"
     assert result.pr_number == 184
     assert result.detail.startswith("base-advanced-after-arming: the automatic resume")
-    assert (refusals[0] if refusals else "nothing to resume from") in result.detail
-    assert journal.records[0]["stage"] == "needs-human-blocked"
+    assert refusal in result.detail
+    assert len(comments) == 1
+    assert comments[0][0] == _ITEM_ID
+    assert comments[0][1].startswith("livespec-base-advanced-after-arming\n")
+    assert refusal in comments[0][1]
+    assert [row["stage"] for row in journal.records] == [
+        "base-advanced-after-arming-record",
+        "needs-human-blocked",
+    ]
 
 
 def test_the_command_offers_its_own_launch_as_the_admit_and_dispatch_path() -> None:
