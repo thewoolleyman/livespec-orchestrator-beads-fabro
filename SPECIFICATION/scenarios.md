@@ -14321,3 +14321,25 @@ Feature: the plan record posting primitive renders a record's artifact paths lin
     Then it refuses naming artifact_paths
     And no record is posted
 ```
+
+## Scenario: a hand commit's passing delegated pre-commit verdict stands in at the pre-push gate
+
+```gherkin
+Feature: a hand commit's passing delegated pre-commit verdict stands in at the pre-push gate
+
+  Scenario: a qualifying delegated pre-commit verdict replaces the pre-push gate Job
+    Given this repository sets delegated_gate = true and delegated_pre_commit = true
+    And a hand commit's delegated pre-commit gate Job J passed the full aggregate of clean staged tree T and recorded pre-push evidence naming J, T and the members it ran and passed
+    And the pushing worktree is clean and its HEAD tree is T
+    When the pre-push gate runs for that push
+    Then it MUST NOT submit a pre-push gate Job and MUST NOT run the local fall-through aggregate
+    And it MUST run on the pushing host every check-set member the evidence does not name as passed, every world-reading member and every authorization-reading member
+    And it MUST print J, T, the name of each member it ran and the number it skipped
+
+  Scenario: a dirty worktree or a different HEAD tree gates the push as if no evidence existed
+    Given this repository sets delegated_gate = true and delegated_pre_commit = true
+    And a hand commit's delegated pre-commit gate Job J recorded pre-push evidence naming J and tree T
+    And the pushing worktree is dirty or its HEAD tree is not T
+    When the pre-push gate runs for that push
+    Then it MUST gate the push exactly as it does with no such evidence
+```
