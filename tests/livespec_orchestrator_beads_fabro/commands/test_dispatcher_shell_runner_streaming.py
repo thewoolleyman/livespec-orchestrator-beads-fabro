@@ -50,13 +50,9 @@ def test_streaming_runner_ends_the_child_when_the_callback_refuses_a_line(
     tmp_path: Path,
 ) -> None:
     """A refusal terminates before the candidate can emit a later natural verdict."""
+    code = "import sys, time; print('limit', flush=True); time.sleep(3600); print('late')"  # real-time-required: the child idles until the runner ends it on the refused line
     result = ShellCommandRunner().run_streaming(
-        argv=[
-            sys.executable,
-            "-c",
-            # real-time-required: the child idles until the runner ends it on the refused line
-            "import sys, time; print('limit', flush=True); time.sleep(3600); print('late')",
-        ],
+        argv=[sys.executable, "-c", code],
         cwd=tmp_path,
         timeout_seconds=_UNREACHED_DEADLINE_SECONDS,
         on_stdout_line=lambda line: line == "limit\n",
@@ -99,18 +95,14 @@ def test_streaming_runner_ends_only_the_candidates_own_session_group(
     """
     own_group = os.getpgrp()
     reported: list[int] = []
+    code = "import os, time; print(os.getpgrp(), flush=True); time.sleep(3600)"  # real-time-required: the child idles until the runner ends it on the refused line
 
     def refuse_once_the_group_is_known(*, line: str) -> bool:
         reported.append(int(line.strip()))
         return True
 
     result = ShellCommandRunner().run_streaming(
-        argv=[
-            sys.executable,
-            "-c",
-            # real-time-required: the child idles until the runner ends it on the refused line
-            "import os, time; print(os.getpgrp(), flush=True); time.sleep(3600)",
-        ],
+        argv=[sys.executable, "-c", code],
         cwd=tmp_path,
         timeout_seconds=_UNREACHED_DEADLINE_SECONDS,
         on_stdout_line=refuse_once_the_group_is_known,
