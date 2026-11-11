@@ -24,6 +24,7 @@ _GRAPH = (
     / "implement-work-item"
     / "workflow.fabro"
 )
+_FIX_PROMPT = _GRAPH.parent / "prompts" / "fix.md"
 
 
 def _script(*, node: str) -> str:
@@ -272,8 +273,12 @@ def test_a_janitor_check_suite_failure_records_a_verdict_and_still_reaches_fix(
     assert "JANITOR-FAILURE-OUTPUT" in janitor.stdout
     state = repo / ".git" / "livespec-publication"
     assert (state / "livespec-janitor-check-suite-verdict").read_text(encoding="utf-8") == "7\n"
+    assert (state / "livespec-janitor-gate-output").read_text(encoding="utf-8") == (
+        "JANITOR-FAILURE-OUTPUT\n"
+    )
 
     route = _run(node="janitor_refresh_route", repo=repo)
 
     assert route.returncode == 0
     assert json.loads(route.stdout) == {"preferred_next_label": "fix"}
+    assert "livespec-janitor-gate-output" in _FIX_PROMPT.read_text(encoding="utf-8")

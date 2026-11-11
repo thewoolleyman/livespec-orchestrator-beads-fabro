@@ -101,7 +101,10 @@ the incoming stage's latest response, not an earlier round's disposition.
 When the most recent incoming stage is `janitor_refresh_route`, it is only the
 router a red janitor passes through: its own response is a routing label. The
 failure to repair is the `janitor` response immediately before it, so read the
-janitor failure output there.
+janitor failure output there. The complete transcript is also retained at
+`$(git rev-parse --git-path livespec-publication)/livespec-janitor-gate-output`;
+read that durable file when the summarized stage response omits the failing
+target's own output.
 
 ## When the incoming stage is `fix_commit_settle`
 
