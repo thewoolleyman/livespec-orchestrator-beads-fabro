@@ -11963,6 +11963,37 @@ Feature: The implement stage separates Red from Green and commits outside agent 
     When commit_green's hook refuses naming only check-lint
     Then the implement stage's outcome is failed
     And the needs-human cause names both the mechanical and the ordinary re-entry budgets as exhausted
+
+  Scenario: A purely mechanical refusal of the single implement node's commit re-enters implement on its mechanical budget
+    Given a workflow that runs a single implement node in place of separate Red and Green nodes
+    And a repository that declares check-file-lloc and check-per-file-coverage as mechanical targets
+    And the implement turn's commit is refused by a hook whose recorded output names only check-file-lloc
+    When the implement hook route routes the refusal
+    Then the run re-enters implement with one fewer mechanical re-entry remaining
+    And the implement node's ordinary re-entry is unspent
+    And the re-entry brief names the refusal as mechanical, names check-file-lloc and names the mechanical re-entries remaining
+
+  Scenario: A mechanical re-entry's handoff names the failing files, capped at forty
+    Given a repository that declares check-per-file-coverage as a mechanical target
+    And an implement-stage commit refused by a hook whose recorded output names only check-per-file-coverage and reports 55 files below the coverage threshold
+    When the run takes a mechanical re-entry for that refusal
+    Then the handoff names the first 40 of those files in the output's order, each with its uncovered lines
+    And it states that 15 further files were omitted
+
+  Scenario: A mechanical re-entry is withheld when the wall budget cannot fit another implement turn
+    Given a repository that declares check-per-file-coverage as a mechanical target and mechanical re-entries remain
+    And a run whose longest completed implement-stage turn took 50 minutes and whose whole-run wall budget has 30 minutes remaining
+    When an implement-stage commit is refused by a hook whose recorded output names only check-per-file-coverage
+    Then no mechanical re-entry is taken
+    And the refusal is handled as one whose mechanical re-entries are spent
+    And the handoff says the mechanical re-entry was withheld for wall time, naming the 30 minutes remaining and the 50-minute turn
+
+  Scenario: A raised visit bound adds no visits to an incomplete-turn re-entry
+    Given a workflow that runs a single implement node with two ordinary and two mechanical re-entries, so its visit bound is five
+    And the implement node's two ordinary re-entries are spent
+    When an implement turn ends incomplete with no refused commit
+    Then the implement stage ends failed
+    And no mechanical re-entry is spent on that incomplete turn
 ```
 
 ## Scenario 289 — A Green amend whose staged test fails is refused before the rest of its gate's tests run
