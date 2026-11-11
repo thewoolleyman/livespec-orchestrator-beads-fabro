@@ -127,6 +127,13 @@ def test_proof_capture_scratch_repository_commits_keep_their_hooks_and_the_check
         marker=checkout_marker,
         environment=environment,
     )
+    _assert_protected_and_unsafe_pushes_are_refused(
+        tmp_path=tmp_path,
+        work=work,
+        scratch=scratch,
+        marker=checkout_marker,
+        environment=environment,
+    )
     _assert_scratch_push_to_temporary_bare_repository_is_allowed(
         scratch=scratch,
         marker=scratch_marker,
@@ -227,6 +234,68 @@ def _assert_scratch_push_to_temporary_bare_repository_is_allowed(
     named_arrival = _git("rev-parse", "refs/heads/scratch-by-name", repo=remote, environment=None)
     assert named_arrival.returncode == 0, named_arrival.stderr
     assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
+
+
+def _assert_protected_and_unsafe_pushes_are_refused(
+    *, tmp_path: Path, work: Path, scratch: Path, marker: Path, environment: dict[str, str]
+) -> None:
+    """Only scratch-to-temporary-bare pushes can reach Git."""
+    temporary_remote = scratch.parent / "remote.git"
+    linked = tmp_path / "linked-push-worktree"
+    _ = _git("worktree", "add", "-b", "linked-push", str(linked), repo=work, environment=None)
+    for repo, argv, extra in (
+        (work, ("push", str(temporary_remote), "HEAD:refs/heads/protected"), {}),
+        (scratch, ("-C", str(work), "push", str(temporary_remote), "HEAD:refs/heads/by-c"), {}),
+        (
+            scratch,
+            (
+                "--git-dir",
+                str(work / ".git"),
+                "push",
+                str(temporary_remote),
+                "HEAD:refs/heads/by-dir",
+            ),
+            {},
+        ),
+        (linked, ("push", str(temporary_remote), "HEAD:refs/heads/linked"), {}),
+        (scratch, ("push", "https://example.invalid/proof.git"), {}),
+        (scratch, ("push", "ssh://example.invalid/proof.git"), {}),
+        (scratch, ("push", "git://example.invalid/proof.git"), {}),
+        (scratch, ("push", "example.invalid:proof.git"), {}),
+    ):
+        _assert_git_write_is_refused(
+            argv=argv,
+            repo=repo,
+            marker=marker,
+            environment={**environment, **extra},
+            guard=None,
+        )
+    temporary_root = tmp_path / "temporary-root"
+    temporary_root.mkdir()
+    outside = tmp_path / "outside.git"
+    _ = _git("init", "--bare", str(outside), repo=tmp_path, environment=None)
+    _assert_git_write_is_refused(
+        argv=("push", str(outside), "HEAD:refs/heads/outside"),
+        repo=scratch,
+        marker=marker,
+        environment={**environment, "TMPDIR": str(temporary_root)},
+        guard=None,
+    )
+    _assert_git_write_is_refused(
+        argv=("push", str(work / ".git"), "HEAD:refs/heads/shared"),
+        repo=scratch,
+        marker=marker,
+        environment=environment,
+        guard=None,
+    )
+    for option in ("--receive-pack=/bin/true", "--exec=/bin/true"):
+        _assert_git_write_is_refused(
+            argv=("push", option, str(temporary_remote), "HEAD:refs/heads/option"),
+            repo=scratch,
+            marker=marker,
+            environment=environment,
+            guard=None,
+        )
 
 
 def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> None:

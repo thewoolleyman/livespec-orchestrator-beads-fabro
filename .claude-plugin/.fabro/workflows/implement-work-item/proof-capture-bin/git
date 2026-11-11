@@ -76,6 +76,9 @@ done
 case "$subcommand" in
     push)
         protected_target "$@" || refuse
+        for argument in "$@"; do
+            case "$argument" in --receive-pack|--exec|--receive-pack=*|--exec=*) refuse ;; esac
+        done
         remote=""
         after_push=0
         for argument in "$@"; do
