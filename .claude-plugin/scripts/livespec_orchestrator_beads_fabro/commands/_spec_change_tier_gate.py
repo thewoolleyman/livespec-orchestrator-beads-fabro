@@ -22,12 +22,11 @@ model call each; recording is a write that can never be taken back, because
 beads comments are append-only. Putting the reuse read anywhere but first spends
 two model calls per item per pass on items nothing about has changed.
 
-THE CLASSIFICATION RUNS BEFORE THE JUDGEMENT, and the saving is the point rather
-than a nicety: three of the four classes are exempt outright ("An item
-classified `bug`, `chore` or `non_functional` is never spec-change tier"), so a
-`bug` never pays for the judgement at all — and the judgement is the expensive
-call, because its prompt carries the condensed ratified tree while the
-classification's carries one item's title and description.
+THE CLASSIFICATION RUNS BEFORE THE JUDGEMENT, so the resulting record names
+both halves of the decision in the order the shared component defines them.
+Every implement-kind item takes the behaviour judgement: an unstated or partial
+behaviour is held whatever class the classifier returns, while a stated bug,
+chore or non-functional item records the same free tier as a stated feature.
 
 A JUDGEMENT THAT CANNOT RUN RECORDS THAT IT DID NOT, AND ROUTES AS BEFORE. The
 clause is explicit: "When the classification cannot run (no eligible model, a
@@ -79,12 +78,10 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     CONFIGURATION_RUBRIC,
-    FEATURE_CLASS,
     SPEC_DIRNAME,
     asked_for_behaviour,
     behaviour_digest,
     decide_spec_change_tier,
-    exempt_decision,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_outcome import (
     SpecChangeTierOutcome,
@@ -227,14 +224,6 @@ def classify_spec_change_tier(
             append=append,
         )
     item_class = classification.unwrap()
-    if item_class != FEATURE_CLASS:
-        return recorded_outcome(
-            item=item,
-            stage=stage,
-            decision=exempt_decision(classification=item_class),
-            context=TierRecordContext(spec_version=spec_version, digest=digest),
-            append=append,
-        )
     verdict = judge_within_ceiling(
         spec_tree=snapshot.files,
         statement=statement,

@@ -27,6 +27,10 @@ from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _ITEM = "bd-ib-reply"
+_STATED = (
+    '{"kind": "stated", "stated_by": ["## A governing clause"], '
+    '"generalization_target": null, "rationale": "the clause states it"}'
+)
 
 
 @pytest.fixture(autouse=True)
@@ -93,18 +97,31 @@ def _item() -> WorkItem:
     )
 
 
-def _install_judge(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reply: str) -> None:
+def _install_judge(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     script = tmp_path / "fake-judge"
-    _ = script.write_text(f"#!/bin/sh\necho {reply}\n", encoding="utf-8")
+    _ = script.write_text(
+        "#!/bin/sh\n"
+        'calls=$(wc -l < "$LIVESPEC_TIER_REPLY_CALLS" 2>/dev/null || true)\n'
+        "case $calls in\n"
+        "0) echo bug ;;\n"
+        f"1) echo '{_STATED}' ;;\n"
+        "*) exit 1 ;;\n"
+        "esac\n"
+        'echo call >> "$LIVESPEC_TIER_REPLY_CALLS"\n',
+        encoding="utf-8",
+    )
     script.chmod(script.stat().st_mode | stat.S_IEXEC)
+    calls = tmp_path / "calls"
+    _ = calls.touch()
     monkeypatch.setenv("LIVESPEC_DOD_JUDGEMENT_CLAUDE_PATH", str(script))
+    monkeypatch.setenv("LIVESPEC_TIER_REPLY_CALLS", str(calls))
 
 
 def test_a_bare_word_classification_reply_is_a_recorded_classification(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, reply="bug")
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch)
     append_work_item(path=_config(repo=repo), item=_item())
 
     outcome = classify_item_spec_change_tier(
@@ -114,4 +131,5 @@ def test_a_bare_word_classification_reply_is_a_recorded_classification(
     assert outcome.cause is None
     assert outcome.recorded is not None
     assert outcome.recorded.classification == "bug"
+    assert outcome.recorded.verdict_kind == "stated"
     assert outcome.recorded.is_spec_change is False
