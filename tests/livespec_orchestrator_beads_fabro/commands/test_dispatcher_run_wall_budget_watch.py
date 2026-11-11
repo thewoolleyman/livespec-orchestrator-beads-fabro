@@ -16,7 +16,7 @@ all, so the obvious verification reports a successful write as lost.
 from __future__ import annotations
 
 import importlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -494,3 +494,68 @@ def test_a_failed_export_dump_holds_without_writing_a_pointer(tmp_path: Path) ->
     assert "rm" not in runner.calls
     assert [record["stage"] for record in journal.records] == [RUN_WALL_BUDGET_HELD_STAGE]
     assert "selective stage-diff read failed" in str(journal.records[0]["failed_measurement"])
+
+
+@dataclass(kw_only=True)
+class _CaptureListingRunner(_ScriptedRunner):
+    """A runner whose origin lists the capture refs in `listing`, as `git ls-remote` does."""
+
+    listing: list[str] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+    ) -> CommandResult:
+        if argv[:2] == ["git", "ls-remote"]:
+            self.calls.append("ls-remote")
+            stdout = "".join(f"{'b' * 40}\t{ref}\n" for ref in self.listing)
+            return CommandResult(exit_code=0, stdout=stdout, stderr="")
+        return super().run(argv=argv, cwd=cwd, timeout_seconds=timeout_seconds, env=env)
+
+
+def test_a_capture_standing_before_the_budget_is_not_new_progress_past_it(
+    tmp_path: Path,
+) -> None:
+    """The first past-budget poll does not read a stale capture as in-window progress."""
+    watch_module = _watch()
+    plan = replace(
+        _plan(repo=tmp_path),
+        node_timeouts=_node_timeouts.NodeTimeouts(
+            configured={"implement": 600}, stall_seconds=600, stall_layer=REPOSITORY_LAYER
+        ),
+    )
+    stale = f"refs/livespec/wip/{_WORK_ITEM_ID}/{_RUN_ID}/1"
+    fresh = f"refs/livespec/wip/{_WORK_ITEM_ID}/{_RUN_ID}/2"
+    runner = _CaptureListingRunner(listing=[stale])
+    journal = _RecordingJournal()
+    budget_watch = watch_module.RunWallBudgetWatch(ledger=_FakeLedger())
+
+    def poll(*, elapsed: float) -> Any:
+        return budget_watch.verdict(
+            dispatch_id="dispatch-01",
+            plan=plan,
+            port=_port(repo=tmp_path, runner=runner),
+            runner=cast("Any", runner),
+            journal=cast("Any", journal),
+            run_id=_RUN_ID,
+            recorded_epoch=_START_EPOCH,
+            now_epoch=_START_EPOCH + elapsed,
+            stream_observable=True,
+        )
+
+    # A run far inside its budget costs no probe at all.
+    assert poll(elapsed=100.0) == watch_module.RunWallVerdict.WITHIN
+    assert "ls-remote" not in runner.calls
+    # The last progress window before the budget takes the baseline.
+    assert poll(elapsed=3300.0) == watch_module.RunWallVerdict.WITHIN
+    assert "ls-remote" in runner.calls
+    past = poll(elapsed=3601.0)
+    assert past != watch_module.RunWallVerdict.CONTINUED
+    assert all(r.get("stage") != RUN_WALL_BUDGET_CONTINUED_STAGE for r in journal.records)
+    # The control: a capture created after the baseline IS new progress.
+    runner.listing = [stale, fresh]
+    assert poll(elapsed=3602.0) == watch_module.RunWallVerdict.CONTINUED
