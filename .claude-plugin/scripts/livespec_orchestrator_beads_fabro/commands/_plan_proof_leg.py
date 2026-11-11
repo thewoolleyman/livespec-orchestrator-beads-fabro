@@ -62,6 +62,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HUMAN_ATTESTED,
@@ -82,13 +83,18 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PlanProofEntry,
     latest_plan_proof_entry,
 )
+from livespec_orchestrator_beads_fabro.commands._plan_release_components import artifact_paths_in
 from livespec_orchestrator_beads_fabro.commands._plan_release_repository import (
+    InvalidReleaseComponents,
+    ReleaseComponent,
     ReleaseReader,
+    ReleaseTags,
     UnreadableRelease,
 )
 
 __all__: list[str] = [
     "NOT_EVIDENCE_NO_RELEASE",
+    "NOT_EVIDENCE_RELEASE_COMPONENTS",
     "NOT_EVIDENCE_SELF_VERIFIED",
     "NOT_EVIDENCE_UNKNOWN_RELEASE",
     "NOT_EVIDENCE_UNREADABLE_RELEASE",
@@ -108,6 +114,7 @@ __all__: list[str] = [
 # operator told only that "a release applies" cannot tell whether the gate asked
 # about the repository they released from.
 NOT_EVIDENCE_NO_RELEASE = "states release none, and a release applies to its release repository"
+NOT_EVIDENCE_RELEASE_COMPONENTS = "has an invalid dispatcher.release_components declaration"
 NOT_EVIDENCE_UNKNOWN_RELEASE = "names a release tag its release repository does not carry"
 NOT_EVIDENCE_UNREADABLE_RELEASE = (
     "names a release repository whose release tags the gate could not read"
@@ -269,17 +276,61 @@ def _release_rejection(*, record: ProofRecord, reader: ReleaseReader) -> str | N
     reading brought back for this record's own repository.
     """
     reading = reader.reading(body=record.body)
+    if isinstance(reading, InvalidReleaseComponents):
+        return f"{NOT_EVIDENCE_RELEASE_COMPONENTS}: {reading.finding}"
     if isinstance(reading, UnreadableRelease):
         return f"{NOT_EVIDENCE_UNREADABLE_RELEASE}: {reading.failure}"
     if not reading.tags:
         return None
     build = build_identity_in(body=record.body)
     named = None if build is None else build.release_tag
+    if reading.components is not None:
+        return _component_release_rejection(record=record, reading=reading, named=named)
+    return _repository_release_rejection(reading=reading, named=named)
+
+
+def _repository_release_rejection(*, reading: ReleaseTags, named: str | None) -> str | None:
+    """Apply the original repository-wide release rule."""
     if named is None:
         return f"{NOT_EVIDENCE_NO_RELEASE} {reading.repository}"
     if named not in reading.tags:
         return f"{NOT_EVIDENCE_UNKNOWN_RELEASE}: {reading.repository} does not carry {named}"
     return None
+
+
+def _component_release_rejection(
+    *, record: ProofRecord, reading: ReleaseTags, named: str | None
+) -> str | None:
+    """Judge a governed repository's declaration without weakening the legacy rule."""
+    components = cast("tuple[ReleaseComponent, ...]", reading.components)
+    has_unowned_tag = any(
+        not any(tag.startswith(component.tag_prefix) for component in components)
+        for tag in reading.tags
+    )
+    paths = artifact_paths_in(body=record.body)
+    if has_unowned_tag or not paths:
+        return _repository_release_rejection(reading=reading, named=named)
+    released = tuple(
+        component
+        for component in components
+        if any(tag.startswith(component.tag_prefix) for tag in reading.tags)
+        and any(path.startswith(prefix) for prefix in component.paths for path in paths)
+    )
+    if not released:
+        return None
+    names = ", ".join(component.name for component in released)
+    if named is None:
+        return f"states release none, and a release applies to component {names}"
+    allowed = frozenset(
+        tag
+        for tag in reading.tags
+        if any(tag.startswith(component.tag_prefix) for component in released)
+    )
+    return (
+        None
+        if named in allowed
+        else (f"names a release tag no artifact component carries: {names} does not carry {named}")
+    )
 
 
 def _rejected_line(*, entry: PlanProofEntry, rejection: str) -> str:

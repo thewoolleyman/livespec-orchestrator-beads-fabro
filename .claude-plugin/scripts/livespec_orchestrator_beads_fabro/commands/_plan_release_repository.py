@@ -63,6 +63,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity 
 __all__: list[str] = [
     "BareRepository",
     "ExplicitRepository",
+    "InvalidReleaseComponents",
+    "ReleaseComponent",
     "ReleaseReader",
     "ReleaseReading",
     "ReleaseTags",
@@ -116,6 +118,23 @@ class BareRepository:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ReleaseComponent:
+    """One declared release component and the repository paths it ships."""
+
+    name: str
+    tag_prefix: str
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
+class InvalidReleaseComponents:
+    """A committed component declaration the archive gate must refuse."""
+
+    repository: str
+    finding: str
+
+
+@dataclass(frozen=True, kw_only=True)
 class ReleaseTags:
     """The release tags one repository carries, read from its forge remote.
 
@@ -127,6 +146,7 @@ class ReleaseTags:
 
     repository: str
     tags: frozenset[str]
+    components: tuple[ReleaseComponent, ...] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -144,7 +164,7 @@ class UnreadableRelease:
     failure: str
 
 
-ReleaseReading: TypeAlias = ReleaseTags | UnreadableRelease
+ReleaseReading: TypeAlias = ReleaseTags | UnreadableRelease | InvalidReleaseComponents
 
 
 class ReleaseReader(Protocol):

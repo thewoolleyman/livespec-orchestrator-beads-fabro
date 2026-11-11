@@ -3131,9 +3131,8 @@
     "heading": "## Scenario: a plan record's release rule applies to the release component that ships its artifact",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-qpibvm adds cases in which the plan archive gate, for a governed repository whose committed dispatcher.release_components declares a component owning a release tag, accepts a captured plan Proof of Done record stating release none whose artifact paths line names only paths under no released component; rejects one whose artifact paths lie under a released component, naming the missing release identity and that component; keeps the repository-wide rule, naming the release repository, when a release tag matches no declared component or the record names no artifact paths; and, for a malformed dispatcher.release_components array, emits a configuration finding naming that key and rejects every record. bd-ib-qpibvm owns it.",
-    "work_item": "bd-ib-qpibvm"
+    "test": "tests.integration.test_plan_release_components_scenario350",
+    "reason": ""
   },
   {
     "heading": "## Scenario: the plan record posting primitive renders a record's artifact paths line",
