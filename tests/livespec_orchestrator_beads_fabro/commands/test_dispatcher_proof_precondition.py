@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition i
     PROOF_ASSETS_RELEASE_TAG_ENV_VAR,
     PROOF_STORE_JOURNAL_STAGE,
     PUBLISH_BRANCH_ENV_VAR,
+    WORK_ITEM_ENV_VAR,
     ProofStoreUnobservable,
     proof_assets_refusal,
     proof_assets_refusal_for_items,
@@ -322,6 +323,7 @@ def test_the_env_projection_is_pure_and_carries_the_branch_and_the_tag(tmp_path:
     """
     lines = proof_store_env_lines(repo=_repo(tmp_path=tmp_path), work_item_id="bd-ib-b4u6b7")
 
+    assert f'{WORK_ITEM_ENV_VAR} = "bd-ib-b4u6b7"' in lines
     assert f'{PUBLISH_BRANCH_ENV_VAR} = "feat/bd-ib-b4u6b7"' in lines
     assert f'{PROOF_ASSETS_RELEASE_TAG_ENV_VAR} = "proof-assets"' in lines
 

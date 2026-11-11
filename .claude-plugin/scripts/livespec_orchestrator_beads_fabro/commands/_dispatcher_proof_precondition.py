@@ -59,6 +59,7 @@ __all__: list[str] = [
     "PROOF_ASSET_RENDERING_ENV_VAR",
     "PROOF_STORE_JOURNAL_STAGE",
     "PUBLISH_BRANCH_ENV_VAR",
+    "WORK_ITEM_ENV_VAR",
     "ProofStoreUnobservable",
     "journaled_proof_rendering",
     "proof_assets_refusal",
@@ -73,6 +74,7 @@ __all__: list[str] = [
 # non-secret key the overlay projects, so a reader of the sandbox environment can
 # tell a factory-supplied value from the image's own.
 PUBLISH_BRANCH_ENV_VAR = "LIVESPEC_PUBLISH_BRANCH"
+WORK_ITEM_ENV_VAR = "LIVESPEC_WORK_ITEM_ID"
 PROOF_ASSETS_RELEASE_TAG_ENV_VAR = "LIVESPEC_PROOF_ASSETS_RELEASE_TAG"
 PROOF_ASSET_RENDERING_ENV_VAR = "LIVESPEC_PROOF_ASSET_RENDERING"
 
@@ -286,6 +288,7 @@ def proof_store_env_lines(*, repo: Path, work_item_id: str, rendering: str = "")
     """
     tag = proof_assets_release_tag(block=dispatcher_block(cwd=repo))
     lines = (
+        f"{WORK_ITEM_ENV_VAR} = {json.dumps(work_item_id)}\n"
         f"{PUBLISH_BRANCH_ENV_VAR} = "
         f"{json.dumps(publish_branch_for(work_item_id=work_item_id))}\n"
     )

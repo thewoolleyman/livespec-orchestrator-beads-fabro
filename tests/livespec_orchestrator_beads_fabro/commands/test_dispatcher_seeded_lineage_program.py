@@ -149,6 +149,42 @@ def test_main_refuses_a_bad_prepare_and_advances_for_carried_content(
     ) == f"{carried}\n"
 
 
+def test_main_records_a_broken_lineage_when_it_accepts_carried_content(
+    *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A carried seed patch leaves the item a durable account of its new lineage."""
+    module = _module()
+    repo, seed, other = _repo(tmp_path=tmp_path)
+    records: list[tuple[object, str, str]] = []
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("LIVESPEC_SEEDED_LINEAGE_SEED", seed)
+    monkeypatch.setenv("LIVESPEC_WORK_ITEM_ID", "bd-ib-carried")
+    monkeypatch.setattr(module, "store_config", lambda **_: "fixture-store", raising=False)
+    monkeypatch.setattr(
+        module,
+        "append_work_item_comment",
+        lambda *, path, work_item_id, body: records.append((path, work_item_id, body)),
+        raising=False,
+    )
+
+    _ = _git(repo=repo, args="checkout seed")
+    assert module.main(argv=["prepare"]) == 0
+    _ = _git(repo=repo, args=f"checkout {other}")
+    carried = _commit(repo=repo, content="before\nadded\nother\n", message="carried")
+
+    assert module.main(argv=["settle"]) == 0
+    assert records == [
+        (
+            "fixture-store",
+            "bd-ib-carried",
+            "livespec-seeded-lineage-content-carried\n\n"
+            f"seed commit: {seed}\n"
+            f"settled commit: {carried}\n"
+            "broken lineage with seed content carried",
+        )
+    ]
+
+
 def test_main_accepts_the_seeded_publish_head(
     *, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

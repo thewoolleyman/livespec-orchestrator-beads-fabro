@@ -16,10 +16,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import (
     CommandResult,
     CommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 
 __all__: list[str] = [
@@ -32,7 +34,9 @@ __all__: list[str] = [
 ]
 
 _SEED_ENV = "LIVESPEC_SEEDED_LINEAGE_SEED"
+_WORK_ITEM_ENV = "LIVESPEC_WORK_ITEM_ID"
 _STATE_NAME = "livespec-seeded-lineage-reference"
+_CONTENT_CARRIED_MARKER = "livespec-seeded-lineage-content-carried"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -157,6 +161,8 @@ def main(*, argv: list[str] | None = None) -> int:
         expected=expected,
         head=head,
     )
+    if result.carried:
+        _record_carried_content(repo=repo, seed=expected, settled=head)
     if result.ok and (initial or result.next_expected != expected):
         bytes_written = state.write_text(f"{result.next_expected}\n", encoding="utf-8")
         _ = bytes_written
@@ -188,6 +194,27 @@ def _check_boundary(*, repo: Path, boundary: str, expected: str, head: str) -> L
         expected=expected,
         before_refresh=before_refresh,
         refreshed=head,
+    )
+
+
+def _record_carried_content(*, repo: Path, seed: str, settled: str) -> None:
+    """Append the durable account required when content, rather than ancestry, passes."""
+    work_item_id = os.environ.get(_WORK_ITEM_ENV)
+    if work_item_id is None:
+        return
+    body = "\n".join(
+        (
+            _CONTENT_CARRIED_MARKER,
+            "",
+            f"seed commit: {seed}",
+            f"settled commit: {settled}",
+            "broken lineage with seed content carried",
+        )
+    )
+    append_work_item_comment(
+        path=store_config(repo=repo),
+        work_item_id=work_item_id,
+        body=body,
     )
 
 
