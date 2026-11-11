@@ -16,6 +16,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_recovery_resume_protection as resume_protection,
+)
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_command as resume
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_observation as observation
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
@@ -106,6 +109,10 @@ class _RecoveryRunner:
     ) -> CommandResult:
         del cwd, timeout_seconds
         self.calls.append(argv)
+        if argv[:3] == ["git", "ls-remote", "origin"]:
+            ref = f"refs/heads/{_BRANCH}"
+            stdout = f"{self.head}\t{ref}\n" if ref in argv[3:] else ""
+            return _result(stdout=stdout)
         if argv[:3] == ["gh", "pr", "list"]:
             return self._published_pull_request()
         if argv[:3] == ["gh", "pr", "view"]:
@@ -225,6 +232,7 @@ def _wire_command(
         resume, "apply_factory_size_dispatch_entry", lambda **_kwargs: Success(IO(()))
     )
     monkeypatch.setattr(resume, "ShellCommandRunner", lambda: runner)
+    monkeypatch.setattr(resume_protection, "ShellCommandRunner", lambda: runner)
     monkeypatch.setattr(resume, "pre_dispatch_wall_exit", lambda **_kwargs: None)
     monkeypatch.setattr(resume, "dispatch_tail_exit", lambda **_kwargs: 0)
 

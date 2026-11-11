@@ -108,6 +108,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prelaunch_cpu import (
     PrelaunchCpuProfile,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
+    preserved_descendant_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_args import resumed_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
@@ -132,6 +135,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "add_resume_arguments",
+    "preserved_descendant_refusal",
     "resume_refusal_report",
     "run_resume_command",
 ]
@@ -216,7 +220,10 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     )
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
-    refusals = resume_refusals(observation=gather.observation)
+    refusals = (
+        *resume_refusals(observation=gather.observation),
+        *preserved_descendant_refusal(gather=gather, item=item, repo=repo, journal=journal),
+    )
     if refusals or anchor is None or pull_request is None:
         _ = write_stderr(
             text=resume_refusal_report(

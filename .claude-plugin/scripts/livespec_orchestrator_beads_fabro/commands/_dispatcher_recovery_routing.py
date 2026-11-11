@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     released_for_recovery,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
+    resume_protection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
     ROUTE_HELD,
@@ -361,7 +364,10 @@ def _released_route(
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
         return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
-    return RecoveryRoute(
+    protected = resume_protection(
+        gather=gather, item=item, repo=repo, runner=runner, journal=journal
+    )
+    return protected or RecoveryRoute(
         work_item_id=item.id,
         route=ROUTE_RESUME,
         resume=RecoveryResume(
