@@ -1879,3 +1879,15 @@ Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read
 or write a live tenant DB.
+
+- `test_workflow_janitor_refresh_repair_exhaustion_scenario176.py` — binds the
+  janitor arm of `SPECIFICATION/scenarios.md` Scenario 176's round bound
+  (work-item `bd-ib-64n5ct`): a janitor whose pre-aggregate refresh conflicts, or
+  whose refresh commit the hook refuses with no conflicted path, after two
+  recorded repair rounds restores its pre-refresh head, prints
+  `LIVESPEC_REFRESH_REPAIR_EXHAUSTED`, writes the exhausted marker and the
+  needs-human reason instead of a brief, and `janitor_refresh_route` sends it to
+  `needs_human`. The shipped `janitor` and `janitor_refresh_route` bytes run in a
+  real clone; the budget-remaining case is the control that a round with budget
+  left still writes a brief and routes to `refresh_repair`. The live-run
+  assertion (the run ends at `needs_human`, not `workflow_error`) is host-captured.
