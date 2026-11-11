@@ -51,6 +51,15 @@ def test_the_prepare_step_materializes_the_single_safe_push_recipe() -> None:
     assert f'chmod 700 "{path}"' in script
 
 
+def test_the_exact_head_push_refuses_unearned_tdd_lineage_before_pushing() -> None:
+    """A refresh cannot publish evidence whose recorded parent it rewrote."""
+    source = publication_push_program_source()
+
+    assert "livespec_validate_tdd_lineage" in source
+    assert "TDD-Green-Parent-Reflog" in source
+    assert "TDD-Red-Test-File-Checksum" in source
+
+
 def _git(*, repo: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:
     """One fixture git command, raising its own captured stderr on failure.
 
