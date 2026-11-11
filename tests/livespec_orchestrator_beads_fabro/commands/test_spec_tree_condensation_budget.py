@@ -231,6 +231,24 @@ def test_an_oversized_relevant_section_contributes_a_marked_leading_body_portion
     assert len(recorder.prompts[0]) < ceiling
 
 
+def test_an_oversized_relevant_section_keeps_its_deep_stating_paragraph() -> None:
+    """A stated clause beyond an oversized section's prefix reaches the judge."""
+    heading = "## Self-contained plugin dispatch"
+    stating = (
+        "Repository-controlled code reaches a push only through a credential helper "
+        "that hooks and gates cannot read."
+    )
+    tree = {"contracts.md": f"{heading}\n\n" + "unrelated preamble.\n\n" * 3_000 + stating + "\n"}
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="A credential helper keeps repository pushes unavailable to hooks and gates.",
+        ceiling=20_000,
+    )
+
+    assert stating in condensed["contracts.md"]
+
+
 def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:
     """A prior whole selection cannot make a later oversized section disappear."""
     first_heading = "## First governing section"
