@@ -51,6 +51,7 @@ _OLDER_REF = f"{_PREFIX}/{_OLDER_PRESERVED_COMMIT}"
 _BRANCH_REF = f"refs/heads/feat/{_ITEM_ID}"
 _TRAILER_NEEDS_HUMAN_REF = "refs/heads/needs-human/opaque-preservation-name"
 _TRAILER_NEEDS_HUMAN_COMMIT = "e" * 40
+_IDENTICAL_TREE = "1" * 40
 
 
 @dataclass(kw_only=True)
@@ -208,6 +209,61 @@ def test_a_competing_ref_with_an_unattributable_published_head_is_unobservable()
     )
     assert isinstance(seed, PreservedWorkUnobservable)
     assert "publishing-run-unobservable" in seed.detail
+
+
+def test_an_unattributable_needs_human_ref_with_the_published_heads_tree_is_not_competing() -> None:
+    """The equivalent terminal ref is invisible to the published-head route."""
+    shared_tree = "1" * 40
+    terminal_ref = f"refs/heads/needs-human/{_RUN}"
+    runner = _Runner(
+        answers={
+            terminal_ref: _ls_remote(ref=terminal_ref, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+            f"{_PRESERVED_COMMIT}^{{tree}}": CommandResult(
+                exit_code=0, stdout=f"{shared_tree}\n", stderr=""
+            ),
+            f"{_PUBLISHED_HEAD}^{{tree}}": CommandResult(
+                exit_code=0, stdout=f"{shared_tree}\n", stderr=""
+            ),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            {"stage": "dispatch-id", "work_item_id": _ITEM_ID, "dispatch_id": _RUN},
+            {"work_item_id": _ITEM_ID, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
+    assert isinstance(seed, RecoverySeed)
+    assert seed.commit_sha == _PUBLISHED_HEAD
+    assert seed.preservation_ref == f"{_PREFIX}/{_PUBLISHED_HEAD}"
+    assert seed.passed_over_needs_human == ()
+
+
+def test_an_unattributable_checkpoint_ref_with_the_published_heads_tree_is_not_competing() -> None:
+    """An identical preserved tree is read exactly as an absent preserved ref."""
+    runner = _Runner(
+        answers={
+            _REF: _ls_remote(ref=_REF, commit=_PRESERVED_COMMIT),
+            _BRANCH_REF: _ls_remote(ref=_BRANCH_REF, commit=_PUBLISHED_HEAD),
+            f"{_PRESERVED_COMMIT}^{{tree}}": CommandResult(
+                exit_code=0, stdout=f"{_IDENTICAL_TREE}\n", stderr=""
+            ),
+            f"{_PUBLISHED_HEAD}^{{tree}}": CommandResult(
+                exit_code=0, stdout=f"{_IDENTICAL_TREE}\n", stderr=""
+            ),
+        }
+    )
+    seed = _seed(
+        runner=runner,
+        journal_records=(
+            _row(ref=_REF, base=_OLDER_BASE, run_id=_OLDER_RUN),
+            {"work_item_id": _ITEM_ID, "published_head": _PUBLISHED_HEAD},
+        ),
+    )
+    assert isinstance(seed, RecoverySeed)
+    assert seed.commit_sha == _PUBLISHED_HEAD
+    assert seed.preservation_ref == f"{_PREFIX}/{_PUBLISHED_HEAD}"
 
 
 def test_a_needs_human_ref_is_attributed_from_its_tip_trailer() -> None:
