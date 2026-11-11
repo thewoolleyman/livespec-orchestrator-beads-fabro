@@ -48,6 +48,12 @@ def _repository(*, tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
     tools = tmp_path / "bin"
     tools.mkdir()
     log = tmp_path / "just.log"
+    graph_reader = tmp_path / "tests" / "test_graph_reader.py"
+    graph_reader.parent.mkdir()
+    _ = graph_reader.write_text(
+        "WORKFLOW = 'workflow.fabro'\n",
+        encoding="utf-8",
+    )
     _write_tool(
         directory=tools,
         name="uv",
