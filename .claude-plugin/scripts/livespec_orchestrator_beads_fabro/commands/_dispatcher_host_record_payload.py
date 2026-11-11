@@ -198,6 +198,7 @@ def _payload(*, path: Path) -> tuple[BuildIdentity, tuple[Mapping[str, object], 
             release_tag=_text(value=build.get("release_tag")),
             installed_build=_text(value=build.get("installed_build")),
             commit=_text(value=build.get("commit")),
+            artifact_paths=_artifact_paths(value=build.get("artifact_paths")),
         ),
         entries,
     )
@@ -216,3 +217,10 @@ def _sequence(*, value: object) -> Sequence[object]:
 
 def _text(*, value: object) -> str | None:
     return value if isinstance(value, str) and value.strip() else None
+
+
+def _artifact_paths(*, value: object) -> tuple[str, ...] | None:
+    """The optional build artifact paths, ready for the build-identity renderer."""
+    if value is None:
+        return None
+    return tuple(str(path) for path in _sequence(value=value))
