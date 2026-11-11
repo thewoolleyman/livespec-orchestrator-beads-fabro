@@ -236,6 +236,122 @@ def test_the_primitive_posts_a_capture_and_an_independent_replay_and_refuses_a_s
     assert f"Proof mode: {PROOF_MODE_HOST_CAPTURED}" in replay.record.body
 
 
+def test_a_payload_artifact_paths_render_in_their_given_order(tmp_path: Path) -> None:
+    """A plan record names every artifact path the exercised build supplied."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="artifact-path-record",
+        title="Artifact path record",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-11-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the released build has been run in a real session.",
+            assertions=(_ASSERTION,),
+        ),
+    )
+    record = _payload(path=tmp_path / "artifact-paths.json", reproduced=None)
+    document = json.loads(record.read_text(encoding="utf-8"))
+    document["build"]["artifact_paths"] = [
+        "tools/shared_credentials_provisioning/",
+        "infra/shared-credentials/write-secret.sh",
+    ]
+    _ = record.write_text(json.dumps(document), encoding="utf-8")
+    emitted: list[str] = []
+
+    code = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=record,
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert code == 0
+    body = str(_fake().list_comments(issue_id=created["epic_id"])[0]["text"])
+    assert (
+        "- artifact paths: tools/shared_credentials_provisioning/, "
+        "infra/shared-credentials/write-secret.sh"
+    ) in body
+
+
+def test_a_payload_without_artifact_paths_renders_no_artifact_paths_line(tmp_path: Path) -> None:
+    """An omitted optional artifact-paths array makes no claim about artifacts."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="no-artifact-path-record",
+        title="No artifact path record",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-11-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the released build has been run in a real session.",
+            assertions=(_ASSERTION,),
+        ),
+    )
+    emitted: list[str] = []
+
+    code = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=_payload(path=tmp_path / "no-artifact-paths.json", reproduced=None),
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert code == 0
+    body = str(_fake().list_comments(issue_id=created["epic_id"])[0]["text"])
+    assert "artifact paths:" not in body
+
+
+def test_a_malformed_artifact_paths_value_is_refused_before_posting(tmp_path: Path) -> None:
+    """A blank artifact path is malformed and must not create an epic comment."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="malformed-artifact-path-record",
+        title="Malformed artifact path record",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-11-11T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the released build has been run in a real session.",
+            assertions=(_ASSERTION,),
+        ),
+    )
+    record = _payload(path=tmp_path / "malformed-artifact-paths.json", reproduced=None)
+    document = json.loads(record.read_text(encoding="utf-8"))
+    document["build"]["artifact_paths"] = [""]
+    _ = record.write_text(json.dumps(document), encoding="utf-8")
+    emitted: list[str] = []
+
+    code = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=record,
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert code == 3
+    assert "artifact_paths" in "".join(emitted)
+    assert _fake().list_comments(issue_id=created["epic_id"]) == []
+
+
 # ---------------------------------------------------------------------------
 # bd-ib-555xcd: the plan record is measured against the SAME declared budget,
 # and an over-budget record is refused rather than appended.
