@@ -687,6 +687,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_commit_runner_refuses_subjectless_commit_7cixf3.py",
     "tests/integration/test_publish_draft_refuses_subjectless_commit_7cixf3.py",
     "tests/integration/test_commit_settle_restores_flattened_merge_2deww4.py",
+    "tests/integration/test_commit_settle_stopped_rebase_hmed6n.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
