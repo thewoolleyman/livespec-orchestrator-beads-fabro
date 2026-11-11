@@ -62,7 +62,7 @@ def test_every_refresh_installer_executes_the_shell_quoted_multi_word_command(
     """The exact seven sites install the refreshed canonical bodies, not a command name."""
     forms = _rendered_installers()
 
-    assert len(forms) == 7
+    assert len(forms) == 9
 
     repo = tmp_path / "repo"
     repo.mkdir()
