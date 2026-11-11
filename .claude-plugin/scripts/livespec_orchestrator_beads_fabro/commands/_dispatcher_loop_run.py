@@ -29,6 +29,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     DispatchOutcome,
     PollPolicy,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import FabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     GithubTokenEnvRunner,
     JournalFile,
@@ -56,8 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_credential_lea
     revoke_proof_credentials,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_launch import (
-    consume_seed_ruling_for_run,
-    seeded_launch_receipt,
+    ReceiptWritingLauncher,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_source_staging import (
     SourceStagingRunner,
@@ -220,29 +220,36 @@ def run_dispatch_with_watchdog(
             # detection. The dispatch id rides along because the sink keys
             # every beat by it (`cc_otel_overlay_env` projects no run id),
             # so a probe without it can never match a beat.
-            fabro_launcher=fabro_launcher_type(
-                run_runner=SourceStagingRunner(
-                    inner=runner,
-                    plan=context.plan,
-                    journal=context.journal,
-                    resume_head=getattr(context.args, "resume_head", None),
-                    resume_fetch_ref=getattr(context.args, "resume_fetch_ref", None),
+            fabro_launcher=_receipt_launcher(
+                context=context,
+                launcher=fabro_launcher_type(
+                    run_runner=SourceStagingRunner(
+                        inner=runner,
+                        plan=context.plan,
+                        journal=context.journal,
+                        resume_head=getattr(context.args, "resume_head", None),
+                        resume_fetch_ref=getattr(context.args, "resume_fetch_ref", None),
+                    ),
+                    heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
+                    dispatch_id=context.dispatch_id,
+                    prelaunch_checkpoint=context.prelaunch_checkpoint,
                 ),
-                heartbeat_path=heartbeat_path(args=context.args, repo=context.repo),
-                dispatch_id=context.dispatch_id,
-                prelaunch_checkpoint=context.prelaunch_checkpoint,
             ),
         )
-        if context.seed_ruling_work_item_id is not None and context.dispatch_id is not None:
-            consume_seed_ruling_for_run(
-                receipt=seeded_launch_receipt(
-                    args=context.args,
-                    comments=context.seed_ruling_comments,
-                    work_item_id=context.seed_ruling_work_item_id,
-                    dispatch_id=context.dispatch_id,
-                    run_id=outcome.fabro_run_id,
-                ),
-                repo=context.repo,
-                journal=context.journal,
-            )
     return started_at, outcome
+
+
+def _receipt_launcher(
+    *, context: DispatchRunContext, launcher: WatchedFabroLauncher
+) -> FabroLauncher:
+    """Wrap a seeded dispatch's launcher so its receipt lands once the run id exists."""
+    if context.seed_ruling_work_item_id is None or context.dispatch_id is None:
+        return launcher
+    return ReceiptWritingLauncher(
+        inner=launcher,
+        args=context.args,
+        comments=context.seed_ruling_comments,
+        work_item_id=context.seed_ruling_work_item_id,
+        dispatch_id=context.dispatch_id,
+        repo=context.repo,
+    )

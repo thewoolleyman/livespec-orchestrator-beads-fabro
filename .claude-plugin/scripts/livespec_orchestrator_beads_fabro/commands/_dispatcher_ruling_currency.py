@@ -55,6 +55,7 @@ __all__: list[str] = [
     "SEED_RULING_CONSUMED_MARKER",
     "FreshRuling",
     "current_ruling",
+    "names_instant",
     "seed_ruling_matching",
 ]
 
@@ -93,7 +94,7 @@ def current_ruling(*, comments: Sequence[str]) -> SeedRuling | FreshRuling | Non
     else:
         return None
     if any(
-        _names_instant(comment=text, marker=consumed, instant=latest.instant) for text in comments
+        names_instant(comment=text, marker=consumed, instant=latest.instant) for text in comments
     ):
         return None
     return latest
@@ -103,14 +104,14 @@ def seed_ruling_matching(
     *, comments: Sequence[str], preservation_ref: str, commit_sha: str
 ) -> SeedRuling | None:
     """The ledger seed ruling identified by a run's immutable seed record."""
-    matches = (
+    matches = [
         ruling
         for text in comments
         if (ruling := _seed_ruling(comment=text)) is not None
         and ruling.preservation_ref == preservation_ref
         and ruling.commit_sha == commit_sha
-    )
-    return next(matches, None)
+    ]
+    return matches[-1] if matches else None
 
 
 def _fields(*, comment: str, marker: str, required: tuple[str, ...]) -> dict[str, str] | None:
@@ -158,7 +159,7 @@ def _fresh_ruling(*, comment: str) -> FreshRuling | None:
     )
 
 
-def _names_instant(*, comment: str, marker: str, instant: str) -> bool:
+def names_instant(*, comment: str, marker: str, instant: str) -> bool:
     """Whether this comment is a `marker` consumption naming exactly this instant."""
     lines = comment.splitlines()
     if not lines or lines[0] != marker:

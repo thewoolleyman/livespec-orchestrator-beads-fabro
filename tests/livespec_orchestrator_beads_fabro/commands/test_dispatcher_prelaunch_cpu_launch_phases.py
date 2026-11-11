@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands import _dispatcher_loop_run as r
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_prelaunch_cpu as cpu_module,
 )
+from livespec_orchestrator_beads_fabro.commands import (
+    _dispatcher_seed_ruling_launch as seed_launch_module,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -194,11 +197,12 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
     monkeypatch.setattr(run_module, "dispatch_spans_path", lambda **_: tmp_path / "spans.jsonl")
     monkeypatch.setattr(run_module, "heartbeat_path", lambda **_: tmp_path / "beat.jsonl")
     monkeypatch.setattr(run_module, "revoke_proof_credentials", lambda **_: None)
-    monkeypatch.setattr(
-        run_module,
-        "consume_seed_ruling_for_run",
-        lambda *, receipt, **_: consumed.append(receipt),
-    )
+
+    def consume(*, receipt: object, **_: object) -> None:
+        events.append("receipt")
+        consumed.append(receipt)
+
+    monkeypatch.setattr(seed_launch_module, "consume_seed_ruling_for_run", consume)
     outcome = DispatchOutcome(
         work_item_id="bd-ib-5d5aue",
         status="green",
@@ -209,13 +213,17 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
         fabro_run_id="01RUN",
     )
 
-    def run_dispatch(**_: object) -> DispatchOutcome:
+    def run_dispatch(**kwargs: Any) -> DispatchOutcome:
         events.append("engine")
+        _ = kwargs["fabro_launcher"].launch(plan=kwargs["plan"], runner=object(), journal=object())
+        events.append("post-run-flow")
         return outcome
 
     def launcher_type(**kwargs: Any) -> Any:
         events.append("launcher" if kwargs["prelaunch_checkpoint"] is checkpoint else "wrong")
-        return object()
+        return SimpleNamespace(
+            launch=lambda **_: SimpleNamespace(run_id="01RUN"),
+        )
 
     _ = run_module.run_dispatch_with_watchdog(
         context=run_module.DispatchRunContext(
@@ -251,7 +259,16 @@ def test_the_dispatch_span_is_a_phase_boundary_before_the_engine_runs(
         fabro_launcher_type=launcher_type,
     )
 
-    assert events == ["span", "dispatch-span", "launcher", "engine"]
+    # The receipt lands as soon as the launch returns its run id, before the
+    # engine's pull-request and merge flow runs.
+    assert events == [
+        "span",
+        "dispatch-span",
+        "launcher",
+        "engine",
+        "receipt",
+        "post-run-flow",
+    ]
     assert getattr(consumed[0], "run_id", None) == "01RUN"
 
 

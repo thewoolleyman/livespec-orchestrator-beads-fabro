@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ruling_currency import (
     SEED_RULING_CONSUMED_MARKER,
+    names_instant,
     seed_ruling_matching,
 )
 
@@ -195,8 +196,7 @@ def backfill_seed_ruling_consumptions_from_ledger(
 
 def _already_consumed(*, comment: str, instant: str) -> bool:
     """Whether one comment already identifies this ruling's consumption."""
-    lines = comment.splitlines()
-    return bool(lines and lines[0] == _MARKER and any(instant in line for line in lines[1:]))
+    return names_instant(comment=comment, marker=_MARKER, instant=instant)
 
 
 def _text(*, record: Mapping[str, object], key: str) -> str | None:
