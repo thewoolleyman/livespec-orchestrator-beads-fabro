@@ -1003,6 +1003,11 @@
         "commit_green": 7200,
         "dod_gate": 600,
         "janitor_admission": 600,
+        // A janitor killed by this node timeout before its check suite returns
+        // records no verdict. It is not a red janitor: the route immediately
+        // admits one more janitor visit on the same head, with no agent turn.
+        // A second no-verdict timeout preserves the tree at needs_human; only
+        // a returned failing suite verdict enters fix with its failure output.
         "janitor": 4800,
         "fix": 3600,
         "review_fix": 7200,

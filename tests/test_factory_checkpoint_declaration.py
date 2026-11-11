@@ -319,6 +319,14 @@ matters here moved: the freshness requirement is still governed by the bounded
 credential-use window, and `credential_deadline_epoch` still caps every run at the
 token's observed expiry minus its margin.
 
+The bounded janitor retry for a node-timeout visit with no check-suite verdict
+(work-item `bd-ib-kclvlo`) increases the janitor admission bound from eight to
+nine, so the existing bound can admit the one immediate re-janitor without
+spending a fix visit. Re-measured against that graph, the shipped allowance is
+1422630 seconds. The bound moves to 1450000, leaving 27370 seconds of headroom
+while remaining below the retired fifteen-minute checkpoint control. The
+credential-use window still governs the freshness requirement.
+
 The v175 lesson is kept: crossing the credential line fails loudly and cannot
 pass behind a bound the repository can move, because the fresh-credential
 lifetime is a constant of the host and not a bound.
@@ -347,7 +355,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_400_000
+_ALLOWANCE_BOUND_SECONDS = 1_450_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about

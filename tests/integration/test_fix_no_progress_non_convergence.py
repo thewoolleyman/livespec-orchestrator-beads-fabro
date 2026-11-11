@@ -195,10 +195,75 @@ def test_a_green_janitor_visit_clears_the_no_progress_marker(tmp_path: Path) -> 
 
 
 def test_a_janitor_without_a_check_suite_verdict_does_not_enter_fix(tmp_path: Path) -> None:
-    """A failed janitor with no verdict is held out of the ordinary fix route."""
+    """One verdictless timeout gets one more janitor, then preserves the tree."""
     repo = _repo(tmp_path=tmp_path)
+    state = repo / ".git" / "livespec-publication"
+    state.mkdir()
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    first = _run(node="janitor_refresh_route", repo=repo)
+
+    assert first.returncode == 0
+    assert json.loads(first.stdout) == {"preferred_next_label": "rejanitor"}
+    assert (state / "livespec-janitor-no-verdict-head").read_text(encoding="utf-8").strip() == head
+
+    second = _run(node="janitor_refresh_route", repo=repo)
+
+    assert second.returncode == 0
+    assert json.loads(second.stdout) == {"preferred_next_label": "needs_human"}
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+        ).stdout.strip()
+        == head
+    )
+    cause = (repo / ".git" / "livespec-stage-cause").read_text(encoding="utf-8")
+    assert "both janitor visits were ended by the node timeout with no check-suite verdict" in cause
+
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    edges = {
+        (edge.source, edge.destination, edge.attributes.get("condition", ""))
+        for edge in graph.edges
+    }
+    assert ("janitor_refresh_route", "janitor_admission", "preferred_label=rejanitor") in edges
+
+
+def test_a_janitor_check_suite_failure_records_a_verdict_and_still_reaches_fix(
+    tmp_path: Path,
+) -> None:
+    """A returned red suite remains a fixable janitor failure, with its output intact."""
+    repo = _repo(tmp_path=tmp_path)
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    _ = (plugins / "livespec-run-plugin-gate.py").write_text("", encoding="utf-8")
+    suite = tmp_path / "red-suite"
+    _ = suite.write_text(
+        "#!/bin/sh\nprintf 'JANITOR-FAILURE-OUTPUT\\n' >&2\nexit 7\n", encoding="utf-8"
+    )
+    suite.chmod(0o755)
+
+    janitor = subprocess.run(
+        [
+            "sh",
+            "-c",
+            _script(node="janitor").replace("{{ inputs.sandbox_check_suite }}", str(suite)),
+        ],
+        cwd=repo,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=os.environ | {"LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)},
+    )
+
+    assert janitor.returncode == 7
+    assert "JANITOR-FAILURE-OUTPUT" in janitor.stdout
+    state = repo / ".git" / "livespec-publication"
+    assert (state / "livespec-janitor-check-suite-verdict").read_text(encoding="utf-8") == "7\n"
 
     route = _run(node="janitor_refresh_route", repo=repo)
 
     assert route.returncode == 0
-    assert json.loads(route.stdout) == {"preferred_next_label": "needs_human"}
+    assert json.loads(route.stdout) == {"preferred_next_label": "fix"}

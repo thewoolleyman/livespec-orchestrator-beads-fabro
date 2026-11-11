@@ -74,7 +74,7 @@ _INCOMPLETE_REENTER = "LIVESPEC_IMPLEMENT_INCOMPLETE_REENTER"
 _REENTRY_EXHAUSTED = "LIVESPEC_IMPLEMENT_REENTRY_BUDGET_EXHAUSTED"
 _CONFIGURED_DELTA = 137
 _SETTLE_VISITS = 3
-_JANITOR_VISIT_CAP = 8
+_JANITOR_VISIT_CAP = 9
 
 # A refusing pre-commit hook: if the route ran it over the staged tree, its
 # distinctive line would appear in the brief, which is what separates "the brief
@@ -523,7 +523,7 @@ def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> Non
 
 
 def test_janitor_admission_names_and_routes_an_exhausted_visit_bound(tmp_path: Path) -> None:
-    """The ninth entry preserves the tree at needs-human instead of replaying old janitor output."""
+    """The tenth entry preserves the tree at needs-human instead of replaying old janitor output."""
     repo = _clone(tmp_path)
     plugins = _plugins(tmp_path)
 
