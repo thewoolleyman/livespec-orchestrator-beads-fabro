@@ -154,6 +154,9 @@ def _start_dispatch(
     if prepared is None:
         return EXIT_PRECONDITION_ERROR
     items, journal = prepared
+    # The journal exists now and the dispatch names its item, so the rows held
+    # since process start are written before any later step can withhold it.
+    profile.bind(journal=journal, work_item_id=args.item)
     raw_target = next((item for item in items if item.id == args.item), None)
     with profile.during(name="factory-size-check"):
         size_result = apply_factory_size_dispatch_entry(

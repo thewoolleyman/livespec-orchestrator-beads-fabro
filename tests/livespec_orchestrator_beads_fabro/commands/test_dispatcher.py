@@ -823,6 +823,11 @@ def test_dispatch_gate_auto_normalizes_beads_native_open(
     assert exit_code == 1
     assert calls == [("native-open", "backlog")]
     records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
+    # The pre-launch profile rows flush as soon as the journal exists, ahead of
+    # the ledger gate; they are asserted by the pre-launch journal tests.
+    records = [
+        record for record in records if record["stage"] not in ("pre-launch-cpu", "pre-launch-step")
+    ]
     # The normalization note now routes through the append layer, so it carries
     # the stamped envelope (`at` + the resolved invoker) alongside its payload.
     # ALL THREE pre-dispatch steps journal their pass ahead of it: both step-gate
