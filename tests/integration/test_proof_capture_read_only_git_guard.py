@@ -307,6 +307,16 @@ def _assert_protected_and_unsafe_pushes_are_refused(
         (scratch, ("push", "ssh://example.invalid/proof.git"), {}),
         (scratch, ("push", "git://example.invalid/proof.git"), {}),
         (scratch, ("push", "example.invalid:proof.git"), {}),
+        (
+            scratch,
+            (
+                "-c",
+                "remote.origin.pushurl=https://127.0.0.1:9/proof.git",
+                "push",
+                "origin",
+            ),
+            {},
+        ),
     ):
         _assert_git_write_is_refused(
             argv=argv,

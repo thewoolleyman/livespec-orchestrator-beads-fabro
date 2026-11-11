@@ -19,6 +19,11 @@ base_of() {
  printf %s "$base"
 }
 
+# Resolve a configured push URL with the same global options as the push itself.
+remote_url_of() {
+ /usr/bin/git "$@" remote get-url --push "$remote"
+}
+
 # Run a function with the global options before the subcommand.
 leading() {
  function_name=$1
@@ -88,7 +93,7 @@ case "$sub" in
    /*|./*|../*) ;;
    *)
     # A remote name resolves through Git; a word naming none is a relative path.
-    if ! url=$(/usr/bin/git -C "$target" remote get-url --push "$remote" 2>/dev/null); then
+    if ! url=$(leading remote_url_of "$@" 2>/dev/null); then
      [ "$(/usr/bin/git -C "$base" ls-remote --get-url "$remote" 2>/dev/null)" = "$remote" ] || refuse
      url=$remote
     fi
