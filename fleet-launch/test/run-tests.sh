@@ -1692,6 +1692,18 @@ else
     tail -n 8 "$STOP_LOG" >&2
 fi
 
+# report_case_20e_admission_order: on any case 20e failure, say whether the stub drive had written
+# `active` before the launcher re-read the item's status, or that the re-read did not occur, and
+# whether the watcher armed and the TERM rendezvous and the admission write happened.
+report_case_20e_admission_order() {
+    printf 'stub admission at launcher re-read: %s\n' \
+        "$(cat "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE" 2>/dev/null || echo 'not-observed: the launcher never re-read the status after every stub drive was gone')" >&2
+    printf 'watcher armed: %s; TERM rendezvous: %s; admission written: %s\n' \
+        "$([ -e "$STUB_DRIVE_WATCHER_ARMED_FILE" ] && echo yes || echo no)" \
+        "$([ -e "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" ] && echo yes || echo no)" \
+        "$([ -e "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE" ] && echo yes || echo no)" >&2
+}
+
 # 20e. A drive that admits its item as the stop takes effect, or whose status
 # cannot be read after the stop, ends in a stopped-after-admission non-run exit.
 for after_stop in admitted unreadable; do
@@ -1706,6 +1718,7 @@ for after_stop in admitted unreadable; do
         if [ "$after_stop" = unreadable ]; then : > "$STUB_ITEM_STATUS_UNREADABLE_FILE"; fi
         if [ "$after_stop" = admitted ] && ! wait_for_file "$STUB_DRIVE_WATCHER_ARMED_FILE" 10; then
             fail "the stub drive's TERM watcher never armed its trap before case 20e set the hold"
+            report_case_20e_admission_order
             stop_launcher "$stop_pid"
             wait "$stop_pid" 2>/dev/null
             continue
@@ -1714,6 +1727,7 @@ for after_stop in admitted unreadable; do
         if [ "$after_stop" = admitted ] \
             && { ! wait_for_drive_gone 10 || ! wait_for_file "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" 10; }; then
             fail "the stopped drive did not exit, or its TERM watcher never ran, before case 20e released its admission rendezvous"
+            report_case_20e_admission_order
             stop_launcher "$stop_pid"
             wait "$stop_pid" 2>/dev/null
             continue
@@ -1732,16 +1746,12 @@ for after_stop in admitted unreadable; do
             pass "a stopped drive that admitted its item ($after_stop) exits stopped-after-admission, re-takes no ticket and comments once"
         else
             fail "a stopped drive that admitted its item ($after_stop) did not make the stopped-after-admission exit (rc=$stop_rc)"
-            printf 'stub admission at launcher re-read: %s\n' \
-                "$(cat "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE" 2>/dev/null || echo 'not-observed: the launcher never re-read the status after every stub drive was gone')" >&2
-            printf 'watcher armed: %s; TERM rendezvous: %s; admission written: %s\n' \
-                "$([ -e "$STUB_DRIVE_WATCHER_ARMED_FILE" ] && echo yes || echo no)" \
-                "$([ -e "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" ] && echo yes || echo no)" \
-                "$([ -e "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE" ] && echo yes || echo no)" >&2
+            report_case_20e_admission_order
             tail -n 8 "$STOP_LOG" >&2
         fi
     else
         fail "the stub drive never started for the stopped-after-admission case"
+        report_case_20e_admission_order
         stop_launcher "$stop_pid"
         wait "$stop_pid" 2>/dev/null
     fi
