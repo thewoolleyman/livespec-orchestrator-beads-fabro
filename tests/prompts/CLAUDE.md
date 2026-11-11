@@ -80,17 +80,18 @@ instead.
   caller: a HEAD-anchored step passes capture and surfaces one stage later as
   a `not_reproduced` verdict against a correct implementation.
 
-- `test_review_proof_record_currency.py` — bd-ib-qnokup: the review prompt
-  judges a captured record's currency by comparing TREES — a record is CURRENT
-  when the tree of the commit it names equals the tree of the head under review
-  — and it forbids the timestamp, sha-equality and commit-order readings
-  outright, carries the moving-HEAD reason in the rule, keeps an absent record
-  and an absent head declaration blocking, and routes its finding through this
-  graph's `fix` label. A prompt test because the judgement is made by the
-  `review` agent out of this prose and is rendered by no Python caller: a
-  reviewer comparing timestamps emits a well-formed blocking finding, the run
-  re-enters capture, and the defect surfaces only as a run that spends its whole
-  firing budget rejecting correct records (measured 2026-10-20 on runs
+- `test_review_proof_record_currency.py` — bd-ib-24xzzf: the review prompt
+  judges a captured record's currency by comparing TREES at the published
+  pull-request head that proof capture recorded — never at the sandbox's engine
+  checkpoint, whose tree can contain prepare-step residue — and it forbids the
+  timestamp, sha-equality and commit-order readings outright, carries the
+  moving-HEAD reason in the rule, keeps an absent record and an absent head
+  declaration blocking, and routes its finding through this graph's `fix`
+  label. A prompt test because the judgement is made by the `review` agent out
+  of this prose and is rendered by no Python caller: a reviewer comparing a
+  checkpoint emits a well-formed blocking finding, the run re-enters capture,
+  and the defect surfaces only as a run that spends its whole firing budget
+  rejecting correct records (measured 2026-10-20 on runs
   `01M5CE38SZJW` and `01M5CDH2FZSE`). The needles are scoped to the currency
   SECTION, since the prompt says `[BLOCKING]` a dozen times for a dozen
   unrelated conditions and separately tells the capture prompt where to read its

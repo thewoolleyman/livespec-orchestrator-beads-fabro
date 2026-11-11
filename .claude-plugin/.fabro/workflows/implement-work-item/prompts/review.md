@@ -141,13 +141,14 @@ the record and the tree stay in lockstep; a record describing a different
 tree means the proof the replay is about to reproduce describes code nobody
 shipped.
 
-A record is **CURRENT** for the head you are reviewing when **the TREE of the
-commit the record names equals the TREE of that head**. Read the sha off the
-record's own second line — `Publish-branch head: <40-character sha>` — and
-compare the two trees:
+A record is **CURRENT** for the published pull request when **the TREE of the
+commit the record names equals the TREE of the published pull-request head**.
+Read the sha off the record's own second line — `Publish-branch head:
+<40-character sha>` — and compare it to the fetched publish branch, not to the
+sandbox's `HEAD`:
 
     git fetch --quiet origin <the publish branch>
-    git diff --quiet <the record's sha> <the head under review> && echo current
+    git diff --quiet <the record's sha> origin/<the publish branch> && echo current
 
 Exit status 0 means the two commits carry the same tree, so the record is
 CURRENT and **no proof-record finding is owed for its head**. Only a
@@ -157,9 +158,11 @@ compared and that you compared their trees.
 **Do NOT judge currency by timestamp, by sha equality, or by commit order,
 and never require the record to POSTDATE the head.** The engine commits a
 CHECKPOINT after every node, and `proof_capture`'s own checkpoint lands
-AFTER the record is posted — so the head you review is routinely a commit
-or two above the sha the record names, seconds later, with an identical
-tree. Measured 2026-10-20 on two runs: `01M5CE38SZJW` posted its record at
+AFTER the record is posted — so the sandbox's `HEAD` is routinely a commit
+or two above the sha the record names, seconds later, with an identical tree.
+It can also carry prepare-step residue that no workflow node authored, so it
+is not the published head that `proof_capture` recorded. Measured 2026-10-20
+on two runs: `01M5CE38SZJW` posted its record at
 14:33:47Z for head `ddb5523d` while the reviewed head `90b906e8` was
 committed at 14:33:52Z, and `01M5CDH2FZSE` posted at 16:54:22Z for
 `67f31db` against a reviewed head committed at 16:54:29Z. Both records were
@@ -178,7 +181,7 @@ anchors the proof.
 A finding whose subject is the latest captured RECORD rather than the tree is
 a **PROOF-RECORD finding**. Exactly these four are proof-record findings:
 
-1. The record is **not current** for the head under review, per the tree
+1. The record is **not current** for the published pull-request head, per the tree
    comparison above — or there is no record at all.
 2. A behavioural assertion whose proof is **test-suite output alone**.
 3. A step that runs a **program the record is required to contain and does
