@@ -25,11 +25,12 @@ the defect exists. A fixture whose clone sits one directory below the
 sandbox root reproduces the PINNED engine, where the guard was never
 committable, so it would pass before the change and prove nothing.
 
-They execute the RENDERED prepare scripts for real, as
-`test_dispatcher_credential_use_projection.py` does, and for the same
-reason: a presence/absence assertion over the rendered text cannot tell
-an exclusion that git honours from one that was written to a path git
-never reads. Only `/workspace` is rebased onto `tmp_path`.
+They execute the chain for real -- the helper fetch's own materializer,
+which writes the guard and names it in the clone's exclude file, then the
+RENDERED startup check -- for the reason a presence/absence assertion over
+rendered text cannot tell an exclusion that git honours from one that was
+written to a path git never reads. Only `/workspace` is rebased onto
+`tmp_path`.
 """
 
 from __future__ import annotations
@@ -52,6 +53,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_proje
     credential_use_env_lines,
     credential_use_guard_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
+    DEFAULT_SANDBOX_GH_REFRESH_ROOT,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    GH_REFRESH_ROOT,
+    LIVESPEC_ROOT,
+    LIVESPEC_SANDBOX_ROOT_PATH,
+    PLUGINS_ROOT,
+)
+
+from tests.prepare_step_support import fetch_helpers
 
 # The in-sandbox root the generated scripts are written against, rebased onto
 # `tmp_path` so the generated text runs here unchanged in every other respect.
@@ -64,6 +76,8 @@ _RUN_BRANCH = "fabro/run/01M4XNM4BBMYFPQDA6X5JCBDYM"
 _GUARD_RELPATH = GUARD_SCRIPT_PATH.removeprefix(f"{_SANDBOX_ROOT}/")
 _GUARD_TOP_SEGMENT = _GUARD_RELPATH.split("/")[0]
 _STEP_TIMEOUT_SECONDS = 60
+# The helper-fetch setup step, which lands the guard; run in-process.
+_FETCH = "<helper-fetch>"
 
 
 def test_no_checkpoint_of_the_prepare_chain_can_stage_the_credential_use_guard(
@@ -194,11 +208,17 @@ def _projection() -> CredentialUseProjection:
 
 
 def _rendered_prepare_scripts(*, sandbox_root: Path) -> list[str]:
-    """Every prepare-step script the credential-use block emits, in order."""
+    """The helper fetch, then every prepare-step script the credential-use block emits.
+
+    The guard is a helper program the helper-fetch setup step writes, so the
+    chain under test starts with that step: `_FETCH` stands for it, and
+    `_run_prepare_step` runs the fetch's own materializer in its place.
+    """
     document = tomli.loads(credential_use_guard_prepare_steps_block(projection=_projection()))
     steps = document.get("run", {}).get("prepare", {}).get("steps", [])
     assert steps
-    return [_rebased(text=str(step["script"]), sandbox_root=sandbox_root) for step in steps]
+    rendered = [_rebased(text=str(step["script"]), sandbox_root=sandbox_root) for step in steps]
+    return [_FETCH, *rendered]
 
 
 def _rendered_env(*, sandbox_root: Path) -> dict[str, str]:
@@ -292,6 +312,17 @@ def _run_prepare_chain(*, scripts: list[str], env: dict[str, str], repo: Path) -
 
 def _run_prepare_step(*, script: str, env: dict[str, str], repo: Path) -> None:
     """Execute ONE rendered prepare step the way the engine's shell does."""
+    if script == _FETCH:
+        _ = fetch_helpers(
+            roots={
+                PLUGINS_ROOT: repo.parent / "plugins",
+                GH_REFRESH_ROOT: Path(
+                    _rebased(text=DEFAULT_SANDBOX_GH_REFRESH_ROOT, sandbox_root=repo)
+                ),
+                LIVESPEC_ROOT: Path(_rebased(text=LIVESPEC_SANDBOX_ROOT_PATH, sandbox_root=repo)),
+            }
+        )
+        return
     step = subprocess.run(
         ["/bin/sh", "-c", script],
         cwd=repo,

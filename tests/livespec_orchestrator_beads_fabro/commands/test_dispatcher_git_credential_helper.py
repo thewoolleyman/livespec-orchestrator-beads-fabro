@@ -40,11 +40,16 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     SANDBOX_GH_REFRESH_ROOT_ENV_VAR,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    GH_REFRESH_ROOT,
+    LIVESPEC_ROOT,
+    PLUGINS_ROOT,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
 
-from tests.prepare_step_support import runnable_script, steps_in
+from tests.prepare_step_support import fetch_helpers, runnable_script, steps_in
 
 _COMMITTED_WORKFLOW_TOML = (
     "_version = 1\n"
@@ -183,7 +188,12 @@ def _provision_sandbox(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> _Sandbox:
-    """Render and EXECUTE the gh-refresh plus credential-helper prepare steps.
+    """Land the fetched helpers, then render and EXECUTE the gh-refresh and credential steps.
+
+    The bundle the wrapper runs is a set of fetched helper programs: the
+    helper-fetch setup step writes them under the bundle root before the
+    gh-refresh step installs the wrapper over `gh`, so they are landed first,
+    from this tree, exactly where that step reads them.
 
     The bundle root is redirected off the production `/workspace` path for the
     reason `_dispatcher_gh_refresh` records beside the lever: the rendered
@@ -228,6 +238,13 @@ def _provision_sandbox(
         "MINT_LOG": str(mint_log),
     }
 
+    _ = fetch_helpers(
+        roots={
+            GH_REFRESH_ROOT: tmp_path / "sandbox-bundle",
+            PLUGINS_ROOT: tmp_path / "plugins",
+            LIVESPEC_ROOT: tmp_path / "livespec-root",
+        }
+    )
     for index, step in enumerate(_prepare_step_scripts(rendered=rendered)):
         script = tmp_path / f"prepare-{index}.sh"
         script.write_text(step, encoding="utf-8")
@@ -235,8 +252,8 @@ def _provision_sandbox(
     assert (bin_dir / "gh.livespec-real").is_file()
     assert "!gh auth git-credential" in (clone / ".git" / "config").read_text(encoding="utf-8")
 
-    # Installed only AFTER the prepare chain, which needs a real `python3` to
-    # unpack the streamed bundle.
+    # Installed only AFTER the prepare chain, so no prepare step can reach the
+    # stand-in in place of the real interpreter.
     _write_executable(
         path=bin_dir / "python3",
         source="#!/usr/bin/env bash\n"

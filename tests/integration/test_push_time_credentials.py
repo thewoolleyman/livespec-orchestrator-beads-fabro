@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import par
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     refreshing_gh_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import GH_REFRESH_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     publication_push_program_source,
 )
@@ -30,7 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_regenera
     record_file_program_source,
 )
 
-from tests.prepare_step_support import env_of, steps_in
+from tests.prepare_step_support import env_of, land_helpers, steps_in
 
 WORKFLOW = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
 BRANCH = "feat/push-time-test"
@@ -243,6 +244,8 @@ def provision_auth(
     monkeypatch.setenv("GITHUB_PRIVATE_KEY", "fixture-key")
     monkeypatch.setenv("LIVESPEC_SANDBOX_GH_REFRESH_ROOT", str(bundle))
     prepare = refreshing_gh_prepare_steps_block()
+    # The bundle is written by the helper fetch that runs before this step.
+    _ = land_helpers(roots={GH_REFRESH_ROOT: bundle})
     for step in steps_in(block=prepare):
         subprocess.run(
             ["bash", "-c", step.script],

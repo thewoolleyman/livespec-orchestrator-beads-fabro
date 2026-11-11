@@ -47,10 +47,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
     RELEASE_REPOSITORY_URL,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
-    JournalFile,
-    ShellCommandRunner,
-)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import (
     INSTALLED_ROOT_ENV,
     executing_payload_root,
@@ -59,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_install_regis
     default_plugin_install_registry,
     installed_build_commit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [

@@ -25,13 +25,6 @@ fails closed on its absence rather than falling back to an inline push.
 
 from __future__ import annotations
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -39,7 +32,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 __all__: list[str] = [
     "PUBLICATION_PUSH_PROGRAM_FILENAME",
     "publication_push_program_path_expansion",
-    "publication_push_program_prepare_steps_block",
     "publication_push_program_source",
 ]
 
@@ -79,28 +71,3 @@ def publication_push_program_source() -> str:
 def publication_push_program_path_expansion() -> str:
     """The path both the prepare step and `pr_refresh` resolve."""
     return f"{sandbox_plugins_root_expansion()}/{PUBLICATION_PUSH_PROGRAM_FILENAME}"
-
-
-def publication_push_program_prepare_steps_block() -> str:
-    """A prepare step that installs the executable helper from its env payload.
-
-    The program rides the step's `env`, and `printf %s` writes it so the shell
-    expands nothing inside it: its own body carries `$#`, `$1` and
-    `${#expected}`, every one of which an expanding write would substitute away
-    before the file was written.
-    """
-    root = sandbox_plugins_root_expansion()
-    path = f"{root}/{PUBLICATION_PUSH_PROGRAM_FILENAME}"
-    step = PrepareStep(
-        script=(
-            f'set -eu\nmkdir -p "{root}"\n'
-            + packed_payload_write_command(path_word=f'"{path}"')
-            + f'\nchmod 700 "{path}"'
-        ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=publication_push_program_source())},
-    )
-    header = (
-        "\n# --- Dispatcher-materialized exact-object publication push: the ONE\n"
-        "# --- rewriting capability the refresh stage is granted ---\n"
-    )
-    return header + render_prepare_step(step=step)

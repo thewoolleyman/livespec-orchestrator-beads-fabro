@@ -67,12 +67,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     GUARD_SCRIPT_PATH,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import GitAuthor
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    LIVESPEC_ROOT,
+    LIVESPEC_SANDBOX_ROOT_PATH,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import (
     render_run_config_overlay,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     codex_freshness_required_seconds,
 )
+
+from tests.prepare_step_support import land_helpers
 
 _MODULE_NAME = "_dispatcher_credential_use_projection"
 _MODULE_IMPORT = f"livespec_orchestrator_beads_fabro.commands.{_MODULE_NAME}"
@@ -273,12 +279,13 @@ def _prepare_then_launch(
     document = _parsed(rendered=rendered)
     env = _env_table(document=document)
     steps = _guard_steps(document=document)
-    # Exclude, install, check. The exclusion that keeps the guard out of the run
-    # branch is its own step and runs FIRST; whether git honours it is
-    # `test_dispatcher_credential_use_guard_worktree.py`'s subject, while what
-    # these cases need from it is that it changes neither the install nor the
-    # startup grade that follow.
-    assert len(steps) == 3, steps
+    # The startup check alone. The guard itself is a helper program the
+    # helper-fetch setup step lands, hidden from the run's worktree, before this
+    # step runs; it is landed here the same way, at the rebased sandbox path.
+    assert len(steps) == 1, steps
+    _ = land_helpers(
+        roots={LIVESPEC_ROOT: Path(_rebased(text=LIVESPEC_SANDBOX_ROOT_PATH, sandbox=sandbox))}
+    )
 
     marker = sandbox / "ran"
     for script in steps:
@@ -288,7 +295,7 @@ def _prepare_then_launch(
                 refusal=step, launched=False, marker_exists=marker.exists(), sandbox=sandbox
             )
     guard_on_disk = Path(_rebased(text=GUARD_SCRIPT_PATH, sandbox=sandbox))
-    # The install must have produced a NON-EMPTY script. An earlier draft wrote an
+    # The fetch must have produced a NON-EMPTY script. An earlier draft wrote an
     # unset variable here, which is precisely what this asserts against.
     assert guard_on_disk.stat().st_size > 0
     launched = subprocess.run(

@@ -37,9 +37,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config im
     codex_otel_env_lines,
     codex_otel_prepare_steps_block,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner import (
-    commit_helpers_prepare_steps_block,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     CredentialUseDeclaration,
     CredentialUseProjection,
@@ -71,6 +68,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helpe
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_prepare_steps_block,
     harness_shell_env_lines,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_build import HelperSource
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    helper_fetch_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_graph_prepare_steps_block,
@@ -136,7 +137,7 @@ CURRENCY_GATE_ENV_VAR = "LIVESPEC_CURRENCY_GATE"
 CURRENCY_GATE_ENV_VALUE = "fail"
 
 
-def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input.
+def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pure overlay builder; each field is an independent projection input, and each `None` return is one unrenderable input the caller reports as a pre-launch refusal.
     *,
     committed_text: str,
     workflow_dir: Path,
@@ -181,6 +182,10 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     # here; False for a direct caller, which renders exactly the overlay it did
     # before the step existed (bd-ib-tlmq3m).
     provision_worktree_pack: bool = False,
+    # The installed build the sandbox fetches its helper programs from. The
+    # Dispatcher passes the identity it read for this dispatch; None reads it
+    # here, from the same install record, so every rendering carries the fetch.
+    helper_source: HelperSource | None = None,
 ) -> str | None:
     """Render the dispatch-time run-config overlay.
 
@@ -269,6 +274,14 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     which installs the guard with no deadline for it to enforce; a caller
     projecting nothing at all passes None for both, which renders no guard and
     leaves ordinary execution untouched.
+
+    `helper_source` is the installed plugin build the sandbox fetches every
+    helper program from (`_dispatcher_helper_fetch`): the overlay carries the
+    helper manifest and the one setup step that fetches and verifies them, and
+    no helper's source. It is not optional in effect. Absent, the identity is read
+    from the install record the pre-dispatch wall probed, a local read with no
+    forge call, and a build with no identity renders no overlay at all, because
+    there would be no commit for the sandbox to fetch.
     """
     if codex_auth_snapshot is not None and not isinstance(credential_use, CredentialUseProjection):
         return None
@@ -341,13 +354,18 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
             graph_artifact=graph_artifact, written_graph=resolved_graph, warn=warn
         )
     )
-    commit_runner_steps = commit_helpers_prepare_steps_block()
+    # Rendered FIRST among the Dispatcher's own steps, because every step after
+    # it that runs a helper program runs the copy this one fetched and verified.
+    helper_fetch_steps = helper_fetch_prepare_steps_block(source=helper_source)
+    if helper_fetch_steps is None:
+        return None
     factory_provenance_steps = factory_run_id_prepare_steps_block(dispatch_id=dispatch_id)
-    # Rendered FIRST among the Dispatcher-materialized steps, which puts it
-    # immediately after the committed `git fetch --unshallow` whose single-branch
-    # refspec it completes. Every later step and every graph node that diffs the
-    # dispatch base then sees the ref, rather than depending on which of them the
-    # agent happened to reach first.
+    # Rendered immediately after the helper fetch, ahead of every other
+    # Dispatcher-materialized step, which keeps it right behind the committed
+    # `git fetch --unshallow` whose single-branch refspec it completes (the fetch
+    # touches no ref of the clone). Every later step and every graph node that
+    # diffs the dispatch base then sees the ref, rather than depending on which
+    # of them the agent happened to reach first.
     dispatch_base_steps = default_branch_fetch_prepare_steps_block(prepare_inputs=prepare_inputs)
     author_env_lines = git_author_env_lines(author=git_author)
     # Rendered immediately after the dispatch base, so EVERY later step and every
@@ -382,6 +400,7 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
     return (
         rewritten
         + github_app_table(github_app=github_app)
+        + helper_fetch_steps
         + dispatch_base_steps
         + git_identity_steps
         + worktree_pack_steps
@@ -394,7 +413,6 @@ def render_run_config_overlay(  # noqa: PLR0913, PLR0915 — kw-only pure overla
         + codex_steps
         + codex_otel_steps
         + plugin_cache_steps
-        + commit_runner_steps
         + resume_checkout_steps
         + credential_use_steps
         # The pull-request body, materialized as a FILE because the stage hands

@@ -34,6 +34,7 @@ import os
 import shlex
 from collections.abc import Mapping
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_helper_build
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     resolve_sandbox_gh_refresh_root,
 )
@@ -56,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 
 __all__: list[str] = [
     "HELPER_MANIFEST_ENV",
@@ -120,9 +122,19 @@ def helper_fetch_prepare_step(
 
 
 def helper_fetch_prepare_steps_block(
-    *, source: HelperSource, roots: Mapping[str, str] | None = None
-) -> str:
-    """The step rendered as overlay TOML, under a header naming what it fetches."""
+    *, source: HelperSource | None, roots: Mapping[str, str] | None = None
+) -> str | None:
+    """The step rendered as overlay TOML, under a header naming what it fetches.
+
+    `source` None reads the installed build's identity from the install record
+    the pre-dispatch wall already probed the forge for: a local read, with no
+    second forge call. A build with no identity has no commit for the sandbox to
+    fetch, so it renders nothing and the caller renders no overlay.
+    """
+    if source is None:
+        source = _dispatcher_helper_build.read_helper_source(runner=ShellCommandRunner())
+    if source is None:
+        return None
     header = (
         "\n# --- Dispatcher-fetched helper programs: this plugin at the installed"
         f"\n# --- build's commit {source.commit}, every helper digest-verified ---\n"

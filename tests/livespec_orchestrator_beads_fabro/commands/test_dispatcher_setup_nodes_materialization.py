@@ -190,31 +190,34 @@ def test_a_payload_step_keeps_its_bytes_in_the_run_env_table_and_not_in_its_scri
 ) -> None:
     """The engine's compact fidelity re-sends every setup script and no environment.
 
-    A step that carries a helper program therefore keeps the program in the run's
-    environment table, under a name unique to its step, and leaves only the short
-    command that writes it in the node's script. The node carries no environment of
-    its own: a graph attribute for one is not something the engine is known to read.
+    A step that carries bytes -- the helper-fetch step's manifest, or a packed
+    per-dispatch payload -- therefore keeps them in the run's environment table,
+    under a name unique to its step, and leaves only the short command that reads
+    them in the node's script. The node carries no environment of its own: a graph
+    attribute for one is not something the engine is known to read.
     """
     _, written, graph_text = _materialize(
         tmp_path=tmp_path, monkeypatch=monkeypatch, graph_text=_GRAPH
     )
     graph = _graph(text=graph_text)
     env = tomli.loads(written)["environments"]["livespec-ci"]["env"]
+    carried = (
+        r"LIVESPEC_SETUP_\d+__(?:LIVESPEC_PREPARE_PAYLOAD\w*|LIVESPEC_DISPATCH_HELPER_MANIFEST)"
+    )
     payloads = {
         name: attributes
         for name, attributes in graph.nodes.items()
-        if "PREPARE_PAYLOAD" in attributes.get("script", "")
+        if re.search(carried, attributes.get("script", ""))
     }
-    assert payloads
+    assert any("LIVESPEC_DISPATCH_HELPER_MANIFEST" in a["script"] for a in payloads.values())
     for attributes in payloads.values():
-        named = set(
-            re.findall(r"LIVESPEC_SETUP_\d+__LIVESPEC_PREPARE_PAYLOAD\w*", attributes["script"])
-        )
+        named = set(re.findall(carried, attributes["script"]))
         assert named
         assert named <= set(env)
         assert "env" not in attributes
         assert not re.search(r"[A-Za-z0-9+/=]{200,}", attributes["script"])
-    assert len({key for key in env if "PREPARE_PAYLOAD" in key}) >= len(payloads)
+        assert '"sha256"' not in attributes["script"]
+    assert len({key for key in env if re.fullmatch(carried, key)}) >= len(payloads)
 
 
 def test_the_chain_continues_after_the_nodes_the_committed_graph_already_declares(

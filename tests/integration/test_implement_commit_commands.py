@@ -12,7 +12,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import pack_payload
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
+
+from tests.prepare_step_support import land_helpers
 
 _ROOT = Path(__file__).parents[2]
 _RED = _ROOT / "dev-tooling" / "commit-red.sh"
@@ -83,25 +85,8 @@ def test_commit_command_scripts_materialize_and_run_the_plugin_root_programs(
     assert _COMMIT_PROGRAMS_PATH.is_file()
     programs = importlib.import_module(_COMMIT_PROGRAMS_MODULE)
     plugins_root = tmp_path / "plugins"
-    prepare = programs.commit_program_prepare_steps_block()
-    environment = {
-        "HOME": str(tmp_path / "home"),
-        "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
-        "LIVESPEC_PREPARE_PAYLOAD": "",
-    }
-    for source, filename in (
-        (programs.commit_red_program_source(), programs.COMMIT_RED_PROGRAM_FILENAME),
-        (programs.commit_green_program_source(), programs.COMMIT_GREEN_PROGRAM_FILENAME),
-    ):
-        environment["LIVESPEC_PREPARE_PAYLOAD"] = pack_payload(text=source)
-        completed = subprocess.run(
-            ["sh", "-c", prepare[filename]],
-            check=False,
-            capture_output=True,
-            env=environment,
-            text=True,
-        )
-        assert completed.returncode == 0, completed.stderr
+    landed = land_helpers(roots={PLUGINS_ROOT: plugins_root})
+    assert plugins_root / programs.COMMIT_RED_PROGRAM_FILENAME in landed
     assert (plugins_root / programs.COMMIT_RED_PROGRAM_FILENAME).is_file()
     assert (plugins_root / programs.COMMIT_GREEN_PROGRAM_FILENAME).is_file()
 

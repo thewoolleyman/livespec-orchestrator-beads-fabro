@@ -27,11 +27,11 @@ from types import ModuleType
 from typing import Any
 
 import pytest
-import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_merge_program,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import pack_payload
+
+from tests.prepare_step_support import plugins_helper
 
 _MODULE_PATH = (
     Path(__file__).resolve().parents[3]
@@ -174,16 +174,10 @@ def test_the_hook_declaration_is_a_pretooluse_bash_hook_that_cannot_block_on_a_m
     assert entry["timeout"] == module.REVIEW_GUARD_HOOK_TIMEOUT_SECONDS
 
 
-def test_the_prepare_step_writes_the_exact_guard_source_into_the_plugins_root() -> None:
+def test_the_helper_fetch_writes_the_exact_guard_source_into_the_plugins_root() -> None:
     module = _guard_module()
-    block = module.review_guard_prepare_steps_block()
-    (step,) = tomli.loads(block)["run"]["prepare"]["steps"]
-    script = str(step["script"])
-    assert module.REVIEW_GUARD_PROGRAM_FILENAME in script
-    assert "<<" not in script
-    assert step["env"] == {
-        "LIVESPEC_PREPARE_PAYLOAD": pack_payload(text=module.review_guard_program_source())
-    }
+    helper = plugins_helper(path=module.REVIEW_GUARD_PROGRAM_FILENAME)
+    assert helper.compose() == module.review_guard_program_source().encode("utf-8")
 
 
 def test_the_settings_merge_program_installs_the_guard_beside_the_gate() -> None:

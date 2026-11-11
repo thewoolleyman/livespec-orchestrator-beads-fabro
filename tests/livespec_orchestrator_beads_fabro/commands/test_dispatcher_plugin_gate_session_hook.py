@@ -73,11 +73,8 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_merge_program,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
-    plugin_cache_gate_prepare_step,
-)
 
-from tests.prepare_step_support import runnable_script
+from tests.prepare_step_support import plugin_gate_installer_script
 
 # The hook event and matcher, spelled as LITERALS rather than imported from the
 # rendering under test. The engine reads these two words and nothing else
@@ -331,9 +328,7 @@ def test_the_hook_command_repairs_an_unmaterialized_record_and_lets_the_call_pro
     home.mkdir()
     env = _child_env(plugins_root=plugins_root, home=home)
     installer = tmp_path / "install-plugin-gate.sh"
-    _ = installer.write_text(
-        runnable_script(step=plugin_cache_gate_prepare_step()), encoding="utf-8"
-    )
+    _ = installer.write_text(plugin_gate_installer_script(), encoding="utf-8")
     _ = subprocess.run(["bash", str(installer)], check=True, capture_output=True, env=env)
     _write_unmaterialized_registry(plugins_root=plugins_root)
     assert _recorded_builds(plugins_root=plugins_root) == ["c6f61c5856ac"]

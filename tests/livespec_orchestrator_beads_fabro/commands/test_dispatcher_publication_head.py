@@ -39,7 +39,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head imp
     PROOF_HEAD_PROGRAM_FILENAME,
     PROOF_HEAD_REQUIRED_VERDICTS,
     proof_head_program_path_expansion,
-    proof_head_program_prepare_steps_block,
     proof_head_program_source,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
@@ -47,7 +46,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
     published_head,
 )
 
-from tests.prepare_step_support import env_of, steps_in
+from tests.prepare_step_support import land_plugin_helpers
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _REAL_PAYLOADS = _REPO_ROOT / "tests" / "integration" / "fixtures" / "proof_records"
@@ -360,33 +359,22 @@ def test_a_misused_invocation_refuses_rather_than_establishing_nothing(
     assert "nothing would be established" in verdict_err
 
 
-def test_the_prepare_step_lands_a_runnable_program_under_the_shared_root(
+def test_the_helper_fetch_lands_a_runnable_program_under_the_shared_root(
     tmp_path: Path,
 ) -> None:
-    """The step the overlay renders actually materializes the program.
+    """The helper registry the fetch step composes from lands the program where the node reads it.
 
-    Run as the sandbox runs it -- the rendered TOML basic string handed to `sh`
-    -- rather than asserted as text, because the write must stop the shell
-    substituting into a program that is full of dollar signs, and that is
-    exactly the kind of thing a text assertion passes over.
+    The program is a helper program: the helper-fetch setup step writes it from
+    the installed build's own commit. Landing it the way that step does and then
+    reading it back is what proves the root the NODE resolves names the file the
+    fetch wrote; the two are different expressions of one root and a divergence
+    is invisible.
     """
-    block = proof_head_program_prepare_steps_block()
-    [step] = steps_in(block=block)
+    landed = land_plugin_helpers(env={"HOME": str(tmp_path)})
 
-    result = subprocess.run(
-        ["sh", "-c", step.script],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env_of(step=step, base={"HOME": str(tmp_path), "PATH": "/usr/bin:/bin"}),
-    )
-
-    landed = tmp_path / ".claude" / "plugins" / PROOF_HEAD_PROGRAM_FILENAME
-    assert result.returncode == 0, result.stderr
-    assert landed.is_file()
-    assert landed.read_text(encoding="utf-8") == proof_head_program_source()
-    # The path the NODE resolves must name the file the step just wrote; the two
-    # are different expressions of one root and a divergence is invisible.
+    program = landed / PROOF_HEAD_PROGRAM_FILENAME
+    assert program.is_file()
+    assert program.read_text(encoding="utf-8") == proof_head_program_source()
     assert proof_head_program_path_expansion().endswith(f"/{PROOF_HEAD_PROGRAM_FILENAME}")
     assert "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT" in proof_head_program_path_expansion()
 

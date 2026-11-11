@@ -45,13 +45,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record
     record_parse_fragment,
     record_reader_fragment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -59,7 +52,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 __all__: list[str] = [
     "CARRY_FORWARD_PROGRAM_FILENAME",
     "carry_forward_program_path_expansion",
-    "carry_forward_program_prepare_steps_block",
     "carry_forward_program_source",
 ]
 
@@ -113,27 +105,3 @@ def carry_forward_program_path_expansion() -> str:
     Dispatcher that never materialized one.
     """
     return f"{sandbox_plugins_root_expansion()}/{CARRY_FORWARD_PROGRAM_FILENAME}"
-
-
-def carry_forward_program_prepare_steps_block() -> str:
-    """The prepare step that lands the program below the sandbox plugins root.
-
-    The program rides the step's `env` and `printf %s` writes it, so the shell
-    expands nothing inside it: the decision carries dollar-bearing,
-    shell-looking text of its own -- the forbidden-character set alone contains
-    `$` and a backtick.
-    """
-    root = sandbox_plugins_root_expansion()
-    step = PrepareStep(
-        script=(
-            f'set -eu\nmkdir -p "{root}"\n'
-            + packed_payload_write_command(path_word=f'"{root}/{CARRY_FORWARD_PROGRAM_FILENAME}"')
-        ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=carry_forward_program_source())},
-    )
-    header = (
-        "\n# --- Dispatcher-materialized carry-forward decision program: the\n"
-        "# --- deterministic rule a changed-head pr_refresh decides by, with no\n"
-        "# --- language-model judgement in it (bd-ib-v4exlm) ---\n"
-    )
-    return header + render_prepare_step(step=step)

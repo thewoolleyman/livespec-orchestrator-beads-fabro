@@ -31,11 +31,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_render import 
     node_timeout_seconds,
     render_workflow_graph,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_grade_program import (
     PROOF_GRADE_ASSERTIONS_ENV_VAR,
     PROOF_GRADE_FAILURE_COUNT_FILENAME,
     PROOF_GRADE_FINDING_FILENAME,
-    proof_grade_program_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
@@ -45,7 +45,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     node_timeouts_from_block,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import land_helpers
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
@@ -321,13 +321,7 @@ def _materialized_sandbox(*, tmp_path: Path, comments: list[dict[str, str]]) -> 
     )
     root = tmp_path / "plugins"
     root.mkdir(parents=True)
-    [step] = steps_in(block=proof_grade_program_prepare_steps_block())
-    _ = subprocess.run(
-        ["sh", "-c", step.script],
-        cwd=repo,
-        check=True,
-        env={**os.environ, **step.env, "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(root)},
-    )
+    _ = land_helpers(roots={PLUGINS_ROOT: root})
     forge = tmp_path / "bin"
     forge.mkdir()
     payload = json.dumps({"comments": comments})

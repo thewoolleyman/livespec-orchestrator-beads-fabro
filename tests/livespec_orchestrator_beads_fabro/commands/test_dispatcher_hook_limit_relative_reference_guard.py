@@ -21,10 +21,14 @@ failure rather than a silent one.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    HELPER_MANIFEST_ENV,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     HOOK_LIMIT_LIMITS_FILENAME,
     HOOK_LIMIT_PROGRAM_FILENAME,
@@ -33,6 +37,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
+
+from tests.prepare_step_support import steps_in
 
 # Opaque non-secret placeholders, bound to locals so ruff's hardcoded-credential
 # rules do not read the literals at the call sites as real ones.
@@ -45,32 +51,11 @@ _FAKE_GITHUB_TOKEN = "relative-reference-github-placeholder"
 _DECOY_LIMIT_SECONDS = 913
 _FIGURE_RE = re.compile(r"LIVESPEC_PUBLISH_DRAFT_[A-Z_]+_SECONDS=(\d+)")
 
-# The decoy is hunted inside the OBSERVER'S OWN prepare step rather than across
-# the whole rendered config, and the narrowing is required rather than cosmetic:
-# the overlay also carries the `gh` refresh bundle as an opaque base64 payload,
-# and a three-digit needle matches somewhere in that noise for some bundle
-# contents and not others -- so a whole-text search reports a decoy that was
-# never resolved, from a region no duration could ever be projected into. The
-# discrimination the case exists for is untouched, because a resolved decoy
-# would be written as this step's own figures heredoc: that is the one place
-# `hook_limit_prepare_steps_block` puts a limit.
-_OBSERVER_STEP_MARKER = "repository-hook limit observer"
-
-
-def _observer_step(*, rendered: str) -> str:
-    """The observer's own `script` line, located from its labelling comment.
-
-    Cut at the SCRIPT LINE rather than at the next comment: the block's label is
-    itself three `# ---` lines, so a scan for the next one lands inside the same
-    comment and returns a slice holding no script at all -- a region where the
-    decoy could not appear however the limit resolved, which is a reading that
-    passes for both answers. `hook_limit_prepare_steps_block` renders the whole
-    step as one `json.dumps`-ed line, so one line is the whole subject.
-    """
-    at = rendered.index(_OBSERVER_STEP_MARKER)
-    header = rendered.index("[[run.prepare.steps]]", at)
-    body = rendered[header:]
-    return body[: body.index("\n", body.index("script = "))]
+# The figures step is the ONE place `hook_limit_prepare_steps_block` puts a limit,
+# labelled by this marker. The observer program itself is a fetched helper the
+# helper-fetch step lands from its manifest (bd-ib-jrawlp), so the overlay names it
+# there whether or not any figure resolved.
+_FIGURES_STEP_MARKER = "repository-hook limit figures"
 
 
 _COMMITTED_WORKFLOW_TOML = (
@@ -99,9 +84,12 @@ def test_a_relative_graph_reference_withholds_the_limit_and_says_so(
 
     Three things are required of one call, and each would pass while another
     failed: the observer is still landed (withholding bounds nothing, it does not
-    disable the mechanism), no figure at all is projected, and the DECOY's
-    duration specifically is absent -- which is the assertion that tells
-    "resolved nothing" apart from "resolved the wrong graph".
+    disable the mechanism), no figure at all is projected, and no figures step is
+    rendered to carry the DECOY's duration -- which is the assertion that tells
+    "resolved nothing" apart from "resolved the wrong graph". The figures step is
+    the one place a limit is ever written, so its absence leaves the decoy
+    nowhere to be projected into; a whole-text hunt for its three digits would
+    instead match inside the manifest's digests for some helper contents.
     """
     monkeypatch.chdir(tmp_path)
     _ = (tmp_path / "workflow.fabro").write_text(_DECOY_GRAPH, encoding="utf-8")
@@ -118,10 +106,17 @@ def test_a_relative_graph_reference_withholds_the_limit_and_says_so(
     )
 
     assert rendered is not None
-    assert HOOK_LIMIT_PROGRAM_FILENAME in rendered
+    [manifest] = [
+        step.env[HELPER_MANIFEST_ENV]
+        for step in steps_in(block=rendered)
+        if HELPER_MANIFEST_ENV in step.env
+    ]
+    landed = {entry["path"] for entry in json.loads(manifest)["helpers"]}
+    assert HOOK_LIMIT_PROGRAM_FILENAME in landed
     assert HOOK_LIMIT_LIMITS_FILENAME not in rendered
     assert _FIGURE_RE.findall(rendered) == []
-    assert str(_DECOY_LIMIT_SECONDS) not in _observer_step(rendered=rendered)
+    assert _FIGURES_STEP_MARKER not in rendered
+    assert not any(str(_DECOY_LIMIT_SECONDS) in step.script for step in steps_in(block=rendered))
     assert len(surfaced) == 1
     assert PUBLISH_DRAFT_NODE in surfaced[0]
     assert "workflow.fabro" in surfaced[0]

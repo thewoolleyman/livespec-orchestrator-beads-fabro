@@ -14,12 +14,33 @@ import re
 import shlex
 import zlib
 from collections.abc import Mapping
+from pathlib import Path
 
 import tomli
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_materialize import materialize
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import (
+    PLUGINS_ROOT,
+    Helper,
+    helper_manifest_text,
+    helper_registry,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
+    PLUGIN_GATE_PROGRAM_FILENAME,
+    plugin_cache_gate_prepare_step,
+    plugin_cache_gate_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PrepareStep
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
 
 __all__: list[str] = [
     "env_of",
+    "fetch_helpers",
+    "land_helpers",
+    "land_plugin_helpers",
+    "plugin_gate_installer_script",
+    "plugins_helper",
     "readable",
     "readable_block",
     "runnable_script",
@@ -84,3 +105,85 @@ def readable_block(*, block: str) -> str:
         "\n".join([step.script, *(readable(value=value) for value in step.env.values())])
         for step in steps_in(block=block)
     )
+
+
+def land_helpers(*, roots: Mapping[str, Path]) -> list[Path]:
+    """Write every helper program under the named sandbox roots given, as the fetch step does.
+
+    The helper-fetch setup step lands each helper from the installed build's own
+    commit (`_dispatcher_helper_fetch`); a test that runs a consuming step or a
+    helper itself needs those files where that step would have put them. Only
+    the roots named here are written, so a test about the plugins root does not
+    write the gh-refresh bundle.
+    """
+    landed: list[Path] = []
+    for helper in helper_registry():
+        root = roots.get(helper.root)
+        if root is None:
+            continue
+        target = root / helper.path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _ = target.write_bytes(helper.compose())
+        target.chmod(helper.mode)
+        landed.append(target)
+    return landed
+
+
+def land_plugin_helpers(*, env: Mapping[str, str]) -> Path:
+    """Land every plugins-root helper where a step run under `env` resolves that root.
+
+    The same resolution the steps' shell expansion performs: the override when it
+    is set and non-empty, else `$HOME/.claude/plugins`.
+    """
+    override = env.get(SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR, "")
+    root = Path(override) if override else Path(env["HOME"]) / ".claude" / "plugins"
+    _ = land_helpers(roots={PLUGINS_ROOT: root})
+    return root
+
+
+_GATE_PROGRAM_END = "LIVESPEC_TEST_GATE_PROGRAM_END"
+
+
+def plugin_gate_installer_script() -> str:
+    """The plugin-cache gate's own step, preceded by the write the helper fetch performs.
+
+    The gate program is a helper program the helper-fetch setup step lands below
+    the plugins root before the gate's step runs; a test that runs the gate's
+    shipped step body needs that file first, at the root the step itself resolves.
+    """
+    step = plugin_cache_gate_prepare_step()
+    root = step.script.splitlines()[1]
+    assert root.startswith('root="')
+    program = plugin_cache_gate_program_source()
+    assert _GATE_PROGRAM_END not in program
+    return (
+        f"{root}\n"
+        'mkdir -p "$root"\n'
+        f"cat > \"$root/{PLUGIN_GATE_PROGRAM_FILENAME}\" <<'{_GATE_PROGRAM_END}'\n"
+        f"{program}{_GATE_PROGRAM_END}\n" + runnable_script(step=step)
+    )
+
+
+def plugins_helper(*, path: str) -> Helper:
+    """The registered helper the fetch step writes at `path` below the plugins root."""
+    [helper] = [h for h in helper_registry() if (h.root, h.path) == (PLUGINS_ROOT, path)]
+    return helper
+
+
+_FETCH_REPOSITORY = "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git"
+_FETCH_COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+def fetch_helpers(*, roots: Mapping[str, Path]) -> int:
+    """Run the helper fetch's materializer in-process against `roots`, every root named.
+
+    The same call the setup step makes from its checkout, minus the fetch: the
+    manifest is this tree's own, so every digest verifies, and any root inside a
+    git worktree has its helpers named in that worktree's exclude file first.
+    """
+    written = materialize(
+        manifest_text=helper_manifest_text(repository=_FETCH_REPOSITORY, commit=_FETCH_COMMIT),
+        roots=roots,
+    )
+    assert isinstance(written, int), written
+    return written

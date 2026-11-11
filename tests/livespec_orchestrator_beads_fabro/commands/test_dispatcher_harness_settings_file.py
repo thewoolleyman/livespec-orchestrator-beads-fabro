@@ -47,9 +47,11 @@ import pytest
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_harness_shell_policy
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     HARNESS_SETTINGS_MARKER,
+    HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME,
     harness_settings_merge_program,
     harness_settings_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
@@ -57,8 +59,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
     ResumeCheckout,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
+    SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
+)
 
-from tests.prepare_step_support import readable, steps_in
+from tests.prepare_step_support import land_helpers, plugins_helper, steps_in
 
 # Opaque non-secret placeholders: the overlay renders whatever it is handed, and
 # a literal spelled like a credential at the call site reads to the lint rule as
@@ -165,17 +170,20 @@ def _prepare_scripts(*, overlay: str) -> tuple[str, ...]:
 
 
 def _settings_writers(*, overlay: str) -> tuple[str, ...]:
-    """The decoded scripts that RUN the settings write, not merely name the path.
+    """The decoded scripts that RUN the settings write, each beside the program it runs.
 
     The worktree exclusion rendered beside the write names the same path, so a
     filter on the path alone would count two steps and could not tell which of
-    them carries the ceilings. Keying on the interpreter the write runs under is
-    what discriminates them.
+    them carries the ceilings. Keying on the merge program the write runs is what
+    discriminates them, and that program is a helper the fetch step lands, so its
+    composed bytes are read beside the script that runs it.
     """
+    merge = plugins_helper(path=HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME).compose().decode("utf-8")
     return tuple(
-        "\n".join([step.script, *(readable(value=v) for v in step.env.values())])
+        "\n".join([step.script, merge])
         for step in steps_in(block=overlay)
-        if _SETTINGS_RELATIVE_PATH in step.script and "python3" in step.script
+        if _SETTINGS_RELATIVE_PATH in step.script
+        and HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME in step.script
     )
 
 
@@ -465,15 +473,20 @@ def _run_prepare_step(*, step: PrepareStep, repo: Path) -> None:
 
     The engine runs each step with the clone as its working directory, which is
     what the committed chain's own `git fetch --unshallow` already depends on, so
-    that is the one thing these cases hand the script.
+    that is the one thing these cases hand the script. The merge program the
+    write runs is a helper program the helper-fetch setup step lands first, so it
+    is landed here too, in a plugins root under the clone's own `.git`, which no
+    checkpoint can stage.
     """
+    plugins = repo / ".git" / "livespec-test-plugins"
+    _ = land_helpers(roots={PLUGINS_ROOT: plugins})
     completed = subprocess.run(
         ["/bin/sh", "-c", step.script],
         cwd=repo,
         capture_output=True,
         text=True,
         timeout=_STEP_TIMEOUT_SECONDS,
-        env={**os.environ, **step.env},
+        env={**os.environ, SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR: str(plugins), **step.env},
         check=False,
     )
 

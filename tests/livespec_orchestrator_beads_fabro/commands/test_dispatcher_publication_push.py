@@ -14,41 +14,40 @@ import stat
 import subprocess
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    pack_payload,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import (
+    default_helper_roots,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push import (
     PUBLICATION_PUSH_PROGRAM_FILENAME,
     publication_push_program_path_expansion,
-    publication_push_program_prepare_steps_block,
     publication_push_program_source,
 )
 
-from tests.prepare_step_support import steps_in
+from tests.prepare_step_support import plugins_helper
 
 _BRANCH = "feat/publication-push"
 
 
-def test_the_prepare_step_materializes_the_single_safe_push_recipe() -> None:
-    """One push, one lease, no bypass — and the step writes exactly those bytes."""
+def test_the_helper_fetch_lands_the_single_safe_push_recipe() -> None:
+    """One push, one lease, no bypass, and the fetch writes exactly those bytes, owner-only.
+
+    The push program is a fetched helper program: the registry composes its
+    bytes and mode, and the helper-fetch step lands it below the plugins root the
+    publish node's expansion resolves.
+    """
     source = publication_push_program_source()
     path = publication_push_program_path_expansion()
-    block = publication_push_program_prepare_steps_block()
-    [step] = steps_in(block=block)
-    script = step.script
+    helper = plugins_helper(path=PUBLICATION_PUSH_PROGRAM_FILENAME)
 
     assert source.startswith("#!/bin/sh\nset -eu\n")
     assert source.count("git push") == 1
     assert '--force-with-lease="refs/heads/$branch:$expected"' in source
     assert 'origin "HEAD:refs/heads/$branch"' in source
     assert "--no-verify" not in source
-    assert path.endswith(f"/{PUBLICATION_PUSH_PROGRAM_FILENAME}")
-    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=source)}
-    assert 'printf %s "$LIVESPEC_PREPARE_PAYLOAD" | python3 -c' in script
-    assert f'"{path}" 0' in script
-    assert source not in script
-    assert f'chmod 700 "{path}"' in script
+    assert path == f"{default_helper_roots()[PLUGINS_ROOT]}/{PUBLICATION_PUSH_PROGRAM_FILENAME}"
+    assert helper.compose() == source.encode("utf-8")
+    assert helper.mode == 0o700
 
 
 def _git(*, repo: Path, argv: list[str]) -> subprocess.CompletedProcess[str]:

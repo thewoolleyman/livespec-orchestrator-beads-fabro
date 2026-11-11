@@ -34,9 +34,12 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
     parse_dot_graph,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
 
-from tests.prepare_step_support import runnable_script, steps_in, unpacked
+from tests.prepare_step_support import (
+    plugin_gate_installer_script,
+    plugins_helper,
+    steps_in,
+)
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -95,11 +98,8 @@ def _gate_env(*, plugins_root: Path, tmp_path: Path) -> dict[str, str]:
 
 
 def _run_gate(*, plugins_root: Path, tmp_path: Path) -> subprocess.CompletedProcess[str]:
-    module = importlib.import_module(_MODULE_NAME)
     script = tmp_path / "gate.sh"
-    script.write_text(
-        runnable_script(step=module.plugin_cache_gate_prepare_step()), encoding="utf-8"
-    )
+    script.write_text(plugin_gate_installer_script(), encoding="utf-8")
     return subprocess.run(
         ["bash", str(script)],
         capture_output=True,
@@ -305,10 +305,14 @@ def test_overlay_appends_the_gate_as_a_prepare_step() -> None:
 
     assert block.startswith("\n# --- Dispatcher-materialized Claude plugin-cache")
     assert "[[run.prepare.steps]]" in block
-    [gate, *_] = steps_in(block=block)
+    [gate] = steps_in(block=block)
     assert gate == module.plugin_cache_gate_prepare_step()
+    # The program is a fetched helper: the step only runs it, and carries no bytes.
+    assert gate.env == {}
     assert "cache-manifest.json" not in gate.script
-    program = unpacked(value=gate.env[PAYLOAD_ENV_VAR])
+    assert f'exec python3 "$root/{module.PLUGIN_GATE_PROGRAM_FILENAME}"' in gate.script
+    program = plugins_helper(path=module.PLUGIN_GATE_PROGRAM_FILENAME).compose().decode("utf-8")
+    assert program == module.plugin_cache_gate_program_source()
     assert "cache-manifest.json" in program
     assert "required_paths" in program
 

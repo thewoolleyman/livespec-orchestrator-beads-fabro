@@ -18,9 +18,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
     PAYLOAD_ENV_VAR,
     PrepareStep,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import (
-    REVIEW_GUARD_PROGRAM_FILENAME,
-    review_guard_prepare_steps_block,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_metadata import (
+    PUBLICATION_BODY_FILENAME,
+    PublicationMetadata,
+    publication_metadata_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     SANDBOX_CLAUDE_PLUGINS_ROOT_ENV_VAR,
@@ -39,7 +40,10 @@ def _flipped(*, value: str) -> str:
 def test_a_flipped_byte_in_a_packed_embed_refuses_by_name_and_leaves_no_file(
     tmp_path: Path,
 ) -> None:
-    [step] = steps_in(block=review_guard_prepare_steps_block())
+    block = publication_metadata_prepare_steps_block(
+        metadata=PublicationMetadata(title="Title (bd-x)", body="Body of bd-x.\n")
+    )
+    [step] = steps_in(block=block)
     tampered = PrepareStep(
         script=step.script, env={PAYLOAD_ENV_VAR: _flipped(value=step.env[PAYLOAD_ENV_VAR])}
     )
@@ -62,8 +66,8 @@ def test_a_flipped_byte_in_a_packed_embed_refuses_by_name_and_leaves_no_file(
     facts = [
         completed.returncode != 0,
         "LIVESPEC_PREPARE_PAYLOAD_DECODE_FAILED:" in completed.stderr,
-        REVIEW_GUARD_PROGRAM_FILENAME in completed.stderr,
-        not (plugins_root / REVIEW_GUARD_PROGRAM_FILENAME).exists(),
+        PUBLICATION_BODY_FILENAME in completed.stderr,
+        not (plugins_root / PUBLICATION_BODY_FILENAME).exists(),
         sorted(path.name for path in plugins_root.iterdir()) == [],
     ]
     assert all(facts), (facts, completed.returncode, completed.stderr)

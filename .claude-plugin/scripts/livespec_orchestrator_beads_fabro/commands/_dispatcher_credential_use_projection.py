@@ -2,11 +2,12 @@
 
 `_dispatcher_credential_use_guard` owns the ENFORCEMENT -- the POSIX-sh guard, the
 reaper, the deadline arithmetic and the startup grade. This module owns the
-TRANSPORT: the two `[[run.prepare.steps]]` blocks and the
-`[environments.<id>.env]` lines that carry that guard and its three inputs into a
-run. The split is the usual pure-from-impure one turned sideways -- the guard is a
-tested artifact that knows nothing about run configuration, and this module knows
-nothing about process groups.
+TRANSPORT: the startup-check `[[run.prepare.steps]]` block and the
+`[environments.<id>.env]` lines that carry the guard's three inputs into a run.
+The guard itself is a helper program the helper-fetch setup step writes
+(`_dispatcher_helper_registry`). The split is the usual pure-from-impure one
+turned sideways -- the guard is a tested artifact that knows nothing about run
+configuration, and this module knows nothing about process groups.
 
 TWO DIFFERENT QUANTITIES REACH THE SANDBOX, and they answer different questions.
 The ABSOLUTE DEADLINE bounds how long execution may CONTINUE. The observed
@@ -51,14 +52,11 @@ thing to get right. `CredentialUseProjection` makes it UNREPRESENTABLE instead:
 there is no way to construct the partial state, so nothing downstream needs to
 detect it.
 
-WHY THE SCRIPT TRAVELS AS AN ENV VALUE. The guard has to exist inside the sandbox
-before any node runs, and the engine offers no file-projection primitive; the same
-constraint already makes `codex_auth.json` ride the env table. So the generated
-install step `printf`s the variable and then READS IT BACK with `test -s`. That
-read-back is load-bearing rather than belt-and-braces: a projection that silently
-produced an empty guard would otherwise surface as a coding-agent node refusing
-several minutes later, with a message about a missing deadline rather than about
-the install that never happened.
+WHY THE GUARD IS FETCHED, NOT CARRIED. It used to ride the env table as a value an
+install step wrote and read back. It is a fixed program of this plugin, so it is
+now one of the helper programs the sandbox fetches at the installed build's commit
+and verifies by digest before any node runs; a guard that did not land fails the
+startup check itself, in preparation, rather than an agent node minutes later.
 
 WHY THE STARTUP CHECK IS RENDERED LAST. The caller appends this block after every
 other prepare step, so the check observes the time preparation itself consumed --
@@ -71,7 +69,6 @@ insufficient by the time an agent would use it.
 from __future__ import annotations
 
 import json
-import shlex
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,14 +82,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     PROOF_CAPTURE_GIT_BIN_PATH,
     PROOF_CAPTURE_HOOKS_PATH,
     credential_use_deadline_epoch_capped,
-    guard_script_text,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     codex_freshness_required_seconds,
     decode_codex_access_token_exp,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
-    worktree_exclude_script,
 )
 
 __all__: list[str] = [
@@ -105,10 +98,6 @@ __all__: list[str] = [
     "proof_capture_asset_sources",
 ]
 
-# The transport for the guard's own text. Private because it is an implementation
-# detail of the two functions below -- the producer and the consumer of this name
-# are both in this file, which is what keeps a disagreement about it impossible.
-_GUARD_SCRIPT_ENV_VAR = "LIVESPEC_CREDENTIAL_USE_GUARD_SCRIPT"
 _PROOF_CAPTURE_ASSETS_DIR = (
     Path(__file__).resolve().parents[3] / ".fabro" / "workflows" / "implement-work-item"
 )
@@ -168,12 +157,11 @@ def credential_use_env_lines(*, projection: CredentialUseDeclaration | None) -> 
     """Render the enforcement inputs as `[environments.<id>.env]` lines.
 
     Empty string when `projection` is None -- the no-guard shape, which must
-    carry none of these names. Every value is `json.dumps`-ed so the multi-line
-    guard single-line-encodes with `\\n` escapes (valid TOML), exactly as the Codex
-    auth snapshot beside it does.
+    carry none of these names. Every value is `json.dumps`-ed so it is a valid
+    TOML string, exactly as the Codex auth snapshot beside it is.
 
-    An UNPROTECTED declaration carries the guard's text and the declaration, and
-    DELIBERATELY NOT the three enforcement names -- not even empty. The startup
+    An UNPROTECTED declaration carries the declaration, and DELIBERATELY NOT the
+    three enforcement names -- not even empty. The startup
     grade treats exactly one of the expiry pair being present as a half-wired
     projection and fails closed on it, so emitting them blank would refuse every
     unprotected dispatch during preparation.
@@ -187,7 +175,6 @@ def credential_use_env_lines(*, projection: CredentialUseDeclaration | None) -> 
         return (
             f"{CREDENTIAL_USE_UNPROTECTED_ENV_VAR} = "
             f"{json.dumps(CREDENTIAL_USE_UNPROTECTED_VALUE)}\n"
-            f"{_GUARD_SCRIPT_ENV_VAR} = {json.dumps(guard_script_text())}\n"
         )
     return (
         f"{CREDENTIAL_USE_DEADLINE_ENV_VAR} = {json.dumps(str(projection.deadline_epoch))}\n"
@@ -195,91 +182,41 @@ def credential_use_env_lines(*, projection: CredentialUseDeclaration | None) -> 
         f"{json.dumps(str(projection.credential_expiry_epoch))}\n"
         f"{CREDENTIAL_REQUIRED_REMAINING_ENV_VAR} = "
         f"{json.dumps(str(projection.required_remaining_seconds))}\n"
-        f"{_GUARD_SCRIPT_ENV_VAR} = {json.dumps(guard_script_text())}\n"
     )
 
 
 def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclaration | None) -> str:
-    """Render the exclude + install + startup-check `[[run.prepare.steps]]` blocks.
+    """Render the startup-check `[[run.prepare.steps]]` block.
 
     Empty string when `projection` is None. An UNPROTECTED declaration renders
-    the SAME three steps as a protected projection, because the launch wrap is
-    unconditional: the guard is what execs every coding agent either way, so
-    skipping the install would leave each adapter running a path that does not
-    exist. The steps differ only in what the guard then reads -- the startup
-    check admits and enforces nothing. Three steps, in this order:
+    the SAME step as a protected projection, because the launch wrap is
+    unconditional: the guard is what execs every coding agent either way. The
+    step differs only in what the guard then reads -- the startup check admits
+    and enforces nothing.
 
-    1. EXCLUDE -- hide the guard's own path from the run's git worktree, and its
-       position is load-bearing. `GUARD_SCRIPT_PATH` is fixed at
-       `/workspace/.livespec/...`, which sits OUTSIDE the clone on the pinned
-       engine but INSIDE it on the Petri-era engine, where the clone is
-       `/workspace` itself; that engine runs each prepare step as a graph node
-       and checkpoints after it, so a step that writes the guard before the
-       exclusion is in place is a step whose checkpoint commits it into the run
-       branch (`bd-ib-ccywva`, hp-candidate run 01M4XNM4BBMYFPQDA6X5JCBDYM).
-       Each dispatcher-materialized FILE is named, never the `.livespec`
-       directory holding them: the entry lands in a governed repository's
-       clone, and excluding a directory a repository could legitimately track
-       would hide that repository's own content from git.
-    2. INSTALL -- write the guard from its env value, make it executable, and read
-       it back with `test -s` so an empty projection aborts the sandbox here
-       rather than surfacing as an unexplained node refusal later.
-    3. CHECK -- run the guard's `--check-start`, which grades BOTH the absolute
-       deadline and the credential's remaining lifetime against the sandbox's own
-       clock, and exits non-zero on either shortfall. A prepare step exiting
-       non-zero means no coding-agent node ever runs, which is the whole point:
-       the refusal lands BEFORE any credential use, not mid-turn.
+    The guard itself, and the proof-capture launcher and hooks beside it, are
+    helper programs: the helper-fetch setup step writes them under
+    `/workspace/.livespec` from the installed build's own commit, digest-verified,
+    and names each one in the run clone's exclude file before it writes it, which
+    is what keeps a per-node-checkpointing engine from committing them
+    (`bd-ib-ccywva`, hp-candidate run 01M4XNM4BBMYFPQDA6X5JCBDYM). Each FILE is
+    named, never the `.livespec` directory holding them.
 
-    The exclusion changes nothing about the LAUNCH: the guard is installed at the
-    same path, and `guarded_acp_command` still execs it there. Hiding it from git
-    is not hiding it from the sandbox.
+    The CHECK runs the guard's `--check-start`, which grades BOTH the absolute
+    deadline and the credential's remaining lifetime against the sandbox's own
+    clock, and exits non-zero on either shortfall. A prepare step exiting
+    non-zero means no coding-agent node ever runs, which is the whole point: the
+    refusal lands BEFORE any credential use, not mid-turn. A guard the fetch never
+    landed fails the same step, because `/bin/sh` cannot read it.
     """
     if projection is None:
         return ""
-    proof_capture_paths = (
-        f"{PROOF_CAPTURE_GIT_BIN_PATH}/git",
-        f"{PROOF_CAPTURE_HOOKS_PATH}/pre-commit",
-        f"{PROOF_CAPTURE_HOOKS_PATH}/pre-push",
-    )
-    exclude = worktree_exclude_script(
-        paths=(GUARD_SCRIPT_PATH, *proof_capture_paths),
-        label="livespec-credential-use-guard",
-    )
-    launcher = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-bin" / "git").read_text(encoding="utf-8")
-    commit_hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-commit").read_text(
-        encoding="utf-8"
-    )
-    push_hook = (_PROOF_CAPTURE_ASSETS_DIR / "proof-capture-hooks" / "pre-push").read_text(
-        encoding="utf-8"
-    )
-    install = (
-        f'mkdir -p "$(dirname {GUARD_SCRIPT_PATH})"'
-        f" {shlex.quote(PROOF_CAPTURE_GIT_BIN_PATH)}"
-        f" {shlex.quote(PROOF_CAPTURE_HOOKS_PATH)}"
-        f' && printf %s "${_GUARD_SCRIPT_ENV_VAR}" > {GUARD_SCRIPT_PATH}'
-        f" && printf %s {shlex.quote(launcher)} > {PROOF_CAPTURE_GIT_BIN_PATH}/git"
-        f" && printf %s {shlex.quote(commit_hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
-        f" && printf %s {shlex.quote(push_hook)} > {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
-        f" && chmod 700 {GUARD_SCRIPT_PATH}"
-        f" {PROOF_CAPTURE_GIT_BIN_PATH}/git"
-        f" {PROOF_CAPTURE_HOOKS_PATH}/pre-commit"
-        f" {PROOF_CAPTURE_HOOKS_PATH}/pre-push"
-        f" && test -s {GUARD_SCRIPT_PATH}"
-        f" && test -x {PROOF_CAPTURE_GIT_BIN_PATH}/git"
-    )
     check = f"/bin/sh {GUARD_SCRIPT_PATH} --check-start"
     lines = [
         "",
-        "# --- Dispatcher-materialized credential-use enforcement: hide the guard",
-        "# --- from the run's worktree, install the absolute-deadline guard, then",
-        "# --- refuse at startup if queueing or preparation consumed the budget or",
-        "# --- aged the credential below the lifetime this dispatch requires ---",
-        "[[run.prepare.steps]]",
-        f"script = {json.dumps(exclude)}",
-        "",
-        "[[run.prepare.steps]]",
-        f"script = {json.dumps(install)}",
-        "",
+        "# --- Dispatcher-materialized credential-use enforcement: refuse at",
+        "# --- startup if queueing or preparation consumed the budget or aged the",
+        "# --- credential below the lifetime this dispatch requires ---",
         "[[run.prepare.steps]]",
         f"script = {json.dumps(check)}",
     ]

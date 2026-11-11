@@ -37,13 +37,6 @@ while a file merged here is rewritten with no human in the loop.
 
 from __future__ import annotations
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
-    PAYLOAD_ENV_VAR,
-    PrepareStep,
-    pack_payload,
-    packed_payload_write_command,
-    render_prepare_step,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
     sandbox_plugins_root_expansion,
 )
@@ -51,7 +44,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 __all__: list[str] = [
     "RECORD_FILE_MERGE_PROGRAM_FILENAME",
     "record_file_merge_program_path_expansion",
-    "record_file_merge_program_prepare_steps_block",
     "record_file_merge_program_source",
 ]
 
@@ -358,29 +350,3 @@ def record_file_merge_program_path_expansion() -> str:
     the repair route while the stage reported the merger absent.
     """
     return f"{sandbox_plugins_root_expansion()}/{RECORD_FILE_MERGE_PROGRAM_FILENAME}"
-
-
-def record_file_merge_program_prepare_steps_block() -> str:
-    """The prepare step that lands the program below the sandbox plugins root.
-
-    The program rides the step's `env` and `printf %s` writes it, so the shell
-    expands nothing inside it: the merger carries dollar-bearing, shell-looking
-    text of its own -- a backslash-bearing regular expression, a `$` inside one
-    -- and an expanding write would land bytes nobody wrote.
-    """
-    root = sandbox_plugins_root_expansion()
-    step = PrepareStep(
-        script=(
-            f'set -eu\nmkdir -p "{root}"\n'
-            + packed_payload_write_command(
-                path_word=f'"{root}/{RECORD_FILE_MERGE_PROGRAM_FILENAME}"'
-            )
-        ),
-        env={PAYLOAD_ENV_VAR: pack_payload(text=record_file_merge_program_source())},
-    )
-    header = (
-        "\n# --- Dispatcher-materialized declared record-file merger: the arm a\n"
-        "# --- refresh takes before refresh repair when every conflicted path is\n"
-        "# --- a declared shared record (v162, bd-ib-davaxq) ---\n"
-    )
-    return header + render_prepare_step(step=step)
