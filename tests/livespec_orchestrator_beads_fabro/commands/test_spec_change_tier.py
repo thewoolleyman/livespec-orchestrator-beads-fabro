@@ -151,7 +151,7 @@ def test_a_partial_feature_is_held_and_a_stated_one_is_not() -> None:
     assert recorded.linked_proposal_topic is None
 
 
-def test_a_bug_is_never_spec_change_tier_whatever_the_verdict_says() -> None:
+def test_an_unstated_behaviour_is_spec_change_tier_whatever_the_classification() -> None:
     item = _item()
     for classification in ("bug", "chore", "non_functional"):
         decision = decide_spec_change_tier(
@@ -159,8 +159,8 @@ def test_a_bug_is_never_spec_change_tier_whatever_the_verdict_says() -> None:
             classification=classification,  # pyright: ignore[reportArgumentType]
             verdict=_verdict(kind="unstated", target=_TARGET),
         )
-        assert decision.tier == NO_TIER
-        assert decision.linked_proposal_topic is None
+        assert decision.tier == SPEC_CHANGE_TIER
+        assert decision.linked_proposal_topic == proposal_topic_for(item=item)
 
 
 def test_an_already_linked_topic_wins_over_the_derivation() -> None:

@@ -225,7 +225,7 @@ def test_an_unrelated_revision_reuses_the_tier_verdict_without_a_model_call(
     ledger = _install_judge(
         tmp_path=tmp_path,
         monkeypatch=monkeypatch,
-        replies=("feature", _UNSTATED, "bug"),
+        replies=("feature", _UNSTATED, "bug", _STATED),
     )
     append_work_item(path=_config(repo=repo), item=_item())
 
@@ -247,11 +247,11 @@ def test_an_unrelated_revision_reuses_the_tier_verdict_without_a_model_call(
     assert _calls(ledger=ledger) == 2
 
 
-def test_a_bug_pays_for_the_classification_and_not_for_the_judgement(
+def test_a_bug_with_stated_behaviour_records_a_free_tier(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    ledger = _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug",))
+    ledger = _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug", _STATED))
     append_work_item(path=_config(repo=repo), item=_item())
 
     outcome = classify_item_spec_change_tier(
@@ -260,8 +260,9 @@ def test_a_bug_pays_for_the_classification_and_not_for_the_judgement(
     assert outcome.is_spec_change is False
     assert outcome.recorded is not None
     assert outcome.recorded.classification == "bug"
+    assert outcome.recorded.verdict_kind == "stated"
     assert outcome.recorded.linked_proposal_topic is None
-    assert _calls(ledger=ledger) == 1
+    assert _calls(ledger=ledger) == 2
 
 
 def test_an_edited_item_is_re_classified_rather_than_reusing_the_old_record(
@@ -287,7 +288,7 @@ def test_an_edited_item_is_re_classified_rather_than_reusing_the_old_record(
     )
     assert edited.reused is False
     assert edited.is_spec_change is False
-    assert _calls(ledger=ledger) == 3
+    assert _calls(ledger=ledger) == 4
 
 
 def test_an_unreadable_classification_records_the_cause_once_and_no_tier(

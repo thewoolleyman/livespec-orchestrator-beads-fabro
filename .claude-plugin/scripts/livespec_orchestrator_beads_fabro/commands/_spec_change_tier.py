@@ -8,14 +8,11 @@ is that decision, and nothing else: the model call, the ledger record and the
 hold each live in their own sibling, because the decision is the one part of
 this feature that can be stated as a function.
 
-THE RULE IS A CONJUNCTION AND BOTH HALVES MATTER. An item is spec-change tier
-exactly when the classification is `feature` AND the judgement reports its
-asked-for behaviour `partial` or `unstated`. Dropping the classification half
-holds every bug whose fix the spec happens not to state, which is the exemption
-the clause grants outright ("An item classified `bug`, `chore` or
-`non_functional` is never spec-change tier"). Dropping the verdict half holds
-every feature forever, including the implementation follow-ups to changes that
-ratified years ago.
+THE VERDICT DECIDES THE HOLD. An item is spec-change tier exactly when the
+judgement reports its asked-for behaviour `partial` or `unstated`, whatever
+classification the shared classifier returns. A stated bug, chore or
+non-functional item retains its ordinary routing; an unstated one needs the
+same ratified proposal as an unstated feature.
 
 `partial` IS HELD, NOT ONLY `unstated`, and the independent review of this
 plan's scoping required it (research note 005, finding 6: "`partial` needs
@@ -229,7 +226,7 @@ def decide_spec_change_tier(
     tier — a released item carries no topic, so a stale one cannot be inherited
     into a record that says the item is free.
     """
-    holds = classification == FEATURE_CLASS and verdict.kind in SPEC_CHANGE_KINDS
+    holds = verdict.kind in SPEC_CHANGE_KINDS
     if not holds:
         return SpecChangeTierDecision(
             tier=NO_TIER,

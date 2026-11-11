@@ -287,7 +287,7 @@ def test_scenario206_a_bug_is_routed_through_intake_exactly_as_today(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repo = _repo(tmp_path=tmp_path)
-    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug",))
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("bug", _STATED))
     append_work_item(path=_config(repo=repo), item=_item())
     _stand_down_earlier_rows(monkeypatch=monkeypatch)
 
