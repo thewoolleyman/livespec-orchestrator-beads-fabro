@@ -88,6 +88,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress im
     RunWallProgress,
     RunWallProgressInputs,
     run_wall_progress,
+    seed_run_wall_captures,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe import (
     watchdog_run_reading,
@@ -142,6 +143,30 @@ class RunWallVerdict:
     CONTINUED: Final = RunWallVerdictValue(value="run-wall-budget-continued")
 
 
+def _progress_inputs(  # noqa: PLR0913 — kw-only; each keyword is an independent polling fact.
+    *,
+    plan: DispatchPlan,
+    runner: CommandRunner,
+    run_id: str,
+    seen_captures: set[str] | None,
+    stream_observable: bool | None,
+    new_completions: tuple[tuple[str, float], ...],
+    now_epoch: float,
+) -> RunWallProgressInputs:
+    """The progress reading's inputs, with the window the plan's node timeouts bound."""
+    return RunWallProgressInputs(
+        runner=runner,
+        repo=plan.repo,
+        work_item_id=plan.work_item_id,
+        run_id=run_id,
+        seen_captures=set() if seen_captures is None else seen_captures,
+        stream_observable=bool(stream_observable),
+        new_completions=new_completions,
+        now_epoch=now_epoch,
+        window_seconds=max(plan.node_timeouts.configured.values(), default=0),
+    )
+
+
 def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the two seams, the run and the clock reading are independent inputs.
     *,
     dispatch_id: str | None,
@@ -176,19 +201,34 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     if start is None or elapsed is None:
         return RunWallVerdict.WITHIN
     if not budget_exceeded(elapsed_seconds=elapsed, budget=plan.run_wall_budget):
+        # Only the last progress window before the budget probes: the captures
+        # standing then are the baseline a past-budget poll tells a NEW capture
+        # from, and a run far inside its budget still costs nothing.
+        if stream_observable:
+            window_seconds = max(plan.node_timeouts.configured.values(), default=0)
+            if window_seconds > 0 and elapsed > plan.run_wall_budget.seconds - window_seconds:
+                seed_run_wall_captures(
+                    inputs=_progress_inputs(
+                        plan=plan,
+                        runner=runner,
+                        run_id=run_id,
+                        seen_captures=seen_captures,
+                        stream_observable=True,
+                        new_completions=new_completions,
+                        now_epoch=now_epoch,
+                    )
+                )
         return RunWallVerdict.WITHIN
     if progress is None and stream_observable is not None:
         progress = run_wall_progress(
-            inputs=RunWallProgressInputs(
+            inputs=_progress_inputs(
+                plan=plan,
                 runner=runner,
-                repo=plan.repo,
-                work_item_id=plan.work_item_id,
                 run_id=run_id,
-                seen_captures=set() if seen_captures is None else seen_captures,
+                seen_captures=seen_captures,
                 stream_observable=stream_observable,
                 new_completions=new_completions,
                 now_epoch=now_epoch,
-                window_seconds=max(plan.node_timeouts.configured.values(), default=0),
             )
         )
     if (

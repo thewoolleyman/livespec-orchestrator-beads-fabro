@@ -20,6 +20,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress import (
     RunWallProgressInputs,
     run_wall_progress,
+    seed_run_wall_captures,
 )
 
 _BUDGET = RunWallBudget(seconds=100.0, layer=WORKFLOW_DEFAULT_LAYER)
@@ -199,3 +200,29 @@ def test_a_completion_outside_the_progress_window_does_not_extend_budget(tmp_pat
         )
     )
     assert progress.node is None
+
+
+def test_seeding_records_only_a_capture_the_listing_actually_shows(tmp_path: Path) -> None:
+    """An empty or refused listing seeds nothing, so absence never masks a later capture."""
+    ref = "refs/livespec/wip/bd-ib-pof4aa/run-1/3"
+    seen: set[str] = set()
+    for result, expected in (
+        (CommandResult(exit_code=0, stdout=f"{'a' * 40}\t{ref}\n", stderr=""), {ref}),
+        (CommandResult(exit_code=0, stdout="", stderr=""), set()),
+        (CommandResult(exit_code=1, stdout="", stderr="unavailable"), set()),
+    ):
+        seen.clear()
+        seed_run_wall_captures(
+            inputs=RunWallProgressInputs(
+                runner=cast("Any", _Runner(result=result)),
+                repo=tmp_path,
+                work_item_id="bd-ib-pof4aa",
+                run_id="run-1",
+                seen_captures=seen,
+                stream_observable=True,
+                new_completions=(),
+                now_epoch=100.0,
+                window_seconds=10.0,
+            )
+        )
+        assert seen == expected

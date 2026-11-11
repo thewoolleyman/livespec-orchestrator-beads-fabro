@@ -12,6 +12,7 @@ __all__: list[str] = [
     "RunWallProgress",
     "RunWallProgressInputs",
     "run_wall_progress",
+    "seed_run_wall_captures",
 ]
 
 _REMOTE = "origin"
@@ -53,17 +54,15 @@ class RunWallProgressInputs:
     window_seconds: float
 
 
-def run_wall_progress(*, inputs: RunWallProgressInputs) -> RunWallProgress:
-    """Read fresh captures and completion events; unreadable input is not progress."""
-    if not inputs.stream_observable:
-        return RunWallProgress(observable=False)
+def _latest_capture(*, inputs: RunWallProgressInputs) -> RunWallCapture | None | bool:
+    """The run's highest capture, `None` when it has none, `False` when unreadable."""
     result = inputs.runner.run(
         argv=["git", "ls-remote", _REMOTE, f"{_PREFIX}/{inputs.work_item_id}/{inputs.run_id}/*"],
         cwd=inputs.repo,
         timeout_seconds=_TIMEOUT_SECONDS,
     )
     if result.exit_code != 0:
-        return RunWallProgress(observable=False)
+        return False
     refs = {
         fields[1]: fields[0]
         for line in result.stdout.splitlines()
@@ -75,8 +74,30 @@ def run_wall_progress(*, inputs: RunWallProgressInputs) -> RunWallProgress:
         for ref, commit in refs.items()
         if ref.startswith(prefix) and ref.removeprefix(prefix).isdecimal()
     ]
-    capture = None if not candidates else max(candidates, key=lambda value: value[0])[1]
-    if capture is not None and capture.ref not in inputs.seen_captures:
+    return None if not candidates else max(candidates, key=lambda value: value[0])[1]
+
+
+def seed_run_wall_captures(*, inputs: RunWallProgressInputs) -> None:
+    """Record the captures standing before the budget, so none of them reads as new.
+
+    A capture created long before the progress window is not progress, and a
+    ref listing carries no age; the baseline taken over the last window before
+    the budget is what lets a past-budget poll tell a newly created capture from
+    one that was already there. An unreadable listing seeds nothing.
+    """
+    capture = _latest_capture(inputs=inputs)
+    if isinstance(capture, RunWallCapture):
+        inputs.seen_captures.add(capture.ref)
+
+
+def run_wall_progress(*, inputs: RunWallProgressInputs) -> RunWallProgress:
+    """Read fresh captures and completion events; unreadable input is not progress."""
+    if not inputs.stream_observable:
+        return RunWallProgress(observable=False)
+    capture = _latest_capture(inputs=inputs)
+    if capture is False:
+        return RunWallProgress(observable=False)
+    if isinstance(capture, RunWallCapture) and capture.ref not in inputs.seen_captures:
         inputs.seen_captures.add(capture.ref)
         return RunWallProgress(capture=capture)
     for node, completed_at in inputs.new_completions:
