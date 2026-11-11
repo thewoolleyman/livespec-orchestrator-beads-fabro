@@ -30,8 +30,12 @@ from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     claim_stamp_metadata,
     create_claim_token,
 )
+from livespec_orchestrator_beads_fabro.commands import (
+    _incident_authority_lifecycle as lifecycle,
+)
 from livespec_orchestrator_beads_fabro.commands import incident_authority as command
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import CommandResult
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
 from livespec_orchestrator_beads_fabro.incident_authority import (
     AuthorityRefusal,
     IncidentReading,
@@ -246,6 +250,74 @@ def _refused(reply: tuple[int, Any]) -> str:
     assert code == 78, response
     assert response["status"] == "refused"
     return f"{response['result']['code']}: {response['result']['detail']}"
+
+
+def _lifecycle_payload(*, action: str) -> tuple[str, ...]:
+    """Supply every action-only argument; the injected handler does not decode it."""
+    return tuple(
+        part
+        for field in lifecycle.LIFECYCLE_PAYLOADS[action]
+        for part in (f"--{field.replace('_', '-')}", "injected")
+    )
+
+
+def _ledger_reply_or_none(*, invoke: Callable[[], tuple[int, Any]]) -> tuple[int, Any] | None:
+    """Retain the pre-fix crash as an assertion target without leaking it from the test."""
+    try:
+        return invoke()
+    except (BeadsConnectionError, BeadsCommandError):
+        return None
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        BeadsConnectionError(detail="mid-action outage"),
+        BeadsCommandError(command="bd update", exit_code=1, stderr="mid-action outage"),
+    ],
+    ids=["connection", "command"],
+)
+def test_the_lifecycle_failure_probe_preserves_the_pre_fix_crash_as_none(
+    failure: Exception,
+) -> None:
+    """Cover the probe's pre-fix exception arm while the process contract stays green."""
+
+    def unavailable() -> NoReturn:
+        raise failure
+
+    assert _ledger_reply_or_none(invoke=unavailable) is None
+
+
+@pytest.mark.parametrize("action", lifecycle.LIFECYCLE_PAYLOADS)
+@pytest.mark.parametrize(
+    "failure",
+    [
+        BeadsConnectionError(detail="mid-action outage"),
+        BeadsCommandError(command="bd update", exit_code=1, stderr="mid-action outage"),
+    ],
+    ids=["connection", "command"],
+)
+def test_every_lifecycle_verb_refuses_a_post_read_ledger_failure_by_name(
+    tenant: _Tenant,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+    failure: Exception,
+) -> None:
+    """A post-read ledger outage is a wire refusal, never an unnamed process crash."""
+    observed = _merged_repair(tenant)
+
+    def unavailable(**_: object) -> NoReturn:
+        raise failure
+
+    monkeypatch.setattr(lifecycle, "_HANDLERS", {action: unavailable})
+    reply = _ledger_reply_or_none(
+        invoke=lambda: tenant.cli(action, observed, *_lifecycle_payload(action=action))
+    )
+    assert reply is not None, "post-read ledger failures must be emitted as lifecycle refusals"
+    code, response = reply
+    assert code == 78
+    assert (response["schema"], response["status"]) == (1, "refused")
+    assert response["result"]["code"] == "incident-lifecycle-unavailable"
 
 
 def _green(state: _Tenant) -> None:

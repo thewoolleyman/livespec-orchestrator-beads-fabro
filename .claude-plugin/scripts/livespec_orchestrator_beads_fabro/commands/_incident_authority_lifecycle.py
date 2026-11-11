@@ -73,6 +73,7 @@ from livespec_orchestrator_beads_fabro.commands._incident_rollback_conflict impo
     record_rollback_conflict,
     resolve_rollback_conflict,
 )
+from livespec_orchestrator_beads_fabro.errors import BeadsCommandError, BeadsConnectionError
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
     RepaymentEntry,
@@ -119,6 +120,7 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "complete-incident": ("master_run", "completion_json"),
 }
 _PR_NUMBER = re.compile(r"[1-9][0-9]*")
+_LEDGER_ERRORS = (BeadsCommandError, BeadsConnectionError)
 
 LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
@@ -307,7 +309,10 @@ def run_lifecycle_action(
 ) -> LifecycleReply:
     """Run the one lifecycle action `args.action` names against the observed attempt."""
     handler = _HANDLERS[args.action]
-    return handler(args=args, client=client, reading=reading, runner=runner)
+    try:
+        return handler(args=args, client=client, reading=reading, runner=runner)
+    except _LEDGER_ERRORS as exc:
+        return AuthorityRefusal(code="incident-lifecycle-unavailable", detail=str(exc))
 
 
 def lifecycle_body(
