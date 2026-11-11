@@ -201,6 +201,14 @@ on_exit() {
   return 0
 }
 trap on_exit EXIT
+# INT and HUP keep their traps so the terminal line and the ledger comment name the signal that
+# ended the launcher: bash 5.2 reports a zero status to EXIT cleanup after a default signal exit, so
+# the status cannot tell them from TERM.  TERM alone takes bash's default exit, because a TERM trap
+# action can fail to parse while a command substitution is active (the wait loops preload TERM's
+# description instead).
+on_signal() { exit_cause="signal $1 (this exit was not a run ending)"; exit "$2"; }
+trap 'on_signal INT 130' INT
+trap 'on_signal HUP 129' HUP
 
 read_fleet_cap() { FLEET_CAP=$(tr -dc 0-9 < "$FLEET_LAUNCH_FLEET_CAP_FILE" 2>/dev/null); FLEET_CAP=${FLEET_CAP:-0}; }
 
