@@ -15,6 +15,8 @@ from dataclasses import dataclass, replace
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     journal_run_output_markers,
+    run_wall_budget_outcome,
+    stalled_outcome,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import (
     CommandRunner,
@@ -23,7 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import 
     JournalWriter,
     SleepFn,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import inspect_after_run
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_reattach import (
+    ReattachRun,
+    inspect_after_run,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_terminal import (
     fabro_run_terminal_outcome,
 )
@@ -43,10 +48,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication
 from livespec_orchestrator_beads_fabro.commands._dispatcher_worker_exit_log_cause import (
     worker_exit_engine_failure_outcome,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
 
 __all__: list[str] = [
     "PostRunTerminal",
     "post_run_terminal",
+    "reattach_terminal",
 ]
 
 
@@ -82,7 +89,11 @@ def post_run_terminal(
         plan=plan,
         runner=runner,
         journal=journal,
-        run_id=run_id,
+        run_id=(
+            None
+            if run_id is None
+            else ReattachRun(run_id=run_id, watch_state=launched.run_watch_state)
+        ),
         follow_live=fabro.exit_code != 0,
         sleep=sleep,
     )
@@ -93,6 +104,21 @@ def post_run_terminal(
     # (see `journal_run_output_markers`). The event comes back so the terminal
     # outcome can carry it to the cause writer.
     run_output = f"{fabro.stdout}\n{fabro.stderr}\n{inspect_stdout}\n{inspect_stderr}"
+    reattached = reattach_terminal(plan=plan, inspect=inspect)
+    if reattached is not None:
+        publication = reconcile_terminal_publication(
+            plan=plan,
+            runner=runner,
+            journal=journal,
+            terminal=reattached,
+            evidence=None,
+        )
+        return PostRunTerminal(
+            run_id=run_id,
+            run_output=run_output,
+            publication=publication,
+            refusal=publication.refusal,
+        )
     hook_over_limit = journal_run_output_markers(
         journal=journal, work_item_id=plan.work_item_id, text=run_output
     )
@@ -151,3 +177,24 @@ def post_run_terminal(
     return PostRunTerminal(
         run_id=run_id, run_output=run_output, publication=publication, refusal=refusal
     )
+
+
+def reattach_terminal(
+    *, plan: DispatchPlan, inspect: FabroInspectResult | None
+) -> DispatchOutcome | None:
+    """Map a cancel performed during re-attach before publication reconciliation."""
+    if inspect is None:
+        return None
+    if inspect.budget_exceeded_run_id is not None:
+        return run_wall_budget_outcome(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            run_id=inspect.budget_exceeded_run_id,
+        )
+    if inspect.stalled_run_id is not None:
+        return stalled_outcome(
+            outcome_type=DispatchOutcome,
+            plan=plan,
+            run_id=inspect.stalled_run_id,
+        )
+    return None

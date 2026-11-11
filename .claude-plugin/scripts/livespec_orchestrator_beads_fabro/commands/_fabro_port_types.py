@@ -121,6 +121,8 @@ class FabroInspectResult:
     failure: FabroFailureDetail | None
     events_payload: object | None = None
     sandbox_termination: SandboxTermination | None = None
+    budget_exceeded_run_id: str | None = None
+    stalled_run_id: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)

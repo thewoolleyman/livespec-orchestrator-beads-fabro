@@ -1,14 +1,21 @@
 """A dead client stream does not terminate the bound server run."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_fabro_reattach as reattach
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     PollPolicy,
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
+    ReattachRun,
+    RunWatchDecision,
+)
 
 
 @dataclass(kw_only=True)
@@ -22,7 +29,7 @@ class Runner:
         argv: list[str],
         cwd: Path,
         timeout_seconds: float,
-        env: dict[str, str] | None = None,
+        env: Mapping[str, str | None] | None = None,
         stdin: int | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
@@ -46,6 +53,7 @@ def test_stream_drop_keeps_polling_bound_run_until_terminal(*, tmp_path: Path) -
                 stdout="Run: 01DROPPED\n",
                 stderr="error decoding response body: timed out",
             ),
+            CommandResult(exit_code=0, stdout='[{"status":{"kind":"runnable"}}]', stderr=""),
             CommandResult(exit_code=0, stdout='[{"status":{"kind":"running"}}]', stderr=""),
             CommandResult(exit_code=0, stdout='[{"status":{"kind":"running"}}]', stderr=""),
             CommandResult(exit_code=0, stdout='[{"status":{"kind":"blocked"}}]', stderr=""),
@@ -71,12 +79,55 @@ def test_stream_drop_keeps_polling_bound_run_until_terminal(*, tmp_path: Path) -
     )
     assert outcome.status == "blocked"
     assert outcome.fabro_run_id == "01DROPPED"
-    assert len(sleeps) == 2
+    assert len(sleeps) == 3
     assert all(delay > 0 for delay in sleeps)
-    assert [argv[1:3] for argv in runner.calls[1:]] == [["inspect", "01DROPPED"]] * 3
+    assert [argv[1:3] for argv in runner.calls[1:]] == [["inspect", "01DROPPED"]] * 4
     assert not runner.replies
 
     attempts = [row for row in journal.records if row["stage"] == "fabro-reattach"]
-    assert [row["attempt"] for row in attempts] == [1, 2, 3]
-    assert [row["status"] for row in attempts] == ["running", "running", "blocked"]
+    assert [row["attempt"] for row in attempts] == [1, 2, 3, 4]
+    assert [row["status"] for row in attempts] == ["runnable", "running", "running", "blocked"]
     assert all(row["run_id"] == "01DROPPED" for row in attempts)
+
+
+def test_reattach_reports_a_stall_from_the_shared_watch(*, tmp_path: Path) -> None:
+    """A within-budget dropped-client run retains the stall watchdog outcome."""
+
+    @dataclass(kw_only=True)
+    class _StalledWatch:
+        def observe_liveness(self, **_kwargs: object) -> None:
+            return None
+
+        def decide(self, **_kwargs: object) -> RunWatchDecision:
+            return RunWatchDecision(stalled=True)
+
+    runner = Runner(
+        replies=[
+            CommandResult(
+                exit_code=0,
+                stdout='[{"run_id":"01DROPPED","status":{"kind":"running"}}]',
+                stderr="",
+            )
+        ]
+    )
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="bd-ib-pxp2ve",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+    result = reattach.inspect_run(
+        plan=plan,
+        runner=cast(Any, runner),
+        journal=cast(Any, Journal()),
+        run_id=ReattachRun(run_id="01DROPPED", watch_state=cast(Any, _StalledWatch())),
+        follow_live=True,
+        timing=reattach.ReattachTiming(sleep=lambda _seconds: None),
+    )
+
+    assert result is not None
+    assert result.stalled_run_id == "01DROPPED"
+    assert result.budget_exceeded_run_id is None
