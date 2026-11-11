@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.320.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.319.0...v0.320.0) (2026-11-11)
+
+
+### Features
+
+* identify preserved descendants of published heads ([aae9eb7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/aae9eb7a806d1cef456a961418b39529d5c4505c))
+* judge non-feature item behaviour ([7860c6a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7860c6a9fb747457e1a16a0f25a09580a7d2b41e))
+* **plan:** judge release rules per component ([c95dac3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c95dac3d4322ba671e090992bdc88db96f1874f1))
+* refuse resumes that would discard preserved work ([4ca4d0a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4ca4d0a2b721a68e694838adca0a4076f937e10a))
+
+
+### Bug Fixes
+
+* compare a checkpoint seed's preserved tip with the published head ([40770d8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/40770d8d01a5f9b8a367b55eb897034135fe78f5))
+* **dispatcher:** retain the run watch after a client drop ([fdcbefb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fdcbefbb96e7e8453b9c78272ff6b2fd57e588af))
+* honor fresh recovery rulings ([c5fcc5a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c5fcc5a2c2fdb935427ed01d5cf4de891dc4e828))
+* judge non-feature groom slices ([c8439a7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c8439a7e961f96f855c35557618d85a05c33e7f0))
+* observe every groom judgement spawn ([8669d58](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8669d587d974891bb819b8a0832dbe2e7265f06a))
+* record fresh recovery ruling routes ([01b7446](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/01b74461d40c0bbd5fd752f27fba5c214d71edc8))
+* reject non-repository-relative release component paths ([bbd3392](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/bbd3392ea8fd38ae9d1913729ca95599ab5f6be2))
+* rejudge changed classify-tier items ([a86805a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a86805a21dc6e5781d945ba8b970f7b8cbc05217))
+* resolve host dod gate from workflow defaults ([3b2b2cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3b2b2cf2993374a27f62e617545f08d5a7510b09))
+* structure the bundled dod gate default ([e24f675](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e24f675ff9d119399c4873cda2ad611c138cda14))
+
 ## [0.319.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.318.0...v0.319.0) (2026-11-11)
 
 
