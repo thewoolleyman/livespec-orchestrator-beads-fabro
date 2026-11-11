@@ -315,6 +315,20 @@ def test_is_host_only_item_true_for_unnegated_workflow_edit(line: str) -> None:
     assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
 
 
+@pytest.mark.parametrize(
+    "line",
+    [
+        "Scope has no root .github/workflows/ edit; this item updates .github/workflows/ci.yml.",
+        "Scope has no root .github/workflows/ edit and this item updates .github/workflows/ci.yml.",
+        "With NO .github/workflows/ edit, we still rewrite .github/workflows/release.yml.",
+    ],
+)
+def test_is_host_only_item_true_when_a_fence_precedes_a_separate_positive_edit(line: str) -> None:
+    item = _item(description=line)
+    assert is_host_only_item(item=item) is True
+    assert "factory-safety refusal" in host_only_refusal_detail(item_id=item.id)
+
+
 def test_host_only_refusal_detail_is_actionable() -> None:
     detail = host_only_refusal_detail(item_id="livespec-impl-beads-uvd")
     assert "livespec-impl-beads-uvd" in detail
