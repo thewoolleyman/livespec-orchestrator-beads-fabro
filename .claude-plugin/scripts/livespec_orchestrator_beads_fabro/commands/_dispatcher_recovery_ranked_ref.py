@@ -30,7 +30,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurement
     MEASUREMENT_PRESERVED_WORK,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_published_head import (
+    PublishedHeadEquivalent,
     PublishedHeadUnobservable,
+    RecoveryPublicationHistory,
     newer_published_head_seed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import RecoverySeed
@@ -69,6 +71,7 @@ class Ranking:
     work_item_id: str
     journal_records: tuple[dict[str, object], ...]
     publications: tuple[tuple[str, str], ...]
+    earlier_run_ids: tuple[str, ...]
     carrying: list[NeedsHumanRef]
 
 
@@ -107,6 +110,7 @@ def ranked_ref(
             remote=ranking.remote,
             commit_sha=chosen.commit_sha,
             preservation_ref=chosen.ref,
+            preservation_tip_sha=chosen.commit_sha,
         )
     elif tree is not None:
         preserved = _preserved_tree_seed(ranking=ranking, named=tree)
@@ -117,11 +121,19 @@ def ranked_ref(
         repo=ranking.repo,
         work_item_id=ranking.work_item_id,
         terminal=preserved,
-        records=ranking.journal_records,
-        publications=ranking.publications,
+        history=RecoveryPublicationHistory(
+            records=ranking.journal_records,
+            publications=ranking.publications,
+            earlier_run_ids=ranking.earlier_run_ids,
+        ),
     )
     if isinstance(newer_head, PublishedHeadUnobservable):
         return RankedRefUnobservable(detail=newer_head.detail, measurement=newer_head.measurement)
+    if isinstance(newer_head, PublishedHeadEquivalent):
+        return listing(
+            seed=newer_head.seed,
+            carrying=[one for one in ranking.carrying if one.ref != newer_head.competing_ref],
+        )
     return listing(seed=preserved if newer_head is None else newer_head, carrying=ranking.carrying)
 
 
@@ -198,4 +210,5 @@ def _preserved_tree_seed(
         remote=ranking.remote,
         commit_sha=base,
         preservation_ref=ref,
+        preservation_tip_sha=refs_by_name(stdout=result.stdout)[ref],
     )

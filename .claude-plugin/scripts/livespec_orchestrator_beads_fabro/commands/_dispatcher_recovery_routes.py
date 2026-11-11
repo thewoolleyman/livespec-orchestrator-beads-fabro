@@ -33,7 +33,7 @@ half, and two paths re-deriving one thing is how they come to disagree.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 __all__: list[str] = [
     "ROUTE_FRESH",
@@ -91,6 +91,7 @@ class RecoverySeed:
     remote: str
     commit_sha: str
     preservation_ref: str
+    preservation_tip_sha: str | None = field(default=None, compare=False)
     passed_over_needs_human: tuple[tuple[str, str], ...] = ()
 
 
