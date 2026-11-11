@@ -130,6 +130,12 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
         f"ls-remote origin refs/heads/{_BRANCH}": CommandResult(
             exit_code=0, stdout=f"{_PUBLISHED_HEAD}\trefs/heads/{_BRANCH}\n", stderr=""
         ),
+        f"{_PRESERVED_COMMIT}^{{tree}}": CommandResult(
+            exit_code=0, stdout=f"{'1' * 40}\n", stderr=""
+        ),
+        f"{_PUBLISHED_HEAD}^{{tree}}": CommandResult(
+            exit_code=0, stdout=f"{'2' * 40}\n", stderr=""
+        ),
     }
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
 

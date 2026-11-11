@@ -152,6 +152,10 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
         f"ls-remote origin refs/heads/{_BRANCH}": CommandResult(
             exit_code=0, stdout=f"{_DEAD_HEAD}\trefs/heads/{_BRANCH}\n", stderr=""
         ),
+        f"{_PRESERVED_COMMIT}^{{tree}}": CommandResult(
+            exit_code=0, stdout=f"{'1' * 40}\n", stderr=""
+        ),
+        f"{_DEAD_HEAD}^{{tree}}": CommandResult(exit_code=0, stdout=f"{'2' * 40}\n", stderr=""),
         "gh api --method POST": CommandResult(exit_code=0, stdout="", stderr=""),
         "gh api --method DELETE": CommandResult(exit_code=0, stdout="", stderr=""),
     }
