@@ -32,6 +32,7 @@ from types import ModuleType
 
 import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_registry import PLUGINS_ROOT
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay import (
     render_run_config_overlay,
 )
@@ -41,7 +42,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_siblings imp
     sibling_clone_steps_block,
 )
 
-from tests.prepare_step_support import runnable_script, steps_in
+from tests.prepare_step_support import land_helpers, runnable_script, steps_in
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones"
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -149,12 +150,19 @@ def _run_program(
     monkeypatch: pytest.MonkeyPatch,
     env: dict[str, str] | None = None,
 ) -> _Done:
-    """Run the materialized program in-process, in `project`, the way the sandbox runs it."""
-    source = _module().run_from_program_source(
-        url_base=url_base, root=str(tmp_path / "run-from"), repos=("livespec",)
+    """Run the materialized program in-process, in `project`, the way the sandbox runs it.
+
+    The program is the fetched helper and the plan sits beside it, exactly as the
+    helper fetch and the prepare step leave them below the plugins root.
+    """
+    module = _module()
+    program = tmp_path / module.RUN_FROM_PROGRAM_FILENAME
+    program.write_text(module.run_from_program_source())
+    (tmp_path / module.RUN_FROM_PLAN_FILENAME).write_text(
+        module.run_from_plan_text(
+            url_base=url_base, root=str(tmp_path / "run-from"), repos=("livespec",)
+        )
     )
-    program = tmp_path / "livespec-run-from-clones.py"
-    program.write_text(source)
     _ = [
         monkeypatch.delenv(name) for name in list(os.environ) if name.startswith(_SCRUBBED_PREFIXES)
     ]
@@ -438,6 +446,8 @@ def test_the_steps_block_materializes_the_program_and_runs_it_for_the_planned_re
 
     (step,) = steps_in(block=block)
     plugins = tmp_path / "plugins"
+    # The program is a helper the helper-fetch step lands before this step runs.
+    _ = land_helpers(roots={PLUGINS_ROOT: plugins})
     done = subprocess.run(
         ["bash", "-c", runnable_script(step=step)],
         cwd=project,
@@ -448,6 +458,7 @@ def test_the_steps_block_materializes_the_program_and_runs_it_for_the_planned_re
     )
     assert done.returncode == 0, done.stderr
     assert (plugins / module.RUN_FROM_PROGRAM_FILENAME).is_file()
+    assert (plugins / module.RUN_FROM_PLAN_FILENAME).is_file()
     assert _version(tmp_path=tmp_path) == "v0.47.1"
     assert not (tmp_path / "run-from" / "livespec-overseer").exists()
 

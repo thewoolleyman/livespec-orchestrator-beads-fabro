@@ -107,6 +107,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_guard import 
     REVIEW_GUARD_PROGRAM_FILENAME,
     review_guard_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones import (
+    RUN_FROM_PROGRAM_FILENAME,
+    run_from_program_source,
+)
 
 __all__: list[str] = [
     "GH_REFRESH_ROOT",
@@ -180,6 +184,7 @@ def _plugin_root_programs() -> tuple[Helper, ...]:
         ("commit-green", COMMIT_GREEN_PROGRAM_FILENAME, commit_green_program_source),
         ("review-guard", REVIEW_GUARD_PROGRAM_FILENAME, review_guard_program_source),
         ("harness-settings-merge", _MERGE_FILENAME, harness_settings_merge_program),
+        ("run-from-clones", RUN_FROM_PROGRAM_FILENAME, run_from_program_source),
     )
     programs = tuple(
         Helper(
