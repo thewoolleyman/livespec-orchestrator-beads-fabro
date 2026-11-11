@@ -164,3 +164,5 @@ class RecoveryRoute:
     hold: RecoveryHold | None = None
     loss: RecoveryLoss | None = None
     preserved_work: str | None = None
+    fresh_ruling_instant: str | None = None
+    passed_over_needs_human: tuple[tuple[str, str], ...] = ()

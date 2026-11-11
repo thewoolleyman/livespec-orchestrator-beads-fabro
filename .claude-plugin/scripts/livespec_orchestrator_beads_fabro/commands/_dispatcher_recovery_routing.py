@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_ruling import (
+    fresh_ruling_route,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     unobservable_measurements,
 )
@@ -341,12 +344,18 @@ def _released_route(
         # with the record reading like an ordinary measured fallback.
         return _held_route(item=item, journal=journal, hold=hold)
     if isinstance(ruling, FreshRuling):
+        fresh = fresh_ruling_route(
+            runner=runner,
+            repo=repo,
+            work_item_id=item.id,
+            earlier_run_ids=gather.earlier_run_ids,
+            journal_records=read_journal_records(journal_path=journal.path),
+            ruling=ruling,
+        )
         return (
-            RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
-            if gather.anchor is not None
-            else _fallback_route(
-                gather=gather, item=item, repo=repo, runner=runner, journal=journal
-            )
+            _held_route(item=item, journal=journal, hold=fresh)
+            if isinstance(fresh, RecoveryHold)
+            else fresh
         )
     if ruling is not None:
         # A CURRENT SEED RULING takes the seed "ahead of a `resume` and ahead of the

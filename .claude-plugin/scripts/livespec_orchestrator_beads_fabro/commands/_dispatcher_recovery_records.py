@@ -37,6 +37,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     RecoveryHold,
     RecoveryLoss,
+    RecoveryRoute,
     RecoverySeed,
 )
 
@@ -72,6 +73,7 @@ def recovery_route_record(
     seed: RecoverySeed | None = None,
     loss: RecoveryLoss | None = None,
     preserved_work: str | None = None,
+    fresh: RecoveryRoute | None = None,
 ) -> dict[str, object]:
     """One non-held route's row, with the SAME key set whichever route it is.
 
@@ -98,11 +100,12 @@ def recovery_route_record(
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
-        "passed_over_needs_human": _passed_over(seed=seed),
+        "fresh_ruling_instant": None if fresh is None else fresh.fresh_ruling_instant,
+        "passed_over_needs_human": _passed_over(seed=seed, fresh=fresh),
     }
 
 
-def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
+def _passed_over(*, seed: RecoverySeed | None, fresh: RecoveryRoute | None) -> list[dict[str, str]]:
     """Each needs-human ref that carried an earlier run and was not taken, with its commit.
 
     Every entry carries the reason `not-taken`: this listing holds the refs the
@@ -113,11 +116,16 @@ def _passed_over(*, seed: RecoverySeed | None) -> list[dict[str, str]]:
     on every `seeded`, `fresh` and `resume` row so a reader can tell "nothing was
     passed over" from a record written by a build that never listed them.
     """
-    if seed is None:
-        return []
+    passed_over = (
+        seed.passed_over_needs_human
+        if seed is not None
+        else ()
+        if fresh is None
+        else fresh.passed_over_needs_human
+    )
     return [
         {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
-        for ref, commit in seed.passed_over_needs_human
+        for ref, commit in passed_over
     ]
 
 

@@ -179,5 +179,6 @@ def journal_recovery_route(*, route: RecoveryRoute | None, journal: JournalFile)
             seed=route.seed,
             loss=route.loss,
             preserved_work=route.preserved_work,
+            fresh=route if route.fresh_ruling_instant is not None else None,
         )
     )
