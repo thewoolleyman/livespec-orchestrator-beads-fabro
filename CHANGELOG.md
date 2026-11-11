@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.318.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.317.0...v0.318.0) (2026-11-11)
+
+
+### Features
+
+* keep the spec-change tier decision across a proof-mode-only Definition of Done edit ([8c79392](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8c793920f1a04ac376a6333aa6a3430c61b03b20))
+
+
+### Bug Fixes
+
+* grade proof currency at published head ([6dff09a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6dff09aa5e2c516267f55448adc7a1ab01270181))
+* identical preserved tree reads as absent whatever the journal attributes ([048e7a9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/048e7a9d95f9288657edf741ce3c127f46e70304))
+* ignore equivalent preserved recovery refs ([7425ba7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7425ba7f809ed7efee96c381ece09f3b5d61ae3f))
+* keep non-proof-mode sub-headings and Reason lines in the asked-for behaviour statement ([0fb454c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0fb454ca6d558950a16496be6af734555b0a3cd3))
+* materialize setup argv words in command nodes (bd-ib-535uvj) ([a8996f4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a8996f416b67a4b0a8c19cb8688f1aa1863817af))
+* sort bullets under a non-proof-mode sub-heading in the asked-for behaviour statement ([0c7881a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0c7881ae012eb856471f73b238f40c676ffaa6ea))
+
 ## [0.317.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.316.1...v0.317.0) (2026-11-11)
 
 
