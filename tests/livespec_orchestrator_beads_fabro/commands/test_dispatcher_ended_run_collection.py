@@ -252,6 +252,8 @@ def test_busy_factory_defers_each_closed_ended_run_until_the_factory_is_idle(
             stamps=(("01ENDED-A", "bd-ib-a"), ("01ENDED-B", "bd-ib-b")),
         ),
         port=_port(tmp_path=tmp_path, runner=runner),
+        runner=_Forge(),
+        repo=tmp_path,
         journal=journal,
         dry_run=False,
     )

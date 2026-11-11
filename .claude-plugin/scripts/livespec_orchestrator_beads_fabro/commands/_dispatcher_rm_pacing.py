@@ -63,7 +63,7 @@ class DeletionPacer:
                 next_start=now,
             )
             return False
-        if not has_running_run or settings.rm_min_interval_seconds == 0:
+        if settings.rm_min_interval_seconds == 0:
             return True
         path = _state_path(repo=self.repo, factory=factory)
         path.parent.mkdir(parents=True, exist_ok=True)
