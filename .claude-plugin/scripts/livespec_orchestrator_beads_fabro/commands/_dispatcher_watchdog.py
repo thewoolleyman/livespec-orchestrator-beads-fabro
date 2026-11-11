@@ -175,11 +175,19 @@ class LivenessSample:
     It defaults to None so a caller that observes nothing DECLARES
     nothing: a default bound would silently widen every window in the
     fleet, which is the direction a backstop must not drift in.
+
+    `event_stream_observable` distinguishes a successful read of the bound
+    run's stream from a failed, timed-out, or non-successful one. A heartbeat
+    may still provide a useful newer progress instant on the same poll, but it
+    cannot alone confirm a stall while the independent stream source is
+    unobservable. Synthetic samples default to True; the production wall-clock
+    probe supplies the observed result.
     """
 
     last_event_epoch: float | None
     observed_at: float
     open_command_node: OpenCommandNode | None = None
+    event_stream_observable: bool = True
 
 
 class LivenessProbe(Protocol):
@@ -313,10 +321,11 @@ def decide_stall(
     is emitting now would cancel healthy work, which is the one direction
     this watchdog must never fail in.
 
-    Only samples that carry a timestamp (`last_event_epoch is not None`)
-    participate in the comparison; no-signal samples are skipped entirely,
-    so a burst of probe failures in the middle of a healthy run cannot
-    manufacture a false stall.
+    An unobservable bound-stream read breaks the current quiet window,
+    whatever timestamp a heartbeat layer supplied on that poll. Only
+    timestamped samples from the remaining observable tail participate in the
+    comparison; no-signal samples are skipped entirely, so a burst of probe
+    failures in the middle of a healthy run cannot manufacture a false stall.
 
     AN OPEN COMMAND NODE RAISES THE BAR, and that is the third repair
     (bd-ib-qsk4o5). When any observation IN THE CURRENT WINDOW reports an
@@ -390,14 +399,23 @@ def _current_quiet_window(
     The whole window is returned rather than just its opening instant because
     TWO questions are asked of it — how long it has run, and whether any
     observation in it found a command node open — and answering them from one
-    walk is what keeps them talking about the same window. Only timestamped
-    readings are in it: a no-signal reading is a probe failure, which this
-    module must never let manufacture a stall.
+    walk is what keeps them talking about the same window. The walk first
+    discards every sample at or before the newest unobservable stream read:
+    that fact cannot be skipped merely because a heartbeat carried a
+    timestamp. Only timestamped readings in the remaining observable tail are
+    in it; a no-signal reading still cannot manufacture a stall.
 
     None means UNMEASURED: fewer than two readings carried a timestamp, so
     there is no pair of observations to span.
     """
-    timestamped = tuple(sample for sample in samples if sample.last_event_epoch is not None)
+    observable_tail: list[LivenessSample] = []
+    for sample in reversed(samples):
+        if not sample.event_stream_observable:
+            break
+        observable_tail.append(sample)
+    timestamped = tuple(
+        sample for sample in reversed(observable_tail) if sample.last_event_epoch is not None
+    )
     if len(timestamped) < _MIN_READINGS_TO_COMPARE:
         return None
     current_event = timestamped[-1].last_event_epoch
