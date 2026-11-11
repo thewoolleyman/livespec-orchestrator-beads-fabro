@@ -43,18 +43,30 @@ that exists to say a measurement failed.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import RunWallBudget
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import RunWallCeiling
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     watchdog_cancel_fields,
 )
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress import (
+        RunWallProgress,
+    )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading import (
     StallPublication,
 )
 
 __all__: list[str] = [
+    "RUN_WALL_BUDGET_CONTINUED_STAGE",
     "RUN_WALL_BUDGET_EXCEEDED_STAGE",
     "RUN_WALL_BUDGET_HELD_STAGE",
     "RUN_WALL_BUDGET_HOLD_ESCALATED_STAGE",
+    "RunWallBudgetContinuation",
+    "run_wall_budget_continued_record",
     "run_wall_budget_exceeded_record",
     "run_wall_budget_held_record",
     "run_wall_budget_hold_escalated_record",
@@ -64,6 +76,7 @@ __all__: list[str] = [
 # producer and every reader — the resume anchor, the budget disposition, and an
 # operator's `grep`.
 RUN_WALL_BUDGET_EXCEEDED_STAGE = "run-wall-budget-exceeded"
+RUN_WALL_BUDGET_CONTINUED_STAGE = "run-wall-budget-continued"
 
 # The journal stage a held cancel appends. Its own stage rather than a field on
 # the row above, for the reason the stall disposition's held stage is: a reader
@@ -88,6 +101,8 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
     elapsed_seconds: float,
     budget: RunWallBudget,
     start_source: str,
+    ceiling: RunWallCeiling | None = None,
+    bound_exceeded: str = "budget",
     preserved_pointer: str | None = None,
     preserved_ref: str | None = None,
     preserved_ref_commit: str | None = None,
@@ -144,8 +159,58 @@ def run_wall_budget_exceeded_record(  # noqa: PLR0913 — kw-only record rendere
         "elapsed_seconds": elapsed_seconds,
         "budget_seconds": budget.seconds,
         "budget_layer": budget.layer,
+        "bound_exceeded": bound_exceeded,
+        "bound_seconds": (
+            budget.seconds if bound_exceeded == "budget" or ceiling is None else ceiling.seconds
+        ),
         "budget_start_source": start_source,
         **preservation,
+    }
+
+
+@dataclass(frozen=True, kw_only=True)
+class RunWallBudgetContinuation:
+    """The identity, bounds and evidence one continuation journal row names."""
+
+    work_item_id: str
+    dispatch_id: str | None
+    run_id: str
+    factory: str
+    executing_stage: str | None
+    elapsed_seconds: float
+    budget: RunWallBudget
+    ceiling: RunWallCeiling
+    progress_window_seconds: float
+    progress: RunWallProgress
+
+
+def run_wall_budget_continued_record(
+    *, continuation: RunWallBudgetContinuation
+) -> dict[str, object]:
+    """Record the evidence that permits this over-budget run to retain its slot."""
+    evidence: dict[str, object] = (
+        {
+            "capture_ref": continuation.progress.capture.ref,
+            "capture_commit": continuation.progress.capture.commit,
+        }
+        if continuation.progress.capture is not None
+        else {
+            "completed_node": continuation.progress.node,
+            "completed_at": continuation.progress.completed_at,
+        }
+    )
+    return {
+        "stage": RUN_WALL_BUDGET_CONTINUED_STAGE,
+        "work_item_id": continuation.work_item_id,
+        "dispatch_id": continuation.dispatch_id,
+        "run_id": continuation.run_id,
+        "factory": continuation.factory,
+        "executing_stage": continuation.executing_stage,
+        "elapsed_seconds": continuation.elapsed_seconds,
+        "budget_seconds": continuation.budget.seconds,
+        "ceiling_seconds": continuation.ceiling.seconds,
+        "progress_window_seconds": continuation.progress_window_seconds,
+        **evidence,
     }
 
 

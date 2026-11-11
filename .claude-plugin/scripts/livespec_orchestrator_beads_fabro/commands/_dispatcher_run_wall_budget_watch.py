@@ -68,14 +68,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_hold
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
     preserved_pointer,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
-    run_wall_budget_exceeded_record,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_refs import (
     PreservationRefsUnobservable,
     VerifiedPreservationRef,
     committed_tip,
     verified_preservation_ref,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watch_records import (
+    cancel_run_wall_budget,
+    journal_run_wall_budget_continuation,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RunWallStart,
@@ -83,15 +84,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock impor
     run_wall_start_from,
     slot_holding_seconds,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
-    FABRO_RM_TIMEOUT_SECONDS,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_run_reading import (
-    executing_stage,
-    last_publish_draft_publication,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress import (
+    RunWallProgress,
+    RunWallProgressInputs,
+    run_wall_progress,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe import (
-    WatchdogRunReading,
     watchdog_run_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
@@ -102,7 +100,6 @@ from livespec_orchestrator_beads_fabro.errors import (
 )
 
 __all__: list[str] = [
-    "RunWallBudgetWatch",
     "RunWallVerdict",
     "RunWallVerdictValue",
     "cancel_run_past_budget",
@@ -142,6 +139,7 @@ class RunWallVerdict:
     WITHIN: Final = RunWallVerdictValue(value="within-budget")
     CANCELLED: Final = RunWallVerdictValue(value="run-wall-budget-exceeded")
     HELD: Final = RunWallVerdictValue(value="run-wall-budget-held")
+    CONTINUED: Final = RunWallVerdictValue(value="run-wall-budget-continued")
 
 
 def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the two seams, the run and the clock reading are independent inputs.
@@ -156,6 +154,10 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     now_epoch: float,
     ledger: LedgerComments | None,
     hold: RunWallHoldState | None = None,
+    progress: RunWallProgress | None = None,
+    stream_observable: bool | None = None,
+    new_completions: tuple[tuple[str, float], ...] = (),
+    seen_captures: set[str] | None = None,
 ) -> RunWallVerdictValue:
     """Export, cancel and journal a run past its budget; hold it when it cannot.
 
@@ -171,12 +173,39 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     held poll escalates on; a caller passing none can never escalate.
     """
     elapsed = slot_holding_seconds(start=start, now_epoch=now_epoch)
-    if (
-        start is None
-        or elapsed is None
-        or not budget_exceeded(elapsed_seconds=elapsed, budget=plan.run_wall_budget)
-    ):
+    if start is None or elapsed is None:
         return RunWallVerdict.WITHIN
+    if not budget_exceeded(elapsed_seconds=elapsed, budget=plan.run_wall_budget):
+        return RunWallVerdict.WITHIN
+    if progress is None and stream_observable is not None:
+        progress = run_wall_progress(
+            inputs=RunWallProgressInputs(
+                runner=runner,
+                repo=plan.repo,
+                work_item_id=plan.work_item_id,
+                run_id=run_id,
+                seen_captures=set() if seen_captures is None else seen_captures,
+                stream_observable=stream_observable,
+                new_completions=new_completions,
+                now_epoch=now_epoch,
+                window_seconds=max(plan.node_timeouts.configured.values(), default=0),
+            )
+        )
+    if (
+        elapsed <= plan.run_wall_ceiling.seconds
+        and progress is not None
+        and progress.observable
+        and (progress.capture is not None or progress.node is not None)
+    ):
+        journal_run_wall_budget_continuation(
+            dispatch_id=dispatch_id,
+            plan=plan,
+            journal=journal,
+            run_id=run_id,
+            elapsed_seconds=elapsed,
+            progress=progress,
+        )
+        return RunWallVerdict.CONTINUED
     preserved = preserved_pointer(plan=plan, runner=runner, run_id=run_id, ledger=ledger)
     # The run's own record is read BEFORE anything can destroy it, on both
     # routes to a cancel: `rm -f` is what makes it unavailable.
@@ -185,7 +214,7 @@ def cancel_run_past_budget(  # noqa: PLR0913 — kw-only per-poll decision; the 
     def cancel(
         *, pointer: str | None, verified_ref: VerifiedPreservationRef | None
     ) -> RunWallVerdictValue:
-        _cancel(
+        cancel_run_wall_budget(
             dispatch_id=dispatch_id,
             plan=plan,
             port=port,
@@ -232,81 +261,17 @@ def _failed_measurement(*, export: str, located: PreservationRefsUnobservable | 
     return export
 
 
-def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, the run and the two measured figures are independent inputs.
-    *,
-    dispatch_id: str | None,
-    plan: DispatchPlan,
-    port: FabroPort,
-    journal: JournalWriter,
-    run_id: str,
-    elapsed_seconds: float,
-    start: RunWallStart,
-    reading: WatchdogRunReading,
-    pointer: str | None,
-    verified_ref: VerifiedPreservationRef | None,
-    export_failure: str,
-) -> None:
-    """Destroy the run, then write the record of the reading taken BEFORE it.
-
-    The reading is taken by the caller FIRST for the reason the stall cancel's
-    is: `rm -f` is what makes the record unavailable, and a reading taken
-    afterwards succeeds while describing nothing.
-    """
-    rm = port.rm(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS)
-    journal.append(
-        record={
-            **run_wall_budget_exceeded_record(
-                work_item_id=plan.work_item_id,
-                dispatch_id=dispatch_id,
-                run_id=run_id,
-                factory=plan.fabro_factory_name,
-                executing_stage=executing_stage(events_json=reading.events_json),
-                publication=last_publish_draft_publication(
-                    events_json=reading.events_json,
-                    record_text=reading.record_text,
-                ),
-                elapsed_seconds=elapsed_seconds,
-                budget=plan.run_wall_budget,
-                start_source=start.source,
-                preserved_pointer=pointer,
-                preserved_ref=None if verified_ref is None else verified_ref.ref,
-                preserved_ref_commit=None if verified_ref is None else verified_ref.commit,
-                export_failed_measurement=export_failure,
-            ),
-            "rm_exit_code": rm.command.exit_code,
-        }
-    )
-
-
 @dataclass(kw_only=True)
 class RunWallBudgetWatch:
-    """One run's budget clock and the ledger its export writes through.
-
-    MUTABLE, and the one field that moves is the whole reason this exists: the
-    clock is fixed ONCE, on the first poll that observed the run `running`, and
-    kept for the life of the run. A clock re-derived per poll could move when
-    one reading failed and another succeeded, and a budget that moved would
-    cancel at a different elapsed figure than its own record names.
-
-    `hold` is the run's count of consecutive held polls, kept here for the same
-    reason: a count the loop re-derived per poll could never reach the third
-    consecutive hold the escalation is owed at.
-
-    `ledger` is resolved once, before any poll, because it is a property of the
-    dispatching host rather than of the run — a per-poll resolution would put a
-    configuration read on every poll of every dispatch. None is a host with no
-    ledger, which HOLDS a budget cancel rather than taking one.
-
-    It lives here rather than in the watch loop so the loop holds no budget
-    state of its own: a loop that tracked the clock itself would be the second
-    place the fix-it-once rule above could be broken.
-    """
+    """One run's fixed budget clock, hold state, and continuation-comment state."""
 
     ledger: LedgerComments | None
     start: RunWallStart | None = None
     hold: RunWallHoldState = field(default_factory=RunWallHoldState)
+    seen_captures: set[str] = field(default_factory=set)
+    continued_comment_written: bool = False
 
-    def verdict(  # noqa: PLR0913 — kw-only per-poll decision; the dispatch, the three seams, the run and the two clock readings are independent inputs.
+    def verdict(  # noqa: PLR0913 — each keyword names an independent polling fact.
         self,
         *,
         dispatch_id: str | None,
@@ -317,26 +282,16 @@ class RunWallBudgetWatch:
         run_id: str,
         recorded_epoch: float | None,
         now_epoch: float,
+        progress: RunWallProgress | None = None,
+        stream_observable: bool | None = None,
+        new_completions: tuple[tuple[str, float], ...] = (),
     ) -> RunWallVerdictValue:
-        """This poll's budget decision, fixing the clock on the first running poll.
-
-        ONE wall-clock reading serves both the fixing and the measurement, which
-        the caller takes and passes in: the instant the clock is fixed at and
-        the instant the elapsed figure is measured to are the same poll, so two
-        readings would report a span this poll did not observe.
-
-        `recorded_epoch` arrives from the poll's OWN observation rather than
-        being read here, which is what keeps the budget off the per-poll probe
-        budget entirely: the per-run read the watchdog already takes carries the
-        run's record, so the instant costs no round trip — and a second
-        `fabro inspect` for it would be a second answer about one run with
-        nothing announcing a divergence.
-        """
+        """Fix the clock once and take this poll's budget disposition."""
         if self.start is None:
             self.start = run_wall_start_from(
                 recorded_epoch=recorded_epoch, observed_at_epoch=now_epoch
             )
-        return cancel_run_past_budget(
+        verdict = cancel_run_past_budget(
             dispatch_id=dispatch_id,
             plan=plan,
             port=port,
@@ -347,4 +302,27 @@ class RunWallBudgetWatch:
             now_epoch=now_epoch,
             ledger=self.ledger,
             hold=self.hold,
+            progress=progress,
+            stream_observable=stream_observable,
+            new_completions=new_completions,
+            seen_captures=self.seen_captures,
         )
+        if verdict == RunWallVerdict.CONTINUED and not self.continued_comment_written:
+            _write_continued_comment(ledger=self.ledger, plan=plan, run_id=run_id)
+            self.continued_comment_written = True
+        return verdict
+
+
+def _write_continued_comment(
+    *, ledger: LedgerComments | None, plan: DispatchPlan, run_id: str
+) -> None:
+    """Give the item one durable notice that its autonomous run was retained."""
+    if ledger is None:
+        return
+    ledger.add_comment(
+        issue_id=plan.work_item_id,
+        body=(
+            f"run-wall-budget-continued: run {run_id} is making qualifying progress "
+            f"past its wall budget and remains running until its hard ceiling."
+        ),
+    )
