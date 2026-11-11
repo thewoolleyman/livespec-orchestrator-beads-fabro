@@ -18,7 +18,7 @@ if [[ "${#changed[@]}" -gt 0 ]]; then
 fi
 
 if [[ -n "$workflow_changed" ]]; then
-    mapfile -t workflow_tests < <(rg --files-with-matches --glob '*.py' 'workflow\.fabro' tests)
+    mapfile -t workflow_tests < <(grep -rlE --include='*.py' 'workflow\.fabro' tests)
     if [[ "${#workflow_tests[@]}" -eq 0 ]]; then
         echo ":: check-changed: $workflow changed but no graph-reading test could be selected" >&2
         exit 75
