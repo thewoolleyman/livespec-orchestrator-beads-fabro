@@ -127,7 +127,11 @@ def test_proof_capture_scratch_repository_commits_keep_their_hooks_and_the_check
         marker=checkout_marker,
         environment=environment,
     )
-    _assert_scratch_push_is_refused(scratch=scratch, marker=scratch_marker, environment=environment)
+    _assert_scratch_push_to_temporary_bare_repository_is_allowed(
+        scratch=scratch,
+        marker=scratch_marker,
+        environment=environment,
+    )
 
 
 def _assert_scratch_commit_runs_its_own_hooks(
@@ -195,17 +199,22 @@ def _assert_checkout_commits_refuse_however_they_are_addressed(
         )
 
 
-def _assert_scratch_push_is_refused(
+def _assert_scratch_push_to_temporary_bare_repository_is_allowed(
     *, scratch: Path, marker: Path, environment: dict[str, str]
 ) -> None:
-    """A push is refused everywhere, scratch repositories included."""
-    _assert_git_write_is_refused(
-        argv=("push", "origin", "HEAD:refs/heads/scratch"),
+    """A scratch repository may push to a temporary bare repository by path."""
+    remote = scratch.parent / "remote.git"
+    pushed = _git(
+        "push",
+        str(remote),
+        "HEAD:refs/heads/scratch",
         repo=scratch,
-        marker=marker,
         environment=environment,
-        guard=None,
     )
+    assert pushed.returncode == 0, pushed.stderr
+    arrived = _git("rev-parse", "refs/heads/scratch", repo=remote, environment=None)
+    assert arrived.returncode == 0, arrived.stderr
+    assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
 
 
 def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> None:
