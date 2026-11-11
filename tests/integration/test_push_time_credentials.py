@@ -66,6 +66,7 @@ class PushSandbox:
         assert not isinstance(graph, str), graph
         script = graph.nodes[node]["script"].replace("{{ inputs.default_branch }}", "master")
         script = script.replace("{{ inputs.sandbox_check_suite }}", "true")
+        script = script.replace("{{ inputs.conformance_hook_install }}", "")
         return subprocess.run(
             ["bash", "-c", script],
             cwd=self.clone,
