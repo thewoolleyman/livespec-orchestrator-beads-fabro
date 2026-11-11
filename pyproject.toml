@@ -579,6 +579,13 @@ destructive_cli_allowlist = [
 #   that has no copy of this package, and the thing under test is the git state it
 #   leaves, so no in-process `main()` can stand in. It scrubs every `GIT_`,
 #   `COVERAGE` and `COV_CORE` variable from the child env.
+# - test_commit_runner_folds_checkpoints_above_open_red_gisyvv.py runs the
+#   MATERIALIZED commit runner's `start` and `wait` against engine-checkpoint
+#   chains above an open Red in a throwaway repository, for the reason the entry
+#   above gives: the runner is stdlib-only source written into a sandbox with no
+#   copy of this package, and what is under test is the commit the amend lands on,
+#   so no in-process `main()` can stand in. It scrubs every `GIT_`, `COVERAGE`
+#   and `COV_CORE` variable from the child env.
 # - test_dispatcher_publication_head.py runs the MATERIALIZED publication-head
 #   program the Dispatcher lands in the sandbox. That program is deliberately
 #   stdlib-only because a governed clone has no copy of this package, and the
@@ -688,6 +695,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_commit_settle_stopped_rebase_hmed6n.py",
     "tests/integration/test_commit_runner_refuses_subjectless_commit_7cixf3.py",
     "tests/integration/test_publish_draft_refuses_subjectless_commit_7cixf3.py",
+    "tests/integration/test_commit_runner_folds_checkpoints_above_open_red_gisyvv.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]

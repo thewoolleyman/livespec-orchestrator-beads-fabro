@@ -10,6 +10,11 @@ prompts direct every commit through it:
   its own session so it outlives the tool call, and prints the run id without
   waiting. It refuses `--no-verify` (and the bundled `-n`), and refuses while
   an earlier run is still running, naming that run.
+  An amend started over engine checkpoint commits that sit above an open Red
+  is first moved onto that Red (`git reset --soft`, keeping the checkpoints'
+  tree changes staged), so a re-entered turn's Green amend amends the Red
+  rather than the top checkpoint (bd-ib-gisyvv). The commit arguments are
+  still run unchanged; only the commit they amend is the open Red.
 - `wait <run-id> --timeout-seconds <n>` blocks for at most `n` seconds and
   prints one JSON report: `running`, or the terminal state with the exit
   status, the resulting `HEAD` on `passed`, and the output's final lines.
@@ -147,6 +152,12 @@ OPERATION_HOOKS = {
 GIT_VALUE_OPTIONS = ("-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path")
 TICKS = os.sysconf("SC_CLK_TCK")
 STOP_GRACE_SECONDS = 10.0
+# An engine checkpoint's subject, `fabro(<run-id>): <node> (<status>)`.
+ENGINE_CHECKPOINT_SUBJECT = re.compile(r"^fabro\([^)]*\): ")
+# The red_green_replay trailers that make a commit an open Red: Red without Green.
+TDD_RED_TRAILER = "TDD-Red-Test-File-Checksum:"
+TDD_GREEN_TRAILER = "TDD-Green-Verified-At:"
+FOLDED_CHECKPOINTS_SENTINEL = "LIVESPEC_COMMIT_RUNNER_FOLDED_CHECKPOINTS"
 
 
 class RunnerRefusal(Exception):
@@ -349,6 +360,71 @@ def skips_hooks(arguments):
     return False
 
 
+def amends(arguments):
+    """True when an ordinary commit's arguments ask for `--amend` (or an abbreviation)."""
+    for argument in arguments:
+        if argument == "--":
+            return False
+        if argument.startswith("--ame") and "--amend".startswith(argument):
+            return True
+    return False
+
+
+def carries_trailer(message, trailer):
+    return any(line.startswith(trailer) for line in message.splitlines())
+
+
+def open_red_under_checkpoints():
+    """The open Red commit under one or more engine checkpoints at HEAD, and their count.
+
+    Walks first-parent from HEAD over engine checkpoint commits. None when HEAD is
+    not a checkpoint, when a checkpoint in the chain is a merge (folding it would
+    flatten the merged-in side), when the first authored commit is not an open Red,
+    or when a merge, rebase or cherry-pick is in progress.
+    """
+    if operation_in_progress() is not None:
+        return None
+    if (runs_directory().parent / "CHERRY_PICK_HEAD").exists():
+        return None
+    folded, commit = 0, "HEAD"
+    while True:
+        line = git_output("rev-list", "--parents", "-n", "1", commit).split()
+        sha, parents = line[0], line[1:]
+        message = git_output("log", "-1", "--format=%B", sha)
+        if ENGINE_CHECKPOINT_SUBJECT.match(message):
+            if len(parents) != 1:
+                return None
+            folded, commit = folded + 1, parents[0]
+            continue
+        if (
+            folded
+            and carries_trailer(message, TDD_RED_TRAILER)
+            and not carries_trailer(message, TDD_GREEN_TRAILER)
+        ):
+            return sha, folded
+        return None
+
+
+def fold_checkpoints_onto_open_red(arguments):
+    """Move an amend onto the open Red under engine checkpoints, keeping their tree staged."""
+    if not amends(arguments):
+        return
+    found = open_red_under_checkpoints()
+    if found is None:
+        return
+    red, folded = found
+    git_output("reset", "--soft", red)
+    print(
+        FOLDED_CHECKPOINTS_SENTINEL
+        + ": the amend now amends open Red commit "
+        + red
+        + ", folding "
+        + str(folded)
+        + " engine checkpoint commit(s) above it into the staged tree",
+        file=sys.stderr,
+    )
+
+
 def start(command, program):
     arguments = commit_arguments(command)
     if arguments is None:
@@ -362,6 +438,7 @@ def start(command, program):
         record = read_record(path)
         if record is not None and current_state(path, record) == RUNNING:
             raise RunnerRefusal("commit run " + path.stem + " is still running; wait on it first")
+    fold_checkpoints_onto_open_red(arguments)
     run_id = "commit-" + uuid.uuid4().hex
     path = state_path(directory, run_id)
     write_record(
