@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.316.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.316.0...v0.316.1) (2026-11-11)
+
+
+### Bug Fixes
+
+* keep a verdict a commit run reaches while its settle stop is performed ([82d38b9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/82d38b96d0536e954c755fe3da72c9a4ce68f1d3))
+* name a removed assertion alongside an added one in the changed-Definition-of-Done refusal ([57965f3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/57965f308f967d1d5ca030bcbac206b896156ca5))
+* refuse resumes after removed Definition-of-Done assertions ([e88e54a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e88e54aabdddd0bcdcc4c08962c82ac7fdc119a6))
+* resolve Definition-of-Done references on canonical branch ([9ea02d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9ea02d64dde354a4214b4f36dfc241902fa4d33b))
+* stop only a commit run the settle could target ([79210c5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/79210c53f4cd889ea31860573229335f31bb7e3e))
+* stop timed-out commit settle runs ([98c441e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98c441eee0cf5143126db603348780725cb8e59b))
+
+
+### Reverts
+
+* bd-ib-dpsiwz setup command nodes, which fail every toolchain-declaring dispatch at run_prepare_2 ([4fadc2a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/4fadc2a3910f20f24607bac021eca91ece9ce30b))
+
 ## [0.316.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.315.1...v0.316.0) (2026-11-11)
 
 
