@@ -1061,6 +1061,21 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   janitor that called every non-pass reading a lost verdict would satisfy all
   three of them.
 
+- `test_workflow_janitor_sibling_reclone.py` — binds work-item `bd-ib-rzkhqv`
+  against `SPECIFICATION/contracts.md` "A sandbox runs its tools from pinned clones
+  and works in the latest clones": when the janitor refreshes the run onto the
+  default branch, the same step re-clones every sibling under
+  `LIVESPEC_SIBLING_CLONES_ROOT` at its default-branch tip as of the refresh. The
+  shipped `janitor` node bytes (taken through `parse_dot_graph`) are executed by
+  `sh` against real throwaway origins reached through `file://` URLs, since a plain
+  path makes git ignore `--depth`. The positive case releases a commit on the
+  sibling AFTER its run-start clone, so "at the new tip" cannot hold by default. An
+  unreachable sibling and a clone that fails after a reachable probe each keep
+  their previous clone and are named with the run-start step's reason (the latter
+  through a `git` shim failing only `clone`, with no scratch directory left); the
+  neighbouring sibling is still re-taken. The control is a janitor whose fetch of
+  the default branch fails: it never refreshes and must leave the clones alone.
+
 - `test_pre_push_deletion_only_scenario188.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 188 and `constraints.md` §"Pre-push
   gate refinements": a push whose every ref update is a deletion (an all-zero
