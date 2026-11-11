@@ -192,7 +192,22 @@ for argument in "$@"; do
             done
             case $mode in
                 status)
-                    [ ! -e "$STUB_ITEM_STATUS_UNREADABLE_FILE" ] || exit 1
+                    if [ -e "$STUB_ITEM_STATUS_UNREADABLE_FILE" ]; then
+                        printf 'unreadable at launcher re-read\n' > "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE"
+                        exit 1
+                    fi
+                    if [ -e "${STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE:-}" ]; then
+                        deadline=$(( $(date +%s) + 10 ))
+                        while [ ! -e "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE" ] \
+                            && [ "$(date +%s)" -lt "$deadline" ]; do
+                            sleep "$HARNESS_POLL_S"
+                        done
+                        if [ "$(cat "$STUB_ITEM_STATUS_FILE")" = active ]; then
+                            printf 'active before launcher re-read\n' > "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE"
+                        else
+                            printf 'ready at launcher re-read\n' > "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE"
+                        fi
+                    fi
                     printf 'LEDGER-STATUS %s\n' "$(cat "$STUB_ITEM_STATUS_FILE")"
                     ;;
                 comment) printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS" ;;
@@ -237,7 +252,37 @@ for argument in "$@"; do
                 printf '%s\n' "$item" >> "$STUB_DRIVE_WAITING"
                 printf '%s\n' "$$" >> "$STUB_DRIVE_PIDS"
                 if [ -n "${STUB_DRIVE_ADMIT_ON_TERM:-}" ]; then
-                    trap 'printf "active\n" > "$STUB_ITEM_STATUS_FILE"; exit 143' TERM
+                    # Keep the primary drive alive until stop_drive exhausts
+                    # its grace period and sends KILL, as a loaded shell can
+                    # when TERM arrives during a foreground poll.
+                    trap '' TERM
+                    # This watcher handles TERM while the primary stub is in
+                    # its polling sleep.  Its TERM trap starts a new delayed
+                    # admission writer, which is not in stop_drive's PID
+                    # snapshot and therefore survives the grace-period KILL.
+                    # The status stub rendezvouses with that writer, so case
+                    # 20e orders its post-stop read without relying on timing.
+                    (
+                        trap '
+                            : > "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE"
+                            (
+                                deadline=$(( $(date +%s) + 10 ))
+                                while [ ! -e "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE" ] \
+                                    && [ "$(date +%s)" -lt "$deadline" ]; do
+                                    sleep "$HARNESS_POLL_S"
+                                done
+                                if [ -e "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE" ]; then
+                                    printf "active\\n" > "$STUB_ITEM_STATUS_FILE"
+                                    : > "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE"
+                                fi
+                            ) >/dev/null 2>&1 &
+                            exit 143
+                        ' TERM
+                        while :; do
+                            sleep 60 &
+                            wait "$!"
+                        done
+                    ) &
                 fi
                 wait_deadline=$(( $(date +%s) + 60 ))
                 while [ ! -e "$STUB_DRIVE_ADMIT_GATE" ] && [ "$(date +%s)" -lt "$wait_deadline" ]; do
@@ -424,6 +469,10 @@ new_case() {
     export STUB_DRIVE_ADMIT_GATE_FILE="$CASE_DIR/admit-gate"
     export STUB_DRIVE_SUBMIT_GATE_FILE="$CASE_DIR/submit-gate"
     export STUB_ITEM_STATUS_UNREADABLE_FILE="$CASE_DIR/item-status-unreadable"
+    export STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE="$CASE_DIR/item-status-re-read-observation"
+    export STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE="$CASE_DIR/post-stop-status-rendezvous"
+    export STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE="$CASE_DIR/admission-written"
+    export STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE="$CASE_DIR/admit-after-stop-gate"
     unset STUB_DRIVE_ADMIT_GATE STUB_DRIVE_SUBMIT_GATE STUB_DRIVE_ADMIT_ON_TERM
 
     export REPO_OVERRIDE="$TENANT"
@@ -1500,6 +1549,14 @@ drive_gone() {
     while read -r pid; do kill -0 "$pid" 2>/dev/null && return 1; done < "$STUB_DRIVE_PIDS"
     return 0
 }
+wait_for_drive_gone() {
+    local limit="$1" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while ! drive_gone; do
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+}
 inflight_empty() { [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ]; }
 
 # 20a. A hold set before admission stops the drive; the ticket survives; the
@@ -1621,6 +1678,13 @@ for after_stop in admitted unreadable; do
     if wait_for_drive_invocations 1 10; then
         if [ "$after_stop" = unreadable ]; then : > "$STUB_ITEM_STATUS_UNREADABLE_FILE"; fi
         set_hold "$HOLD_FILE" 'engine restart'
+        if [ "$after_stop" = admitted ] && ! wait_for_drive_gone 10; then
+            fail "the stopped drive did not exit before case 20e released its admission rendezvous"
+            stop_launcher "$stop_pid"
+            wait "$stop_pid" 2>/dev/null
+            continue
+        fi
+        if [ "$after_stop" = admitted ]; then : > "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE"; fi
         wait "$stop_pid"
         stop_rc=$?
         if [ "$stop_rc" != 0 ] \
@@ -1629,10 +1693,13 @@ for after_stop in admitted unreadable; do
             && [ "$(wc -l < "$STUB_LEDGER_COMMENTS")" = 1 ] \
             && grep -qF 'ticket 100' "$STUB_LEDGER_COMMENTS" \
             && grep -qF 'move' "$STUB_LEDGER_COMMENTS" \
-            && [ "$(drive_log_items)" = bd-ib-stop-admit ] && inflight_empty; then
+            && [ "$(drive_log_items)" = bd-ib-stop-admit ] && inflight_empty \
+            && [ -s "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE" ]; then
             pass "a stopped drive that admitted its item ($after_stop) exits stopped-after-admission, re-takes no ticket and comments once"
         else
             fail "a stopped drive that admitted its item ($after_stop) did not make the stopped-after-admission exit (rc=$stop_rc)"
+            printf 'stub admission at launcher re-read: %s\n' \
+                "$(cat "$STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE" 2>/dev/null || echo not-observed)" >&2
             tail -n 8 "$STOP_LOG" >&2
         fi
     else
