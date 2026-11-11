@@ -102,10 +102,12 @@ def _scope_text_parts(*, item: WorkItem) -> tuple[str, ...]:
 
 def _text_declares_workflow_edit(*, text: str) -> bool:
     normalized = text.replace("`", "")
-    for line in normalized.splitlines() or (normalized,):
+    for raw_line in normalized.splitlines() or (normalized,):
+        # The "no files under|in <path>" fence governs only its own mention of
+        # the path, so remove that mention and judge what remains: a second,
+        # separate mention beside a positive edit verb still refuses.
+        line = _NEGATED_WORKFLOW_SCOPE.sub(" ", raw_line)
         if _WORKFLOW_PREFIX not in line.lower():
-            continue
-        if _NEGATED_WORKFLOW_SCOPE.search(line) is not None:
             continue
         if _line_has_unnegated_workflow_edit(line=line):
             return True
