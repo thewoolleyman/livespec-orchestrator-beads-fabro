@@ -57,7 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryMeasurement,
     RecoverySeed,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ruling_currency import current_ruling
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ruling_currency import (
+    FreshRuling,
+    current_ruling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling import (
     SeedRuling,
     observed_ref_commit,
@@ -97,13 +100,10 @@ _LEDGER_UNREADABLE = (
 )
 
 
-def current_seed_ruling(*, repo: Path, item: WorkItem) -> SeedRuling | RecoveryHold | None:
-    """The seed ruling that governs this item, a hold when its comments cannot be asked, or `None`.
-
-    A current FRESH ruling reads as `None` here: the latest ruling of either kind
-    governs, so a later fresh ruling has replaced any seed ruling, and routing that
-    ruling is the fresh ruling's own work. The ordinary routing runs unchanged.
-    """
+def current_seed_ruling(
+    *, repo: Path, item: WorkItem
+) -> SeedRuling | FreshRuling | RecoveryHold | None:
+    """The ruling that governs this item, a comments-read hold, or `None`."""
     comments = attempt(
         action=lambda: read_work_item_comments(path=store_config(repo=repo), work_item_id=item.id),
         exceptions=_LEDGER_UNREADABLE,
@@ -123,8 +123,7 @@ def current_seed_ruling(*, repo: Path, item: WorkItem) -> SeedRuling | RecoveryH
                 )
             )
         return None
-    ruling = current_ruling(comments=tuple(one.text for one in comments))
-    return ruling if isinstance(ruling, SeedRuling) else None
+    return current_ruling(comments=tuple(one.text for one in comments))
 
 
 def ruled_seed(

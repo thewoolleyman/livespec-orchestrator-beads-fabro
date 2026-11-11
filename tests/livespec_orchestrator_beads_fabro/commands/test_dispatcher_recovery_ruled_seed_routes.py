@@ -334,6 +334,30 @@ def test_a_ruling_outranks_a_resume_every_precondition_of_which_passes(
     assert (route.seed.preservation_ref, route.seed.commit_sha) == (_RULED_REF, _RULED_SHA)
 
 
+def test_a_current_fresh_ruling_routes_fresh_past_a_resumable_release(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh ruling wins even when every resume precondition would otherwise pass."""
+    route, _, _ = _route(
+        tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
+        world=_World(refs={**_TREES, f"refs/heads/{_BRANCH}": _HEAD}, pull_request_state="OPEN"),
+        comments=(
+            fresh_ruling_comment_body(
+                work_item_id=_ITEM,
+                invoker="coordinator",
+                reason="start from the default branch",
+                instant=_SECOND,
+            ),
+        ),
+        ending="stall-anchored",
+    )
+
+    assert route.route == ROUTE_FRESH
+    assert route.resume is None
+    assert route.seed is None
+
+
 @pytest.mark.parametrize(
     ("refs", "observed"),
     [

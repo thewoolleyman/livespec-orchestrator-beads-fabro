@@ -97,6 +97,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation i
     gather_resume,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import resume_refusals
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ruling_currency import FreshRuling
 from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling import SeedRuling
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_release import (
     stale_assignee_with_run,
@@ -289,7 +290,7 @@ def _released_route(
     repo: Path,
     runner: CommandRunner,
     journal: JournalFile,
-    ruling: SeedRuling | None,
+    ruling: SeedRuling | FreshRuling | None,
 ) -> RecoveryRoute:
     """The route one RELEASED candidate takes, from the resume's own measurement.
 
@@ -325,23 +326,31 @@ def _released_route(
     before this step is reached for any item.
     """
     measurements = unobservable_measurements(observation=gather.observation)
-    if measurements:
-        # An unobservable measurement at ANY step routes `held`, which is why this
-        # precedes the ladder rather than riding it: every one of these reads also
-        # produces a REFUSAL, and a refusal is graded as fallback-permitting or
-        # not — so falling through would seed or dispatch around a question that
-        # was never answered, and the record would read like a measured decision.
-        return _held_route(item=item, journal=journal, hold=RecoveryHold(measurements=measurements))
     refusals = non_fallback_refusals(observation=gather.observation)
-    if refusals:
+    hold = (
+        RecoveryHold(measurements=measurements)
+        if measurements
+        else RecoveryHold(refusals=refusals)
+        if refusals
+        else None
+    )
+    if hold is not None:
         # "A non-fallback refusal takes precedence over every fallback-permitting
         # one, so a merged pull request is never treated as a missing anchor."
-        # Hence BEFORE the ladder rather than inside it: the ladder's first test
+        # The hold is BEFORE the ladder rather than inside it: the ladder's first test
         # is whether ANY refusal applies, and a non-fallback one answers that
         # test identically to a fallback-permitting one — so falling through
         # would carry out a remedy the refusal exists to forbid, and would do it
         # with the record reading like an ordinary measured fallback.
-        return _held_route(item=item, journal=journal, hold=RecoveryHold(refusals=refusals))
+        return _held_route(item=item, journal=journal, hold=hold)
+    if isinstance(ruling, FreshRuling):
+        return (
+            RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
+            if gather.anchor is not None
+            else _fallback_route(
+                gather=gather, item=item, repo=repo, runner=runner, journal=journal
+            )
+        )
     if ruling is not None:
         # A CURRENT SEED RULING takes the seed "ahead of a `resume` and ahead of the
         # preference order", so it sits past the two gradings above (which a ruling
