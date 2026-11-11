@@ -1,4 +1,4 @@
-"""The review prompt judges a captured record's currency by comparing TREES.
+"""The review prompt judges a captured record's currency at its published head.
 
 bd-ib-qnokup: the review prompt's currency section asked whether the latest
 record was "posted BEFORE the tree you are reviewing" and told the reviewer to
@@ -14,11 +14,11 @@ at 16:54:29Z. Both were rejected round after round as "proof predates the
 reviewed head" until the review-fix firing budget ran out.
 
 `SPECIFICATION/contracts.md` ratified the rule in v175, in its account of the
-Definition-of-Done and Proof-of-Done stages: a record is CURRENT for a head
-under review when the tree of the commit the record names equals the tree of
-that head, a commit that changes no tree MUST NOT make a record stale, and no
-rule MAY require a record to postdate such a commit. This module binds the
-prompt to that rule.
+Definition-of-Done and Proof-of-Done stages: a record is CURRENT at its
+published pull-request head when the tree of the commit the record names equals
+the tree of that published head. A checkpoint is not the published head: it can
+carry preparation residue even when no workflow node authored a change. This
+module binds the prompt to that rule.
 
 WHY A PROMPT TEST AND NOT A CODE TEST. The currency judgement is made by the
 `review` agent out of this prose and is rendered by no Python caller, exactly as
@@ -112,13 +112,15 @@ _REVIEW_VERDICT_LABEL = re.compile(
 )
 
 # The rule itself: what CURRENT means, and the command that decides it. The
-# tree-equality definition and the `git diff --quiet` comparison are asserted
+# published-head definition and the `git diff --quiet` comparison are asserted
 # together because either alone is satisfiable by prose the reviewer cannot act
 # on — a definition with no command leaves the comparison to be improvised, and
-# a command with no definition says nothing about what its exit status means.
-_TREE_EQUALITY_RULE = (
-    "the TREE of the commit the record names equals the TREE of that head",
-    "git diff --quiet <the record's sha> <the head under review>",
+# a command against the sandbox's checkpoint says nothing about what proof
+# capture actually recorded.
+_PUBLISHED_HEAD_RULE = (
+    "the TREE of the commit the record names equals the TREE of the published pull-request head",
+    "git fetch --quiet origin <the publish branch>",
+    "git diff --quiet <the record's sha> origin/<the publish branch>",
     "Exit status 0 means the two commits carry the same tree",
 )
 
@@ -208,15 +210,15 @@ def test_the_graph_scan_names_one_review_prompt_that_is_on_disk() -> None:
     assert named.is_file(), f"{named} is declared by the graph but absent on disk"
 
 
-def test_the_currency_section_defines_current_as_tree_equality() -> None:
-    """CURRENT means equal TREES, decided by a named `git diff --quiet` comparison."""
+def test_the_currency_section_compares_to_the_published_pull_request_head() -> None:
+    """CURRENT means equal TREES at the same published head proof capture recorded."""
     section = _currency_section()
 
-    for phrase in _TREE_EQUALITY_RULE:
+    for phrase in _PUBLISHED_HEAD_RULE:
         assert phrase in section, (
-            f"the record-currency section omits {phrase!r}, so a reviewer has no "
-            f"tree-equality test to apply and judges currency by whatever the section "
-            f"does offer"
+            f"the record-currency section omits {phrase!r}, so a reviewer can grade "
+            "the sandbox checkpoint instead of the published pull-request head that "
+            "proof capture recorded"
         )
 
 
