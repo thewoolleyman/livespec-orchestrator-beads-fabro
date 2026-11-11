@@ -23,6 +23,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exclude import (
     worktree_exclude_script,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
+    WIP_CAPTURE_PROGRAM_FILENAME,
+    wip_capture_program_source,
+)
 
 __all__: list[str] = [
     "DEFAULT_SANDBOX_GH_REFRESH_ROOT",
@@ -274,6 +278,7 @@ def _payload_chunk_steps(*, payload_path: str) -> list[PrepareStep]:
 
 _MINT_VAR = f"{PAYLOAD_ENV_VAR}_MINT"
 _PUSH_VAR = f"{PAYLOAD_ENV_VAR}_PUSH"
+_WIP_CAPTURE_VAR = f"{PAYLOAD_ENV_VAR}_WIP_CAPTURE"
 _WRAPPER_TAIL_VAR = f"{PAYLOAD_ENV_VAR}_WRAPPER_TAIL"
 _WRAPPER_TAIL = (
     _AGENT_PUBLICATION_GUARD_SOURCE
@@ -296,8 +301,12 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
     fixed tail) ride the step's `env`; the script only writes them.
     """
     push_helper = f"{bundle_root}/bin/push_origin"
+    wip_capture_helper = f"{bundle_root}/bin/{WIP_CAPTURE_PROGRAM_FILENAME}"
     write_mint = packed_payload_write_command(path_word='"$mint"', var=_MINT_VAR)
     write_push = packed_payload_write_command(path_word=f'"{push_helper}"', var=_PUSH_VAR)
+    write_wip_capture = packed_payload_write_command(
+        path_word=f'"{wip_capture_helper}"', var=_WIP_CAPTURE_VAR
+    )
     write_tail = packed_payload_write_command(
         path_word='"$real_gh"', var=_WRAPPER_TAIL_VAR, append=True
     )
@@ -311,7 +320,9 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
         f'rm -f "{payload_path}"\n'
         f"{write_mint}\n"
         f"{write_push}\n"
+        f"{write_wip_capture}\n"
         f'chmod 755 "{push_helper}"\n'
+        f'chmod 755 "{wip_capture_helper}"\n'
         'chmod 755 "$mint"\n'
         'real_gh="$(command -v gh)"\n'
         'case "$real_gh" in\n'
@@ -330,6 +341,7 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
         env={
             _MINT_VAR: pack_payload(text=_MINT_HELPER_SOURCE),
             _PUSH_VAR: pack_payload(text=PUSH_ORIGIN_SOURCE),
+            _WIP_CAPTURE_VAR: pack_payload(text=wip_capture_program_source()),
             _WRAPPER_TAIL_VAR: pack_payload(text=_WRAPPER_TAIL),
         },
     )

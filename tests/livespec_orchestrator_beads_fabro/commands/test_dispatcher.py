@@ -2009,10 +2009,15 @@ def _assert_projected_gh_wrapper_publishes(
 
     assert rendered is not None
     scripts = _gh_refresh_prepare_scripts(rendered=rendered)
-    # Guard against a regression to a hardcoded root: with the lever set, the
-    # production path must not appear in any emitted step.
+    # Guard against a regression to a hardcoded materialization root: with the
+    # lever set, every prepare script must use the redirected root.  The WIP
+    # helper's own source legitimately carries its production fallback because
+    # it executes later in the sandbox, after this preparation has completed.
     for script in scripts:
-        assert DEFAULT_SANDBOX_GH_REFRESH_ROOT not in script
+        assert (
+            DEFAULT_SANDBOX_GH_REFRESH_ROOT not in script
+            or "root=${LIVESPEC_SANDBOX_GH_REFRESH_ROOT:-/workspace/.livespec-gh-refresh}" in script
+        )
     # The payload must never ride in one exec slot above the cap again
     # (bd-ib-gnli): Linux caps a SINGLE argument or environment string at
     # MAX_ARG_STRLEN (131072), not the total. One 186KB step killed every

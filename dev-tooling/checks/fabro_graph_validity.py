@@ -110,6 +110,7 @@ from _checked_workflow_payloads import (  # noqa: E402  — sibling private impo
     checked_payloads,
     incompleteness,
 )
+from _fabro_wip_capture import wip_capture_findings  # noqa: E402  — sibling private import
 from _fork_only_settings import (  # noqa: E402  — sibling private import
     FORK_ONLY_SETTINGS,
     SETTINGS_NAME,
@@ -140,6 +141,7 @@ __all__: list[str] = [
     "unenumerated_graphs",
     "validate_graph",
     "validation_findings",
+    "wip_capture_findings",
 ]
 
 GRAPH_NAME = "workflow.fabro"
@@ -356,6 +358,7 @@ def report(*, repo_root: Path) -> Report:
     ]
     settings_findings, notes = _settings_review(payloads=payloads)
     findings.extend(settings_findings)
+    findings.extend(wip_capture_findings(payloads=payloads))
     lever = os.environ.get(LEVER, WARN_WHEN_ABSENT)
     if lever not in LEVER_VALUES:
         space = f"outside the closed value space {', '.join(LEVER_VALUES)}"
