@@ -144,6 +144,17 @@ def test_a_chore_whose_behaviour_is_partial_is_routed_to_spec_change(
     assert classified[0].is_spec_change is True
 
 
+def test_a_non_functional_slice_whose_behaviour_is_partial_is_routed_to_spec_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    partial = _UNSTATED.replace('"unstated"', '"partial"')
+    _install_judge(tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("non_functional", partial))
+    classified = classified_candidate_slices(
+        slices=[_candidate(is_spec_change=False)], repo=_repo(tmp_path=tmp_path)
+    )
+    assert classified[0].is_spec_change is True
+
+
 def test_a_bug_whose_behaviour_is_stated_is_filed_as_factory_work(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
