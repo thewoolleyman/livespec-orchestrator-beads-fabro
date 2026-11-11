@@ -141,11 +141,13 @@ def _failed_state_result() -> FabroHttpResult:
 def _successful_state_result(*, runner: object) -> FabroHttpResult:
     configured = getattr(runner, "stage_diffs", None)
     stage_diffs = configured if isinstance(configured, dict) else {"002-implement@1": _DEFAULT_DIFF}
-    stages = {
-        _stage_name(path=path): {"first_event_seq": _stage_sequence(path=path), "diff": diff}
-        for path, diff in stage_diffs.items()
-        if isinstance(path, str) and isinstance(diff, str)
-    }
+    stages: dict[str, dict[str, str | None]] = {}
+    for path, diff in sorted(stage_diffs.items(), key=lambda item: _stage_sequence(path=item[0])):
+        if not isinstance(path, str) or not isinstance(diff, str):
+            continue
+        for position in range(len(stages) + 1, _stage_sequence(path=path)):
+            stages[f"stage-{position:03d}@1"] = {"diff": None}
+        stages[_stage_name(path=path)] = {"diff": diff}
     return FabroHttpResult(
         status=200, body="", error=None, payload={"stages": stages}, succeeded=True
     )
