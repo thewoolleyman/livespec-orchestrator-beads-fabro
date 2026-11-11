@@ -141,7 +141,7 @@ def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
     terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
     detail = terminal.get(_DETAIL_KEY)
     if isinstance(detail, str) and RECAPTURE_EXHAUSTED_MARKER in detail:
-        return False
+        return terminal.get(_STATUS_KEY) == "blocked"
     if isinstance(terminal.get(_NEEDS_HUMAN_KIND_KEY), str):
         return True
     return terminal.get(_STATUS_KEY) in {"cancelled", RUN_WALL_BUDGET_EXCEEDED_STAGE} or (
