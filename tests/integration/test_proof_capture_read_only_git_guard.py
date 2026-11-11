@@ -215,6 +215,18 @@ def _assert_scratch_push_to_temporary_bare_repository_is_allowed(
     arrived = _git("rev-parse", "refs/heads/scratch", repo=remote, environment=None)
     assert arrived.returncode == 0, arrived.stderr
     assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
+    _ = marker.unlink()
+    named = _git(
+        "push",
+        "origin",
+        "HEAD:refs/heads/scratch-by-name",
+        repo=scratch,
+        environment=environment,
+    )
+    assert named.returncode == 0, named.stderr
+    named_arrival = _git("rev-parse", "refs/heads/scratch-by-name", repo=remote, environment=None)
+    assert named_arrival.returncode == 0, named_arrival.stderr
+    assert marker.read_text(encoding="utf-8").splitlines() == ["pre-push"]
 
 
 def _assert_proof_capture_configuration(*, environment: Mapping[str, str]) -> None:
