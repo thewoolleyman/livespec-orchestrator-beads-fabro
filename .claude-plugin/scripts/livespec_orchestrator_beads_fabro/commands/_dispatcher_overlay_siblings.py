@@ -28,6 +28,8 @@ from dataclasses import dataclass
 
 __all__: list[str] = [
     "CORE_PLUGIN_ROOT_ENV_VAR",
+    "RUN_FROM_CLONES_ROOT",
+    "RUN_FROM_CLONES_ROOT_ENV_VAR",
     "SIBLING_CLONES_ROOT_ENV_VAR",
     "SiblingClones",
     "core_plugin_env_line",
@@ -36,14 +38,30 @@ __all__: list[str] = [
 
 SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
 
+# Where the RUN-FROM clones land: the clones of other repositories whose tools the
+# sandbox EXECUTES, which the contract keeps apart from the WORK clones under the
+# sibling root ("A tool from a repository other than the target MUST NOT execute
+# from a work clone"). A different directory rather than a different depth of the
+# same one, because the two kinds differ in every property the contract states --
+# release, depth, writability -- and a shared path would let either kind be taken
+# for the other. It sits outside `/workspace` for the reason the sibling root
+# does (see `_dispatcher_sibling_clones`): the engines place the target's clone
+# differently inside that mount, so only a path beside it is outside the clone on
+# both. `_dispatcher_run_from_clones` renders the steps that populate it.
+RUN_FROM_CLONES_ROOT = "/livespec-run-from"
+RUN_FROM_CLONES_ROOT_ENV_VAR = "LIVESPEC_RUN_FROM_CLONES_ROOT"
+
 # The env-var a fleet repo's janitor reads to resolve the livespec CORE plugin
 # inside the Fabro sandbox (the console's `check-doctor-static`). The sandbox
 # spawns with a fail-closed env allowlist (fabro-server/src/spawn_env.rs) and
 # carries no installed-plugin registry, so without this projection a
 # CORE-dependent `just check` cannot find core. The Dispatcher's overlay
 # projects it at the in-sandbox core-sibling clone path
-# (`<clones_root>/livespec/.claude-plugin`); `_CORE_SIBLING_SLUG` is the livespec
-# CORE repo's clone slug.
+# (`<run-from root>/livespec/.claude-plugin`), the RUN-FROM clone checked out at the
+# release the governed tree pins -- never a work clone under `<clones_root>`, whose
+# commit is whatever the default branch held when the pod started and which is
+# what made run 01M6Y1Q7ZFWZ check a v0.47.1 tree with a 0.47.0-era checker.
+# `_CORE_SIBLING_SLUG` is the livespec CORE repo's clone slug.
 CORE_PLUGIN_ROOT_ENV_VAR = "LIVESPEC_CORE_PLUGIN_ROOT"
 _CORE_SIBLING_SLUG = "livespec"
 
@@ -64,20 +82,20 @@ class SiblingClones:
 
 
 def core_plugin_env_line(*, siblings: SiblingClones | None) -> str:
-    """Project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox core-sibling clone.
+    """Project LIVESPEC_CORE_PLUGIN_ROOT at the in-sandbox core RUN-FROM clone.
 
     A fleet repo whose janitor resolves the livespec CORE plugin (the console's
     `check-doctor-static`) cannot find core inside the sandbox: the worker env
     is a fail-closed allowlist and the container carries no installed-plugin
     registry. So the overlay projects CORE's location as a container-level env
-    key — the SAME mechanism that carries GITHUB_TOKEN — valued at the cloned core
-    sibling's plugin root (`<clones_root>/livespec/.claude-plugin`). Returns the
-    empty string when no core sibling is cloned (the derived path would not
-    resolve), mirroring the sibling-clones-root guard.
+    key — the SAME mechanism that carries GITHUB_TOKEN — valued at the core
+    run-from clone's plugin root (`<run-from root>/livespec/.claude-plugin`).
+    Returns the empty string when core is not among the planned clones (the
+    derived path would not resolve), mirroring the sibling-clones-root guard.
     """
     if siblings is None or _CORE_SIBLING_SLUG not in siblings.repos:
         return ""
-    core_plugin_root = f"{siblings.clones_root}/{_CORE_SIBLING_SLUG}/.claude-plugin"
+    core_plugin_root = f"{RUN_FROM_CLONES_ROOT}/{_CORE_SIBLING_SLUG}/.claude-plugin"
     return f"{CORE_PLUGIN_ROOT_ENV_VAR} = {json.dumps(core_plugin_root)}\n"
 
 
@@ -85,12 +103,22 @@ def sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
     """Render the appended sibling-clone `[[run.prepare.steps]]` blocks.
 
     One step per fleet member (the dispatch target is excluded
-    upstream): a depth-1 default-branch `git clone` into
+    upstream): a full-history default-branch `git clone` into
     `<clones_root>/<repo>` — mirroring how livespec CI provisions the
     `LIVESPEC_SIBLING_CLONES_ROOT` siblings-root for the cross-repo
     wiring check. Plain `git clone` over https is used (NOT `gh`): the
     sandbox clones its own workspace repo the same way, while `gh api`
     is unauthenticated there.
+
+    THESE ARE WORK CLONES, NOT RUN-FROM CLONES, and the contract gives each kind
+    the opposite of what the other needs (`contracts.md` "A sandbox runs its tools
+    from pinned clones and works in the latest clones"). A work clone is the
+    default branch's latest commit at the moment it is cloned, writable, and deep
+    enough for archaeology and debugging, so there is NO `--depth` argument: the
+    agent that reads these checkouts for cross-repository state must be able to
+    walk their history, and a depth-1 clone answers `git log` and `git blame` with
+    one commit. Nothing here is executed as a tool; the tools run from the
+    run-from clones `_dispatcher_run_from_clones` renders.
 
     Each step TOLERATES its own member's failure: a member that cannot
     be cloned is reported as a one-line stderr diagnostic and skipped
@@ -112,13 +140,13 @@ def sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
     separates "repository not reachable (nonexistent or no access)"
     from a "clone failed after a successful reachability probe
     (transient)". Only the `mkdir` can fail the step. On the
-    all-members-healthy path the observable result is unchanged: the
-    same depth-1 quiet https clone into the same `<clones_root>/<repo>`.
+    all-members-healthy path the observable result is the same quiet
+    https clone into the same `<clones_root>/<repo>`.
     """
     lines: list[str] = [
         "",
         "# --- Dispatcher-materialized sibling clones (from livespec master's",
-        "# --- .livespec-fleet-manifest.jsonc): depth-1 default-branch clones so",
+        "# --- .livespec-fleet-manifest.jsonc): full-history default-branch clones so",
         "# --- cross-repo checks resolve every family sibling under",
         f"# --- {siblings.clones_root} inside the sandbox ---",
     ]
@@ -134,7 +162,7 @@ def sibling_clone_steps_block(*, siblings: SiblingClones) -> str:
             " >/dev/null 2>&1 ||"
             f" {{ echo '{diagnostic}repository not reachable"
             " (nonexistent or no access)' >&2; exit 0; };"
-            f" GIT_TERMINAL_PROMPT=0 git clone --quiet --depth 1 {url}"
+            f" GIT_TERMINAL_PROMPT=0 git clone --quiet {url}"
             f" {siblings.clones_root}/{repo_name} ||"
             f" {{ echo '{diagnostic}clone failed after a successful"
             " reachability probe (transient)' >&2; exit 0; }"

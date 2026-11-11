@@ -16,6 +16,7 @@ import os
 import sys
 import time
 from collections.abc import Callable, Mapping
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -74,6 +75,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_secret_channel impor
     VaultSecretSink,
     resolve_secret_channel,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_materialize import (
+    SetupRefusal,
+    overlay_with_setup_nodes,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
     resolve_sibling_clones,
@@ -83,6 +88,7 @@ from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
     NO_FACTORY_GITHUB_APP,
     FactoryGithubApp,
 )
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import NodeTimeouts
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
@@ -156,6 +162,12 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     # resolve-once reason the integration contract gives; False is the posture a
     # caller that wires nothing rendered before the step existed (bd-ib-tlmq3m).
     provision_worktree_pack: bool = False,
+    # The node timeouts this dispatch's payload graph was rendered with. The setup
+    # nodes are added to that graph AFTER it is rendered, so they take their
+    # durations from the same resolution rather than from a literal; None is the
+    # fully-defaulted resolution, which is what a caller that wires nothing
+    # rendered the graph with.
+    node_timeouts: NodeTimeouts | None = None,
 ) -> str | None:
     """Write the uncommitted mode-600 run-config overlay.
 
@@ -175,12 +187,14 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
     reaches a log, journal, or argv; the overlay file is deleted when
     the run returns.
 
-    The overlay ALSO provisions the sandbox sibling clones: one depth-1
-    prepare-step clone per fleet member (minus the dispatch target,
+    The overlay ALSO provisions the sandbox sibling clones: one full-history
+    prepare-step work clone per fleet member (minus the dispatch target,
     keyed by the `--repo` basename) plus the non-secret
     `LIVESPEC_SIBLING_CLONES_ROOT` env key, so cross-repo checks under
     `just check` resolve family siblings inside the sandbox the same
-    way livespec CI provisions them.
+    way livespec CI provisions them. It provisions the RUN-FROM clone of
+    livespec core beside them, a shallow read-only clone at the release the
+    governed tree pins that `LIVESPEC_CORE_PLUGIN_ROOT` points into.
 
     It projects the in-sandbox Claude-Code OTel env (29f.3): the
     `cc_otel_overlay_env` dict carrying the correlation triple
@@ -407,6 +421,23 @@ def materialize_overlay(  # noqa: PLR0911, PLR0913 — kw-only overlay materiali
             f"workflow config {committed} is not materializable: it must carry "
             '[workflow] graph = "..." and [run.environment] id = "..."'
         )
+    # The prepare steps leave the written config and become `run_prepare_<N>`
+    # command nodes of this dispatch's own graph, because upstream Fabro refuses
+    # `run.prepare`. A dispatch with no per-dispatch graph has nowhere to put them
+    # and keeps them in the config, exactly as it always rendered.
+    if isinstance(
+        setup := overlay_with_setup_nodes(
+            rendered=rendered,
+            graph=graph_override,
+            timeouts=node_timeouts,
+            release=partial(
+                revoke_proof_credentials, repo=repo, scope=dispatch_id, runner=lease_runner
+            ),
+        ),
+        SetupRefusal,
+    ):
+        return setup.message
+    rendered = setup
     write_refusal = write_routed_overlay(
         overlay=overlay,
         rendered=rendered,

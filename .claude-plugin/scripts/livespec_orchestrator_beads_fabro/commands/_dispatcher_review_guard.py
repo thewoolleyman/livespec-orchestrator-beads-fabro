@@ -44,7 +44,8 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -355,8 +356,8 @@ def review_guard_prepare_steps_block() -> str:
     root = sandbox_plugins_root_expansion()
     step = PrepareStep(
         script=f'set -eu\nmkdir -p "{root}"\n'
-        + payload_write_command(path_word=f'"{_program_path_expansion()}"'),
-        env={PAYLOAD_ENV_VAR: review_guard_program_source()},
+        + packed_payload_write_command(path_word=f'"{_program_path_expansion()}"'),
+        env={PAYLOAD_ENV_VAR: pack_payload(text=review_guard_program_source())},
     )
     return "\n# --- Dispatcher-materialized review-turn guard (bd-ib-azxvoo) ---\n" + (
         render_prepare_step(step=step)

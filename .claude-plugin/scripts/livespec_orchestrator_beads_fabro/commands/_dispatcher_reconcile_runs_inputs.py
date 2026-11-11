@@ -138,6 +138,11 @@ class ReconcileInputs:
     # observation-only callers' case and the default every existing caller
     # keeps.
     claim_lane: ClaimLaneReconciler | None = None
+    # The OTHER repositories whose runs this pass also collects once their item
+    # closes (`_dispatcher_fleet_run_collection`). Only the host timer's standalone
+    # sweep names any; every other caller keeps the empty default and collects its
+    # own repository's runs alone.
+    dispatching_repositories: tuple[Path, ...] = ()
 
 
 def port_for(*, inputs: ReconcileInputs, factory: FactoryTarget) -> FabroPort:

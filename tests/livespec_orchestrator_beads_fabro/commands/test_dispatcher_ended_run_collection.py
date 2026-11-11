@@ -8,6 +8,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ended_run_collection import (
     collect_closed_ended_runs,
+    journaled_refusals,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preservation_ref_deletion import (
@@ -117,12 +118,23 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
             "run_id": "01CLOSED",
             "factory_name": "factory",
             "factory_server_url": "https://factory.test",
+            "dispatching_repository": tmp_path.name,
             "work_item_id": "bd-ib-closed",
             "work_item_status": "done",
             "rm_exit_code": 0,
             "rm_stdout": "",
             "rm_stderr": "",
-        }
+        },
+        {
+            "stage": "ended-run-collection-refused",
+            "run_id": "01BLOCKED",
+            "factory_name": "factory",
+            "factory_server_url": "https://factory.test",
+            "dispatching_repository": tmp_path.name,
+            "work_item_id": "bd-ib-blocked",
+            "work_item_status": "blocked",
+            "reason": "item-not-closed",
+        },
     ]
 
 
@@ -230,6 +242,7 @@ def _inventory(
     statuses: dict[str, str],
     stamps: tuple[tuple[str, str], ...],
     only_work_item_id: str | None = None,
+    refused_before: frozenset[tuple[str, str | None]] = frozenset(),
 ) -> FactoryRunInventory:
     return FactoryRunInventory(
         runs=runs,
@@ -244,6 +257,7 @@ def _inventory(
         factory_name="factory",
         factory_server_url="https://factory.test",
         only_work_item_id=only_work_item_id,
+        refused_before=refused_before,
     )
 
 
@@ -349,3 +363,92 @@ def test_a_refused_ref_deletion_is_journaled_and_leaves_the_run_for_the_next_pas
     assert [(record["stage"], record["ref"]) for record in journal.records] == [
         (JOURNAL_STAGE_DELETION_FAILED, refused)
     ]
+
+
+def test_a_run_whose_item_status_could_not_be_read_is_refused_and_left_in_place(
+    tmp_path: Path,
+) -> None:
+    runner = _Runner()
+    journal = _Journal()
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(_run(run_id="01LOST", status_kind="failed"),),
+            statuses={},
+            stamps=(("01LOST", "bd-ib-lost"),),
+        ),
+        port=_port(tmp_path=tmp_path, runner=runner),
+        runner=_Forge(),
+        repo=tmp_path,
+        journal=journal,
+        dry_run=False,
+    )
+
+    assert runner.calls == []
+    assert [
+        (record["run_id"], record["work_item_id"], record["work_item_status"], record["reason"])
+        for record in journal.records
+    ] == [("01LOST", "bd-ib-lost", None, "item-status-unreadable")]
+
+
+def test_a_refusal_already_journaled_at_the_same_status_is_not_journaled_again(
+    tmp_path: Path,
+) -> None:
+    journal = _Journal()
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(
+                _run(run_id="01SAME", status_kind="failed"),
+                _run(run_id="01MOVED", status_kind="failed"),
+            ),
+            statuses={"bd-ib-same": "blocked", "bd-ib-moved": "open"},
+            stamps=(("01SAME", "bd-ib-same"), ("01MOVED", "bd-ib-moved")),
+            refused_before=frozenset({("01SAME", "blocked"), ("01MOVED", "blocked")}),
+        ),
+        port=_port(tmp_path=tmp_path, runner=_Runner()),
+        runner=_Forge(),
+        repo=tmp_path,
+        journal=journal,
+        dry_run=False,
+    )
+
+    assert [record["run_id"] for record in journal.records] == ["01MOVED"]
+
+
+def test_a_live_run_of_an_open_item_is_neither_collected_nor_refused(tmp_path: Path) -> None:
+    journal = _Journal()
+
+    collect_closed_ended_runs(
+        inventory=_inventory(
+            runs=(_run(run_id="01LIVE", status_kind="running"),),
+            statuses={"bd-ib-open": "active"},
+            stamps=(("01LIVE", "bd-ib-open"),),
+        ),
+        port=_port(tmp_path=tmp_path, runner=_Runner()),
+        runner=_Forge(),
+        repo=tmp_path,
+        journal=journal,
+        dry_run=False,
+    )
+
+    assert journal.records == []
+
+
+def test_journaled_refusals_reads_only_refusal_records_with_their_status(tmp_path: Path) -> None:
+    path = tmp_path / "journal.jsonl"
+    _ = path.write_text(
+        "\n".join(
+            (
+                '{"stage":"ended-run-collection-refused","run_id":"01A","work_item_status":"blocked"}',
+                '{"stage":"ended-run-collection-refused","run_id":"01B","work_item_status":null}',
+                '{"stage":"ended-run-collection-refused","work_item_status":"blocked"}',
+                '{"stage":"ended-run-collected","run_id":"01C","work_item_status":"done"}',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    assert journaled_refusals(journal_path=path) == {("01A", "blocked"), ("01B", None)}
+    assert journaled_refusals(journal_path=None) == frozenset()

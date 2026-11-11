@@ -69,7 +69,10 @@ def test_the_core_plugin_line_is_projected_when_core_is_among_the_siblings() -> 
     """The janitor's only route to core inside a fail-closed sandbox env."""
     line = core_plugin_env_line(siblings=_siblings(repos=("livespec", "livespec-overseer")))
     assert line.startswith(f"{CORE_PLUGIN_ROOT_ENV_VAR} = ")
-    assert f"{_CLONES_ROOT}/livespec/.claude-plugin" in line
+    # The RUN-FROM clone, never a work clone under the siblings root: a work clone is
+    # whatever the default branch held when the pod started, not the pinned release.
+    assert '"/livespec-run-from/livespec/.claude-plugin"' in line
+    assert _CLONES_ROOT not in line
 
 
 def test_no_core_sibling_projects_no_core_plugin_line() -> None:

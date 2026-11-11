@@ -131,4 +131,4 @@ def test_the_projected_env_var_names_the_directory_the_prepare_steps_clone_into(
     assert f"mkdir -p {root} ||" in rendered
     for member in plan.repos:
         destination = f"https://github.com/{plan.owner}/{member}.git {root}/{member}"
-        assert f"git clone --quiet --depth 1 {destination}" in rendered
+        assert f"git clone --quiet {destination}" in rendered

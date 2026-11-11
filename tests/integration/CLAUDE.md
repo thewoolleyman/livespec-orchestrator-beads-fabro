@@ -1504,8 +1504,24 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   identity survives untouched — which is what leaves that question with the
   relay authority that owns it.
 
-- `test_sandbox_history_preparation.py` — the FIRST `[[run.prepare.steps]]` entry
-  of the shipped implement-work-item run config, EXECUTED under `/bin/sh` against
+- `test_sandbox_setup_nodes_scenario32.py` — binds the setup-node scenarios of
+  `SPECIFICATION/scenarios.md` Scenario 32 (work-item `bd-ib-dpsiwz`): neither
+  committed run config declares a prepare table, each committed graph's setup is a
+  numbered `run_prepare_<N>` chain entered from `start` and left into the first
+  stage, and a failed step ends the run. The graph is read through the shared
+  parser. Two properties an editor must not weaken. Every setup node is asserted to
+  carry BOTH a conditional failed edge to `setup_failed` and exactly ONE
+  unconditional edge, because a command node that exits non-zero otherwise follows
+  its unconditional edge and the run succeeds, while the engine rejects a node whose
+  every edge is conditional; the walk case follows only the failed outcome from each
+  node and requires it to end at the terminal without entering the first stage,
+  with the all-succeeded walk as its control. And the terminal's OWN script is
+  executed by `sh` in a throwaway repository whose branch carries engine-shaped
+  `fabro(<run>): <node> (<status>)` checkpoints, because the step it names is read
+  off that chain.
+
+- `test_sandbox_history_preparation.py` — the FIRST setup node (`run_prepare_1`)
+  of the shipped implement-work-item graph, EXECUTED under `/bin/sh` against
   real complete and shallow clones (work-item bd-ib-ukht2p). It executes rather
   than matching the command line because the assertion is what the step does to a
   clone, and a conditional that inspects the wrong thing — or swallows a failure
@@ -1840,6 +1856,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   removed none. The retired-hold case is the control for the first, and the
   unreadable-journal case asserts the unobservable fact beside the ABSENT
   idle-factory row rather than beside an empty one.
+
+- `test_run_from_clones_scenario336.py` — binds `SPECIFICATION/scenarios.md`
+  Scenario 336 and the "A sandbox runs its tools from pinned clones and works in
+  the latest clones" paragraph of `contracts.md` (work-item `bd-ib-lupzxt`). The
+  Dispatcher-materialized program that takes each run-from clone is EXECUTED
+  in-process against local bare repositories standing in for the forge and a
+  project directory holding real JSONC, so the pinned release, the shallow clone,
+  the re-clone after a changed pin, the newest-release-tag fallback (numeric order,
+  pre-releases excluded) and the three failure arms are observed rather than
+  matched. Two limits are stated in the module itself: whether a write by the
+  run's agent is REFUSED depends on the capabilities the sandbox image grants uid
+  0 (measured: CAP_DAC_OVERRIDE present, CAP_LINUX_IMMUTABLE and CAP_SYS_ADMIN
+  absent), so the host-captured proof owns that assertion and this file asserts
+  only that the program strips write bits, asks for the immutable flag and reports
+  honestly which of its two markers is true. The graph case asserts all three nodes
+  that check a refreshed tree (`janitor`, `publish_draft`, `pr_refresh`) re-run the
+  program before the declared suite.
 
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small

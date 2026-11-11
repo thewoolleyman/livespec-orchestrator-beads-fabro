@@ -1751,7 +1751,7 @@
     "work_item": "bd-ib-7f66ar"
   },
   {
-    "heading": "## Scenario 175 \u2014 A run past the whole-run wall budget is exported, cancelled and rested for a human",
+    "heading": "## Scenario 175 \u2014 A run past the whole-run wall budget continues while it progresses, and otherwise is exported, cancelled and rested for a human",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_run_wall_budget_scenario175"
@@ -3053,9 +3053,7 @@
     "heading": "## Scenario 336 \u2014 A sandbox checks a tree with the tooling release that tree pins, and works in the latest clones",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-lupzxt prepares a factory sandbox and shows that livespec core's doctor checks run from a separate shallow, read-only run-from clone at the governed tree's compat.pinned release (not under /livespec-siblings), that a janitor refresh onto a tree pinning a different release re-clones it at that release, that a repository with no declared release runs from its newest release tag, and that the target and /livespec-siblings work clones are at their default branch's latest commit, writable and non-shallow. bd-ib-lupzxt owns it.",
-    "work_item": "bd-ib-lupzxt"
+    "test": "tests.integration.test_run_from_clones_scenario336"
   },
   {
     "heading": "## Scenario 337 \u2014 A merged rework re-dispatch whose merge wait was handed off is completed by reconciliation, and a parked rework stays unsurveyed",

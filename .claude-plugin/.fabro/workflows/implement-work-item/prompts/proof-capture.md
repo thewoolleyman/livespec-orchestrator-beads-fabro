@@ -207,6 +207,14 @@ assertion's sequence, and publish the corrected version. Never publish a
 step you did not run, and never publish output from a command other than
 the one the step names.
 
+### Keep repository check aggregates serial
+
+Run at most ONE repository check aggregate at a time in this sandbox.
+A trailing `&` inside one tool call breaks this rule.
+Parallel tool calls that start check aggregates also break this rule.
+Wait for each aggregate to finish before starting the next one, even when the
+checks target separate copies of the repository.
+
 ## Step 4 — capture the proof
 
 ### Exercise the behaviour, not the test suite

@@ -27,6 +27,8 @@ on the script cannot tell a correct write from one that writes nothing.
 
 from __future__ import annotations
 
+import base64
+import os
 import subprocess
 from pathlib import Path
 
@@ -277,9 +279,15 @@ def test_a_body_over_the_env_value_limit_refuses_rather_than_rendering() -> None
     The body rides the step's env, and one env string over `MAX_ARG_STRLEN`
     makes `execve` fail with "argument list too long" and kills the run at
     launch with no branch. `publication_metadata_for` bounds the body well under
-    that, so the refusal is reached directly with a hand-built value.
+    that, so the refusal is reached directly with a hand-built value. The body
+    rides PACKED, so the value is one that barely compresses.
     """
     with pytest.raises(ValueError, match="argument list too long"):
         _ = publication_metadata_prepare_steps_block(
-            metadata=PublicationMetadata(title="t", body="b" * 200_000)
+            metadata=PublicationMetadata(title="t", body=_incompressible(size=200_000))
         )
+
+
+def _incompressible(*, size: int) -> str:
+    """Text of `size` characters that gzip cannot shrink below the env-value cap."""
+    return base64.b85encode(os.urandom(size)).decode("ascii")[:size]

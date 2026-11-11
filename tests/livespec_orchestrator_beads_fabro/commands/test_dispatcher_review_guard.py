@@ -31,6 +31,7 @@ import tomli
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_merge_program,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import pack_payload
 
 _MODULE_PATH = (
     Path(__file__).resolve().parents[3]
@@ -180,7 +181,9 @@ def test_the_prepare_step_writes_the_exact_guard_source_into_the_plugins_root() 
     script = str(step["script"])
     assert module.REVIEW_GUARD_PROGRAM_FILENAME in script
     assert "<<" not in script
-    assert step["env"] == {"LIVESPEC_PREPARE_PAYLOAD": module.review_guard_program_source()}
+    assert step["env"] == {
+        "LIVESPEC_PREPARE_PAYLOAD": pack_payload(text=module.review_guard_program_source())
+    }
 
 
 def test_the_settings_merge_program_installs_the_guard_beside_the_gate() -> None:

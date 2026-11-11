@@ -25,7 +25,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_progra
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_record import (
     record_reader_fragment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    pack_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_head import (
     proof_head_program_source,
 )
@@ -107,7 +110,7 @@ def test_the_prepare_step_carries_the_program_in_env_and_writes_it_without_expan
 
     assert "[[run.prepare.steps]]" in block
     [step] = steps_in(block=block)
-    assert step.env == {PAYLOAD_ENV_VAR: carry_forward_program_source()}
+    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=carry_forward_program_source())}
     assert 'printf %s "$LIVESPEC_PREPARE_PAYLOAD"' in step.script
     assert carry_forward_program_source() not in step.script
     assert CARRY_FORWARD_PROGRAM_FILENAME in block

@@ -12,19 +12,22 @@ in, for the cohesion reason that module's docstring gives: it is authored by the
 Dispatcher from the invocation's resume attributes rather than read off the item,
 so it shares neither input nor provenance with anything assembled here.
 
-WHICH COMMENTS ARE BRIEF, AND WHICH ARE RECEIPTS. Every ledger comment reaches
-the brief EXCEPT the Dispatcher's own Definition-of-Done judgement records, which
-`contracts.md`'s one-rubric-one-subject clause excludes from the node's rendered
-goal for the same reason it excludes them from the subject the host takings
-grade: a receipt is what the Dispatcher wrote ABOUT the brief, so a node that
-read one would grade a brief growing by a paragraph every time a verdict was
-recorded — and would meet, among its riders, a verdict about itself.
+WHICH COMMENTS ARE BRIEF, WHICH ARE RECEIPTS, AND WHICH ARE LEFT OUT. A ledger
+comment other than the Dispatcher's own Definition-of-Done judgement records
+(`contracts.md`'s one-rubric-one-subject clause excludes those from the node's
+rendered goal for the same reason it excludes them from the subject the host
+takings grade) is a rider, and the goal carries the riders `_dispatcher_rider_bound`
+says are CARRIED: those appended after the item's previous dispatch claim, the
+`STANDING RIDER:` ones and the `FOR <stage> ONLY:` ones. A rider that is not carried
+stays on the ledger and is counted in one left-out line instead (bd-ib-l2poch).
 
-The predicate is `_dispatcher_dod_judgement_markers.is_receipt_comment`, the
-same one the subject uses. One spelling of the marker is the whole point: two
-would make the subject and the goal disagree about which comments the item's
-brief consists of, which is the disagreement between host and in-run takings
-that the clause exists to close.
+A receipt is what the Dispatcher wrote ABOUT the brief, so a node that read one
+would grade a brief growing by a paragraph every time a verdict was recorded.
+The receipt predicate is `_dispatcher_dod_judgement_markers.is_receipt_comment`,
+the same one the subject uses, and the carried-rider predicate is likewise the
+subject's: two spellings would make the subject and the goal disagree about which
+comments the item's brief consists of, which is the disagreement between host and
+in-run takings that the clause exists to close.
 """
 
 from __future__ import annotations
@@ -39,9 +42,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     reusable_governing_heading_verdict,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
-    is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     recorded_governing_heading,
@@ -58,6 +58,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import (
+    bound_riders,
+    left_out_line,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_workflow_guard import (
     FACTORY_WORKFLOW_BOUNDARY_TEXT,
@@ -168,6 +172,7 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     lessons: str = "",
     interrupted: InterruptedAttempt | None = None,
     repayment: str = "",
+    claim_at: str | None = None,
 ) -> str:
     """Render the per-item brief delivered to the phase graph.
 
@@ -263,7 +268,8 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     # receipts. An item whose comments are ALL receipts renders no section at
     # all, exactly as one with no comment does: a heading with nothing under it
     # would tell the node riders exist.
-    riders = tuple(comment for comment in comments if not is_receipt_comment(body=comment.text))
+    bounded = bound_riders(comments=comments, claim_at=claim_at)
+    riders = bounded.carried
     # The governing-heading verdict rides AFTER the riders for the same reason
     # the recovery placement rides before them: a rider is part of the brief the
     # verdict was taken about, so a block standing ahead of them would describe
@@ -298,12 +304,14 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     # appending it made each request of each node carry the item's referenced
     # spec sections (bd-ib-qshcwc: 24,910 to 136,040 characters). The node reads
     # the same subject from the file `_dispatcher_dod_gate_subject` materializes.
-    if not riders:
+    if not riders and bounded.left_out == 0:
         return escape_minijinja_literal(text=body + verdict_block)
     lines = [
         "",
         "Ledger comments (operator riders appended after filing; treat them as part of the brief):",
     ]
+    if bounded.left_out:
+        lines.append(left_out_line(item_id=item.id, riders=bounded))
     # Numbered over the RIDERS rather than over the comments, so the brief
     # carries no gap where a receipt was dropped — a gap reads as a comment the
     # renderer lost rather than one it deliberately omitted.

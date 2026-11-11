@@ -40,6 +40,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_view import view_
 from livespec_orchestrator_beads_fabro.commands._dispatcher_required_checks import (
     required_check_names,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import (
+    REWORK_ADMIT_STAGE,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     HANDOFF_ENDED,
     HANDOFF_MERGED,
@@ -53,6 +56,7 @@ __all__: list[str] = [
     "HandoffReading",
     "handed_off_hold_detail",
     "handed_off_pull_request",
+    "handed_off_rework_pull_request",
     "observe_handoff",
 ]
 
@@ -126,6 +130,36 @@ def handed_off_pull_request(
         ):
             return number
     return None
+
+
+def handed_off_rework_pull_request(
+    *,
+    records: tuple[Mapping[str, object], ...] | None,
+    work_item_id: str,
+    run_id: str,
+) -> int | None:
+    """The pull request a REWORK dispatch of this claim handed off, or `None`.
+
+    A handed-off rework is told from a parked one by the journal alone: the rework
+    admission row marks where the rework began, and only a handoff row of a dispatch
+    opened AFTER the newest such row is the rework's own. The earlier dispatch's
+    handoff (the original run, whose merge was accepted and then failed acceptance)
+    sits before that row and says nothing about the rework, and a rework that has
+    been admitted but not opened, or that opened and died before publishing, has no
+    handoff row after it. An item whose journal holds no rework admission is not a
+    rework that started at all. A journal that could not be read answers `None`.
+    """
+    if records is None:
+        return None
+    own = [record for record in records if record.get(_WORK_ITEM_KEY) == work_item_id]
+    admissions = [
+        index for index, record in enumerate(own) if record.get(_STAGE_KEY) == REWORK_ADMIT_STAGE
+    ]
+    if not admissions:
+        return None
+    return handed_off_pull_request(
+        records=tuple(own[admissions[-1] + 1 :]), work_item_id=work_item_id, run_id=run_id
+    )
 
 
 def observe_handoff(

@@ -616,8 +616,11 @@ def _hermetic_factory_credential_slots(monkeypatch: pytest.MonkeyPatch) -> None:
     every one of them at teardown, so a test asserting the rotation-following
     selection sets the slot it needs back explicitly.
     """
-    for name in [name for name in os.environ if name.startswith(_FACTORY_CREDENTIAL_SLOT_PREFIX)]:
+    _ = [
         monkeypatch.delenv(name, raising=False)
+        for name in list(os.environ)
+        if name.startswith(_FACTORY_CREDENTIAL_SLOT_PREFIX)
+    ]
     # The unnumbered token too: the availability confirmation turn projects whatever
     # `select_factory_credential` names into the factory's environment, so an
     # AMBIENT one (this suite runs under the credential wrapper in the post-merge

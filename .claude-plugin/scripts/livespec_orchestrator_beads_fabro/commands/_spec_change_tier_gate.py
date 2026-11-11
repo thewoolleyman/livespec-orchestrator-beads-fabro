@@ -63,7 +63,7 @@ from livespec_runtime import spec_stated
 from returns.pipeline import is_successful
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner

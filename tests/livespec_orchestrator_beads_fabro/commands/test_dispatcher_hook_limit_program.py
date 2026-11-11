@@ -43,6 +43,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
     hook_over_limit_from_text,
 )
 
+from tests.prepare_step_support import readable_block
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _GRAPH = (
     _REPO_ROOT
@@ -353,7 +355,7 @@ def test_the_limit_is_read_off_the_graph_and_withheld_when_it_cannot_be(
 
 def test_the_prepare_step_lands_the_program_and_withholds_unknown_figures() -> None:
     """The program is always materialized; the figures only when they are known."""
-    known = hook_limit_prepare_steps_block(limit_seconds=3600)
+    known = readable_block(block=hook_limit_prepare_steps_block(limit_seconds=3600))
 
     assert HOOK_LIMIT_PROGRAM_FILENAME in known
     assert HOOK_LIMIT_LIMITS_FILENAME in known
@@ -365,7 +367,7 @@ def test_the_prepare_step_lands_the_program_and_withholds_unknown_figures() -> N
     assert HOOK_OVER_LIMIT_SENTINEL in known
     assert "__SENTINEL__" not in known
 
-    withheld = hook_limit_prepare_steps_block(limit_seconds=None)
+    withheld = readable_block(block=hook_limit_prepare_steps_block(limit_seconds=None))
 
     assert HOOK_LIMIT_PROGRAM_FILENAME in withheld
     assert HOOK_LIMIT_LIMITS_FILENAME not in withheld

@@ -160,6 +160,7 @@ def _reconcile(
             invoker=None if identity.invoker_source == FALLBACK_SOURCE else identity.invoker,
             force=True,
             regrade=False,
+            handed_off_rework=request.item.rework_pending,
             as_json=False,
         )
     )

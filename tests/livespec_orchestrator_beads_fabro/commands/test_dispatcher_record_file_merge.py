@@ -29,7 +29,10 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
+from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
+    PAYLOAD_ENV_VAR,
+    pack_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_record_file_merge import (
     RECORD_FILE_MERGE_PROGRAM_FILENAME,
     record_file_merge_program_path_expansion,
@@ -352,7 +355,7 @@ def test_the_prepare_step_lands_the_program_where_the_stage_resolves_it() -> Non
 
     assert expansion.endswith(f"/{RECORD_FILE_MERGE_PROGRAM_FILENAME}")
     assert RECORD_FILE_MERGE_PROGRAM_FILENAME in step.script
-    assert step.env == {PAYLOAD_ENV_VAR: record_file_merge_program_source()}
+    assert step.env == {PAYLOAD_ENV_VAR: pack_payload(text=record_file_merge_program_source())}
     assert record_file_merge_program_source() not in step.script
 
 

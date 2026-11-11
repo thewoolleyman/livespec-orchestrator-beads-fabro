@@ -94,7 +94,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_over_limit impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -480,10 +481,10 @@ def hook_limit_prepare_steps_block(
     step = PrepareStep(
         script=(
             f'set -eu\nmkdir -p "{root}"\n'
-            + payload_write_command(path_word=f'"{root}/{HOOK_LIMIT_PROGRAM_FILENAME}"')
+            + packed_payload_write_command(path_word=f'"{root}/{HOOK_LIMIT_PROGRAM_FILENAME}"')
             + figures
         ),
-        env={PAYLOAD_ENV_VAR: hook_limit_program_source()},
+        env={PAYLOAD_ENV_VAR: pack_payload(text=hook_limit_program_source())},
     )
     header = (
         "\n# --- Dispatcher-materialized repository-hook limit observer: the ONE\n"

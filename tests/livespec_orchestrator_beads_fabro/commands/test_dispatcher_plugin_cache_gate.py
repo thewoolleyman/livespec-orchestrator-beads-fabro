@@ -36,7 +36,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import PAYLOAD_ENV_VAR
 
-from tests.prepare_step_support import runnable_script, steps_in
+from tests.prepare_step_support import runnable_script, steps_in, unpacked
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate"
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -308,8 +308,9 @@ def test_overlay_appends_the_gate_as_a_prepare_step() -> None:
     [gate, *_] = steps_in(block=block)
     assert gate == module.plugin_cache_gate_prepare_step()
     assert "cache-manifest.json" not in gate.script
-    assert "cache-manifest.json" in gate.env[PAYLOAD_ENV_VAR]
-    assert "required_paths" in gate.env[PAYLOAD_ENV_VAR]
+    program = unpacked(value=gate.env[PAYLOAD_ENV_VAR])
+    assert "cache-manifest.json" in program
+    assert "required_paths" in program
 
 
 def test_the_prepare_pass_materializes_the_gate_program_for_later_stages(

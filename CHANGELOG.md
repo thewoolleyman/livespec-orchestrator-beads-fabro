@@ -1,5 +1,44 @@
 # Changelog
 
+## [0.315.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.315.0...v0.315.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* pack every plain-text dispatch prepare payload gzip+base64 so the collected workflow.toml stays under Fabro's per-file cap (bd-ib-p5e32s) ([77d27cf](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/77d27cffc42587502ae324e642fb5b1a258b3932))
+
+## [0.315.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.314.0...v0.315.0) (2026-11-10)
+
+
+### Features
+
+* collect an ended closed item's runs whichever repository dispatched them ([d5fe0f2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d5fe0f2de522f38bfd08d8cb499dc04629295725))
+* **dev-tooling:** balance coverage shards by per-file test duration (bd-ib-eq5ics) ([de8476c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/de8476cfc43773385356fc6f066a45ae954d6802))
+* **dev-tooling:** commit a measured per-file duration table that balances the 4 coverage shards (bd-ib-eq5ics) ([0357b72](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0357b729c58f89691922f52180bd72eebce3732a))
+* **dev-tooling:** regenerate the coverage shard duration table from one pytest run (bd-ib-eq5ics) ([0d0cede](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0d0cede493c380e5649edc0ce89c5b57e7697249))
+* run a sandbox's cross-repository tools from pinned shallow run-from clones ([cfa81a6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/cfa81a6b5802ada48e8f77d0e50552b4b8891ccc))
+
+
+### Bug Fixes
+
+* **fleet-launch:** define item_status and installed_build before the launcher's exit path ([9eb16b1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9eb16b1fc00fb1414c5bcd497f73253a87386a64))
+* **fleet-launch:** state the slot-wait give-up phrase once in dispatch-dual.sh ([58a5c1e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/58a5c1ebcf92b0f911e7c4202fa23e81ea770501))
+* golden-master seed References line resolves to a skeleton H2 ([468015d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/468015d1a9c28da4d4dd6c742525d5fd7c2e1aef))
+
+## [0.314.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.313.0...v0.314.0) (2026-11-10)
+
+
+### Features
+
+* bound the rider set a rendered goal and the judgement subject carry ([0396272](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0396272beb32cb984206cae512bd30fb4797b38d))
+* install the pinned fabro asset for the runner's architecture ([57bfd4a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/57bfd4a2f8ffb7f1fc56dbbd02cd366df82856a3))
+
+
+### Bug Fixes
+
+* settle restores a merge the engine checkpoint consumed (bd-ib-2deww4) ([db2c17c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db2c17c8f4dd8f79d345fa6d48e10c88fb8b564e))
+* survey and complete a rework re-dispatch whose merge wait was handed off ([8fba75d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8fba75d7e5037e274e6ca1a0fc24e8525135d8ad))
+
 ## [0.313.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.312.3...v0.313.0) (2026-11-10)
 
 

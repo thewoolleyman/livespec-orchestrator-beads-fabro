@@ -54,7 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_varian
     criteria_wall_variant,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
-    item_comment_bodies,
+    judgement_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     held_judgement,
@@ -201,7 +201,7 @@ def _exempt(*, repo: Path, item: WorkItem, workflow_name: str | None) -> bool:
 
 
 def _is_held(*, item: WorkItem, repo: Path, config: StoreConfig) -> bool:
-    bodies = item_comment_bodies(path=config, work_item_id=item.id)
+    bodies = judgement_comment_bodies(path=config, work_item_id=item.id, repo=repo)
     if bodies is None:
         return False
     return held_judgement(item=item, repo=repo, comments=bodies) is not None

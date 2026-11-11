@@ -391,7 +391,12 @@ def test_the_run_lane_and_the_container_lane_both_act_in_one_pass(tmp_path: Path
         "list_comments:bd-ib-orphan",
     ]
     assert transport.calls[-1].endswith(f"/runs/{_ORPHAN_RUN}/cancel")
-    assert [record["stage"] for record in journal.written] == ["orphan-run-reconciled"]
+    # The run of the still-active item ended without closing it, so collection
+    # REFUSES it (journaled, left in place) before the orphan run is reconciled.
+    assert [record["stage"] for record in journal.written] == [
+        "ended-run-collection-refused",
+        "orphan-run-reconciled",
+    ]
     assert _removed(runner=runner) == [f"fabro-run-{_FAILED_RUN}"]
     # Both lanes journaled, through the one journal the pass was handed.
     assert [record["stage"] for record in journal.swept] == [

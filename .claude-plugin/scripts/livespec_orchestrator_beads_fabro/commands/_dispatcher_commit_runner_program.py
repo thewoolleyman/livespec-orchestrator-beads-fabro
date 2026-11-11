@@ -48,7 +48,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_node_timeout_cut imp
 from livespec_orchestrator_beads_fabro.commands._dispatcher_prepare_payload import (
     PAYLOAD_ENV_VAR,
     PrepareStep,
-    payload_write_command,
+    pack_payload,
+    packed_payload_write_command,
     render_prepare_step,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins import (
@@ -1183,8 +1184,9 @@ def commit_runner_prepare_steps_block() -> str:
     root = sandbox_plugins_root_expansion()
     path = commit_runner_program_path_expansion()
     step = PrepareStep(
-        script=f'set -eu\nmkdir -p "{root}"\n' + payload_write_command(path_word=f'"{path}"'),
-        env={PAYLOAD_ENV_VAR: commit_runner_program_source()},
+        script=f'set -eu\nmkdir -p "{root}"\n'
+        + packed_payload_write_command(path_word=f'"{path}"'),
+        env={PAYLOAD_ENV_VAR: pack_payload(text=commit_runner_program_source())},
     )
     return (
         "\n# --- Dispatcher-materialized detached commit runner (bd-ib-atyefi) ---\n"

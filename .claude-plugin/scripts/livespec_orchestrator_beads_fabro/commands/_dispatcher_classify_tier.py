@@ -16,7 +16,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common impor
     EXIT_FAILURE,
     EXIT_PRECONDITION_ERROR,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items

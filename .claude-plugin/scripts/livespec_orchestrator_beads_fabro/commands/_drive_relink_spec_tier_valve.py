@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal, cast
 from livespec_runtime.spec_stated import SpecStatedVerdict
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     item_comment_bodies,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
