@@ -334,6 +334,21 @@ def test_scenario305_the_route_sends_only_a_janitor_brief_to_refresh_repair(
     assert '"preferred_next_label":"refresh_repair"' in _route_label(run=run, plugins=plugins)
 
 
+def test_scenario305_second_verdictless_janitor_timeout_records_a_needs_human_cause(
+    *, tmp_path: Path
+) -> None:
+    run, _ = _world(root=tmp_path)
+    plugins = _plugins(root=tmp_path)
+
+    assert '"preferred_next_label":"rejanitor"' in _route_label(run=run, plugins=plugins)
+    assert '"preferred_next_label":"needs_human"' in _route_label(run=run, plugins=plugins)
+
+    cause = (run / ".git" / "livespec-stage-cause").read_text(encoding="utf-8")
+    assert cause.startswith("stage: janitor\n")
+    assert "cause: LIVESPEC_JANITOR_NO_VERDICT_EXHAUSTED:" in cause
+    assert "both janitor visits were ended by the node timeout" in cause
+
+
 def test_scenario305_a_janitor_visit_drops_the_previous_janitor_brief_only(
     *, tmp_path: Path
 ) -> None:
