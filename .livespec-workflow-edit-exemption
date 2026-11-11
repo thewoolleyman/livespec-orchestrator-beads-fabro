@@ -1,9 +1,12 @@
 # Workflow-edit exemption — one exemption binds to one reviewed change.
 #
-# The change: three comment lines at the head of .github/workflows/ci.yml that
-# described a non-existent ~/.cache/uv actions/cache step are reworded to name
-# only the uv cache paths the workflow really uses (the container image and the
-# uid-1000 warm uv seed). Comment-only: no job, step, trigger, permission,
-# runner or required check changes, so it runs exactly the same work.
-work_item=bd-ib-hg6mjm
-reason=Comment-only rewrite of ci.yml lines 35-37 (stale uv actions/cache reference). Logically additive under coordinator-duties §12 (runs the same, not slower); modified-line diff forces the approval:workflow-edit label, applied on legacy-coordinator-agent's authorization 2026-11-10 (session ae5fa182), plan ci-cache-optimization (livespec-dev-tooling-7zozck).
+# The change: two purely additive pieces in .github/workflows/ci.yml for the
+# Scenario 279 size bound. One line runs check-materialized-workflow-toml-size in
+# check-metadata-batch, and one new job, check-fleet-materialized-workflow-toml-size,
+# shallow-clones the public fleet repositories anonymously (no token) and runs the
+# fleet-wide render. No existing job, step, trigger, permission, runner or
+# required check changes. Measured on vmi3006760: 7.5 s and 29 s.
+work_item=bd-ib-pwkhqz
+change=additive
+ci_runtime=no-significant-increase
+reason=Additive CI wiring of the materialized workflow package size gate, self-scope plus fleet-wide, under the maintainer's delegated additive tier, authorized by legacy-coordinator-agent (session 4e17d8e9) 2026-11-11 for plan dispatch-payload-packaging (bd-ib-x5ypbf).

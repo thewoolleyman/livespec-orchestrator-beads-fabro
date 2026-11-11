@@ -1204,6 +1204,7 @@ jobs:
           just check-acp-preflight-config || failed="$failed check-acp-preflight-config"
           just check-closed-item-integrity || failed="$failed check-closed-item-integrity"
           just check-fabro-port-seam || failed="$failed check-fabro-port-seam"
+          just check-materialized-workflow-toml-size || failed="$failed check-materialized-workflow-toml-size"
           just check-needs-attention-surface-ownership || failed="$failed check-needs-attention-surface-ownership"
           just check-no-fleet-pat-dispatch-surface || failed="$failed check-no-fleet-pat-dispatch-surface"
           just check-pi-plugin-structure || failed="$failed check-pi-plugin-structure"
@@ -1216,6 +1217,62 @@ jobs:
             echo "Failed targets:$failed"
             exit 1
           fi
+
+  # bd-ib-pwkhqz (plan dispatch-payload-packaging, bd-ib-x5ypbf): the fleet-wide
+  # Scenario 279 size bound. check-fleet-materialized-workflow-toml-size renders
+  # EVERY member of livespec's fleet manifest from that member's origin/master, so
+  # it needs a clone of each, which the delegated cluster gate's pod lacks; that
+  # is why it is not in `just check`. Every member is a public repository, so the
+  # clones are anonymous and this job carries no token. A member that cannot be
+  # cloned fails the clone step, and one the check cannot find fails the check.
+  check-fleet-materialized-workflow-toml-size:
+    name: check-fleet-materialized-workflow-toml-size
+    runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    container:
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.189.1
+    env:
+      MISE_DATA_DIR: /root/.local/share/mise
+      MISE_NOT_FOUND_AUTO_INSTALL: "0"
+      LIVESPEC_SIBLING_CLONES_ROOT: /tmp/fleet-clones
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Prepare workspace (git trust, mise trust + install, uv sync)
+        run: |
+          git config --global --add safe.directory '*'
+          mise trust
+          mise install
+          uv sync --all-groups
+
+      # This checkout stands in for this repository, so only the others are
+      # cloned. The member list comes from the manifest through the same parser
+      # the Dispatcher uses, never from a list written here.
+      - name: Clone every other fleet member anonymously
+        run: |
+          root="$LIVESPEC_SIBLING_CLONES_ROOT"
+          mkdir -p "$root"
+          git clone --quiet --depth 1 "https://github.com/${GITHUB_REPOSITORY_OWNER}/livespec.git" "$root/livespec"
+          uv run python - "$root/livespec/.livespec-fleet-manifest.jsonc" > "$RUNNER_TEMP/fleet-members.txt" <<'PY'
+          import sys
+          from pathlib import Path
+          sys.path[:0] = [".claude-plugin/scripts", ".claude-plugin/scripts/_vendor"]
+          from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import parse_fleet_members
+          members = parse_fleet_members(manifest_text=Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if members is None:
+              sys.exit(f"fleet manifest {sys.argv[1]} does not parse into an owner and members")
+          for repo in members.repos:
+              print(members.owner, repo)
+          PY
+          while read -r owner repo; do
+            if [ "$repo" = "${GITHUB_REPOSITORY#*/}" ] || [ -d "$root/$repo" ]; then
+              continue
+            fi
+            git clone --quiet --depth 1 "https://github.com/$owner/$repo.git" "$root/$repo"
+          done < "$RUNNER_TEMP/fleet-members.txt"
+
+      - name: just check-fleet-materialized-workflow-toml-size
+        run: just check-fleet-materialized-workflow-toml-size
 
   acceptance:
     name: acceptance
