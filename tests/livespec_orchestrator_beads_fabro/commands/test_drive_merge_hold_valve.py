@@ -447,6 +447,63 @@ def test_a_failed_arm_is_reported_after_the_hold_was_removed(tmp_path: Path) -> 
     assert "boom" in str(result["summary"])
 
 
+def test_release_merges_directly_when_clean_status_refuses_auto_merge(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="rebase")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json()),
+            *_guard_answers(),
+            _Run(
+                returncode=1,
+                stderr="GraphQL: Pull request is in clean status (enablePullRequestAutoMerge)",
+            ),
+            _Run(returncode=0),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert not _held()
+    assert runner.calls[-2:] == [
+        ("gh", "pr", "merge", "7", "--rebase", "--auto", "--delete-branch"),
+        ("gh", "pr", "merge", "7", "--rebase", "--delete-branch"),
+    ]
+    summary = str(result["summary"])
+    assert "merged directly" in summary
+    assert "#7" in summary
+    assert "--rebase" in summary
+
+
+def test_release_reports_a_failed_direct_merge_after_clean_status_refusal(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _hold(repo)
+    _journal(repo, records=[_contract_record(work_item_id=_ITEM_ID, merge_mode="rebase")])
+    runner = _Runner(
+        results=[
+            _Run(returncode=0, stdout=_pr_json()),
+            *_guard_answers(),
+            _Run(
+                returncode=1,
+                stderr="GraphQL: Pull request is in clean status (enablePullRequestAutoMerge)",
+            ),
+            _Run(returncode=1, stderr="direct merge blocked"),
+        ]
+    )
+
+    result = run_human_valve_action(
+        repo=repo, action_id=f"set-merge-hold:{_ITEM_ID}:off", runner=runner
+    )
+
+    assert not _held()
+    assert result["domain_error"] == "direct-merge-failed"
+    assert "direct merge blocked" in str(result["summary"])
+    assert runner.calls[-1] == ("gh", "pr", "merge", "7", "--rebase", "--delete-branch")
+
+
 def test_release_refuses_while_a_run_of_the_item_is_live(tmp_path: Path) -> None:
     """The v145 arm guard's first measurement: a live run means no arming.
 
