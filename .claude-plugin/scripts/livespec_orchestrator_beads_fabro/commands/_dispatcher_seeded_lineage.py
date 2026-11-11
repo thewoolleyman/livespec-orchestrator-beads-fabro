@@ -26,6 +26,7 @@ __all__: list[str] = [
     "LineageCheck",
     "check_prepare",
     "check_publish",
+    "check_refresh",
     "check_settle",
     "main",
 ]
@@ -103,6 +104,36 @@ def check_publish(
     )
 
 
+def check_refresh(
+    *,
+    repo: Path,
+    expected: str,
+    before_refresh: str,
+    refreshed: str,
+    runner: CommandRunner | None = None,
+) -> LineageCheck:
+    """Advance only after a command refresh began from accepted lineage."""
+    if not _is_ancestor(
+        repo=repo,
+        ancestor=expected,
+        descendant=before_refresh,
+        runner=runner,
+    ):
+        return LineageCheck(
+            ok=False,
+            cause=(
+                "LIVESPEC_SEEDED_LINEAGE_REFRESH_REFUSED: expected commit "
+                f"{expected} is not an ancestor of pre-refresh head {before_refresh}"
+            ),
+            next_expected=expected,
+        )
+    return LineageCheck(
+        ok=True,
+        cause="",
+        next_expected=expected if before_refresh == refreshed else refreshed,
+    )
+
+
 def main(*, argv: list[str] | None = None) -> int:
     """Run one command-node boundary check when this run was seeded.
 
@@ -110,7 +141,7 @@ def main(*, argv: list[str] | None = None) -> int:
     checkpoints but never enters the work tree an agent can accidentally commit.
     """
     parser = argparse.ArgumentParser()
-    _boundary = parser.add_argument("boundary", choices=("prepare", "settle", "publish"))
+    _boundary = parser.add_argument("boundary", choices=("prepare", "refresh", "settle", "publish"))
     parsed = parser.parse_args(argv)
     seed = os.environ.get(_SEED_ENV, "")
     if not seed:
@@ -118,24 +149,46 @@ def main(*, argv: list[str] | None = None) -> int:
     repo = Path.cwd()
     state = _git_dir(repo=repo) / _STATE_NAME
     head = _git(repo=repo, args=("rev-parse", "HEAD"), runner=None)
-    if parsed.boundary == "prepare":
-        result = check_prepare(repo=repo, seed=seed, head=head)
-        if result.ok:
-            bytes_written = state.write_text(f"{seed}\n", encoding="utf-8")
-            _ = bytes_written
-    else:
-        expected = state.read_text(encoding="utf-8").strip()
-        result = (
-            check_settle(repo=repo, expected=expected, settled=head)
-            if parsed.boundary == "settle"
-            else check_publish(repo=repo, expected=expected, tip=head)
-        )
-        if result.ok and result.next_expected != expected:
-            bytes_written = state.write_text(f"{result.next_expected}\n", encoding="utf-8")
-            _ = bytes_written
+    initial = parsed.boundary == "prepare"
+    expected = seed if initial else state.read_text(encoding="utf-8").strip()
+    result = _check_boundary(
+        repo=repo,
+        boundary=parsed.boundary,
+        expected=expected,
+        head=head,
+    )
+    if result.ok and (initial or result.next_expected != expected):
+        bytes_written = state.write_text(f"{result.next_expected}\n", encoding="utf-8")
+        _ = bytes_written
     if result.cause:
         _ = sys.stderr.write(result.cause + "\n")
     return 0 if result.ok else 1
+
+
+def _check_boundary(*, repo: Path, boundary: str, expected: str, head: str) -> LineageCheck:
+    """Check the line of descent appropriate to one command boundary."""
+    if boundary == "prepare":
+        return check_prepare(repo=repo, seed=expected, head=head)
+    if boundary == "settle":
+        return check_settle(repo=repo, expected=expected, settled=head)
+    if boundary == "publish":
+        return check_publish(repo=repo, expected=expected, tip=head)
+    before_refresh = os.environ.get("LIVESPEC_SEEDED_LINEAGE_REFRESH_BEFORE", "")
+    if not before_refresh:
+        return LineageCheck(
+            ok=False,
+            cause=(
+                "LIVESPEC_SEEDED_LINEAGE_REFRESH_REFUSED: refresh did not name "
+                "its pre-refresh head"
+            ),
+            next_expected=expected,
+        )
+    return check_refresh(
+        repo=repo,
+        expected=expected,
+        before_refresh=before_refresh,
+        refreshed=head,
+    )
 
 
 def _is_ancestor(

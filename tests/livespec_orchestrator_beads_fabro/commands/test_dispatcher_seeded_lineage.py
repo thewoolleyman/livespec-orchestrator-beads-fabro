@@ -121,3 +121,27 @@ def test_a_later_settle_accepts_the_carried_commit_and_publish_refuses_a_drop(
     assert publish.ok is False
     assert first.next_expected in publish.cause
     assert other in publish.cause
+
+
+def test_refresh_requires_an_accepted_pre_refresh_head(tmp_path: Path) -> None:
+    """A command refresh cannot advance an agent-dropped lineage."""
+    module = _module()
+    repo, seed, other = _fixture(tmp_path=tmp_path)
+    _ = _git(repo, "checkout", "seed")
+    refreshed = _commit(
+        repo=repo,
+        path=repo / "tracked.txt",
+        content="before\nadded\nrefreshed\n",
+        message="refreshed",
+    )
+
+    result = module.check_refresh(
+        repo=repo,
+        expected=seed,
+        before_refresh=other,
+        refreshed=refreshed,
+    )
+
+    assert result.ok is False
+    assert seed in result.cause
+    assert other in result.cause

@@ -164,6 +164,24 @@ def test_main_accepts_the_seeded_publish_head(
     assert module.main(argv=["publish"]) == 0
 
 
+def test_main_refresh_needs_its_pre_refresh_head(
+    *, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The command boundary refuses an unaccounted-for refresh."""
+    module = _module()
+    repo, seed, _ = _repo(tmp_path=tmp_path)
+    monkeypatch.chdir(repo)
+    monkeypatch.setenv("LIVESPEC_SEEDED_LINEAGE_SEED", seed)
+    _ = _git(repo=repo, args="checkout seed")
+
+    assert module.main(argv=["prepare"]) == 0
+    monkeypatch.setenv("LIVESPEC_SEEDED_LINEAGE_REFRESH_BEFORE", seed)
+    assert module.main(argv=["refresh"]) == 0
+    monkeypatch.delenv("LIVESPEC_SEEDED_LINEAGE_REFRESH_BEFORE")
+    assert module.main(argv=["refresh"]) == 1
+    assert "pre-refresh head" in capsys.readouterr().err
+
+
 def test_a_seed_added_file_must_be_present_on_carried_content(tmp_path: Path) -> None:
     """A whole carried patch includes files added by the preservation seed."""
     module = _module()
@@ -258,3 +276,56 @@ def test_only_a_seeded_recovery_projects_the_seed_environment() -> None:
     assert module.seeded_lineage_env_lines(checkout=seeded) == (
         'LIVESPEC_SEEDED_LINEAGE_SEED = "' + "a" * 40 + '"\n'
     )
+
+
+def test_a_refresh_advances_the_reference_only_after_a_seeded_tip_passes(
+    tmp_path: Path,
+) -> None:
+    """A rebase may replace seed ancestry only after its pre-refresh tip passed."""
+    module = _module()
+    repo, seed, other = _repo(tmp_path=tmp_path)
+    _ = _git(repo=repo, args="checkout seed")
+    before_refresh = _commit(
+        repo=repo,
+        content="before\nadded\nwork\n",
+        message="refresh-work",
+    )
+    _ = _git(repo=repo, args="checkout other")
+    refreshed = _commit(
+        repo=repo,
+        content="before\nadded\nother\nwork\n",
+        message="rebuilt-work",
+    )
+    successor = _commit(
+        repo=repo,
+        content="before\nadded\nother\nwork\nnext\n",
+        message="refresh-successor",
+    )
+
+    assert hasattr(module, "check_refresh")
+    refreshed_result = module.check_refresh(
+        repo=repo,
+        expected=seed,
+        before_refresh=before_refresh,
+        refreshed=refreshed,
+    )
+    later_settle = module.check_settle(
+        repo=repo,
+        expected=refreshed_result.next_expected,
+        settled=successor,
+    )
+
+    assert refreshed_result.ok is True
+    assert refreshed_result.next_expected == refreshed
+    assert later_settle.ok is True
+
+
+def test_publish_checks_seeded_lineage_before_its_first_rebase() -> None:
+    """A bad pre-publish tip cannot reach the command's rebase or push path."""
+    workflow = Path(".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro")
+    rendered = workflow.read_text(encoding="utf-8")
+    publish_node = rendered[rendered.index("publish_draft [") :]
+    publish_check = 'main(argv=[\\"publish\\"])'
+
+    assert publish_check in publish_node
+    assert publish_node.index(publish_check) < publish_node.index("livespec_refresh_onto_default")
