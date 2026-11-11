@@ -41,6 +41,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 __all__: list[str] = [
     "BOUND_ENDED_CANDIDATE_FIELD",
     "bound_ended_lines",
+    "input_bound_detail_lines",
     "input_usage_lines",
 ]
 
@@ -48,6 +49,9 @@ _DECIDING_CANDIDATE_FIELD = "deciding-candidate"
 _DECIDING_INPUT_TOKENS_FIELD = "deciding-candidate-input-tokens"
 _DECIDING_INPUT_USAGE_FIELD = "deciding-candidate-input-usage"
 BOUND_ENDED_CANDIDATE_FIELD = "bound-ended-candidate"
+_SUBJECT_SIZE_FIELD = "subject-size-characters"
+_CARRIED_RIDER_COUNT_FIELD = "carried-rider-count"
+_INPUT_LIMIT_CAUSE = "input-limit-reached"
 _FIELD_SEPARATOR = ": "
 
 
@@ -72,4 +76,16 @@ def bound_ended_lines(*, candidates: Sequence[str]) -> list[str]:
     """
     return [
         f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}" for candidate in candidates
+    ]
+
+
+def input_bound_detail_lines(
+    *, cause: str, subject_characters: int | None, carried_rider_count: int | None
+) -> list[str]:
+    """Render the subject measurement that explains an input-bound ending."""
+    if cause != _INPUT_LIMIT_CAUSE or subject_characters is None or carried_rider_count is None:
+        return []
+    return [
+        f"{_SUBJECT_SIZE_FIELD}{_FIELD_SEPARATOR}{subject_characters}",
+        f"{_CARRIED_RIDER_COUNT_FIELD}{_FIELD_SEPARATOR}{carried_rider_count}",
     ]
