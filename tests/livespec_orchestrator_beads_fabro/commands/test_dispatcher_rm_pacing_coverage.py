@@ -85,6 +85,34 @@ def test_worktrees_share_their_factory_deletion_interval(tmp_path: Path) -> None
     assert journal[-1]["next_deletion_may_start_at"] == 69.0
 
 
+def test_idle_factory_deletions_still_observe_the_host_wide_interval(tmp_path: Path) -> None:
+    (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"dispatcher":{"factories":'
+        '{"petri":{"rm_min_interval_seconds":60}}}}}',
+        encoding="utf-8",
+    )
+    journal: list[dict[str, object]] = []
+    pacer = DeletionPacer(repo=tmp_path, now_epoch=lambda: 9.0)
+
+    assert pacer.permit(
+        factory="petri",
+        run_id="first",
+        caller="stale-item-reap",
+        has_running_run=False,
+        collection=False,
+        journal=journal,
+    )
+    assert not pacer.permit(
+        factory="petri",
+        run_id="second",
+        caller="wall-budget-cancel",
+        has_running_run=False,
+        collection=False,
+        journal=journal,
+    )
+    assert journal[-1]["next_deletion_may_start_at"] == 69.0
+
+
 def test_pacing_state_handles_primary_and_incomplete_git_metadata(tmp_path: Path) -> None:
     primary = tmp_path / "primary"
     primary.mkdir()
