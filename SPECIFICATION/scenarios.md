@@ -6960,6 +6960,22 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     When the agent waits on that commit run
     Then the wait blocks for no longer than its bound
     And it reports running or the commit run's terminal state
+
+  Scenario: A settled failed Green amend names its cause in the settle node's output
+    Given a review_fix-stage agent whose Green amend through the sandbox commit runner is refused by a commit hook that names the failed target check-types
+    And the agent ended its turn while that commit run was still running
+    When the review_fix_commit_settle node settles that commit run as failed
+    Then the node's recorded output names the commit run's identity and its recorded exit status
+    And it names the failed target check-types and states that the hook ran and did not pass
+    And it carries the final lines of that commit run's own recorded output
+    And those lines are read from the commit run's own records, not from the agent's reply
+
+  Scenario: A re-entered review_fix turn is told why its Green amend failed
+    Given a review_fix_commit_settle node that settled a Green amend as failed, naming the failed target check-types
+    And the last authored commit is still an open Red
+    When review_fix_open_red_route re-enters review_fix
+    Then the re-entered turn's open-Red brief names the failed target check-types
+    And it carries the final lines of that commit run's own recorded output
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
