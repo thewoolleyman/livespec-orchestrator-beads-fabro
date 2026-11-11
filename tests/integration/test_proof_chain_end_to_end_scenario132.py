@@ -113,10 +113,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import 
     VERDICT_CAPTURED,
     VERDICT_VERIFIED,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
-    SETUP_FAILURE_NODE,
-    is_setup_node,
-)
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentAcceptanceScope
 from livespec_orchestrator_beads_fabro.store import (
@@ -214,12 +210,9 @@ _GRAPH_KEY = re.compile(r'(?m)^graph = "(?P<path>[^"]+)"')
 _ASSERTION_HEADING = re.compile(r"(?m)^## Assertion \d+ — (?P<text>.+)$")
 _SIGNIFICANT_TERM = re.compile(r"[a-z0-9_]{4,}")
 # A generous bound on the reserved workflow's longest honest route. The journey
-# below walks eighteen stage nodes AFTER the sandbox setup chain -- the committed
-# `run_prepare_<N>` nodes plus every step the Dispatcher materializes into the
-# dispatch's graph (work-item bd-ib-dpsiwz), which is several dozen -- so the bound
-# is sized for that chain too. Anything near it is a graph that does not terminate,
-# which the drive reports rather than hanging on.
-_STEP_BOUND = 192
+# below walks eighteen nodes; anything near this many is a graph that does not
+# terminate, which the drive reports rather than hanging on.
+_STEP_BOUND = 64
 
 _PULL_REQUEST_NUMBER = 2538
 _PULL_REQUEST_URL = "https://example.test/thewoolleyman/livespec-orchestrator-beads-fabro/pull/"
@@ -450,18 +443,6 @@ class _Forge:
             )
             return CommandResult(exit_code=0, stdout=payload, stderr="")
         return CommandResult(exit_code=0, stdout=_MERGED_DIFF, stderr="")
-
-
-def _is_setup(*, name: str) -> bool:
-    """Whether a node belongs to the sandbox setup chain or the terminal it fails to."""
-    return is_setup_node(name=name) or name == SETUP_FAILURE_NODE
-
-
-def _outside_setup(*, edges: tuple[_Edge, ...]) -> tuple[_Edge, ...]:
-    """The edges touching no setup node."""
-    return tuple(
-        edge for edge in edges if not (_is_setup(name=edge.source) or _is_setup(name=edge.target))
-    )
 
 
 def _edges(*, text: str) -> tuple[_Edge, ...]:
@@ -906,28 +887,14 @@ def _assert_drove_the_committed_graph(*, run: _Run) -> None:
     than against the name `exit`, because "the run finished GREEN" is a claim
     about the terminal's kind and a renamed terminal must not pass.
     """
-    # The dispatch's graph is the committed one PLUS the setup nodes the Dispatcher
-    # materializes into it (work-item bd-ib-dpsiwz), so the two are compared on
-    # everything that is not setup; the setup chain is graded on its own below.
-    assert _outside_setup(edges=run.edges) == _outside_setup(
-        edges=_edges(text=_COMMITTED_GRAPH_TEXT)
-    )
+    assert run.edges == _edges(text=_COMMITTED_GRAPH_TEXT)
     graph = parse_workflow_graph(text=_COMMITTED_GRAPH_TEXT)
-    assert tuple((edge.source, edge.target) for edge in _outside_setup(edges=run.edges)) == tuple(
-        (source, target)
-        for source, target in graph.edges
-        if not (_is_setup(name=source) or _is_setup(name=target))
-    )
-    setup = [name for name in run.visited if _is_setup(name=name)]
-    committed_setup = {name for name in re.findall(r"run_prepare_\d+", _COMMITTED_GRAPH_TEXT)}
-    assert committed_setup
-    assert len(setup) >= len(committed_setup)
-    assert setup == [f"run_prepare_{index}" for index in range(1, len(setup) + 1)]
+    assert tuple((edge.source, edge.target) for edge in run.edges) == graph.edges
     assert run.inputs[_CAP_INPUT].isdigit()
     # One reviewer-requested fix round, so `publish_draft` and `proof_capture`
     # are each entered twice — that second entry is what makes the idempotence
     # and append-only claims load-bearing.
-    assert [name for name in run.visited if not _is_setup(name=name)] == [
+    assert run.visited == [
         _START,
         "dod_gate",
         # The post-turn mutation guard (bd-ib-al54tl) sits on `dod_gate`'s

@@ -53,7 +53,6 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
     ContractPrepareParameters,
     contract_prepare_parameters,
@@ -62,7 +61,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import workflo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import (
     resolve_repo_integration_contract,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import setup_node_names
 
 from tests.integration.governed_repo_fixtures import (
     ADOPTER,
@@ -168,19 +166,6 @@ def _prepare_scripts(*, run_config: Path) -> tuple[str, ...]:
     """
     text = run_config.read_text(encoding="utf-8")
     return tuple(match.group("script") for match in _SCRIPT_LINE.finditer(text))
-
-
-def _setup_node_scripts(*, graph: Path) -> tuple[str, ...]:
-    """Every setup-node script a committed workflow graph declares, in chain order.
-
-    The bundled payload's provisioning is graph nodes, not run-config prepare steps
-    (work-item bd-ib-dpsiwz), so its scripts are read from the graph through the
-    shared parser; an adopter's own run config still declares prepare steps, and
-    `_prepare_scripts` reads those.
-    """
-    parsed = parse_dot_graph(text=graph.read_text(encoding="utf-8"))
-    assert not isinstance(parsed, str), parsed
-    return tuple(str(parsed.nodes[name]["script"]) for name in setup_node_names(graph=parsed))
 
 
 def _constants_in_scripts(*, scripts: Sequence[str]) -> set[str]:
@@ -299,7 +284,7 @@ def test_scenario32_a_fleet_member_names_all_three_constants_through_the_same_se
         default_branch=PROBED_DEFAULT_BRANCH,
     )
     projected = _projected_argv(parameters=contract_prepare_parameters(resolved=member))
-    scripts = _setup_node_scripts(graph=PAYLOAD_RUN_CONFIG.with_name("workflow.fabro"))
+    scripts = _prepare_scripts(run_config=PAYLOAD_RUN_CONFIG)
 
     assert _constants_in_argv(argv=projected) == _FLEET_PREPARE_CONSTANTS
     # The matcher's own positive control, run on the retired command line: it is
