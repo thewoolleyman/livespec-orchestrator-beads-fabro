@@ -39,3 +39,18 @@ TimeoutStartSec=1800
 # A failed pass is not an incident: the next tick asks the same question again,
 # and a restart storm against an unreachable factory would be pure noise.
 Restart=no
+# A pass is background inventory work. Under CPU contention it must give way
+# to dispatches and interactive sessions, not compete with them as an equal.
+# The default weight is 100, so a pass gets about a fifth of a contended CPU's
+# share and runs at full speed on an idle host. Measured on vmi3006760 on
+# 2026-11-11: a pass used a median of 264 CPU-seconds, 0.45 of a core over the
+# day, while the host sat at about 80% CPU pressure from 19:40Z to 20:50Z.
+CPUWeight=20
+# A reclaim watermark, not a ceiling. Above 5G the kernel throttles the pass
+# and reclaims its memory before the host comes under memory pressure. Measured
+# memory peaks were 3.5 GB median and 4.7 GB max. There is deliberately NO
+# MemoryMax: a hard cap near that peak would OOM-kill the pass, and every later
+# pass would hit the same limit and be killed again. The real fix is to stop
+# re-parsing the dispatch journal in every pass (bd-ib-cwuxfi); this setting
+# only keeps the current cost from crowding out the rest of the host.
+MemoryHigh=5G
