@@ -166,8 +166,10 @@ def _node_script(*, node: str) -> str:
     # the token unbound would let the shell's own "not found" stand in for a gate
     # rejection and route the push failure to `fix`. With the gate passing, the
     # only remaining cause is the push itself, which is this case's subject.
-    return unescaped.replace("{{ inputs.default_branch }}", "master").replace(
-        "{{ inputs.sandbox_check_suite }}", "true"
+    return (
+        unescaped.replace("{{ inputs.default_branch }}", "master")
+        .replace("{{ inputs.sandbox_check_suite }}", "true")
+        .replace("{{ inputs.conformance_hook_install }}", "")
     )
 
 
