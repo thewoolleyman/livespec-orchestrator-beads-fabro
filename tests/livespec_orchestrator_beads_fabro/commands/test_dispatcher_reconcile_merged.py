@@ -26,11 +26,24 @@ from livespec_orchestrator_beads_fabro.commands import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_criteria import (
     CriterionCheck,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
+    PROOF_MODE_FACTORY_CAPTURED,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
+    DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
+    EffectiveCriteria,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
     IncidentAcceptance,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import janitor_checkout_path
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
+    ProofLeg,
+    proof_leg,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import pointer_in
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import proof_records
 from livespec_orchestrator_beads_fabro.commands.dispatcher import main
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentStanding
 from livespec_orchestrator_beads_fabro.store import (
@@ -73,6 +86,7 @@ class _PendingHostProof:
     pending_host_captured: tuple[str, ...]
     pending_human_attested: tuple[str, ...] = ()
     record: None = None
+    host_verified_record: None = None
     captured: None = None
     reason: str = "host evidence read"
     host: _HostProofState = field(default_factory=_HostProofState)
@@ -1088,6 +1102,8 @@ def test_regrade_pass_closes_the_item_and_clears_rework_pending(
         "reconcile-pr-view-branch",
         "regrade-merge-containment",
         "acceptance-ai-pass",
+        # A legacy-source item has no proof leg, so the pointer write journals its skip.
+        "proof-pointer-skipped",
         "ledger-regrade-accept",
         "outcome",
     ]
@@ -1792,3 +1808,134 @@ def _list_pr(
 def _journal_records(*, repo: Path) -> list[dict[str, object]]:
     text = (repo / "tmp" / "fabro-dispatch-journal.jsonl").read_text(encoding="utf-8")
     return [json.loads(line) for line in text.splitlines()]
+
+
+_SUPERSEDED_POINTER_DESCRIPTION = (
+    "## Definition of Done\n\n"
+    "- The regrade arm reconciles a stranded merge.\n\n"
+    "## Proof of Done\n\n"
+    "- Pull request: #4655\n"
+    "- Verified record: https://example.test/pull/4655#issuecomment-1\n"
+    "- Run: 01M3OLDRUN\n"
+    "- Timestamp: 2026-11-09T10:00:00Z\n"
+    "- Verdict: verified\n"
+)
+_REGRADED_RECORD_URL = "https://example.test/pull/2459#issuecomment-2"
+_REGRADED_RUN_ID = "01M3NEWRUN"
+
+
+@dataclass(frozen=True, kw_only=True)
+class _GradedPass:
+    """A passing acceptance pass carrying a REAL proof leg, so the pointer write reads it."""
+
+    proof: ProofLeg
+    verdict: str = "PASS"
+    absent_evidence: tuple[str, ...] = ()
+    diff_reason: str = "merged diff read"
+    telemetry_reason: str = "green merged dispatch with PR and merge sha"
+    criteria: tuple[CriterionCheck, ...] = ()
+
+    def journal_record(self, *, work_item_id: str, policy: str) -> dict[str, object]:
+        return {
+            "stage": "acceptance-ai-pass",
+            "work_item_id": work_item_id,
+            "verdict": self.verdict,
+            "acceptance_policy": policy,
+        }
+
+
+def _verified_proof_leg() -> ProofLeg:
+    assertion = "The regrade arm reconciles a stranded merge."
+    comment = {
+        "url": _REGRADED_RECORD_URL,
+        "body": (
+            f"Proof of Done — verified — run {_REGRADED_RUN_ID} — 2026-11-09T14:00:00Z\n\n"
+            f"## Assertion 1 — {assertion}\n\nReproduced: yes.\n"
+        ),
+    }
+    return proof_leg(
+        criteria=EffectiveCriteria(
+            text=assertion,
+            source=DESCRIPTION_DEFINITION_OF_DONE_SOURCE,
+            assertions=(assertion,),
+            proof_modes=(PROOF_MODE_FACTORY_CAPTURED,),
+        ),
+        records=proof_records(comments=[comment]),
+        run_ids=(_REGRADED_RUN_ID,),
+        reason="read",
+    )
+
+
+def test_regrade_rewrites_the_proof_pointer_to_the_pull_request_it_graded(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The pointer left on a superseded pull request would make `accept` read the wrong one."""
+    repo = _repo(tmp_path=tmp_path)
+    item = _item(description=_SUPERSEDED_POINTER_DESCRIPTION)
+    append_work_item(path=_config(), item=item)
+    _seed_rework_pending(item_id=item.id, failed_ai_passes=1)
+    runner = _Runner(
+        queue=[
+            *_plan_build_probe(),
+            _ok(stdout=_pr_json(number=2459, state="MERGED", sha="51d99744")),
+            _ok(),
+        ]
+    )
+    _patch_runner(monkeypatch=monkeypatch, runner=runner)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade, "run_acceptance_pass", lambda **_: _GradedPass(proof=_verified_proof_leg())
+    )
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    assert exit_code == 0
+    assert json.loads(capsys.readouterr().out)[0]["stage"] == "done"
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    pointer = pointer_in(description=stored.description)
+    assert pointer is not None
+    assert (pointer.pull_request, pointer.record_url, pointer.run_id) == (
+        2459,
+        _REGRADED_RECORD_URL,
+        _REGRADED_RUN_ID,
+    )
+    assert "#4655" not in stored.description
+
+
+def test_regrade_that_loses_the_claim_token_leaves_the_proof_pointer_on_the_pull_request_it_named(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refused re-grade wrote nothing, so the pointer must not move to the graded pull request."""
+    repo, item, token = _passing_regrade_after_the_cutover(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, pending=()
+    )
+    client = make_beads_client(config=_config())
+    client.update_issue(issue_id=item.id, description=_SUPERSEDED_POINTER_DESCRIPTION)
+    regrade = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_regrade"
+    )
+    monkeypatch.setattr(
+        regrade, "run_acceptance_pass", lambda **_: _GradedPass(proof=_verified_proof_leg())
+    )
+    close = client.close_issue_without_verdict
+
+    def _raced(*, issue_id: str, reason: str) -> None:
+        if issue_id == token:
+            close(issue_id=issue_id, reason="another writer won this token")
+        close(issue_id=issue_id, reason=reason)
+
+    monkeypatch.setattr(client, "close_issue_without_verdict", _raced)
+
+    exit_code = _regrade(repo=repo, item=item)
+
+    payload = json.loads(capsys.readouterr().out)[0]
+    assert exit_code == 1
+    assert (payload["status"], payload["stage"]) == ("failed", "regrade")
+    stored = materialize_work_items(records=read_work_items(path=_config()))[item.id]
+    assert stored.description == _SUPERSEDED_POINTER_DESCRIPTION

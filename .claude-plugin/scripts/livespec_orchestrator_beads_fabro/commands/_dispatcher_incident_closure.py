@@ -56,6 +56,7 @@ __all__: list[str] = [
     "incident_decision",
     "incident_hold_record",
     "incident_holds",
+    "incident_proof_pointer",
     "incident_refusal_detail",
     "incident_standing_for",
 ]
@@ -191,6 +192,35 @@ def incident_hold_record(
     }
 
 
+def incident_proof_pointer(
+    *,
+    repo: Path,
+    item: WorkItem,
+    outcome: DispatchOutcome,
+    proof: ProofLeg | None,
+    journal: JournalFile,
+    incident: IncidentAcceptance,
+) -> None:
+    """Write the proof pointer for the merge an acceptance pass graded, unless the incident refuses.
+
+    The pointer is not written for a merge the incident chain does not bind as
+    its current carrier (a resumed earlier repair PR), nor once the repayment
+    generation it graded is superseded: neither can stand in for final normal
+    proof. Both the dispatch-path decision and the `reconcile-merged --regrade`
+    arm write through here, so the pointer always names the pull request the
+    pass graded.
+    """
+    scope = incident.scope
+    refusal = (scope.refusal if scope is not None else None) or _refused_effect(
+        config=incident.config, standing=incident.standing, effect="proof"
+    )
+    if refusal is not None:
+        refused: dict[str, object] = {"stage": INCIDENT_POINTER_STAGE, "work_item_id": item.id}
+        journal.append(record=refused | {"reason": refusal})
+    else:
+        write_proof_pointer(repo=repo, item=item, outcome=outcome, proof=proof, journal=journal)
+
+
 def incident_decision(  # noqa: PLR0913 — kw-only; the pointer write's inputs, the incident and the policy.
     *,
     repo: Path,
@@ -203,22 +233,13 @@ def incident_decision(  # noqa: PLR0913 — kw-only; the pointer write's inputs,
 ) -> AcceptanceDecision:
     """Write the proof pointer, then decide acceptance with the close withheld from an incident.
 
-    The pointer is not written for a merge the incident chain does not bind as
-    its current carrier (a resumed earlier repair PR), nor once the repayment
-    generation it graded is superseded: neither can stand in for final normal
-    proof. The decision's close is withdrawn while the incident owes anything,
-    so neither the completed nor the no-change-needed close can discharge it
-    and the item parks instead.
+    The decision's close is withdrawn while the incident owes anything, so
+    neither the completed nor the no-change-needed close can discharge it and
+    the item parks instead.
     """
-    scope = incident.scope
-    refusal = (scope.refusal if scope is not None else None) or _refused_effect(
-        config=incident.config, standing=incident.standing, effect="proof"
+    incident_proof_pointer(
+        repo=repo, item=item, outcome=outcome, proof=proof, journal=journal, incident=incident
     )
-    if refusal is not None:
-        refused: dict[str, object] = {"stage": INCIDENT_POINTER_STAGE, "work_item_id": item.id}
-        journal.append(record=refused | {"reason": refusal})
-    else:
-        write_proof_pointer(repo=repo, item=item, outcome=outcome, proof=proof, journal=journal)
     decision = acceptance_decision(policy=policy)
     if incident_holds(incident=incident, journal=journal, route="complete"):
         return replace(decision, to_done=False)

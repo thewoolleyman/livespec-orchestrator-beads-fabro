@@ -3295,6 +3295,29 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   re-runs a failed check: any automatic re-run belongs to the failed-check recovery,
   at most once per head, and this pass records the attempt the forge reports.
 
+- `_dispatcher_ruling_currency.py` and `_dispatcher_recovery_ruled_seed.py` — how
+  recovery routing honours an operator's SEED RULING (`bd-ib-26mhad`, Scenario 185;
+  the writer is `dispatcher.py seed-ruling`, `_dispatcher_seed_ruling*`). The first is
+  PURE and is the ONE reader of an item's rulings: `current_ruling` takes the item's
+  ledger comments oldest first and answers the seed or fresh ruling that governs,
+  because "the latest ruling of either kind governs" must be read in one place and the
+  fresh ruling's own routing reads it there too. The second turns a current seed
+  ruling into the route's seed, or into the hold. Six properties an editor must not
+  invert. The ruling is read from the item's LEDGER COMMENTS and never the journal, so
+  a ruling written from another checkout governs a dispatch from this one. A ruling is
+  graded AFTER the non-fallback refusals and the unobservable measurements, which keep
+  their precedence, and BEFORE the resume ladder, which it outranks. A ruled ref origin
+  does not carry at the ruled SHA HOLDS the item under its own measurement name
+  (`seed-ruling-ref`) and never falls through to another preserved tree, the published
+  head or `fresh`. An unanswered `git ls-remote` is the existing `preserved-work`
+  unobservable hold and not "absent", because the two have different remedies. A ledger
+  that cannot be ASKED (connection, command or tenant faults) holds the item as
+  `seed-ruling-comments`, while a repository with no ledger to ask reads as no ruling.
+  And a consumed comment is matched to its ruling by marker kind and the ruling's
+  instant found among its field VALUES, so a ruling is never revived behind a later
+  consumed one and the two kinds never consume each other. A current FRESH ruling reads
+  as no seed ruling here: routing it is the fresh ruling's own work.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`

@@ -93,7 +93,17 @@ ITEM = "test-incident"
 OWNER = "operator:alice"
 APP = "app.py"
 WORKFLOW = ".github/workflows/ci.yml"
-WORKFLOW_SOURCE = "name: ci\n"
+# The workflow at the merge, from which dev-tooling derives the expected job graph of an
+# original run (livespec-dev-tooling-zapgpu, v1.192.x): one block-style job per JOBS entry.
+WORKFLOW_SOURCE = (
+    "name: ci\n"
+    "on: push\n"
+    "jobs:\n"
+    "  check-lint:\n"
+    "    runs-on: ubuntu-latest\n"
+    "  check-metadata-batch:\n"
+    "    runs-on: ubuntu-latest\n"
+)
 LEAF = "check-metadata-batch"
 JOBS = ("check-lint", LEAF)
 WEBHOOK_SECRET = b"webhook-secret"
@@ -112,6 +122,18 @@ GIT_IDENTITY = (
 
 def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+# The focused-evidence row and receipt-id derivation of dev-tooling's `/arm` gate
+# (livespec_dev_tooling.incident_focused_admission, livespec-dev-tooling-4aksht, v1.192.2):
+# one slot's id is the sha256 of the canonical JSON of [row, subject, slot]. The walk
+# derives it itself so the same steps run against a pin that predates the gate, where the
+# record is stored and simply never read; a changed derivation fails loudly at the arm.
+FOCUSED_EVIDENCE_ROW = "incident-focused-evidence"
+
+
+def _evidence_receipt_id(*, subject: dict[str, object], slot: int) -> str:
+    return hashlib.sha256(_canonical([FOCUSED_EVIDENCE_ROW, subject, slot]).encode()).hexdigest()
 
 
 def _flags(attempt: IncidentAttempt) -> list[str]:
@@ -314,10 +336,95 @@ class _Walk:
         successor = record | {"generation": current.generation + 1}
         return self.act("commit-transition", current, "--successor-json", _canonical(successor))
 
+    def record_focused_evidence(self, attempt: IncidentAttempt) -> dict[str, Any]:
+        """Record the head tree's focused evidence through the real `record-local-gates`.
+
+        The record is what the real collector would emit for this head: its paths are
+        the attempt's own base..head diff, each Python path executable and fully
+        covered, the focused tests and the coverage run finished at exit 0, and the
+        manual reproduction passed. So it leaves no member awaiting a disposition.
+        The forge answers the head commit's tree, which the gate reads itself.
+        Returns the recorded receipt.
+        """
+        tree = self.git("rev-parse", f"{attempt.head}^{{tree}}")
+        self.forge.rest[f"repos/{REPOSITORY}/git/commits/{attempt.head}"] = {
+            "sha": attempt.head,
+            "tree": {"sha": tree},
+        }
+        changed = self.git("diff", "--name-only", attempt.base, attempt.head).splitlines()
+        executable = [path for path in changed if path.endswith(".py")]
+        subject: dict[str, object] = {
+            "repository": REPOSITORY,
+            "item": ITEM,
+            "attempt": attempt.attempt_id,
+            "operation": attempt.operation_id,
+            "generation": attempt.generation,
+            "head": attempt.head,
+            "tree": tree,
+        }
+        finished = {"timed_out": False, "returncode": 0}
+        record = {
+            "mode": "expedited-repair",
+            "scope": "focused-tests-and-touched-files",
+            "tree_hash": tree,
+            "outcome": "passed",
+            "identity": {
+                "repository": REPOSITORY,
+                "incident_item_id": ITEM,
+                "attempt_id": attempt.attempt_id,
+                "operation_id": attempt.operation_id,
+                "head_sha": attempt.head,
+            },
+            "manual": {
+                "outcome": "passed",
+                "procedure": f"run {APP} on the repaired head",
+                "expected": "the incident no longer reproduces",
+                "observed": "the incident no longer reproduces",
+            },
+            "tests": finished,
+            "coverage_command": finished,
+            "paths": {
+                path: "executable" if path in executable else "non-executable" for path in changed
+            },
+            "coverage": {path: {"summary": {"percent_covered": 100}} for path in executable},
+            "selection": {"deferred_tests": {}},
+            "risks": [],
+        }
+        row = {
+            "name": FOCUSED_EVIDENCE_ROW,
+            "status": "passed",
+            "reason": "focused evidence passed",
+            "returncode": 0,
+            "duration_seconds": 1.0,
+            "output": _canonical(record),
+        }
+        receipt = {
+            "receipt_id": _evidence_receipt_id(subject=subject, slot=0),
+            "hook": "pre-push",
+            "tree": tree,
+            "mode": "expedited-repair",
+            "evidence_kind": "expedited-local-partial",
+            "exit_status": 0,
+            "results": [row],
+        }
+        code, reply = self.process(
+            [
+                "record-local-gates",
+                "--repo",
+                str(self.root),
+                *_flags(attempt),
+                "--receipt-json",
+                _canonical(receipt),
+            ]
+        )
+        assert (code, reply["status"]) == (0, "verified"), reply
+        return receipt
+
     def arm(self, attempt: IncidentAttempt, *, expected: str | None) -> str:
         """`POST /arm` with the attempt the reader returns, as the arming procedure builds it."""
         code, reply = self.process(["read-current", "--repo", str(self.root), *_flags(attempt)])
         assert code == 0, reply
+        evidence = self.record_focused_evidence(attempt)
         receipt = _canonical(reply["result"]["attempt"]).encode().hex()
         payload = {
             "repository": REPOSITORY,
@@ -337,6 +444,19 @@ class _Walk:
             path="/arm", payload=payload
         )
         assert armed["status"] == "armed", armed
+        # The arm admitted THIS record: the gate's own read of the head tree returns it.
+        code, lookup = self.process(
+            [
+                "read-local-gates",
+                "--repo",
+                str(self.root),
+                *_flags(attempt),
+                "--receipt-id",
+                evidence["receipt_id"],
+            ]
+        )
+        assert (code, lookup["result"]["status"]) == (0, "recorded"), lookup
+        assert lookup["result"]["receipt"] == evidence, lookup
         query = {
             "repository": REPOSITORY,
             "arm_id": armed["receipt"],
