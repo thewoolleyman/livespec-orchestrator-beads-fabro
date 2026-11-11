@@ -5445,7 +5445,8 @@ remedy, when:
   does not hold (a live or unreadable ownership lock among them), the
   refusal names that condition in place of the remedy;
 - the pull request has already anchored two resumes, naming them (remedy:
-  a plain dispatch).
+  a plain dispatch);
+- the item holds a needs-human ref or a failed-checkpoint preservation ref, as §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work" defines them, or a run's latest preserved capture, that belongs to the run that published the pull request's current head or to a later run of the item, whose tip commit descends from that head and whose tip tree differs from that head's tree, naming the ref, its tip and the head (remedy: a plain dispatch, which recovery routing seeds from that ref). The run a ref belongs to is established exactly as that section establishes it. A ref whose run cannot be established is graded by that section's `publishing-run-unobservable` hold, not by this bullet. An ancestry or tree comparison this bullet needs that cannot be taken is the unreadable-measurement refusal below, and MUST NOT be read as the absence of such a ref.
 
 When more than one refusal applies, the refusal MUST name every
 applicable mismatch, in the order listed, each with its remedy; a
@@ -9715,13 +9716,13 @@ pull request (`resume --item`)" is *fallback-permitting* when its named remedy
 is a plain dispatch: the publish branch carries no open pull request, which
 includes a missing pull request and one closed without merging; no proof record
 names a head and no cancel record anchors one; the pull request's head moved;
-the Definition of Done changed; or the pull request already anchored two
-resumes. Every other refusal is *non-fallback*: the earlier run is live, the
+the Definition of Done changed; the pull request already anchored two
+resumes; or a preserved ref of the publishing run or a later run descends from the head with a different tree. Every other refusal is *non-fallback*: the earlier run is live, the
 item's dispatch-scoped ownership lock is held by a live process, or the pull
 request is merged (its remedy stays `reconcile-merged --item`). The not-ready
 refusal cannot apply, because routing grades a `ready` item. A non-fallback
 refusal takes precedence over every fallback-permitting one, so a merged pull
-request is never treated as a missing anchor.
+request is never treated as a missing anchor. When the refusal for a preserved ref that descends from the head with a different tree is the only refusal that applies, routing MUST seed from the ref it names.
 
 - `resume`, when every published-PR resume precondition of §"Resume from a
   published pull request (`resume --item`)" passes;
