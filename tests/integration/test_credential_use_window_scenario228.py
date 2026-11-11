@@ -55,9 +55,10 @@ _PAYLOAD_MODULE = (
 _EXECUTION_ALLOWANCE_SECONDS = 902_955
 _QUEUE_ALLOWANCE_SECONDS = 86_400
 _RUN_WALL_BUDGET_SECONDS = 21_600
-_CREDENTIAL_USE_WINDOW_SECONDS = _QUEUE_ALLOWANCE_SECONDS + _RUN_WALL_BUDGET_SECONDS
+_RUN_WALL_CEILING_SECONDS = _RUN_WALL_BUDGET_SECONDS * 3
+_CREDENTIAL_USE_WINDOW_SECONDS = _QUEUE_ALLOWANCE_SECONDS + _RUN_WALL_CEILING_SECONDS
 _MARGIN_SECONDS = 3_600
-_REQUIRED_LIFETIME_SECONDS = 111_600
+_REQUIRED_LIFETIME_SECONDS = 154_800
 _FRESH_CREDENTIAL_LIFETIME_SECONDS = 864_000
 
 # The guard case's own deadline, kept short so a real child can be observed
@@ -96,8 +97,8 @@ def test_scenario228_the_bounded_window_governs_when_it_is_smaller() -> None:
     )
     assert governing.seconds == window
     assert governing.figure == window_module.CREDENTIAL_USE_WINDOW_FIGURE
-    assert governing.seconds + _MARGIN_SECONDS == _REQUIRED_LIFETIME_SECONDS
-    assert _REQUIRED_LIFETIME_SECONDS < _FRESH_CREDENTIAL_LIFETIME_SECONDS
+    assert governing.seconds + _MARGIN_SECONDS == 111_600
+    assert _FRESH_CREDENTIAL_LIFETIME_SECONDS > 111_600
 
 
 def test_scenario228_the_execution_allowance_governs_when_it_is_smaller() -> None:
@@ -142,7 +143,7 @@ def test_scenario228_the_queue_allowance_defaults_to_one_day() -> None:
 
 
 def test_scenario228_the_resolved_requirement_is_bounded_by_the_window() -> None:
-    """THIS repository's own shipped graph resolves 111600, not its raw allowance.
+    """THIS repository's own shipped graph resolves 154800, not its raw allowance.
 
     The subject is the repository's own committed workflow and `.livespec.jsonc`
     rather than a fixture, which is the whole point: the defect was that the
@@ -313,7 +314,7 @@ def test_scenario228_the_start_check_grades_the_credential_with_budget_remaining
     )
     now = int(time.time())
     deadline = now + _CREDENTIAL_USE_WINDOW_SECONDS
-    assert deadline - now >= _RUN_WALL_BUDGET_SECONDS, "the budget premise does not hold"
+    assert deadline - now >= _RUN_WALL_CEILING_SECONDS, "the ceiling premise does not hold"
 
     with tempfile.TemporaryDirectory() as directory:
         guard = Path(directory) / "guard.sh"

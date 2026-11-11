@@ -1,7 +1,8 @@
-"""Scenario 175 — a run past the whole-run wall budget is exported and rested.
+"""Scenario 175 — a run past the wall budget continues while it progresses.
 
 Binds `SPECIFICATION/scenarios.md` "Scenario 175 — A run past the whole-run wall
-budget is exported, cancelled and rested for a human", and the
+budget continues while it progresses, and otherwise is exported, cancelled and
+rested for a human", and the
 `contracts.md` paragraphs it exercises (the Dispatcher progress watchdog's "The
 whole-run wall budget", and the whole-run wall budget key of "ACP node
 timeouts").
@@ -68,6 +69,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
     RUN_WALL_BUDGET_EXCEEDED_STAGE,
     run_wall_budget_exceeded_record,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+    RunWallCeiling,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
@@ -141,9 +145,11 @@ class _ScriptedFabro:
     events: str
     status_kind: str
     polls_before_run_returns: int = 4
+    captures: bool = False
     run_done: threading.Event = field(default_factory=threading.Event)
     verbs: list[str] = field(default_factory=list)
     _polls: int = 0
+    _captures: int = 0
 
     def run(
         self,
@@ -154,6 +160,17 @@ class _ScriptedFabro:
         env: dict[str, str] | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env)
+        if argv[0] == "git":
+            self._captures += 1
+            return CommandResult(
+                exit_code=0,
+                stdout=(
+                    f"{'a' * 40} refs/livespec/wip/{_ITEM_ID}/{_RUN_ID}/{self._captures}\n"
+                    if self.captures
+                    else ""
+                ),
+                stderr="",
+            )
         verb = argv[1] if len(argv) > 1 else ""
         self.verbs.append(verb)
         if verb == "run":
@@ -225,6 +242,10 @@ def _plan(*, repo: Path) -> DispatchPlan:
         janitor=None,
         janitor_checkout=repo / "janitor-co",
         run_wall_budget=_BUDGET,
+        # The scripted continuing run takes several polls to complete; its
+        # explicit ceiling keeps this scenario below the separate hard-ceiling
+        # case while it proves each fresh capture extends the ordinary budget.
+        run_wall_ceiling=RunWallCeiling(seconds=36000.0, layer=REPOSITORY_LAYER),
         # A janitor timeout well past the budget, so the open-command-node case
         # below genuinely widens the stall window past it rather than merely
         # appearing to.
@@ -247,9 +268,11 @@ def _monotonic_clock() -> Any:
     return lambda: next(ticks)
 
 
-def _launch(*, repo: Path, events: str, status_kind: str = "running") -> tuple[Any, _Journal, Any]:
+def _launch(
+    *, repo: Path, events: str, status_kind: str = "running", captures: bool = False
+) -> tuple[Any, _Journal, Any]:
     _seed(repo=repo)
-    fabro = _ScriptedFabro(events=events, status_kind=status_kind)
+    fabro = _ScriptedFabro(events=events, status_kind=status_kind, captures=captures)
     journal = _Journal()
     launcher = WatchedFabroLauncher(
         sleep=lambda _seconds: None,
@@ -273,25 +296,24 @@ def _exceeded_rows(*, journal: _Journal) -> list[dict[str, object]]:
     ]
 
 
-def test_scenario175_a_run_inside_an_open_command_node_is_still_cancelled(
+def test_scenario175_a_run_past_budget_continues_while_it_creates_captures(
     tmp_path: Path,
 ) -> None:
-    """ "A progressing run is still bounded": the open node does not defer it.
+    """A progressing run continues, with its capture evidence journaled once per poll.
 
     The stream carries a `janitor` start with no completion, so the production
-    stall decision grades this run against that node's 36000-second timeout and
-    would not cancel it for hours. The budget cancels it anyway, which is what
-    makes the two bounds independent rather than one deferring the other.
+    stall decision grades this run against that node's 36000-second timeout.
+    The run publishes a new capture at each past-budget poll, so the watchdog
+    leaves it running until the scripted run completes.
     """
-    result, journal, fabro = _launch(repo=tmp_path, events=_OPEN_COMMAND_NODE_EVENTS)
-    assert result.budget_exceeded_run_id == _RUN_ID
+    result, journal, fabro = _launch(repo=tmp_path, events=_OPEN_COMMAND_NODE_EVENTS, captures=True)
+    assert result.budget_exceeded_run_id is None
     assert result.stalled_run_id is None
-    assert "rm" in fabro.verbs
-    rows = _exceeded_rows(journal=journal)
-    assert len(rows) == 1
-    assert rows[0]["executing_stage"] == "janitor"
-    assert rows[0]["elapsed_seconds"] > rows[0]["budget_seconds"]
-    # Never the stall record: the two cancels carry opposite dispositions.
+    assert "rm" not in fabro.verbs
+    continued = [r for r in journal.records if r.get("stage") == "run-wall-budget-continued"]
+    assert continued
+    assert all(r["capture_ref"].startswith("refs/livespec/wip/") for r in continued)
+    assert _exceeded_rows(journal=journal) == []
     assert all(record.get("stage") != STALL_CANCEL_STAGE for record in journal.records)
 
 

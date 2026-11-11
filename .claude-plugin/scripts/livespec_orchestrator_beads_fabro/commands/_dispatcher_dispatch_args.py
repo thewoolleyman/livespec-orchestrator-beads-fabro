@@ -131,6 +131,16 @@ def add_dispatch_common(*, parser: argparse.ArgumentParser) -> None:
             "dispatcher.run_wall_budget_seconds and the 21600-second default"
         ),
     )
+    _ = parser.add_argument(
+        "--run-wall-ceiling-seconds",
+        dest="run_wall_ceiling_seconds",
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "hard limit for a progressing run, overriding "
+            "dispatcher.run_wall_ceiling_seconds and the three-times-budget default"
+        ),
+    )
     _ = parser.add_argument("--poll-attempts", dest="poll_attempts", type=int, default=80)
     _ = parser.add_argument(
         "--poll-interval-seconds",
