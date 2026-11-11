@@ -32,6 +32,10 @@ _BUNDLE = (".claude-plugin", ".fabro", "workflows", "implement-work-item")
 # in sh + awk rather than Python so the spawned child never self-instruments
 # under `pytest --cov`.
 _RULE_FAITHFUL_STUB = """#!/bin/sh
+if [ "$1" = "--version" ]; then
+    echo "fabro 0.408.0-nightly.0 (test)"
+    exit 0
+fi
 awk '
 /^[ \\t]*[A-Za-z_][A-Za-z0-9_]*[ \\t]*->/ {
     total[$1]++
@@ -52,7 +56,35 @@ END {
 """
 
 # A stub that cannot return a hit: it accepts every graph it is handed.
-_BLIND_STUB = "#!/bin/sh\nexit 0\n"
+_BLIND_STUB = (
+    "#!/bin/sh\n"
+    'if [ "$1" = "--version" ]; then\n'
+    '    echo "fabro 0.408.0-nightly.0 (test)"\n'
+    "    exit 0\n"
+    "fi\n"
+    "exit 0\n"
+)
+
+_UNPARSEABLE_VERSION_STUB = (
+    "#!/bin/sh\n"
+    'if [ "$1" = "--version" ]; then\n'
+    '    echo "fabro unknown (test)"\n'
+    "    exit 0\n"
+    "fi\n"
+    "exit 0\n"
+)
+
+
+def _versioned_stub(*, version: str) -> str:
+    """A rule-faithful client whose version command identifies its engine era."""
+    return (
+        "#!/bin/sh\n"
+        'if [ "$1" = "--version" ]; then\n'
+        f'    echo "fabro {version} (test)"\n'
+        "    exit 0\n"
+        "fi\n" + _RULE_FAITHFUL_STUB.split("\n", 1)[1]
+    )
+
 
 _VALID_GRAPH = """digraph Probe {
     start -> a
@@ -370,6 +402,50 @@ def test_a_non_executable_path_resolves_to_nothing(
     assert check.resolved_binary(repo_root=tmp_path) is None
 
 
+def test_legacy_clients_are_refused_and_petri_clients_report_their_version_per_graph(
+    check: ModuleType,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The gate must not silently validate a graph with the retired 0.254 client."""
+    root = tmp_path / "repo"
+    _seed_payload(root=root, graph=_VALID_GRAPH)
+    _use_stub(
+        monkeypatch=monkeypatch,
+        root=tmp_path,
+        body=_versioned_stub(version="0.254.0"),
+    )
+
+    legacy = check.report(repo_root=root)
+
+    assert any("0.254.0" in finding and "Petri-era" in finding for finding in legacy.findings)
+
+    _use_stub(
+        monkeypatch=monkeypatch,
+        root=tmp_path,
+        body=_versioned_stub(version="0.408.0-nightly.0"),
+    )
+    monkeypatch.chdir(root)
+
+    assert check.main() == 0
+    captured = capsys.readouterr().err
+    assert "workflow.fabro validated with fabro 0.408.0-nightly.0" in captured
+
+
+def test_an_unparseable_client_version_is_refused_before_graph_validation(
+    check: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    root = tmp_path / "repo"
+    _seed_payload(root=root, graph=_VALID_GRAPH)
+    _use_stub(monkeypatch=monkeypatch, root=tmp_path, body=_UNPARSEABLE_VERSION_STUB)
+
+    findings = check.report(repo_root=root).findings
+
+    assert len(findings) == 1
+    assert "did not report a parseable version" in findings[0]
+
+
 def test_mutant_text_skips_edges_that_cannot_carry_the_control(check: ModuleType) -> None:
     """An attributed edge, a node with no conditional sibling, and a node with two
     fallthroughs are each passed over; the first eligible edge is the one rewritten."""
@@ -403,7 +479,9 @@ def test_main_exits_zero_on_a_clean_repository(
     monkeypatch.chdir(root)
 
     assert check.main() == 0
-    assert capsys.readouterr().err == ""
+    captured = capsys.readouterr().err
+    assert "workflow.fabro validated with fabro 0.408.0-nightly.0" in captured
+    assert '"level": "info"' in captured
 
 
 def test_main_exits_one_and_logs_every_finding(
