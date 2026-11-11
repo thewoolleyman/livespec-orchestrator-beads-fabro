@@ -201,6 +201,10 @@ Path(f"{side}.record").write_text(
                 item=item, cwd=repo, comments=comments, spec_identity=identity.value
             ),
             "rubric_digest": rubric_digest(rubric=rubric),
+            "subject_characters": len(subject),
+            "carried_rider_count": sum(
+                not is_receipt_comment(body=comment) for comment in comments
+            ),
         }
     ),
     encoding="utf-8",
@@ -299,6 +303,8 @@ if chain.reply is None:
             digest=record["subject_digest"],
             rubric_digest=record["rubric_digest"],
             cause=chain.cause,
+            subject_characters=record["subject_characters"],
+            carried_rider_count=record["carried_rider_count"],
             bound_ended_candidates=chain.bound_ended_candidates,
             attempts=chain.attempts,
         ),
