@@ -60,18 +60,12 @@ what the overlay carried before this existed.
 from __future__ import annotations
 
 import importlib
-from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import (
     DotGraph,
     parse_dot_graph,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import (
-    SETUP_FAILURE_NODE,
-    setup_chain_tail,
-    setup_node_names,
 )
 
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry"
@@ -284,12 +278,6 @@ def _reachable_from_start(*, graph_text: str) -> set[str]:
     return seen
 
 
-def _graph_of(*, text: str) -> DotGraph:
-    graph = parse_dot_graph(text=text)
-    assert not isinstance(graph, str), graph
-    return graph
-
-
 def test_a_resume_entered_at_proof_capture_can_reach_neither_dod_gate_nor_implement() -> None:
     """Scenario 172: the resumed run enters at capture, and nothing precedes it.
 
@@ -302,10 +290,8 @@ def test_a_resume_entered_at_proof_capture_can_reach_neither_dod_gate_nor_implem
     module = _entry_module()
     derived = module.graph_entered_at(graph_text=_committed_graph(), node="proof_capture")
     assert derived is not None
-    tail = setup_chain_tail(graph=_graph_of(text=derived))
-    assert tail == setup_chain_tail(graph=_graph_of(text=_committed_graph()))
-    assert f"{tail} -> proof_capture" in derived
-    assert f"{tail} -> dod_gate" not in derived
+    assert "start -> proof_capture" in derived
+    assert "start -> dod_gate" not in derived
     reachable = _reachable_from_start(graph_text=derived)
     assert "proof_capture" in reachable
     assert "dod_gate" not in reachable
@@ -321,20 +307,11 @@ def test_the_proof_only_arm_visits_its_three_proof_stages_in_order_and_nothing_e
     graph = parse_dot_graph(text=derived)
     assert not isinstance(graph, str), graph
     proof_stages = ("proof_capture", "proof_verify", "proof_grade")
-    # The setup chain stays whole in front of capture: the arm's sandbox is set up
-    # like any other's, and only the edge OUT of the chain's tail is replaced.
-    committed = _graph_of(text=_committed_graph())
-    chain = setup_node_names(graph=committed)
-    tail = setup_chain_tail(graph=committed)
-    assert chain
-    assert set(graph.nodes) == {"start", "exit", *proof_stages, *chain, SETUP_FAILURE_NODE}
+    assert set(graph.nodes) == {"start", "exit", *proof_stages}
     assert [
         (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
     ] == [
-        ("start", chain[0], None),
-        *[(first, second, None) for first, second in pairwise(chain)],
-        *[(name, SETUP_FAILURE_NODE, "outcome=failed") for name in chain],
-        (tail, "proof_capture", None),
+        ("start", "proof_capture", None),
         ("proof_capture", "exit", "outcome=failed"),
         ("proof_capture", "exit", "preferred_label=fix"),
         ("proof_capture", "proof_verify", None),

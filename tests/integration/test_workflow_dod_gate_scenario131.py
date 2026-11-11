@@ -146,24 +146,11 @@ def test_the_gate_is_an_acp_node_on_its_own_adapter_input() -> None:
 
 
 def test_the_gate_sits_between_start_and_implement() -> None:
-    """`start` enters the setup chain, the chain enters the gate, and nothing enters `implement` from `start`.
-
-    The sandbox setup is a chain of `run_prepare_<N>` command nodes between `start`
-    and the first stage (work-item bd-ib-dpsiwz), so the gate is still the FIRST
-    stage after `start` -- it is entered from the chain's last node and from nothing
-    else.
-    """
+    """`start` enters the gate, and nothing enters `implement` from `start` any more."""
     edges = _edges(text=_dot(payload=_BUNDLE))
 
-    assert [edge for edge in edges if edge.startswith("start ->")] == ["start -> run_prepare_1"]
+    assert [edge for edge in edges if edge.startswith("start ->")] == [f"start -> {_GATE}"]
     assert not any(edge.startswith("start -> implement") for edge in edges)
-    setup = sorted(
-        {int(found) for edge in edges for found in re.findall(r"run_prepare_(\d+)", edge)}
-    )
-    assert setup == list(range(1, len(setup) + 1)), "the setup chain is not numbered from 1"
-    assert [edge for edge in edges if edge.endswith(f"-> {_GATE}")] == [
-        f"run_prepare_{setup[-1]} -> {_GATE}"
-    ]
 
 
 def test_the_gate_falls_through_to_implement_and_routes_a_failure_to_needs_human() -> None:

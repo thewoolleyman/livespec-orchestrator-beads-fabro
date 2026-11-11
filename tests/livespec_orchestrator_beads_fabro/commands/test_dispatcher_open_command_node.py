@@ -32,7 +32,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_open_command_node im
     open_command_node,
     updated_open_command_node,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_setup_nodes import is_setup_node
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     DEFAULT_NODE_TIMEOUT_SECONDS,
     DEFAULT_NODE_TIMEOUTS,
@@ -47,7 +46,7 @@ _WORKFLOW = (
 
 # One graph node block, e.g. `    janitor [\n        ...\n    ]`, captured
 # whole so the body can be asked whether it declares a `script` attribute.
-_NODE_BLOCK = re.compile(r"^    (?P<node>[a-z_0-9]+) \[\n.*?^    \]", re.DOTALL | re.MULTILINE)
+_NODE_BLOCK = re.compile(r"^    (?P<node>[a-z_]+) \[\n.*?^    \]", re.DOTALL | re.MULTILINE)
 
 
 def _event(*, name: str, node: str, nested: bool = False) -> str:
@@ -91,14 +90,8 @@ def test_command_nodes_are_exactly_the_graphs_script_nodes() -> None:
     # bound for a node that cannot run. Both read as a perfectly normal
     # answer at every other surface.
     text = _WORKFLOW.read_text(encoding="utf-8")
-    # The numbered `run_prepare_<N>` setup nodes are matched by SHAPE and not listed
-    # (how many a dispatch carries depends on what the Dispatcher materializes into
-    # its graph), so they are the one family of script nodes the tuple omits; the
-    # next case grades them.
     declared = {
-        match.group("node")
-        for match in _NODE_BLOCK.finditer(text)
-        if "script=" in match.group(0) and not is_setup_node(name=match.group("node"))
+        match.group("node") for match in _NODE_BLOCK.finditer(text) if "script=" in match.group(0)
     }
     assert "review_fix_admission" in declared
     assert "review_fix_admission" in COMMAND_NODES
@@ -107,35 +100,6 @@ def test_command_nodes_are_exactly_the_graphs_script_nodes() -> None:
     # run inside one emits agent events throughout, so widening its bound
     # would retire the backstop rather than relax it.
     assert "implement" not in COMMAND_NODES
-
-
-def test_a_started_setup_node_is_open_with_its_own_resolved_timeout() -> None:
-    """A setup step such as `uv sync` runs far past the stall window with no event inside it.
-
-    The numbered setup nodes are not in `COMMAND_NODES`; they are matched by shape,
-    and their bound is the one their `timeout` attribute received, looked up by the
-    node's own name.
-    """
-    timeouts = NodeTimeouts(
-        configured={"run_prepare_7": 900},
-        stall_seconds=7200,
-        stall_layer=REPOSITORY_LAYER,
-    )
-    assert "run_prepare_7" not in COMMAND_NODES
-    for stream in (
-        _stream(_event(name="stage.started", node="run_prepare_7")),
-        _stream(_petri_command_event(event="step.started", node="run_prepare_7")),
-    ):
-        reading = open_command_node(events_json=stream, timeouts=timeouts)
-        assert reading is not None
-        assert (reading.node, reading.timeout_seconds) == ("run_prepare_7", 900.0)
-    assert (
-        open_command_node(
-            events_json=_stream(_event(name="stage.started", node="run_prepare_x")),
-            timeouts=timeouts,
-        )
-        is None
-    )
 
 
 def test_a_started_command_node_is_open_with_its_resolved_timeout() -> None:

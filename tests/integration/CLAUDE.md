@@ -1504,24 +1504,8 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   identity survives untouched — which is what leaves that question with the
   relay authority that owns it.
 
-- `test_sandbox_setup_nodes_scenario32.py` — binds the setup-node scenarios of
-  `SPECIFICATION/scenarios.md` Scenario 32 (work-item `bd-ib-dpsiwz`): neither
-  committed run config declares a prepare table, each committed graph's setup is a
-  numbered `run_prepare_<N>` chain entered from `start` and left into the first
-  stage, and a failed step ends the run. The graph is read through the shared
-  parser. Two properties an editor must not weaken. Every setup node is asserted to
-  carry BOTH a conditional failed edge to `setup_failed` and exactly ONE
-  unconditional edge, because a command node that exits non-zero otherwise follows
-  its unconditional edge and the run succeeds, while the engine rejects a node whose
-  every edge is conditional; the walk case follows only the failed outcome from each
-  node and requires it to end at the terminal without entering the first stage,
-  with the all-succeeded walk as its control. And the terminal's OWN script is
-  executed by `sh` in a throwaway repository whose branch carries engine-shaped
-  `fabro(<run>): <node> (<status>)` checkpoints, because the step it names is read
-  off that chain.
-
-- `test_sandbox_history_preparation.py` — the FIRST setup node (`run_prepare_1`)
-  of the shipped implement-work-item graph, EXECUTED under `/bin/sh` against
+- `test_sandbox_history_preparation.py` — the FIRST `[[run.prepare.steps]]` entry
+  of the shipped implement-work-item run config, EXECUTED under `/bin/sh` against
   real complete and shallow clones (work-item bd-ib-ukht2p). It executes rather
   than matching the command line because the assertion is what the step does to a
   clone, and a conditional that inspects the wrong thing — or swallows a failure
@@ -1753,6 +1737,23 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   and the starting head's tree. The checkpoint is built with `commit-tree` and the
   state files removed by hand, because a real `git commit` would run the very hook the
   case is holding open.
+
+- `test_commit_settle_stopped_rebase_hmed6n.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 176 and work-item `bd-ib-hmed6n`, the
+  sibling of the two settle modules above: a PASSED commit run mid-rebase whose
+  `git rebase --continue` stops on a LATER conflicting pick used to journal only
+  that the continue "did not complete" and return success, so the graph routed the
+  passed settle to the janitor, which failed on the leftover `rebase-merge`
+  directory and looped to its visit limit. The committed `fix_commit_settle` script
+  and the runner's exact source run in a real git fixture whose branch has three
+  picks, the first and third conflicting. The settle must exit non-zero with a
+  `failed` live-commit brief naming the stopped pick and every conflicted path,
+  leave the rebase open at that pick with the settled commit an ancestor of HEAD,
+  and let the NEXT settle (after a resolution commit) finish the rebase. A rebase or
+  merge abort that git refuses is driven with a `git` shim on `PATH`, because no
+  fixture state makes a real abort fail; the journal line must carry git's own
+  output. The merge case does NOT assert the merge stays open: the flattened-merge
+  undo that follows a failed run resets the tree regardless.
 
 - `test_needs_human_node_timeout_cut_scenario192.py` — binds
   `SPECIFICATION/scenarios.md` Scenario 192 and the `contracts.md` paragraph "A

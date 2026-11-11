@@ -87,89 +87,6 @@ digraph GroomWorkItem {
     // request for.
     exit  [shape=Msquare, label="Exit"]
 
-    // Fabro's sandbox clone is hardcoded shallow; the conformance node below diffs
-    // the default branch..HEAD, which needs that merge-base present.
-    run_prepare_1 [
-        label="Setup 1: complete the shallow clone"
-        shape=parallelogram
-        timeout="1800s"
-        script="git fetch --unshallow --quiet"
-    ]
-
-    // Toolchain premise #1 — the version-manager install.
-    run_prepare_2 [
-        label="Setup 2: toolchain premise, the version-manager install"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.prepare_toolchain_mise }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // Toolchain premise #2 — the Python dependency sync that populates the
-    // sandbox's project environment; no-op for a repository that declares none.
-    // A bare constant here assumed a `pyproject.toml` the governed repository may
-    // not carry, which killed preparation before any agent turn (bd-ib-xti6q).
-    // Its POSITION is unchanged: after the version-manager install that resolves
-    // the sync tool, before the hook-manager install and the conformance gate that
-    // both run through the environment it populates.
-    run_prepare_3 [
-        label="Setup 3: toolchain premise, the Python dependency sync"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.prepare_toolchain_python_sync }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // Toolchain premise #3 — the hook-manager install.
-    run_prepare_4 [
-        label="Setup 4: toolchain premise, the hook-manager install"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.prepare_toolchain_lefthook }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // Conformance MECHANISM — install the canonical structural commit-refuse hook.
-    run_prepare_5 [
-        label="Setup 5: conformance mechanism, the commit-refuse hook install"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.conformance_hook_install }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // Declare the sandbox EXEMPT from the commit-refuse refuse branch. The marker
-    // NAME is the resolved contract field, projected rather than spelled.
-    run_prepare_6 [
-        label="Setup 6: declare the sandbox exempt from the commit-refuse branch"
-        shape=parallelogram
-        timeout="1800s"
-        script="git config {{ inputs.sandbox_exempt_marker }} true"
-    ]
-
-    // Conformance Verifier #1 — the hook is actually present.
-    run_prepare_7 [
-        label="Setup 7: conformance verifier, the commit-refuse hook is present"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.conformance_verify_commit_refuse_hook }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // Conformance Verifier #2 — the declaration-integrity plugin-resolution check.
-    run_prepare_8 [
-        label="Setup 8: conformance verifier, the plugin-resolution declaration"
-        shape=parallelogram
-        timeout="1800s"
-        script="set -- {{ inputs.conformance_verify_plugin_resolution }}; test $# -eq 0 || \"$@\""
-    ]
-
-    // The terminal a failed setup step routes to. A command node that exits non-zero
-    // follows its UNCONDITIONAL edge and the run goes on to succeed, so every setup node also
-    // carries a conditional failed edge to this node, which names the step off the engine's
-    // own checkpoint commit and exits non-zero. It has no outgoing edge, so the run ends here.
-    setup_failed [
-        label="Setup failed: a setup step exited non-zero, so the run ends here"
-        shape=parallelogram
-        timeout="600s"
-        script="step=$(git log -n 1 --format=%s 2>/dev/null | sed -n 's/^fabro([^)]*): \\(run_prepare_[0-9][0-9]*\\) (.*$/\\1/p'); echo \"LIVESPEC_SETUP_STEP_FAILED: ${step:-an unidentified run_prepare_<N> step} failed, so the run ends before any stage that needs the sandbox\" >&2; exit 1"
-    ]
-
     // DECLARED SO THE LAYERS RESOLVE, AND DELIBERATELY UNREACHED BY ANY EDGE --
     // the same latitude the `exit` marker above takes, for a different reason.
     // SPECIFICATION/contracts.md holds a registered variant to the reserved
@@ -447,29 +364,7 @@ digraph GroomWorkItem {
         script="echo 'LIVESPEC_NON_CONVERGED: groom conformance loop cap hit without converging; routing back to the Dispatcher for needs-regroom' >&2; exit 1"
     ]
 
-    // Sandbox setup, as explicit command nodes (work-item bd-ib-dpsiwz). Upstream Fabro
-    // refuses the run-config prepare table from v0.396.0-nightly.0, so the steps that table
-    // carried run here, in the same order, between start and the first stage. The names are
-    // fixed: the carrier's re-prepare-on-reacquire recognises a run's setup only by the
-    // run_prepare_ prefix. The Dispatcher appends its own materialized steps after the last
-    // node declared here, continuing the numbering.
-    start -> run_prepare_1
-    run_prepare_1 -> run_prepare_2
-    run_prepare_2 -> run_prepare_3
-    run_prepare_3 -> run_prepare_4
-    run_prepare_4 -> run_prepare_5
-    run_prepare_5 -> run_prepare_6
-    run_prepare_6 -> run_prepare_7
-    run_prepare_7 -> run_prepare_8
-    run_prepare_8 -> implement
-    run_prepare_1 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_2 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_3 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_4 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_5 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_6 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_7 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
-    run_prepare_8 -> setup_failed [label="Setup step failed", condition="outcome=failed"]
+    start -> implement
 
     // A failed groom node routes to the terminal; everything else is proved
     // conformant before any review turn is spent on it.

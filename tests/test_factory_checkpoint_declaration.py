@@ -303,30 +303,14 @@ figures so a reviewer still sees the move:
   credential-use window plus the margin, so an allowance past a fresh
   credential's lifetime cannot reach the requirement.
 
-SANDBOX SETUP BECAME GRAPH NODES (work-item bd-ib-dpsiwz), and that moved the
-allowance for the same reason every earlier node did. Upstream Fabro refuses the
-run-config prepare table from v0.396.0-nightly.0, so the nine committed setup
-steps are now `run_prepare_<N>` command nodes of the committed graph, beside the
-terminal `setup_failed` node they route a failure to. Each is a TIMED node the
-derivation sums, entered once and billed its 1800-second default timeout plus the
-checkpoint budget (the terminal node its 600). Re-measured against the tree that
-carries them, the shipped five-minute allowance is 1376805 seconds, past the old
-1350000 bound, and the retired fifteen-minute control is 2131005. The bound moves
-to 1400000 to stay strictly between the two, with 23195 seconds of shipped
-headroom. The Dispatcher's own materialized setup steps are added to each
-dispatch's graph and are NOT in this committed-graph derivation. Nothing that
-matters here moved: the freshness requirement is still governed by the bounded
-credential-use window, and `credential_deadline_epoch` still caps every run at the
-token's observed expiry minus its margin.
-
 The bounded janitor retry for a node-timeout visit with no check-suite verdict
 (work-item `bd-ib-kclvlo`) increases the janitor admission bound from eight to
 nine, so the existing bound can admit the one immediate re-janitor without
-spending a fix visit. Re-measured against that graph, the shipped allowance is
-1422630 seconds. The bound moves to 1450000, leaving 27370 seconds of headroom
-while remaining below the retired fifteen-minute checkpoint control. The
+spending a fix visit. Re-measured against the merged payload, the shipped
+allowance is 1393680 seconds and the retired fifteen-minute control is 2156880.
+The bound moves from 1350000 to 1400000, leaving 6320 seconds of headroom while
+remaining below the retired checkpoint control. The
 credential-use window still governs the freshness requirement.
-
 The v175 lesson is kept: crossing the credential line fails loudly and cannot
 pass behind a bound the repository can move, because the fresh-credential
 lifetime is a constant of the host and not a bound.
@@ -355,7 +339,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_450_000
+_ALLOWANCE_BOUND_SECONDS = 1_400_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about
