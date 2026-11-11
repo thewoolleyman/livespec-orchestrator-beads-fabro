@@ -120,6 +120,8 @@ def test_the_re_entered_review_fix_brief_names_the_open_red_and_directs_its_gree
     assert red in brief
     assert "Green amend" in brief
     assert "new Red" in brief
+    assert "folds engine checkpoint commits above the open Red onto it before amending" in brief
+    assert "Do not run git reset --soft, git reset --hard, or any other rewrite" in brief
 
 
 def test_a_completed_red_green_pair_routes_to_janitor_admission_as_before(
