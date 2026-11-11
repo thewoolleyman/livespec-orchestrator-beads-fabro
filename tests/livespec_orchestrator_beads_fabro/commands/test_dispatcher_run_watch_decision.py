@@ -45,7 +45,12 @@ def test_the_per_poll_decision_is_a_public_entry_point_of_its_own_module() -> No
     module = _decision_module()
 
     assert callable(module.decide_run_watch)
-    assert module.__all__ == ["RunWatchDecision", "decide_run_watch"]
+    assert module.__all__ == [
+        "ReattachRun",
+        "RunWatchDecision",
+        "RunWatchState",
+        "decide_run_watch",
+    ]
 
 
 def test_the_launcher_no_longer_carries_the_names_the_decision_moved_out() -> None:

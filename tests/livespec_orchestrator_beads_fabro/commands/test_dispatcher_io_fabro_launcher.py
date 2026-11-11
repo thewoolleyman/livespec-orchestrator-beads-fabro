@@ -30,7 +30,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io_fabro_launcher im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_window import StallWindow
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import LivenessSample
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_observation import (
     ObservedRun,
 )
@@ -401,24 +400,6 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     runner = _QueuedRunner(calls=[], rm_calls=[])
     journal = _Journal(records=[])
 
-    samples = [
-        LivenessSample(last_event_epoch=100.0, observed_at=100.0),
-        LivenessSample(last_event_epoch=100.0, observed_at=1200.0),
-    ]
-
-    def _next_sample(
-        *,
-        plan: object,
-        port: object,
-        run_id: str | None,
-        heartbeat_path: object,
-        dispatch_id: object,
-        observed_at: float,
-        state: object,
-    ) -> LivenessSample:
-        _ = (plan, port, run_id, heartbeat_path, dispatch_id, observed_at, state)
-        return samples.pop(0)
-
     def _runnable_run(**_: object) -> ObservedRun:
         return ObservedRun(
             run=FabroRunSummary(
@@ -444,10 +425,6 @@ def test_watched_launcher_does_not_stall_cancel_queued_active_run(
     launcher = WatchedFabroLauncher(sleep=lambda _seconds: None, clock=lambda: 0.0)
     monkeypatch.setattr(_dispatcher_io_fabro_launcher.threading, "Thread", _thread)
     monkeypatch.setattr(_dispatcher_stale_item_reap, "_work_item_status", lambda **_: "active")
-    # The per-poll sample assembly now lives in `_dispatcher_io_liveness_probe`
-    # and the launcher calls it as a module-level function, so the scripted
-    # sample sequence is injected there rather than over a launcher method.
-    monkeypatch.setattr(_dispatcher_io_fabro_launcher, "liveness_sample", _next_sample)
     # The per-poll run observation lives in `_dispatcher_watchdog_observation`
     # for the same reason, and is injected the same way.
     monkeypatch.setattr(_dispatcher_watch_poll, "observed_run", _runnable_run)
