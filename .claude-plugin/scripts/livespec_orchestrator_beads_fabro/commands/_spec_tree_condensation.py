@@ -248,16 +248,11 @@ def condensed_spec_tree(
             remaining -= cost
             continue
         matching_terms = section.terms & statement_terms - FUNCTION_TERMS
-        partial = (
-            partially_selected_section(
-                heading=section.heading,
-                body=section.body,
-                full=section.full,
-                elided=section.elided,
-                remaining=remaining,
-            )
-            if section in pinned or matching_terms
-            else None
+        partial = _partial_selection(
+            section=section,
+            pinned=section in pinned,
+            matching_terms=matching_terms,
+            remaining=remaining,
         )
         if partial is not None:
             selected[section.key] = partial
@@ -332,6 +327,29 @@ def _section(
         terms=frozenset(_TERM.findall(full.casefold())),
         heading=heading,
         body=body,
+    )
+
+
+def _partial_selection(
+    *, section: _Section, pinned: bool, matching_terms: frozenset[str], remaining: int
+) -> str | None:
+    """Relevant paragraphs first, with the established leading-prefix fallback."""
+    if not pinned and not matching_terms:
+        return None
+    partial = partially_selected_section(
+        heading=section.heading,
+        body=section.body,
+        full=section.full,
+        elided=section.elided,
+        remaining=remaining,
+        terms=matching_terms,
+    )
+    return partial or partially_selected_section(
+        heading=section.heading,
+        body=section.body,
+        full=section.full,
+        elided=section.elided,
+        remaining=remaining,
     )
 
 
