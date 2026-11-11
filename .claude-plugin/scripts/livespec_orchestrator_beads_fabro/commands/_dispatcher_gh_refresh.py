@@ -26,7 +26,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_worktree_exc
 
 __all__: list[str] = [
     "DEFAULT_SANDBOX_GH_REFRESH_ROOT",
+    "GH_MINT_HELPER_RELPATH",
+    "GH_PUSH_HELPER_RELPATH",
+    "GH_WRAPPER_TAIL_RELPATH",
     "SANDBOX_GH_REFRESH_ROOT_ENV_VAR",
+    "gh_mint_helper_source",
+    "gh_wrapper_tail_source",
+    "github_auth_support_relpaths",
     "refreshing_gh_env_lines",
     "refreshing_gh_prepare_steps_block",
     "resolve_sandbox_gh_refresh_root",
@@ -333,6 +339,41 @@ def _unpack_step(*, bundle_root: str, mint_helper: str, payload_path: str) -> Pr
             _WRAPPER_TAIL_VAR: pack_payload(text=_WRAPPER_TAIL),
         },
     )
+
+
+# Where each fixed piece of the bundle lands, relative to the bundle root. The
+# helper-fetch setup step writes them (`_dispatcher_helper_registry`); the
+# wrapper-install step below only reads them.
+GH_MINT_HELPER_RELPATH = "bin/mint_app_token.py"
+GH_PUSH_HELPER_RELPATH = "bin/push_origin"
+GH_WRAPPER_TAIL_RELPATH = "bin/gh-wrapper-tail.sh"
+
+
+def gh_mint_helper_source() -> str:
+    """The App-token mint helper the wrapper runs before every `gh` call."""
+    return _MINT_HELPER_SOURCE
+
+
+def gh_wrapper_tail_source() -> str:
+    """The fixed tail of the refreshing wrapper: the publication guard, the mint, the exec."""
+    return _WRAPPER_TAIL
+
+
+def github_auth_support_relpaths(*, scripts_root: Path) -> tuple[Path, ...]:
+    """Every vendored file the mint helper imports, relative to `scripts_root`, sorted.
+
+    The same set the support archive carried: each listed directory contributes
+    its `.py` files and each listed file itself, so a cache's `__pycache__` never
+    rides along.
+    """
+    found: list[Path] = []
+    for relpath in _SUPPORT_ARCHIVE_RELPATHS:
+        source = scripts_root / relpath
+        if source.is_dir():
+            found.extend(child.relative_to(scripts_root) for child in sorted(source.rglob("*.py")))
+        else:
+            found.append(relpath)
+    return tuple(found)
 
 
 def refreshing_gh_env_lines() -> str:

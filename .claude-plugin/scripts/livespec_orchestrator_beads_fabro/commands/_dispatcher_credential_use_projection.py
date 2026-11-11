@@ -102,6 +102,7 @@ __all__: list[str] = [
     "credential_use_env_lines",
     "credential_use_guard_prepare_steps_block",
     "credential_use_projection_for",
+    "proof_capture_asset_sources",
 ]
 
 # The transport for the guard's own text. Private because it is an implementation
@@ -283,6 +284,25 @@ def credential_use_guard_prepare_steps_block(*, projection: CredentialUseDeclara
         f"script = {json.dumps(check)}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def proof_capture_asset_sources() -> tuple[tuple[str, str], ...]:
+    """The proof-capture launcher and hooks: each one's sandbox path and committed text.
+
+    The committed copies live beside the implement-work-item workflow, so they are
+    read from the plugin tree this module ships in.
+    """
+    return tuple(
+        (
+            f"{sandbox_dir}/{name}",
+            (_PROOF_CAPTURE_ASSETS_DIR / asset_dir / name).read_text(encoding="utf-8"),
+        )
+        for sandbox_dir, asset_dir, name in (
+            (PROOF_CAPTURE_GIT_BIN_PATH, "proof-capture-bin", "git"),
+            (PROOF_CAPTURE_HOOKS_PATH, "proof-capture-hooks", "pre-commit"),
+            (PROOF_CAPTURE_HOOKS_PATH, "proof-capture-hooks", "pre-push"),
+        )
+    )
 
 
 def credential_use_projection_for(

@@ -323,6 +323,11 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
     rather than widening it: both name a SHAPE the two renderers below accept,
     and the declaration is the third of exactly three -- protected, unprotected,
     and nothing at all.
+
+    `proof_capture_asset_sources` arrived with `bd-ib-jrawlp`: the proof-capture
+    launcher and hooks this projection installs beside the guard are helper
+    programs the sandbox fetches, and the helper registry reads their committed
+    text through it.
     """
     assert _module_path().is_file(), f"{_MODULE_NAME} is not a module yet"
     module = importlib.import_module(_MODULE_IMPORT)
@@ -333,6 +338,7 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
         "credential_use_env_lines",
         "credential_use_guard_prepare_steps_block",
         "credential_use_projection_for",
+        "proof_capture_asset_sources",
     }
 
 
