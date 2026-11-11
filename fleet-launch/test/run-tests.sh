@@ -1950,7 +1950,7 @@ TERM_SED
     # until the launcher has a FIFO ticket, then sends TERM while its next hold
     # read is evaluating $(sed ...).  A default TERM exit must run EXIT cleanup.
     term_during_hold_substitution() {
-        local launcher="$1" label="$2" attempt term_pid term_rc gate gate_deadline failures=0
+        local launcher="$1" label="$2" attempt term_pid term_rc gate gate_deadline failures=0 term_cause term_parse_error
         for attempt in $(seq 1 100); do
             prepare_312_case "term-substitution-$label-$attempt"
             export FLEET_LAUNCH_POLL_S=0.01
@@ -1983,11 +1983,19 @@ TERM_SED
             stop_launcher "$term_pid"
             wait "$term_pid"
             term_rc=$?
+            term_cause=no
+            term_parse_error=no
+            if grep -F -- 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE" >/dev/null; then
+                term_cause=yes
+            fi
+            if grep -F -- 'unexpected EOF while looking for matching' "$STUB_RM_PROBE_LOG_SOURCE" >/dev/null; then
+                term_parse_error=yes
+            fi
             if [ "$term_rc" != 143 ] \
                 || [ -n "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ] \
                 || [ -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
-                || ! grep -qF 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE" \
-                || grep -qF 'unexpected EOF while looking for matching' "$STUB_RM_PROBE_LOG_SOURCE"; then
+                || [ "$term_cause" != yes ] \
+                || [ "$term_parse_error" = yes ]; then
                 fail "$label iteration $attempt did not exit cleanly from TERM in a command substitution (rc=$term_rc)"
                 tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
                 failures=$((failures + 1))
