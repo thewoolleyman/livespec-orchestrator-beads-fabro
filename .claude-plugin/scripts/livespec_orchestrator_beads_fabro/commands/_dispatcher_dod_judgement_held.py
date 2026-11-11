@@ -12,15 +12,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
     judgement_subject_digest,
     rubric_digest,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
+    identity_for_dod_taking,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     RecordedJudgement,
     reusable_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     judgement_rubric,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    spec_identity_for_governing,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -35,7 +35,7 @@ def held_judgement(
     if rubric is None:
         return None
     governing = reusable_governing_heading_verdict(item=item, repo=repo, comments=comments)
-    identity = spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+    identity = identity_for_dod_taking(item=item, cwd=repo, comments=comments, governing=governing)
     recorded = reusable_verdict(
         comments=comments,
         digest=judgement_subject_digest(
