@@ -270,6 +270,20 @@ def test_is_host_only_item_false_for_cite_only_workflow_mention() -> None:
 @pytest.mark.parametrize(
     "line",
     [
+        "factory-safe, touches no root .github/workflows/.",
+        (
+            "Scope is scripts/just/ and tests/ only, with NO .github/workflows/ edit, "
+            "so it is factory-eligible."
+        ),
+    ],
+)
+def test_is_host_only_item_false_for_live_inline_scope_fences(line: str) -> None:
+    assert is_host_only_item(item=_item(description=line)) is False
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
         "Does NOT touch `.github/workflows/`.",
         "This item never edits .github/workflows/ci.yml.",
         "This item doesn't modify .github/workflows/ci.yml.",
