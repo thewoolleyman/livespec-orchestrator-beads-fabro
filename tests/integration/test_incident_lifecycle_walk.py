@@ -36,7 +36,6 @@ import base64
 import contextlib
 import hashlib
 import hmac
-import importlib
 import io
 import json
 import os
@@ -125,19 +124,16 @@ def _canonical(value: object) -> str:
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
 
 
-def _focused_admission() -> Any:
-    """dev-tooling's focused-evidence admission module, or None on a build without it.
+# The focused-evidence row and receipt-id derivation of dev-tooling's `/arm` gate
+# (livespec_dev_tooling.incident_focused_admission, livespec-dev-tooling-4aksht, v1.192.2):
+# one slot's id is the sha256 of the canonical JSON of [row, subject, slot]. The walk
+# derives it itself so the same steps run against a pin that predates the gate, where the
+# record is stored and simply never read; a changed derivation fails loudly at the arm.
+FOCUSED_EVIDENCE_ROW = "incident-focused-evidence"
 
-    livespec-dev-tooling-4aksht (first released in v1.192.2) made the observer's
-    `/arm` refuse a head tree that carries no complete, disposed focused-evidence
-    record. An older pin has no such gate and no such module, so the walk records
-    nothing there. Drop this branch once the orchestrator's dev-tooling pin floor
-    is v1.192.2 or later (bd-ib-dw6ffz).
-    """
-    try:
-        return importlib.import_module("livespec_dev_tooling.incident_focused_admission")
-    except ModuleNotFoundError:
-        return None
+
+def _evidence_receipt_id(*, subject: dict[str, object], slot: int) -> str:
+    return hashlib.sha256(_canonical([FOCUSED_EVIDENCE_ROW, subject, slot]).encode()).hexdigest()
 
 
 def _flags(attempt: IncidentAttempt) -> list[str]:
@@ -340,7 +336,7 @@ class _Walk:
         successor = record | {"generation": current.generation + 1}
         return self.act("commit-transition", current, "--successor-json", _canonical(successor))
 
-    def record_focused_evidence(self, attempt: IncidentAttempt) -> dict[str, Any] | None:
+    def record_focused_evidence(self, attempt: IncidentAttempt) -> dict[str, Any]:
         """Record the head tree's focused evidence through the real `record-local-gates`.
 
         The record is what the real collector would emit for this head: its paths are
@@ -348,11 +344,8 @@ class _Walk:
         covered, the focused tests and the coverage run finished at exit 0, and the
         manual reproduction passed. So it leaves no member awaiting a disposition.
         The forge answers the head commit's tree, which the gate reads itself.
-        Returns the recorded receipt, or None on a dev-tooling build without the gate.
+        Returns the recorded receipt.
         """
-        focused = _focused_admission()
-        if focused is None:
-            return None
         tree = self.git("rev-parse", f"{attempt.head}^{{tree}}")
         self.forge.rest[f"repos/{REPOSITORY}/git/commits/{attempt.head}"] = {
             "sha": attempt.head,
@@ -360,15 +353,15 @@ class _Walk:
         }
         changed = self.git("diff", "--name-only", attempt.base, attempt.head).splitlines()
         executable = [path for path in changed if path.endswith(".py")]
-        subject = focused.EvidenceSubject(
-            repository=REPOSITORY,
-            item=ITEM,
-            attempt=attempt.attempt_id,
-            operation=attempt.operation_id,
-            generation=attempt.generation,
-            head=attempt.head,
-            tree=tree,
-        )
+        subject: dict[str, object] = {
+            "repository": REPOSITORY,
+            "item": ITEM,
+            "attempt": attempt.attempt_id,
+            "operation": attempt.operation_id,
+            "generation": attempt.generation,
+            "head": attempt.head,
+            "tree": tree,
+        }
         finished = {"timed_out": False, "returncode": 0}
         record = {
             "mode": "expedited-repair",
@@ -398,7 +391,7 @@ class _Walk:
             "risks": [],
         }
         row = {
-            "name": focused.EVIDENCE_ROW,
+            "name": FOCUSED_EVIDENCE_ROW,
             "status": "passed",
             "reason": "focused evidence passed",
             "returncode": 0,
@@ -406,7 +399,7 @@ class _Walk:
             "output": _canonical(record),
         }
         receipt = {
-            "receipt_id": focused.evidence_receipt_id(subject=subject, slot=0),
+            "receipt_id": _evidence_receipt_id(subject=subject, slot=0),
             "hook": "pre-push",
             "tree": tree,
             "mode": "expedited-repair",
@@ -451,20 +444,19 @@ class _Walk:
             path="/arm", payload=payload
         )
         assert armed["status"] == "armed", armed
-        if evidence is not None:
-            # The arm admitted THIS record: the gate's own read of the head tree returns it.
-            code, lookup = self.process(
-                [
-                    "read-local-gates",
-                    "--repo",
-                    str(self.root),
-                    *_flags(attempt),
-                    "--receipt-id",
-                    evidence["receipt_id"],
-                ]
-            )
-            assert (code, lookup["result"]["status"]) == (0, "recorded"), lookup
-            assert lookup["result"]["receipt"] == evidence, lookup
+        # The arm admitted THIS record: the gate's own read of the head tree returns it.
+        code, lookup = self.process(
+            [
+                "read-local-gates",
+                "--repo",
+                str(self.root),
+                *_flags(attempt),
+                "--receipt-id",
+                evidence["receipt_id"],
+            ]
+        )
+        assert (code, lookup["result"]["status"]) == (0, "recorded"), lookup
+        assert lookup["result"]["receipt"] == evidence, lookup
         query = {
             "repository": REPOSITORY,
             "arm_id": armed["receipt"],
