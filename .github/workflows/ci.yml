@@ -1402,7 +1402,7 @@ jobs:
   # (push-only, not a gate) is intentionally absent from `needs:`.
   ci-green:
     name: ci-green
-    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance]
+    needs: [check-python, check-per-file-coverage-shard, check-per-file-coverage, check-coverage, check-python-batch, check-doctor-static, check-metadata, check-metadata-batch, e2e-cli, acceptance, check-factory-provenance, check-fleet-materialized-workflow-toml-size]
     if: always()
     runs-on: ubuntu-latest
     steps:
