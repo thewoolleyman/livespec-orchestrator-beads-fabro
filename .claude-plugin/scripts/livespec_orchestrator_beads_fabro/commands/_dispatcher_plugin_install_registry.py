@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.effects import (
 __all__: list[str] = [
     "PluginInstallRecord",
     "default_plugin_install_registry",
+    "installed_build_commit",
     "plugin_install_records",
     "registered_plugin_root",
 ]
@@ -56,6 +57,7 @@ _MARKETPLACE_SEPARATOR = "@"
 _PLUGINS_KEY = "plugins"
 _PROJECT_PATH_KEY = "projectPath"
 _INSTALL_PATH_KEY = "installPath"
+_GIT_COMMIT_SHA_KEY = "gitCommitSha"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -90,6 +92,43 @@ def registered_plugin_root(*, repo: Path, install_record: Path) -> Path | None:
         if record.project_path.resolve() == target:
             return record.install_path
     return None
+
+
+def installed_build_commit(*, install_roots: tuple[Path, ...], install_record: Path) -> str | None:
+    """The `gitCommitSha` of the record whose `installPath` is one of `install_roots`.
+
+    A THIRD question asked of the same file: not which build a repository
+    resolves, but WHICH COMMIT a build directory was installed from. The harness
+    flattens the commit's `.claude-plugin/` tree into `installPath`, so the record
+    whose install path is the tree this process executes from names the exact
+    commit its bytes came from. Every root is resolved before it is compared,
+    because the harness writes the path it chose and the caller holds the path it
+    was loaded through. A record with no usable `gitCommitSha` names no commit,
+    and the next candidate root is tried.
+    """
+    roots = {root.resolve() for root in install_roots}
+    plugins = _parsed_object(path=install_record).get(_PLUGINS_KEY)
+    if not isinstance(plugins, dict):
+        return None
+    for key, entries in cast("dict[str, Any]", plugins).items():
+        if not _names_this_plugin(key=key) or not isinstance(entries, list):
+            continue
+        for entry in cast("list[Any]", entries):
+            commit = _commit_of(entry=entry, roots=roots)
+            if commit is not None:
+                return commit
+    return None
+
+
+def _commit_of(*, entry: object, roots: set[Path]) -> str | None:
+    if not isinstance(entry, dict):
+        return None
+    fields = cast("dict[str, Any]", entry)
+    install_path = fields.get(_INSTALL_PATH_KEY)
+    commit = fields.get(_GIT_COMMIT_SHA_KEY)
+    if not isinstance(install_path, str) or not isinstance(commit, str) or not commit:
+        return None
+    return commit if install_path and Path(install_path).resolve() in roots else None
 
 
 def _names_this_plugin(*, key: str) -> bool:
