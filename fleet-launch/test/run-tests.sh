@@ -1316,13 +1316,23 @@ fi
 # the marker must no longer hold a slot after the run leaves that board. A
 # never-listed marker remains counted while that drive is alive.
 if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario242 ]; then
+# A stand-in for a dead launcher's live drive, whose command line the
+# launcher's `pgrep -f "drive.py .*--action impl:<item>( |$)"` matches.  The
+# drive arguments ride as ordinary trailing argv of a sleeping python3, never
+# as a renamed argv[0]: the uutils coreutils multicall sleep refuses an
+# unrecognised argv[0] ("Security violation: Requested utility ... does not
+# match executable name"), and so does a mise shim ("... is not a valid
+# shim") (bd-ib-jp82i).
+start_named_drive() {
+    python3 -c 'import time; time.sleep(600)' drive.py --action "impl:$1" &
+}
 echo "--- 18a. releases a listed-and-finished drive's stale marker"
 new_case listed-marker-left-board
 export FLEET_LAUNCH_MAX_WAIT_S=4
 write_board "$BOARD_GMK" 7 gmk
 : > "$BOARD_HL"
 printf '8\n' > "$CAP_FILE"
-bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-ended" &
+start_named_drive bd-ib-ended
 ended_drive_pid=$!
 ended_marker="$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-ended"
 echo "owner=stopped-seat pid=999999 item=bd-ib-ended factory=petri" > "$ended_marker"
@@ -1351,7 +1361,7 @@ export FLEET_LAUNCH_MAX_WAIT_S=4
 write_board "$BOARD_GMK" 7 gmk
 : > "$BOARD_HL"
 printf '8\n' > "$CAP_FILE"
-bash -c 'exec -a "$1" sleep 600' bash "python3 drive.py --action impl:bd-ib-unlisted" &
+start_named_drive bd-ib-unlisted
 unlisted_drive_pid=$!
 echo "owner=stopped-seat pid=999999 item=bd-ib-unlisted factory=petri" \
     > "$FLEET_LAUNCH_INFLIGHT_DIR/100-stopped-seat-bd-ib-unlisted"
