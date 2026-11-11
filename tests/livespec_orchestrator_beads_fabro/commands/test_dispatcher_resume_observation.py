@@ -416,6 +416,29 @@ def test_an_assertion_the_record_does_not_carry_is_reported_as_changed(repo: Pat
     )
 
 
+def test_a_recorded_assertion_removed_from_the_item_refuses_the_resume(repo: Path) -> None:
+    """A Definition-of-Done difference is symmetric, so removed proof cannot carry forward.
+
+    The current item keeps the original assertion while the earlier record also
+    carries one that the item no longer names.  The extra recorded assertion is
+    the removed one: admitting this resume would inherit proof graded against a
+    different Definition of Done, so both the changed set and its refusal name it.
+    """
+    assert _GATHER_PATH.is_file()
+    removed = "The removed assertion must not remain inherited proof."
+    record = _record_body(assertion=f"{_ASSERTION}\n\n## Assertion 2 — {removed}")
+    gather = _gather(
+        repo=repo,
+        item=_item(),
+        runner=_runner(view=_ok(stdout=_comments(body=record))),
+    )
+    assert gather.observation.changed_assertions == (removed,)
+    refusals = resume_refusals(observation=gather.observation)
+    assert len(refusals) == 1
+    assert "Definition of Done has changed" in refusals[0]
+    assert removed in refusals[0]
+
+
 def test_an_assertion_the_record_carries_wrapped_is_not_reported_as_changed(repo: Path) -> None:
     """A record is prose: the publisher may hard-wrap, so matching is wrap-independent."""
     assert _GATHER_PATH.is_file()
