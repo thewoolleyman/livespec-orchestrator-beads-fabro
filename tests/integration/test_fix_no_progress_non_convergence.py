@@ -207,7 +207,17 @@ def test_a_janitor_without_a_check_suite_verdict_does_not_enter_fix(tmp_path: Pa
 
     assert first.returncode == 0
     assert json.loads(first.stdout) == {"preferred_next_label": "rejanitor"}
-    assert (state / "livespec-janitor-no-verdict-head").read_text(encoding="utf-8").strip() == head
+    assert (state / "livespec-janitor-no-verdict-seen").read_text(encoding="utf-8").strip() == head
+
+    # The re-janitor's own fetch/rebase can move HEAD before its suite times out
+    # again; the bound must not depend on HEAD staying put.
+    _ = (repo / "rebased.txt").write_text("rebased\n", encoding="utf-8")
+    _git("add", "rebased.txt", repo=repo)
+    _git("commit", "--quiet", "-m", "rebased", repo=repo)
+    moved_head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
+    ).stdout.strip()
+    assert moved_head != head
 
     second = _run(node="janitor_refresh_route", repo=repo)
 
@@ -217,7 +227,7 @@ def test_a_janitor_without_a_check_suite_verdict_does_not_enter_fix(tmp_path: Pa
         subprocess.run(
             ["git", "rev-parse", "HEAD"], cwd=repo, check=True, capture_output=True, text=True
         ).stdout.strip()
-        == head
+        == moved_head
     )
     cause = (repo / ".git" / "livespec-stage-cause").read_text(encoding="utf-8")
     assert "both janitor visits were ended by the node timeout with no check-suite verdict" in cause
