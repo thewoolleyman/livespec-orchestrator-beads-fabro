@@ -546,15 +546,15 @@ def test_a_captured_step_program_rides_in_the_record_unless_tracked_or_installed
     assert "blocking proof-record finding at review" in prompt
 
 
-def test_review_reads_record_currency_as_a_tree_comparison_not_a_timestamp() -> None:
-    """Assertion 6: equal trees are CURRENT, so a checkpoint commit is not staleness.
+def test_review_reads_record_currency_at_the_published_head_not_a_checkpoint() -> None:
+    """Assertion 6: review judges the same published tree proof capture named.
 
     This is the gap the petri-seat rider measured, and it defeats the other five
     assertions on its own: the engine commits a checkpoint after every node, and
-    `proof_capture`'s lands AFTER the record is posted, so a record naming the
-    publish head AT CAPTURE TIME is still a commit or two below the reviewed head
-    — five to fifteen seconds older, with an identical tree. Under the retired
-    timestamp comparison that was a blocking finding every single round.
+    a checkpoint can carry preparation residue that no workflow node authored.
+    The reviewer must therefore grade the same published pull-request head that
+    proof capture recorded, rather than the sandbox's later checkpoint. Under the
+    retired timestamp comparison that was a blocking finding every single round.
 
     The ABSENCE of the retired instruument is asserted beside the presence of the
     new one, because the two can coexist: a prompt that gained the tree comparison
@@ -563,8 +563,13 @@ def test_review_reads_record_currency_as_a_tree_comparison_not_a_timestamp() -> 
     """
     prompt = _prompt(name="review.md")
 
-    assert "the TREE of the commit the record names equals the TREE of that head" in prompt
-    assert "git diff --quiet <the record's sha> <the head under review>" in prompt
+    assert (
+        "the TREE of the commit the record names equals the TREE of the published "
+        "pull-request head" in prompt
+    )
+    assert "git fetch --quiet origin <the publish branch>" in prompt
+    assert "git diff --quiet <the record's sha> origin/<the publish branch>" in prompt
+    assert "not to the sandbox's `HEAD`" in prompt
     assert "A commit that changes no tree MUST NOT make a record stale" in prompt
     assert "Do NOT judge currency by timestamp, by sha equality, or by commit order" in prompt
     assert "never require the record to POSTDATE the head" in prompt
