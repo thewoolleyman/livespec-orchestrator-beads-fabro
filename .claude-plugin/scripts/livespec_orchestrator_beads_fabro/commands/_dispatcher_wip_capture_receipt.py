@@ -21,6 +21,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_c
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
     PRESERVED_TREE_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_ref_measurement import (
+    PreservedRef,
+    terminal_ref_lines,
+    terminal_refs,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -35,6 +40,7 @@ __all__: list[str] = [
     "WipCapture",
     "WipCaptureUnobservable",
     "latest_wip_capture",
+    "receipt_body",
     "record_wip_capture_receipt",
 ]
 
@@ -115,16 +121,20 @@ def _record_wip_capture_receipt(
 ) -> None:
     """Read, deduplicate and append one receipt, letting the caller fail soft."""
     active_runner = runner if runner is not None else ShellCommandRunner()
+    comments = _comments(repo=repo, work_item_id=work_item_id)
     observed = _read_capture(
         runner=active_runner, repo=repo, work_item_id=work_item_id, run_id=run_id
     )
-    body = _receipt_body(
+    body = receipt_body(
         work_item_id=work_item_id,
         run_id=run_id,
         factory=factory,
         observed=observed,
+        terminal_refs=terminal_refs(
+            runner=active_runner, repo=repo, run_id=run_id, comments=comments
+        ),
     )
-    if _already_recorded(repo=repo, work_item_id=work_item_id, body=body):
+    if any(getattr(comment, "text", None) == body for comment in comments):
         return
     findings = minijinja_openers_in_text(source=PRESERVED_TREE_MARKER, text=body)
     if findings:
@@ -151,12 +161,13 @@ def _read_capture(
     return latest_wip_capture(work_item_id=work_item_id, run_id=run_id, refs=refs)
 
 
-def _receipt_body(
+def receipt_body(
     *,
     work_item_id: str,
     run_id: str,
     factory: str,
     observed: WipCapture | WipCaptureUnobservable | None,
+    terminal_refs: tuple[PreservedRef, ...],
 ) -> str:
     lines = [
         PRESERVED_TREE_MARKER,
@@ -174,21 +185,21 @@ def _receipt_body(
         )
     elif isinstance(observed, WipCaptureUnobservable):
         lines.append("work-in-progress preservation could not be determined")
-    else:
-        lines.append("the run has no work-in-progress ref")
+    elif not terminal_refs:
+        lines.append("the run preserved no tree; the run has no work-in-progress ref")
+    lines.extend(terminal_ref_lines(refs=terminal_refs))
     return "\n".join(lines)
 
 
-def _already_recorded(*, repo: Path, work_item_id: str, body: str) -> bool:
+def _comments(*, repo: Path, work_item_id: str) -> tuple[object, ...]:
+    """Read durable records once; an unreadable ledger supplies no candidates."""
     comments = attempt(
         action=lambda: read_work_item_comments(
             path=store_config(repo=repo), work_item_id=work_item_id
         ),
         exceptions=(*_LEDGER_ERRORS, OSError),
     )
-    return not isinstance(comments, AttemptFailure) and any(
-        comment.text == body for comment in comments
-    )
+    return () if isinstance(comments, AttemptFailure) else tuple(comments)
 
 
 def _error(*, journal: JournalWriter, work_item_id: str, run_id: str, reason: str) -> None:
