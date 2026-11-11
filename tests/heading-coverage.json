@@ -3118,5 +3118,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-t2rg6x adds cases in which an implement-kind item classified bug whose asked-for behaviour the spec-stated judgement reports unstated is recorded spec-change tier with a linked topic and held out of ready, one whose behaviour it reports stated routes at tier none, and classify-tier appends one fresh record for an item whose behaviour digest changed since its latest tier record, holding it when that record is a held spec-change tier. bd-ib-t2rg6x owns it.",
     "work_item": "bd-ib-t2rg6x"
+  },
+  {
+    "heading": "## Scenario: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-z7ckf4 adds cases in which the incident authority writer's drill-close action moves a recorded drill (every distinct carrier pr-bound in its latest snapshot, every bound pull request based on an incident-scratch/** branch, no landed or revert commit reachable from master) to incident phase drill-closed with lifecycle state done and no repayment outstanding; refuses a master-based or never-bound item with incident-not-a-recorded-drill and an unreadable forge read with incident-drill-evidence-unavailable, writing nothing; refuses a commit-transition naming a drill-closed successor with incident-drill-close-requires-action; and refuses a recovery request against a drill-closed item with incident-reopen-not-eligible. bd-ib-z7ckf4 owns it.",
+    "work_item": "bd-ib-z7ckf4"
   }
 ]
