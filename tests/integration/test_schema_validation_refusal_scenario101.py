@@ -55,6 +55,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_refusal
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ci_preflight_wait import (
     MasterCiWait,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch import (
+    REPO_VIEW_ARGV,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_declaration import (
     PLUGIN_BLOCK,
@@ -82,6 +85,9 @@ _ITEM_ID = "bd-ib-scenario101"
 # own `master`, so a pass proves the lookup used the RESOLVED default branch.
 _FORGE_BRANCH = "trunk"
 _GREEN_RUN_ID = "101"
+# The default-branch read, as the ONE shared resolver spells it (minus `gh`).
+_REPO_VIEW_ARGV = REPO_VIEW_ARGV[1:]
+_UNSCRIPTED = CommandResult(exit_code=1, stdout="", stderr="unscripted forge read")
 
 _COMMITTED_WORKFLOW_TOML = (
     '[workflow]\ngraph = "graph.toml"\n\n[run.environment]\nid = "fabro-sandbox"\n'
@@ -160,6 +166,11 @@ class _ScriptedForgeRunner:
         return self._forge(argv=tuple(argv[1:]))
 
     def _forge(self, *, argv: tuple[str, ...]) -> CommandResult:
+        """The scripted answer to one forge read, or an unscripted failure.
+
+        A lookup rather than an `if` ladder, so the unscripted arm is a value
+        every call carries rather than a line only a broken dispatch would run.
+        """
         listing = (
             "run",
             "list",
@@ -172,15 +183,16 @@ class _ScriptedForgeRunner:
             "--json",
             "status,conclusion,databaseId",
         )
-        if argv[:2] == ("repo", "view") and "defaultBranchRef" in argv:
-            return _ok(stdout=f"{_FORGE_BRANCH}\n")
-        if argv == listing:
-            run = {"status": "completed", "conclusion": "success", "databaseId": _GREEN_RUN_ID}
-            return _ok(stdout=json.dumps([run]))
-        if argv == ("run", "view", _GREEN_RUN_ID, "--json", "jobs"):
-            job = {"name": self.job, "status": "completed", "conclusion": "success"}
-            return _ok(stdout=json.dumps({"jobs": [job]}))
-        return CommandResult(exit_code=1, stdout="", stderr="unscripted forge read")
+        run = {"status": "completed", "conclusion": "success", "databaseId": _GREEN_RUN_ID}
+        job = {"name": self.job, "status": "completed", "conclusion": "success"}
+        answers = {
+            _REPO_VIEW_ARGV: _ok(stdout=f"{_FORGE_BRANCH}\n"),
+            listing: _ok(stdout=json.dumps([run])),
+            ("run", "view", _GREEN_RUN_ID, "--json", "jobs"): _ok(
+                stdout=json.dumps({"jobs": [job]})
+            ),
+        }
+        return answers.get(argv, _UNSCRIPTED)
 
 
 def _ok(*, stdout: str) -> CommandResult:
