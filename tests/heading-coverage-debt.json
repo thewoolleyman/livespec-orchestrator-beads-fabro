@@ -1430,6 +1430,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a hand commit's passing delegated pre-commit verdict stands in at the pre-push gate",
+    "work_item": "bd-ib-3k3xh7",
+    "first_seen": "2026-11-11"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a plan record's release rule applies to the release component that ships its artifact",
     "work_item": "bd-ib-qpibvm",
     "first_seen": "2026-11-11"

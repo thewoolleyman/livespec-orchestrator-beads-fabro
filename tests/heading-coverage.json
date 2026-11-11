@@ -3142,5 +3142,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sjxs4f adds cases in which the plan record posting primitive renders a payload's build artifact_paths array as the record's artifact paths line in the order given, renders no such line for a payload carrying no artifact_paths, and refuses a payload whose artifact_paths is not an array of non-empty strings, naming artifact_paths, with no record posted. bd-ib-sjxs4f owns it.",
     "work_item": "bd-ib-sjxs4f"
+  },
+  {
+    "heading": "## Scenario: a hand commit's passing delegated pre-commit verdict stands in at the pre-push gate",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-3k3xh7 adds cases in which this repository's pre-push gate, given recorded delegated pre-commit evidence naming gate Job J and tree T for a clean worktree whose HEAD tree is T, submits no pre-push gate Job and runs no local fall-through aggregate, runs only the check-set members the evidence does not name as passed plus every world-reading and authorization-reading member, and prints J, T, each member it ran and the skipped count; and in which a dirty worktree or a different HEAD tree gates the push as if no evidence existed. bd-ib-3k3xh7 owns it.",
+    "work_item": "bd-ib-3k3xh7"
   }
 ]
