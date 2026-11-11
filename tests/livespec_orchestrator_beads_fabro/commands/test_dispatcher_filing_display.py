@@ -144,7 +144,7 @@ def test_a_conforming_filing_shows_the_parse_the_modes_the_capabilities_and_no_f
         " on the pull request."
     )
     assert lines[3] == "sandbox-capabilities: terminal, tmux"
-    assert lines[4] == "definition-of-done findings: none"
+    assert lines[4] == "definition-of-done findings: judgement unavailable"
     assert len(lines) == 5
 
 

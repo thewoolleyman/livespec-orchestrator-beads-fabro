@@ -111,7 +111,7 @@ def test_the_prescribed_multi_heading_reference_remedy_has_no_definition_of_done
 
     lines = _display(item=item, cwd=_repo(tmp_path=tmp_path))
 
-    assert lines[-1] == "definition-of-done findings: none"
+    assert lines[-1] == "definition-of-done findings: judgement unavailable"
 
 
 def test_the_prescribed_single_heading_reference_remedy_has_no_definition_of_done_finding(
@@ -122,4 +122,4 @@ def test_the_prescribed_single_heading_reference_remedy_has_no_definition_of_don
 
     lines = _display(item=item, cwd=_repo(tmp_path=tmp_path))
 
-    assert lines[-1] == "definition-of-done findings: none"
+    assert lines[-1] == "definition-of-done findings: judgement unavailable"

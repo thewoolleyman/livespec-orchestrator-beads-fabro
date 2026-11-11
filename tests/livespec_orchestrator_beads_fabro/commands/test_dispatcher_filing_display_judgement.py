@@ -104,3 +104,22 @@ def test_an_unavailable_governing_heading_judgement_is_not_reported_as_no_findin
 
     assert "definition-of-done findings: judgement unavailable" in lines
     assert "definition-of-done findings: none" not in lines
+
+
+def test_a_filing_reader_that_takes_no_governing_heading_judgement_is_not_clean(
+    tmp_path: Path,
+) -> None:
+    """An explicitly unjudged display must not render a clean finding verdict."""
+    module = importlib.import_module(_MODULE)
+
+    lines = module.filing_display(
+        item=_item(), cwd=_repo(tmp_path=tmp_path), governing=_unjudged_reader
+    ).splitlines()
+
+    assert "definition-of-done findings: judgement unavailable" in lines
+    assert "definition-of-done findings: none" not in lines
+
+
+def _unjudged_reader(*, item: WorkItem, repo: Path) -> None:
+    """A filing surface that deliberately takes no governing-heading judgement."""
+    del item, repo

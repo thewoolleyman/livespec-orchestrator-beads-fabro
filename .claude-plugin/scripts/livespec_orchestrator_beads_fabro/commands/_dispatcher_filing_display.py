@@ -159,7 +159,10 @@ def filing_display(
     verdict = reader(item=item, repo=cwd)
     lines.extend(
         _finding_lines(
-            item=item, cwd=cwd, governing=verdict, judgement_unavailable=observer.unavailable
+            item=item,
+            cwd=cwd,
+            governing=verdict,
+            judgement_unavailable=verdict is None or observer.unavailable,
         )
     )
     lines.extend(observer.report_lines(item_id=item.id, cwd=cwd))
