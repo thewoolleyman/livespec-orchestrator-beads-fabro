@@ -483,18 +483,19 @@ def test_an_unreadable_ledger_holds_the_item_rather_than_routing_past_a_ruling(
     assert _ITEM in str(held[0]["details"])
 
 
-def test_an_item_the_ledger_does_not_hold_carries_no_ruling(
+def test_an_unmappable_comments_response_holds_the_item_rather_than_routing_past_a_ruling(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def _absent(**_: object) -> object:
-        raise BeadsMappingError(record_id=_ITEM, detail="issue not present")
+    def _unmappable(**_: object) -> object:
+        raise BeadsMappingError(record_id=_ITEM, detail="bd comments returned an unmappable body")
 
-    monkeypatch.setattr(ruled, "read_work_item_comments", _absent)
+    monkeypatch.setattr(ruled, "read_work_item_comments", _unmappable)
 
-    route, _, _ = _route(
+    route, _, journal = _route(
         tmp_path=tmp_path, monkeypatch=monkeypatch, world=_World(refs=_TREES), comments=()
     )
 
-    assert route.route == ROUTE_SEEDED
-    assert route.seed is not None
-    assert route.seed.preservation_ref == _NH_REF
+    assert route.route == ROUTE_HELD
+    held = _rows(journal=journal, stage="recovery-held")
+    assert held[0]["measurements"] == ["seed-ruling-comments"]
+    assert _ITEM in str(held[0]["details"])

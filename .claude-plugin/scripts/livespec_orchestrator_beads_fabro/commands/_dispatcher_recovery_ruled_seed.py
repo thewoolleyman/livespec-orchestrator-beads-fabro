@@ -25,9 +25,11 @@ operator to re-rule a ref that was never missing.
 
 AN UNREADABLE LEDGER IS A HOLD, NOT AN ABSENT RULING, for the fault classes that
 say the ledger itself could not be asked — the same reasoning as an unreadable
-ref, since an unread comment list may hold the ruling that decides the route. The
-faults that say only that this repository has no ledger to ask (no configured
-connection, an item the tenant does not hold) read as no ruling: every candidate
+ref, since an unread comment list may hold the ruling that decides the route. That
+includes a comments response that could not be mapped (`BeadsMappingError`): the
+comments exist but were not read. The faults that say only that this repository has
+no ledger to ask (no configured connection, a work-item id the tenant does not hold)
+read as no ruling: every candidate
 of every pass reaches this read, and a candidate that is no ledger row cannot
 carry one.
 """
@@ -65,6 +67,7 @@ from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
     BeadsConnectionError,
+    BeadsMappingError,
     BeadsTenantMissingError,
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
@@ -81,7 +84,12 @@ _GIT_TIMEOUT_SECONDS = 120.0
 
 # The faults that say the ledger could not be ASKED, as against the ones that say there
 # is no ledger row to ask about.
-_LEDGER_UNASKABLE = (BeadsCommandError, BeadsConnectionError, BeadsTenantMissingError)
+_LEDGER_UNASKABLE = (
+    BeadsCommandError,
+    BeadsConnectionError,
+    BeadsMappingError,
+    BeadsTenantMissingError,
+)
 _LEDGER_UNREADABLE = (
     *LEDGER_WRITE_ERRORS,
     ConnectionPrefixMissingError,
