@@ -404,7 +404,11 @@ def test_the_workflow_name_is_the_one_the_earlier_dispatch_record_names(repo: Pa
 
 
 def test_an_assertion_the_record_does_not_carry_is_reported_as_changed(repo: Path) -> None:
-    """The inherited records must prove exactly what this dispatch is graded on."""
+    """The inherited records must prove exactly what this dispatch is graded on.
+
+    The item replaced the recorded assertion with a new one, so the new one is
+    added and the recorded one is removed; both are named, added first.
+    """
     assert _GATHER_PATH.is_file()
     gather = _gather(
         repo=repo,
@@ -413,6 +417,7 @@ def test_an_assertion_the_record_does_not_carry_is_reported_as_changed(repo: Pat
     )
     assert gather.observation.changed_assertions == (
         "An assertion that arrived after the earlier run.",
+        _ASSERTION,
     )
 
 
@@ -436,6 +441,24 @@ def test_a_recorded_assertion_removed_from_the_item_refuses_the_resume(repo: Pat
     refusals = resume_refusals(observation=gather.observation)
     assert len(refusals) == 1
     assert "Definition of Done has changed" in refusals[0]
+    assert removed in refusals[0]
+
+
+def test_an_added_and_a_removed_assertion_are_both_reported_as_changed(repo: Path) -> None:
+    """An added assertion must not hide a removed one: the refusal names both differences."""
+    assert _GATHER_PATH.is_file()
+    added = "An assertion that arrived after the earlier run."
+    removed = "The removed assertion must not remain inherited proof."
+    record = _record_body(assertion=removed)
+    gather = _gather(
+        repo=repo,
+        item=_item(assertion=added),
+        runner=_runner(view=_ok(stdout=_comments(body=record))),
+    )
+    assert gather.observation.changed_assertions == (added, removed)
+    refusals = resume_refusals(observation=gather.observation)
+    assert len(refusals) == 1
+    assert added in refusals[0]
     assert removed in refusals[0]
 
 

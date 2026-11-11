@@ -255,23 +255,22 @@ def gather_resume(
 
 
 def unproved_assertions(*, item: WorkItem, record: ProofRecord) -> tuple[str, ...]:
-    """A named assertion that establishes the item and anchoring record differ.
+    """Every named assertion that establishes the item and anchoring record differ.
 
-    Current-only assertions arrived after the earlier run and retain the
-    established refusal wording.  When all current assertions are present, a
-    record-only assertion was removed while the item rested, so it establishes
-    the other direction of the exact-match precondition.  Either makes a plain
-    dispatch the safe route.
+    Current-only assertions arrived after the earlier run and keep the
+    established refusal wording; they come first.  A record-only assertion was
+    removed while the item rested, which is the other direction of the
+    exact-match precondition, and follows them, so an addition never hides a
+    removal.  Either makes a plain dispatch the safe route.
     """
     assertions = effective_criteria(item=item).assertions
     body = _normalized(text=record.body)
     current = frozenset(_normalized(text=one) for one in assertions)
     missing = tuple(one for one in assertions if _normalized(text=one) not in body)
-    if missing:
-        return missing
-    return tuple(
+    removed = tuple(
         one for one in _recorded_assertions(record=record) if _normalized(text=one) not in current
     )
+    return missing + removed
 
 
 def _recorded_assertions(*, record: ProofRecord) -> tuple[str, ...]:
