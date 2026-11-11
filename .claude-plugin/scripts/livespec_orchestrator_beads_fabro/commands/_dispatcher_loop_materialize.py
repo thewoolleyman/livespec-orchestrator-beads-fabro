@@ -225,6 +225,7 @@ def materialize_dispatch(
         # the flag, and the reconcile valves build a Namespace that never
         # carried it.
         run_wall_budget_argument=getattr(args, "run_wall_budget_seconds", None),
+        run_wall_ceiling_argument=getattr(args, "run_wall_ceiling_seconds", None),
     )
     if isinstance(payload, str):
         return MaterializationRefusal(stage=_WORKFLOW_PAYLOAD_STAGE, detail=payload)

@@ -27,7 +27,7 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
 
@@ -84,6 +84,9 @@ class LivenessState:
     stream_seq: int | None = None
     run_record: object | None = None
     journal: JournalWriter | None = None
+    stream_observable: bool = False
+    new_completions: tuple[tuple[str, float], ...] = ()
+    completed_nodes: set[str] = field(default_factory=set)
 
     def observe_run(self, *, record: object | None, journal: JournalWriter) -> None:
         """Carry this poll's by-id record and journal into its liveness read."""
@@ -104,6 +107,12 @@ class _WallClockEventProbe:
         if self.run_id is None:
             return LivenessSample(last_event_epoch=None, observed_at=observed_at)
         records, observable, status = self._read_event_pages(run_id=self.run_id)
+        self.state.stream_observable = observable
+        self.state.new_completions = (
+            _new_completions(records=records, completed=self.state.completed_nodes)
+            if observable
+            else ()
+        )
         stage_epoch = _stage_progress_epoch(record=self.state.run_record)
         if self.state.journal is not None:
             self.state.journal.append(
@@ -241,6 +250,28 @@ def _newest_stream_seq(
     if not sequences:
         return current
     return max((*sequences, current)) if current is not None else max(sequences)
+
+
+def _new_completions(
+    *, records: tuple[dict[str, object], ...], completed: set[str]
+) -> tuple[tuple[str, float], ...]:
+    """Return only node completions that had not already occurred in this run."""
+    found: list[tuple[str, float]] = []
+    for record in records:
+        event = record.get("event", record.get("type"))
+        node = record.get("node_id")
+        if (
+            not isinstance(event, str)
+            or not event.endswith(".completed")
+            or not isinstance(node, str)
+        ):
+            continue
+        epoch = parse_last_event_epoch(events_json=json.dumps([record]))
+        if epoch is None or node in completed:
+            continue
+        completed.add(node)
+        found.append((node, epoch))
+    return tuple(found)
 
 
 def _stage_progress_sample(

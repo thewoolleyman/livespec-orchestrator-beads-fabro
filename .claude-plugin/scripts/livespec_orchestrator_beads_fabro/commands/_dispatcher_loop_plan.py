@@ -49,6 +49,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     DEFAULT_RUN_WALL_BUDGET,
     RunWallBudget,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+    DEFAULT_RUN_WALL_CEILING,
+    RunWallCeiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     sandbox_image_source,
 )
@@ -111,6 +115,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
     raw_labels: tuple[str, ...],
     timeouts: NodeTimeouts,
     run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
+    run_wall_ceiling: RunWallCeiling = DEFAULT_RUN_WALL_CEILING,
     runner: CommandRunner,
     committed_workflow: Path,
     acp_nodes: AcpNodeResolution | None = None,
@@ -195,6 +200,7 @@ def dispatch_plan_for_item(  # noqa: PLR0913 — kw-only plan resolver; each fie
         # the figure the watchdog cancels against is the figure the refusal
         # passed and the dispatch record names.
         run_wall_budget=run_wall_budget,
+        run_wall_ceiling=run_wall_ceiling,
         # Already resolved and journaled by the caller, so the run renders the
         # adapters the dispatch record names rather than a re-derivation.
         acp_nodes=acp_nodes,

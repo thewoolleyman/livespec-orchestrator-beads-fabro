@@ -85,11 +85,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_allowance
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_deadline import (
     CredentialLifetimeRequirement,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_queue_allowance import (
-    credential_queue_allowance_from_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window import (
-    credential_use_window_seconds,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_window_resolution import (
+    CredentialUseWindow,
+    credential_use_window_from_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_execution_budget import execution_budget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_projection import (
@@ -108,9 +106,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     CODEX_FRESHNESS_MARGIN_SECONDS,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import (
-    run_wall_budget_from_block,
 )
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import node_timeouts_from_block
 from livespec_orchestrator_beads_fabro.commands._workflow_variants import (
@@ -424,22 +419,7 @@ def _requirement_from_graph(
     )
 
 
-@dataclass(frozen=True, kw_only=True)
-class _CredentialUseWindow:
-    """The window and the queue half of it, resolved from one read of the block.
-
-    Both halves travel together because the status surfaces report queue time
-    consumed against the queue allowance while the gate enforces the window, and
-    a reader cannot recover an addend from a sum.
-    """
-
-    window_seconds: int
-    queue_allowance_seconds: int
-
-
-def _credential_use_window(
-    *, block: dict[str, Any]
-) -> _CredentialUseWindow | WorkflowFaultDeferral:
+def _credential_use_window(*, block: dict[str, Any]) -> CredentialUseWindow | WorkflowFaultDeferral:
     """The bounded credential-use window for this dispatch, or the owning fault.
 
     BOTH keys are resolved from the SAME block read the node timeouts came from,
@@ -453,23 +433,12 @@ def _credential_use_window(
     OWNS both keys, refuses them with its own diagnostic before any run exists,
     and a credential wall answering first leaves that stage silent.
     """
-    queue_allowance = credential_queue_allowance_from_block(block=block)
-    if isinstance(queue_allowance, str):
+    window = credential_use_window_from_block(block=block)
+    if isinstance(window, str):
         return WorkflowFaultDeferral(
-            message=f"credential lifetime requirement unresolved: {queue_allowance}"
+            message=f"credential lifetime requirement unresolved: {window}"
         )
-    wall_budget = run_wall_budget_from_block(block=block)
-    if isinstance(wall_budget, str):
-        return WorkflowFaultDeferral(
-            message=f"credential lifetime requirement unresolved: {wall_budget}"
-        )
-    return _CredentialUseWindow(
-        window_seconds=credential_use_window_seconds(
-            queue_allowance_seconds=queue_allowance.seconds,
-            run_wall_budget_seconds=int(wall_budget.seconds),
-        ),
-        queue_allowance_seconds=queue_allowance.seconds,
-    )
+    return window
 
 
 def _graph_inputs(

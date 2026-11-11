@@ -56,6 +56,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     run_wall_budget_from_block,
     run_wall_budget_journal_record,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+    DEFAULT_RUN_WALL_CEILING,
+    RunWallCeiling,
+    run_wall_ceiling_from_block,
+    run_wall_ceiling_journal_record,
+)
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     NodeTimeouts,
     node_timeouts_from_block,
@@ -103,6 +109,7 @@ class WorkflowPayload:
     node_seconds: Mapping[str, int]
     node_commands: Mapping[str, str]
     run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET
+    run_wall_ceiling: RunWallCeiling = DEFAULT_RUN_WALL_CEILING
 
 
 def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_node are two independent rendering inputs.
@@ -116,6 +123,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     entry_node: str | None = None,
     proof_only: bool = False,
     run_wall_budget_argument: str | None = None,
+    run_wall_ceiling_argument: str | None = None,
 ) -> WorkflowPayload | str:
     """Resolve node timeouts and the wall budget, materialize, and journal.
 
@@ -144,9 +152,14 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     timeouts = node_timeouts_from_block(block=block)
     if isinstance(timeouts, str):
         return timeouts
-    budget = run_wall_budget_from_block(block=block, argument=run_wall_budget_argument)
-    if isinstance(budget, str):
-        return budget
+    bounds = _wall_bounds(
+        block=block,
+        budget_argument=run_wall_budget_argument,
+        ceiling_argument=run_wall_ceiling_argument,
+    )
+    if isinstance(bounds, str):
+        return bounds
+    budget, ceiling = bounds
     # The queue allowance is graded BESIDE the wall budget and from the same
     # block read, because the two are summed into the bounded credential-use
     # window: resolved from two reads, a dispatch could launch against a window
@@ -168,7 +181,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
     # Carried THROUGH rather than written into the graph: the workflow graph
     # declares no budget, because the Dispatcher's own host-side watchdog
     # enforces it and the engine knows nothing about it.
-    payload = replace(payload, run_wall_budget=budget)
+    payload = replace(payload, run_wall_budget=budget, run_wall_ceiling=ceiling)
     conflict = node_timeout_conflict(budget=budget, nodes=payload.node_seconds)
     if conflict is not None:
         return conflict
@@ -178,10 +191,22 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
             "work_item_id": work_item_id,
             **node_timeouts_journal_record(timeouts=timeouts, nodes=payload.node_seconds),
             **run_wall_budget_journal_record(budget=budget),
+            **run_wall_ceiling_journal_record(ceiling=ceiling),
             **credential_queue_allowance_journal_record(allowance=queue_allowance),
         }
     )
     return payload
+
+
+def _wall_bounds(
+    *, block: dict[str, object], budget_argument: str | None, ceiling_argument: str | None
+) -> tuple[RunWallBudget, RunWallCeiling] | str:
+    """Resolve the two dependent wall bounds from one target configuration read."""
+    budget = run_wall_budget_from_block(block=block, argument=budget_argument)
+    if isinstance(budget, str):
+        return budget
+    ceiling = run_wall_ceiling_from_block(block=block, budget=budget, argument=ceiling_argument)
+    return ceiling if isinstance(ceiling, str) else (budget, ceiling)
 
 
 def materialize_workflow_payload(

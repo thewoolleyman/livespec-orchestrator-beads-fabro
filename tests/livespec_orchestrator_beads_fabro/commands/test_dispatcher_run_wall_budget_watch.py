@@ -31,12 +31,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_pres
     run_wall_ledger,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
+    RUN_WALL_BUDGET_CONTINUED_STAGE,
     RUN_WALL_BUDGET_EXCEEDED_STAGE,
     RUN_WALL_BUDGET_HELD_STAGE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock import (
     RUN_RECORD_SOURCE,
     RunWallStart,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress import (
+    RunWallCapture,
+    RunWallProgress,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
@@ -219,6 +224,97 @@ def test_a_run_within_its_budget_is_neither_exported_nor_cancelled(tmp_path: Pat
     assert runner.calls == []
     assert ledger.writes == []
     assert journal.records == []
+
+
+def test_a_fresh_capture_continues_a_run_past_its_budget(tmp_path: Path) -> None:
+    """A capture inside the progress window retains the slot below the ceiling."""
+    watch = _watch()
+    runner = _ScriptedRunner()
+    journal = _RecordingJournal()
+    verdict = watch.cancel_run_past_budget(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=_port(repo=tmp_path, runner=runner),
+        runner=cast("Any", runner),
+        journal=cast("Any", journal),
+        run_id=_RUN_ID,
+        start=RunWallStart(epoch=_START_EPOCH, source=RUN_RECORD_SOURCE),
+        now_epoch=_START_EPOCH + 3601.0,
+        ledger=cast("Any", _FakeLedger()),
+        progress=RunWallProgress(
+            capture=RunWallCapture(ref="refs/livespec/wip/bd-ib-sdxfsn/01RUN/1", commit="a" * 40)
+        ),
+    )
+    assert verdict == watch.RunWallVerdict.CONTINUED
+    assert "rm" not in runner.calls
+    assert journal.records[0]["stage"] == RUN_WALL_BUDGET_CONTINUED_STAGE
+    assert journal.records[0]["capture_commit"] == "a" * 40
+
+
+def test_a_continued_run_adds_one_human_readable_ledger_comment(tmp_path: Path) -> None:
+    """The watch records the continuation comment once, not once per healthy poll."""
+    watch = _watch()
+    ledger = _FakeLedger()
+    verdict = watch.RunWallBudgetWatch(ledger=ledger).verdict(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=_port(repo=tmp_path, runner=_ScriptedRunner()),
+        runner=cast("Any", _ScriptedRunner()),
+        journal=cast("Any", _RecordingJournal()),
+        run_id=_RUN_ID,
+        recorded_epoch=_START_EPOCH,
+        now_epoch=_START_EPOCH + 3601.0,
+        progress=RunWallProgress(
+            capture=RunWallCapture(ref="refs/livespec/wip/bd-ib-sdxfsn/01RUN/3", commit="c" * 40)
+        ),
+    )
+    assert verdict == watch.RunWallVerdict.CONTINUED
+    assert ledger.writes == [_WORK_ITEM_ID]
+    assert "run-wall-budget-continued" in ledger.comments[0]["text"]
+
+
+def test_a_continued_run_without_a_ledger_does_not_block_its_budget_decision(
+    tmp_path: Path,
+) -> None:
+    """The durable journal permits continuation even when no comment surface exists."""
+    watch = _watch()
+    verdict = watch.RunWallBudgetWatch(ledger=None).verdict(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=_port(repo=tmp_path, runner=_ScriptedRunner()),
+        runner=cast("Any", _ScriptedRunner()),
+        journal=cast("Any", _RecordingJournal()),
+        run_id=_RUN_ID,
+        recorded_epoch=_START_EPOCH,
+        now_epoch=_START_EPOCH + 3601.0,
+        progress=RunWallProgress(
+            capture=RunWallCapture(ref="refs/livespec/wip/bd-ib-sdxfsn/01RUN/4", commit="d" * 40)
+        ),
+    )
+    assert verdict == watch.RunWallVerdict.CONTINUED
+
+
+def test_the_hard_ceiling_cancels_even_a_capturing_run(tmp_path: Path) -> None:
+    """Autonomous progress can extend the budget, never the resolved ceiling."""
+    watch = _watch()
+    runner = _ScriptedRunner()
+    journal = _RecordingJournal()
+    verdict = watch.cancel_run_past_budget(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=_port(repo=tmp_path, runner=runner),
+        runner=cast("Any", runner),
+        journal=cast("Any", journal),
+        run_id=_RUN_ID,
+        start=RunWallStart(epoch=_START_EPOCH, source=RUN_RECORD_SOURCE),
+        now_epoch=_START_EPOCH + 64801.0,
+        ledger=cast("Any", _FakeLedger()),
+        progress=RunWallProgress(
+            capture=RunWallCapture(ref="refs/livespec/wip/bd-ib-sdxfsn/01RUN/2", commit="b" * 40)
+        ),
+    )
+    assert verdict == watch.RunWallVerdict.CANCELLED
+    assert journal.records[0]["bound_exceeded"] == "ceiling"
 
 
 def test_a_pointer_that_does_not_read_back_leaves_the_run_running(tmp_path: Path) -> None:

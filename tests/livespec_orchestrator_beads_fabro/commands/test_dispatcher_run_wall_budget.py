@@ -53,6 +53,16 @@ def test_an_unconfigured_budget_resolves_to_the_built_in_default() -> None:
     assert budget == module.DEFAULT_RUN_WALL_BUDGET
 
 
+def test_an_unconfigured_wall_ceiling_defaults_to_three_times_the_budget() -> None:
+    """The bounded continuation ceiling is derived from this dispatch's budget."""
+    module = _budget_module()
+    budget = module.run_wall_budget_from_block(block={})
+    assert not isinstance(budget, str)
+    ceiling = module.run_wall_ceiling_from_block(block={}, budget=budget)
+    assert ceiling.seconds == budget.seconds * 3
+    assert ceiling.layer == module.WORKFLOW_DEFAULT_LAYER
+
+
 def test_the_journal_record_names_the_resolved_budget_and_its_layer() -> None:
     """The dispatch record carries the figure AND the layer that supplied it.
 

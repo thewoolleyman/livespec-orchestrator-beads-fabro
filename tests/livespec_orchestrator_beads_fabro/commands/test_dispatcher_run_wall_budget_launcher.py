@@ -160,6 +160,10 @@ class _ScriptedFabroRunner:
         env: dict[str, str] | None = None,
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env)
+        if argv[0] == "git":
+            # This scenario intentionally observes no capture ref. A failed
+            # read is a budget disposition, not continuation evidence.
+            return CommandResult(exit_code=1, stdout="", stderr="unavailable")
         verb = argv[1] if len(argv) > 1 else ""
         self.calls.append(verb)
         if verb == "run":

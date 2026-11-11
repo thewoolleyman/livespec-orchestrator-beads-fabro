@@ -45,13 +45,18 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
     REPOSITORY_LAYER,
     WORKFLOW_DEFAULT_LAYER,
     positive_int_seconds,
 )
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+        RunWallCeiling,
+    )
 
 __all__: list[str] = [
     "DEFAULT_RUN_WALL_BUDGET",
@@ -63,7 +68,9 @@ __all__: list[str] = [
     "node_timeout_conflict",
     "run_wall_budget_from_block",
     "run_wall_budget_journal_record",
+    "run_wall_ceiling_from_block",
 ]
+
 
 _RUN_WALL_BUDGET_BLOCK_KEY = "run_wall_budget_seconds"
 
@@ -207,3 +214,14 @@ def _argument_budget(*, argument: str) -> RunWallBudget | str:
             f"got {argument!r}"
         )
     return RunWallBudget(seconds=float(seconds), layer=PER_DISPATCH_ARGUMENT_LAYER)
+
+
+def run_wall_ceiling_from_block(
+    *, block: dict[str, Any], budget: RunWallBudget, argument: str | None = None
+) -> RunWallCeiling | str:
+    """Resolve the hard ceiling through its budget-dependent policy leaf."""
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+        run_wall_ceiling_from_block as resolve,
+    )
+
+    return resolve(block=block, budget=budget, argument=argument)

@@ -21,6 +21,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watc
     RunWallBudgetWatch,
     RunWallVerdict,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_progress import RunWallProgress
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
     cancel_stalled_run,
 )
@@ -63,6 +64,9 @@ def decide_run_watch(  # noqa: PLR0913 — kw-only per-poll decision; the dispat
     now_epoch: float,
     samples: tuple[LivenessSample, ...],
     stall_seconds: float,
+    progress: RunWallProgress | None = None,
+    stream_observable: bool | None = None,
+    new_completions: tuple[tuple[str, float], ...] = (),
 ) -> RunWatchDecision:
     """Take this poll's cancel decision for a run observed `running`."""
     # BEFORE the stall decision, which is the clause's own precedence:
@@ -77,6 +81,9 @@ def decide_run_watch(  # noqa: PLR0913 — kw-only per-poll decision; the dispat
         run_id=run_id,
         recorded_epoch=recorded_epoch,
         now_epoch=now_epoch,
+        progress=progress,
+        stream_observable=stream_observable,
+        new_completions=new_completions,
     )
     if verdict == RunWallVerdict.CANCELLED:
         return RunWatchDecision(budget_exceeded=True)
@@ -85,6 +92,8 @@ def decide_run_watch(  # noqa: PLR0913 — kw-only per-poll decision; the dispat
         # a run whose budget export is pending its read-back "is not
         # cancelled as stalled-no-progress" either, and a quiet run past
         # its budget satisfies the stall rule too.
+        return RunWatchDecision()
+    if verdict == RunWallVerdict.CONTINUED:
         return RunWatchDecision()
     # A cancel the server refused falls through: the run may still be
     # live, so the watch keeps polling and asks again.

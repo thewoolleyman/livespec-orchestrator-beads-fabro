@@ -57,6 +57,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget impo
     DEFAULT_RUN_WALL_BUDGET,
     RunWallBudget,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_ceiling import (
+    DEFAULT_RUN_WALL_CEILING,
+    RunWallCeiling,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_image_source import (
     COMMITTED_RUN_CONFIG_IMAGE,
     SandboxImageSource,
@@ -234,6 +238,7 @@ class DispatchPlan:
     # could bound a run by a budget the admission never saw, and both readings
     # produce a well-formed number.
     run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET
+    run_wall_ceiling: RunWallCeiling = DEFAULT_RUN_WALL_CEILING
     # WHERE this invocation retains a FAILED post-merge janitor command's
     # complete captured output, and under which identity. It rides the plan
     # because the venue is per-INVOCATION state resolved up front -- the
@@ -281,6 +286,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
     stall_window: StallWindow = DEFAULT_STALL_WINDOW,
     node_timeouts: NodeTimeouts = DEFAULT_NODE_TIMEOUTS,
     run_wall_budget: RunWallBudget = DEFAULT_RUN_WALL_BUDGET,
+    run_wall_ceiling: RunWallCeiling = DEFAULT_RUN_WALL_CEILING,
     acp_nodes: AcpNodeResolution | None = None,
 ) -> DispatchPlan:
     """Resolve the per-item dispatch plan (publish branch, argv config, contract)."""
@@ -322,6 +328,7 @@ def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an ind
         stall_window=stall_window,
         node_timeouts=node_timeouts,
         run_wall_budget=run_wall_budget,
+        run_wall_ceiling=run_wall_ceiling,
         acp_nodes=acp_nodes,
         integration=integration,
         integration_inputs=contract_run_inputs(

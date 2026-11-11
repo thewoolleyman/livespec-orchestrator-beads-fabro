@@ -277,6 +277,8 @@ class WatchedFabroLauncher:
                 now_epoch=self.wall_clock(),
                 samples=tuple(samples),
                 stall_seconds=stall_seconds,
+                stream_observable=liveness_state.stream_observable,
+                new_completions=liveness_state.new_completions,
             )
             if decision.budget_exceeded:
                 return WatchResult(budget_exceeded_run_id=known_run_id)
