@@ -901,7 +901,8 @@ check-fabro-port-seam:
 # `install-ci-fabro` — CI's metadata batch runs this before
 # `check-fabro-graph-validity`, which it runs with
 # LIVESPEC_FABRO_GRAPH_VALIDATION=fail_when_fabro_absent. It installs the pinned,
-# sha256-verified upstream fabro v0.254.0 musl release; the script records why
+# sha256-verified upstream Petri-era fabro v0.408.0-nightly.0 musl release; the
+# script records why
 # upstream and not the factory's fork build.
 install-ci-fabro:
     bash dev-tooling/install-ci-fabro.sh

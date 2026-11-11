@@ -152,11 +152,11 @@ Current checks:
   harden it. The absence is never silent: one error-level record per graph not
   looked at, plus a summary saying so. `fail_when_fabro_absent` makes that
   absence fatal; CI sets it on the metadata batch after installing the pinned,
-  checksum-verified UPSTREAM fabro 0.254.0 release, and a value outside that
+  checksum-verified UPSTREAM Petri-era fabro 0.408.0-nightly.0 release, and a value outside that
   closed space is a failure, never a fallback. Every validation runs in a
   scratch COPY of the payload whose `workflow.toml` loses exactly the keys
   `FORK_ONLY_SETTINGS` names (today `run.checkpoint.commit_timeout`, fork PR
-  #552, which upstream 0.254.0 cannot parse and then drops the whole settings
+  #552, which upstream 0.408.0-nightly.0 cannot parse and then drops the whole settings
   file over). A settings control requires the copy to equal the original minus
   those keys, and each stripped key is logged, so CI's normalization is
   reported rather than invisible; a new fork-only key makes the upstream engine

@@ -154,7 +154,7 @@ def _seed_payload(*, root: Path, graph: str, with_run_config: bool = True) -> Pa
     return directory
 
 
-# A stub that models the UPSTREAM fabro 0.254.0 release CI pins: it cannot parse
+# A stub that models the UPSTREAM Petri-era fabro release CI pins: it cannot parse
 # the fork-only `run.checkpoint.commit_timeout` key (fork PR #552), and refuses
 # before reading the graph. Its refusal never names `all_conditional_edges`, so
 # a mutant handed to it un-normalized fails the matcher control rather than
