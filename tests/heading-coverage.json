@@ -3094,5 +3094,29 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-7e6uzu adds cases in which the proof_capture git launcher admits a push from a scratch repository to a bare repository under the system temporary directory, by path and by remote name, and refuses, printing a LIVESPEC_PROOF_CAPTURE_READ_ONLY line, a push from the protected checkout or any route to it, to a network or scp-style remote, to a path outside the temporary directory, and with --receive-pack or --exec. bd-ib-7e6uzu owns it.",
     "work_item": "bd-ib-7e6uzu"
+  },
+  {
+    "heading": "## Scenario 342 \u2014 A run that exhausted its recapture bound is held by recovery routing, never routed fresh or resumed automatically",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-p6ammc adds cases in which recovery routing grades an item whose latest journaled dispatch ended at the non_converged terminal with LIVESPEC_RECAPTURE_EXHAUSTED on its cause line, with an open pull request whose every resume precondition passes and with no preserved work at all, and routes it held in both, never fresh, resume or seeded, launching no run. bd-ib-p6ammc owns it.",
+    "work_item": "bd-ib-p6ammc"
+  },
+  {
+    "heading": "## Scenario 343 \u2014 A recapture-exhausted hold names the preserved implementation and the explicit resume route",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-p6ammc adds cases in which the recovery-held record of a recapture-exhausted item names the refusal recapture-exhausted and a detail naming the open pull request and its head, else the needs-human ref and its commit, else no preserved work observed, followed by the explicit resume --item route at proof_capture with a proof rider. bd-ib-p6ammc owns it.",
+    "work_item": "bd-ib-p6ammc"
+  },
+  {
+    "heading": "## Scenario 344 \u2014 An item classified bug whose asked-for behaviour the spec does not state waits for ratification, and classify-tier re-judges a changed item",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-t2rg6x adds cases in which an implement-kind item classified bug whose asked-for behaviour the spec-stated judgement reports unstated is recorded spec-change tier with a linked topic and held out of ready, one whose behaviour it reports stated routes at tier none, and classify-tier appends one fresh record for an item whose behaviour digest changed since its latest tier record, holding it when that record is a held spec-change tier. bd-ib-t2rg6x owns it.",
+    "work_item": "bd-ib-t2rg6x"
   }
 ]

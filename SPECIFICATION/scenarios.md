@@ -8706,7 +8706,7 @@ Feature: A ready item still assigned fabro is a stale assignee, not a dispatch c
 Feature: New behaviour gets new spec before it is built
   As the maintainer keeping the implementation and the specification in lockstep
   I want every feature whose behaviour the spec does not state to wait for its proposal to ratify
-  So that implementation never runs ahead of the specification while bugs and chores keep their leeway
+  So that implementation never runs ahead of the specification, while a bug or chore that restores stated behaviour keeps its leeway
 
   Scenario: An unstated feature is held and the wall refuses it
     Given an implement-kind item typed feature whose asked-for behaviour the spec-stated judgement reports unstated
@@ -8715,8 +8715,8 @@ Feature: New behaviour gets new spec before it is built
     And the item is spec-change tier and is not routed to ready
     And a dispatch of the item is refused with exit code 5 naming the unratified topic
 
-  Scenario: A bug is routed as today
-    Given an implement-kind item the judgement classifies bug
+  Scenario: A bug restoring stated behaviour is routed as today
+    Given an implement-kind item the judgement classifies bug whose asked-for behaviour it reports stated
     When the item is filed
     Then it is routed through intake exactly as an item not subject to the tier
 
@@ -11427,7 +11427,7 @@ Feature: A parked plan child can be classified without being dispatched
     Then the disposition stays refused, exactly as the constraint requires
 
   Scenario: a second classify-tier run appends nothing
-    Given the child already carries a `livespec-spec-change-tier` record
+    Given the child already carries a `livespec-spec-change-tier` record whose behaviour digest and spec identity are unchanged
     When an operator runs `classify-tier` for it again
     Then nothing is appended and the existing classification is reported
 ```
@@ -14144,4 +14144,63 @@ Feature: proof_capture is read-only on the run's checkout but can exercise a loc
     Given a scratch repository under the system temporary directory
     When the launcher runs push to an https, ssh, git or file URL, to an scp-style host:path remote, to a path outside the temporary directory, or with --receive-pack or --exec
     Then it prints a LIVESPEC_PROOF_CAPTURE_READ_ONLY line and exits non-zero
+```
+
+## Scenario 342 — A run that exhausted its recapture bound is held by recovery routing, never routed fresh or resumed automatically
+
+```gherkin
+Feature: A recapture-exhausted run's finished implementation is never thrown away by recovery routing
+  Scenario: The item is held, not routed fresh
+    Given an item whose latest journaled dispatch ended at the non_converged terminal with LIVESPEC_RECAPTURE_EXHAUSTED on its cause line
+    And its draft pull request is open and every resume precondition passes
+    And the item has been returned to ready
+    When recovery routing grades the item
+    Then the route is held
+    And no run is launched for the item
+    And the route is neither fresh nor resume nor seeded
+  Scenario: No preserved work still holds
+    Given an item whose latest journaled dispatch ended with LIVESPEC_RECAPTURE_EXHAUSTED and that holds no open pull request and no needs-human ref
+    When recovery routing grades the item
+    Then the route is held, not fresh
+```
+
+## Scenario 343 — A recapture-exhausted hold names the preserved implementation and the explicit resume route
+
+```gherkin
+Feature: The recovery-held record tells the next seat how to resume a recapture-exhausted item
+  Scenario: Open pull request
+    Given an item held because its latest run exhausted its recapture bound, and whose pull request 4841 is open at head 8a902ed46
+    When its recovery-held record is written
+    Then the record names the refusal recapture-exhausted
+    And its detail reads "recapture-exhausted: implementation preserved on #4841 at 8a902ed46 ; resume --item <work-item-id> at proof_capture with a proof rider"
+  Scenario: No open pull request
+    Given such an item with no open pull request and a needs-human ref preserved at that run's ending
+    When its recovery-held record is written
+    Then the detail names that needs-human ref and its commit in place of the pull request
+  Scenario: No preserved work observed
+    Given such an item with no open pull request and no needs-human ref preserved at that run's ending
+    When its recovery-held record is written
+    Then the detail reads "recapture-exhausted: implementation preserved on no preserved work observed ; resume --item <work-item-id> at proof_capture with a proof rider"
+```
+
+## Scenario 344 — An item classified bug whose asked-for behaviour the spec does not state waits for ratification, and classify-tier re-judges a changed item
+
+```gherkin
+Feature: The spec-change hold covers every classification and follows the item's current text
+  Scenario: A bug-classified ask for unstated behaviour is held
+    Given an implement-kind item that the classifier classifies bug
+    And the spec-stated judgement reports its asked-for behaviour unstated
+    When the item is filed
+    Then its spec-change tier record reads tier spec-change with a linked proposed-change topic
+    And the item is held out of ready
+  Scenario: A bug restoring stated behaviour routes as before
+    Given an implement-kind item classified bug whose asked-for behaviour the judgement reports stated
+    When the item is filed
+    Then its tier record reads tier none and the item routes as every other factory-dispatchable item
+  Scenario: classify-tier re-judges a changed item
+    Given an item whose latest spec-change tier record reads tier none with a behaviour digest
+    And the item's body has since changed so its current behaviour digest differs
+    When classify-tier runs on the item
+    Then it appends one new record from a fresh judgement
+    And when that record is a held spec-change tier the item is held
 ```
