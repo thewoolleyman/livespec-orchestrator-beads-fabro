@@ -1,9 +1,10 @@
 """Rebuild dump-compatible stage diff artifacts from a run-state projection.
 
-The server's run-state projection holds the per-stage checkpoint diff. Reading
-that projection avoids fetching a run's event log, while materialising the
-familiar ``stages/<rank>-<stage>`` layout lets preserve-by-reference retain the
-exact artifact names and bytes a full dump would have written.
+The server's run-state projection holds the per-stage checkpoint diff beside
+the event sequence that orders it. Reading that projection avoids fetching a
+run's event log, while materialising the familiar ``stages/<rank>-<stage>``
+layout lets preserve-by-reference retain the exact artifact names and bytes a
+full dump would have written.
 """
 
 from __future__ import annotations
@@ -39,12 +40,20 @@ def stage_diffs_from_run_state(
         return ()
     stage_records = cast("dict[object, object]", stages)
     found: list[tuple[int, str, bytes]] = []
-    for ordinal, (stage_name, stage) in enumerate(stage_records.items(), start=1):
+    for stage_name, stage in stage_records.items():
         if not isinstance(stage_name, str) or not isinstance(stage, dict):
             continue
         stage_record = cast("dict[str, object]", stage)
+        sequence = stage_record.get("first_event_seq")
+        ordinal = stage_record.get("dump_ordinal", sequence)
         diff = stage_record.get("diff")
-        if not isinstance(diff, str):
+        if (
+            not isinstance(sequence, int)
+            or isinstance(sequence, bool)
+            or not isinstance(ordinal, int)
+            or isinstance(ordinal, bool)
+            or not isinstance(diff, str)
+        ):
             continue
         payload = _diff_payload(diff=diff, read_blob=read_blob)
         if payload is None:
