@@ -68,7 +68,7 @@ def protected_resume_seed(
     head = gather.observation.pull_request_head
     if head is None:
         return None
-    if head in {preserved.preservation_tip_sha, preserved.commit_sha}:
+    if head == (preserved.preservation_tip_sha or preserved.commit_sha):
         return None
     comparison = preserved_descendant(
         runner=runner,
