@@ -48,7 +48,7 @@ identity to compare against.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -178,8 +178,6 @@ def run_post_plan_record_command(
     )
     if evidence is None:
         return _EXIT_REFUSED
-    if evidence.build.artifact_paths is None:
-        evidence = replace(evidence, build=replace(evidence.build, artifact_paths=()))
     return _publish(post=post, client=client, evidence=evidence, env=env, runner=runner, emit=emit)
 
 
