@@ -93,8 +93,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    spec_identity_for_governing,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
+    identity_for_dod_taking,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -192,7 +192,9 @@ if not reading.holds:
     with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
         advisory.writelines(f"advisory: {finding}\n" for finding in reading.findings)
 subject = judgement_subject(item=item, cwd=repo, comments=comments, governing=governing)
-identity = spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+identity = identity_for_dod_taking(
+    item=item, cwd=repo, comments=comments, governing=governing
+)
 Path(f"{side}.record").write_text(
     json.dumps(
         {
