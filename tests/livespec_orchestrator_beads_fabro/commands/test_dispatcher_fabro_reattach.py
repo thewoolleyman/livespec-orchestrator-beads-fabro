@@ -2,13 +2,19 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_fabro_reattach as reattach
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     PollPolicy,
     run_dispatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
+    ReattachRun,
+    RunWatchDecision,
+)
 
 
 @dataclass(kw_only=True)
@@ -80,3 +86,46 @@ def test_stream_drop_keeps_polling_bound_run_until_terminal(*, tmp_path: Path) -
     assert [row["attempt"] for row in attempts] == [1, 2, 3]
     assert [row["status"] for row in attempts] == ["running", "running", "blocked"]
     assert all(row["run_id"] == "01DROPPED" for row in attempts)
+
+
+def test_reattach_reports_a_stall_from_the_shared_watch(*, tmp_path: Path) -> None:
+    """A within-budget dropped-client run retains the stall watchdog outcome."""
+
+    @dataclass(kw_only=True)
+    class _StalledWatch:
+        def observe_liveness(self, **_kwargs: object) -> None:
+            return None
+
+        def decide(self, **_kwargs: object) -> RunWatchDecision:
+            return RunWatchDecision(stalled=True)
+
+    runner = Runner(
+        replies=[
+            CommandResult(
+                exit_code=0,
+                stdout='[{"run_id":"01DROPPED","status":{"kind":"running"}}]',
+                stderr="",
+            )
+        ]
+    )
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="bd-ib-pxp2ve",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+    result = reattach.inspect_run(
+        plan=plan,
+        runner=cast(Any, runner),
+        journal=cast(Any, Journal()),
+        run_id=ReattachRun(run_id="01DROPPED", watch_state=cast(Any, _StalledWatch())),
+        follow_live=True,
+        timing=reattach.ReattachTiming(sleep=lambda _seconds: None),
+    )
+
+    assert result is not None
+    assert result.stalled_run_id == "01DROPPED"
+    assert result.budget_exceeded_run_id is None

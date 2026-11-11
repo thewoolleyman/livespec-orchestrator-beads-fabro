@@ -17,6 +17,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import 
     CommandResult,
     FabroRunResult,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
+    RunWatchState,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
     FABRO_RM_TIMEOUT_SECONDS,
 )
@@ -39,6 +42,7 @@ class WatchResult:
     budget_exceeded_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
+    run_watch_state: RunWatchState | None = None
 
 
 def watched_launch_result(
@@ -80,4 +84,8 @@ def watched_launch_result(
             stalled_run_id=watched.stalled_run_id,
         )
     thread.join()
-    return FabroRunResult(command=holder["result"], run_id=run_id_holder.get("run_id"))
+    return FabroRunResult(
+        command=holder["result"],
+        run_id=run_id_holder.get("run_id"),
+        run_watch_state=watched.run_watch_state,
+    )

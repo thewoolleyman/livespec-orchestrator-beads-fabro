@@ -18,6 +18,13 @@ import importlib
 from pathlib import Path
 from typing import Any
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_post_run_terminal import (
+    reattach_terminal,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroInspectResult
+
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _COMMANDS = (
     _REPO_ROOT / ".claude-plugin" / "scripts" / "livespec_orchestrator_beads_fabro" / "commands"
@@ -46,7 +53,7 @@ def test_the_post_run_terminal_path_is_a_public_entry_point_of_its_own_module() 
     module = _post_run_module()
 
     assert callable(module.post_run_terminal)
-    assert module.__all__ == ["PostRunTerminal", "post_run_terminal"]
+    assert module.__all__ == ["PostRunTerminal", "post_run_terminal", "reattach_terminal"]
 
 
 def test_the_engine_no_longer_carries_the_names_the_post_run_path_moved_out() -> None:
@@ -56,3 +63,43 @@ def test_the_engine_no_longer_carries_the_names_the_post_run_path_moved_out() ->
     still_in_engine = [name for name in _MOVED_OUT_OF_THE_ENGINE if hasattr(engine, name)]
 
     assert still_in_engine == []
+
+
+def test_reattach_terminal_maps_budget_and_stall_cancels(tmp_path: Path) -> None:
+    """A re-attach cancel retains the disposition selected by the shared watch."""
+    plan = build_plan(
+        repo=tmp_path,
+        work_item_id="bd-ib-pxp2ve",
+        workflow_toml=tmp_path / "workflow.toml",
+        goal_file=tmp_path / "goal.md",
+        fabro_bin="fabro",
+        janitor=None,
+        janitor_checkout=tmp_path / "janitor",
+    )
+    command = CommandResult(exit_code=0, stdout="", stderr="")
+    budget = reattach_terminal(
+        plan=plan,
+        inspect=FabroInspectResult(
+            command=command,
+            payload=None,
+            status_kind="running",
+            failure=None,
+            budget_exceeded_run_id="01BUDGET",
+        ),
+    )
+    stalled = reattach_terminal(
+        plan=plan,
+        inspect=FabroInspectResult(
+            command=command,
+            payload=None,
+            status_kind="running",
+            failure=None,
+            stalled_run_id="01STALL",
+        ),
+    )
+
+    assert budget is not None
+    assert (budget.status, budget.fabro_run_id) == ("run-wall-budget-exceeded", "01BUDGET")
+    assert stalled is not None
+    assert (stalled.status, stalled.fabro_run_id) == ("stalled-no-progress", "01STALL")
+    assert reattach_terminal(plan=plan, inspect=None) is None

@@ -45,14 +45,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_watc
     RunWallBudgetWatch,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
-    decide_run_watch,
+    RunWatchState,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watch_poll import (
     WatchPollBinding,
     observe_watch_poll,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
-    LivenessSample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_watched_launch_result import (
     WatchResult,
@@ -197,9 +194,6 @@ class WatchedFabroLauncher:
         # second time is what keeps it in step with the `stall_timeout` written
         # into the rendered graph and with the subprocess ceiling derived from
         # the same number.
-        stall_seconds = plan.stall_window.seconds
-        samples: list[LivenessSample] = []
-        liveness_state = LivenessState()
         known_run_id: str | None = None
         # The run this watch loop has BOUND, and so the one every poll after
         # the first match reads BY ID rather than hunting for in a listing.
@@ -212,7 +206,14 @@ class WatchedFabroLauncher:
         # This run's budget clock and the ledger its export writes through. It
         # holds the clock rather than this loop, so the fix-it-once rule has
         # exactly one home; see `RunWallBudgetWatch`.
-        budget = RunWallBudgetWatch(ledger=run_wall_ledger(repo=plan.repo))
+        watch = RunWatchState(
+            budget=RunWallBudgetWatch(ledger=run_wall_ledger(repo=plan.repo)),
+            dispatch_id=self.dispatch_id,
+            liveness_state=LivenessState(),
+            sample_liveness=liveness_sample,
+            liveness_clock=self.clock,
+            wall_clock=self.wall_clock,
+        )
         stamp = RunAttribution()
         # The run's own RETURN ends the watch. The thread's death is consulted
         # beside it only because `port.run` can RAISE: no signal arrives on
@@ -227,7 +228,7 @@ class WatchedFabroLauncher:
                 # that had already completed. A run whose `fabro run` has NOT
                 # returned, and whose liveness stays flat for the full stall
                 # window, is still cancelled as stalled-no-progress below.
-                return WatchResult()
+                return WatchResult(run_watch_state=watch)
             poll = observe_watch_poll(
                 plan=plan,
                 runner=runner,
@@ -251,38 +252,29 @@ class WatchedFabroLauncher:
             if run_id is not None and not worker_running_notified:
                 self._notify_worker_running()
                 worker_running_notified = True
-            liveness_state.observe_run(record=poll.record, journal=journal)
-            samples.append(
-                liveness_sample(
-                    plan=plan,
-                    port=port,
-                    run_id=bound_run_id or run_id,
-                    heartbeat_path=self.heartbeat_path,
-                    dispatch_id=self.dispatch_id,
-                    observed_at=self.clock(),
-                    state=liveness_state,
-                )
-            )
             if known_run_id is None or run is None or run.status_kind != "running":
                 continue
-            decision = decide_run_watch(
-                budget=budget,
-                dispatch_id=self.dispatch_id,
+            watch.observe_liveness(
+                plan=plan,
+                port=port,
+                run_id=known_run_id,
+                heartbeat_path=self.heartbeat_path,
+                record=poll.record,
+                journal=journal,
+            )
+            decision = watch.decide(
                 plan=plan,
                 port=port,
                 runner=runner,
                 journal=journal,
                 run_id=known_run_id,
-                recorded_epoch=poll.recorded_running_epoch,
-                now_epoch=self.wall_clock(),
-                samples=tuple(samples),
-                stall_seconds=stall_seconds,
+                record=poll.record,
             )
             if decision.budget_exceeded:
                 return WatchResult(budget_exceeded_run_id=known_run_id)
             if decision.stalled:
                 return WatchResult(stalled_run_id=known_run_id)
-        return WatchResult()
+        return WatchResult(run_watch_state=watch)
 
     def _notify_worker_running(self) -> None:
         """Release the native-secret launch transaction, if one is wired.

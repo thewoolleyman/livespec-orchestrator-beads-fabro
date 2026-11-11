@@ -28,6 +28,9 @@ from livespec_orchestrator_beads_fabro.commands._fabro_resource_exhaustion impor
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_run_watch_decision import (
+        RunWatchState,
+    )
 
 __all__: list[str] = [
     "CommandResult",
@@ -79,6 +82,7 @@ class FabroRunResult:
     budget_exceeded_run_id: str | None = None
     abandoned_run_id: str | None = None
     abandoned_item_status: str | None = None
+    run_watch_state: RunWatchState | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
