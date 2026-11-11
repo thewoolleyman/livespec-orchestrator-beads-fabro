@@ -14,9 +14,9 @@ its fields and in each comment.
 
 Scope limits, stated so the counts are not over-read:
 
-- Only two tenants were read: livespec-orchestrator-beads-fabro (5,176 exported records) and
-  livespec-dev-tooling (3,723). The other fleet tenants were not read. The 2026-08-22 sweep
-  recorded on bd-ib-ai9a read twelve.
+- This first pass read two tenants: livespec-orchestrator-beads-fabro (5,176 exported records)
+  and livespec-dev-tooling (3,723). The rest of the fleet was read about an hour later; see
+  "Fleet-wide pass" below.
 - Closed items were excluded on purpose: a closed item is not dispatched.
 - A plan epic is never dispatched, so an opener in an epic's comments strands nothing. Epics
   are listed separately below for that reason. Each item's type and plan slug were read from
@@ -63,6 +63,58 @@ epics, where it is harmless. The work items it has stranded in these two tenants
 livespec-dev-tooling-k9mr, livespec-dev-tooling-uwkmew and livespec-dev-tooling-pztogk; the
 last is already past dispatch. The incident item livespec-dev-tooling-2zotza is closed and so
 is outside this count.
+
+## Fleet-wide pass
+
+At about 22:30Z the same export and search were run over every other tenant with a `.beads`
+configuration under `/data/projects` on this host, at the fleet coordinator's request.
+
+Scope: 19 tenants exist there; 18 were read. NOT read: hetzner-xubuntu-info, which answered
+"Access denied" under the family wrapper. On the coordinator's instruction no credential was
+sought for it, so its state is unknown. homelab, openbrain and resume were read through their
+own project wrappers.
+
+No open item carries an opener in: agent-flywheel, agentic_coding_flywheel_setup, dolt-server,
+gdk-in-a-box-agent-flywheel-wrapper, homelab, livespec-tdd-proof, openbrain, resume and
+tab-groups-windows-list.
+
+Comment-poisoned, beyond the two tenants above: only livespec-console-beads-fabro, with
+livespec-console-beads-fabro-mxppfq (a blocked bug, comment of 2026-09-12) and
+livespec-console-beads-fabro-4jb3kl (a plan epic, harmless).
+
+So the dispatchable work items stranded by a comment, across the 18 tenants read, are four:
+livespec-dev-tooling-k9mr, livespec-dev-tooling-uwkmew, livespec-dev-tooling-pztogk and
+livespec-console-beads-fabro-mxppfq.
+
+Field-only, beyond the two tenants above:
+
+- livespec: livespec-cpqi (`ready`, notes field, offset 8738), livespec-qj3ef3 (active,
+  description), livespec-5qu1 (backlog, description) and livespec-h22nve (a plan epic).
+- One family with one cause: sibling items about uploading flake-retry records carry the same
+  GitHub Actions condition expression in their description in eight tenants: bd-ib-j3rrad,
+  bd-gj-inpdgb, livespec-driver-claude-jk6ka4, livespec-driver-codex-lkw5kl,
+  livespec-driver-pi-baowvv (active), livespec-qj3ef3 (active), overseer-6fvwoq and
+  livespec-runtime-2rqkj4.
+
+Dispositions the coordinator recorded on 2026-11-11: it repaired livespec-dev-tooling-2ocz4v
+itself and will repair livespec-cpqi and livespec-5qu1 before they launch; the eight-tenant
+family goes to plan fleet-flaky-tests to fix in one pass; the remaining field-only items are
+edited when they come up for approve. This plan edited none of them. Comments are not
+hand-edited by anyone: the comment-poisoned items wait for bd-ib-cfgtlo.
+
+What the fleet pass adds to the picture: field openers come overwhelmingly from quoting
+GitHub Actions or Ansible expressions into an item, and one fan-out filing reproduced a single
+opener into eight tenants. That is the population the filing-time finding of Scenario 334
+(bd-ib-cfgtlo) stops at the source.
+
+## Sequencing decided inside the plan
+
+bd-ib-engf4h and bd-ib-it2d each carry a blocks edge from bd-ib-cfgtlo since 2026-11-11.
+bd-ib-engf4h's writers must call the one shared rewrite function that bd-ib-cfgtlo adds to the
+goal render, and bd-ib-it2d's summary assertions sit on the refusal path bd-ib-cfgtlo builds.
+The dispatcher holds both tickets in place until bd-ib-cfgtlo closes. bd-ib-v52w7a's reference
+line now names Scenario 314 and its second assertion is restated in that scenario's generic
+exit-code-5 terms.
 
 ## Proof candidates for the plan's own Definition of Done
 
