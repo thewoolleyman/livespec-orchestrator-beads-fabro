@@ -53,7 +53,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellComma
 from livespec_orchestrator_beads_fabro.commands._drift_run_judge import drift_judge
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     CONFIGURATION_RUBRIC,
-    FEATURE_CLASS,
     SPEC_CHANGE_KINDS,
     SPEC_DIRNAME,
 )
@@ -128,9 +127,9 @@ def _classified(
 ) -> CandidateSlice:
     """One candidate's tier, or the candidate unchanged when nothing decided it.
 
-    The CLASSIFICATION runs before the judgement for the reason the gate's own
-    order gives: three of the four classes are exempt outright, so a `bug` or a
-    `chore` never pays for the judgement at all.
+    The CLASSIFICATION runs before the judgement so that its result remains
+    recorded as evidence, but no implement-kind classification exempts a
+    candidate from the judgement.
     """
     classification = spec_stated.classify(
         title=candidate.title,
@@ -146,8 +145,6 @@ def _classified(
     )
     if not is_successful(classification):
         return candidate
-    if classification.unwrap() != FEATURE_CLASS:
-        return replace(candidate, is_spec_change=False)
     verdict = judge_within_ceiling(
         spec_tree=tree,
         statement=_behaviour(candidate=candidate),
