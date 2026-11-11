@@ -213,6 +213,19 @@ def test_the_checkout_step_fails_the_run_when_it_cannot_land() -> None:
     assert "set -e" in block
 
 
+def test_a_seeded_checkout_runs_the_prepare_lineage_guard() -> None:
+    """A preservation ref places and verifies its exact seed before any agent runs."""
+    module = _entry_module()
+    seed_ref = "refs/heads/needs-human/bd-ib-azhnw5"
+    block = module.resume_checkout_prepare_steps_block(
+        checkout=module.ResumeCheckout(branch=_BRANCH, head=_HEAD, fetch_ref=seed_ref)
+    )
+
+    assert f"git fetch --no-tags origin {seed_ref}" in block
+    assert "_dispatcher_seeded_lineage import main" in block
+    assert 'main(argv=[\\"prepare\\"])' in block
+
+
 def test_no_resume_renders_cache_provisioning_but_no_checkout_step() -> None:
     """A fresh sandbox warms pyright, but does not fetch a published head."""
     module = _entry_module()
