@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     plan_proof_entries,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_release_repository import (
+    ReleaseComponent,
     ReleaseReading,
     ReleaseTags,
     UnreadableRelease,
@@ -141,6 +142,15 @@ def _proved() -> list[dict[str, object]]:
         _record(verdict=VERDICT_VERIFIED, identity="replaying"),
         _record(verdict=VERDICT_HUMAN_ATTESTED, identity="maintainer", assertion=_HUMAN),
     ]
+
+
+def _with_artifact_paths(*, record: dict[str, object], paths: str) -> dict[str, object]:
+    """Add the record-owned artifact evidence line to a rendered plan record."""
+    body = record["text"]
+    assert isinstance(body, str)
+    return {
+        "text": body.replace("- Commit: c0ffee1", f"- Commit: c0ffee1\n- Artifact paths: {paths}")
+    }
 
 
 def test_an_independent_verified_replay_and_an_attestation_prove_both_legs() -> None:
@@ -252,6 +262,51 @@ def test_a_record_naming_an_unknown_tag_is_rejected() -> None:
     # Both halves the clause requires: the missing release identity, and the
     # release repository the gate judged it against.
     assert [("v9.9.9" in one and _REPOSITORY in one) for one in leg.rejected] == [True]
+
+
+def test_a_component_release_rule_applies_only_to_the_recorded_artifact_paths() -> None:
+    components = (
+        ReleaseComponent(
+            name="shared-credentials",
+            tag_prefix="v",
+            paths=("tools/shared_credentials/",),
+        ),
+    )
+    reading = ReleaseTags(
+        repository=_REPOSITORY,
+        tags=_TAGS,
+        components=components,
+    )
+    release_none = _proved()
+    release_none[2] = _with_artifact_paths(
+        record=_record(verdict=VERDICT_VERIFIED, identity="replaying", release=None),
+        paths="tools/shared_credentials/seal.py",
+    )
+
+    rejected = _leg(comments=release_none, reading=reading)
+
+    assert rejected.unproved == (_HOST,)
+    assert ["component shared-credentials" in one for one in rejected.rejected] == [True]
+    # The matching component tag is the control: it proves the same artifact.
+    matching = _proved()
+    matching[2] = _with_artifact_paths(
+        record=_record(
+            verdict=VERDICT_VERIFIED,
+            identity="replaying",
+            release=_TAG,
+        ),
+        paths="tools/shared_credentials/seal.py",
+    )
+    assert _leg(comments=matching, reading=reading).unproved == ()
+
+    wrong_tag = _proved()
+    wrong_tag[2] = _with_artifact_paths(
+        record=_record(verdict=VERDICT_VERIFIED, identity="replaying", release="other-v0.1.0"),
+        paths="tools/shared_credentials/seal.py",
+    )
+    refusal = _leg(comments=wrong_tag, reading=reading)
+    assert refusal.unproved == (_HOST,)
+    assert ["other-v0.1.0" in one for one in refusal.rejected] == [True]
 
 
 def test_a_release_repository_the_gate_could_not_read_rejects_every_record_on_it() -> None:
