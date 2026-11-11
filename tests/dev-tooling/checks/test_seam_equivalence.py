@@ -357,7 +357,11 @@ def test_the_committed_payload_references_every_integration_input(
     assert referenced == rules.SCHEMA_PROJECTABLE_INPUTS
     assert referenced == check.rendered_input_names(repo_root=_REPO_ROOT)
     positions = {occurrence.position for occurrence in occurrences if occurrence.name in referenced}
-    assert positions >= {"script", scan.PREPARE_STEP_POSITION, scan.PROMPT_BODY_POSITION}
+    # The setup steps are graph command nodes, so their tokens sit in a node `script`
+    # (work-item bd-ib-dpsiwz); the committed run config carries no prepare step, and
+    # so no token in a prepare-step position.
+    assert positions >= {"script", scan.PROMPT_BODY_POSITION}
+    assert scan.PREPARE_STEP_POSITION not in positions
 
 
 def test_only_a_prepare_step_script_renders_in_the_run_config(
