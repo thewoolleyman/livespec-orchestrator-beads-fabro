@@ -42,12 +42,12 @@ it can never reach an unrelated process.
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import fcntl
 import os
 import select
 import signal
 import subprocess
-import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -63,6 +63,16 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 # chosen to make a test convenient: at this distance an armed reaper outlives
 # every process identifier it holds.
 _WEEK_SECONDS = 7 * 24 * 60 * 60
+
+# An epoch no host clock is near (the year 2100). The case needs a deadline far
+# enough away that an armed reaper outlives every identifier it holds, and a
+# constant says that without reading the host clock.
+_FAR_FUTURE_EPOCH = 4_102_444_800
+
+# prctl(2) option that makes this process the adoptive parent of its orphaned
+# descendants, so their exit statuses are collected here instead of by whatever
+# the sandbox runs as process 1.
+_PR_SET_CHILD_SUBREAPER = 36
 
 # The failure bound on waiting for the reaper to NOTICE a finished group. It
 # polls, so disarming is not instantaneous, and the wait ends on the reaper's
@@ -143,6 +153,28 @@ class _HolderPipe:
         readable, _, _ = select.select([self.read_fd], [], [], budget_seconds)
         return bool(readable)
 
+    def holders(self) -> list[str]:
+        """Describe every OTHER process holding a descriptor on this pipe.
+
+        Read from `/proc` by the pipe's inode, so a wait that never reaches EOF
+        can say which process kept it open and what state it was in.
+        """
+        needle = f"pipe:[{os.fstat(self.read_fd).st_ino}]"
+        found: list[str] = []
+        for entry in Path("/proc").iterdir():
+            # A process may exit between the listing and any read of it, and
+            # that is the answer this scan wants: it no longer holds anything.
+            with contextlib.suppress(OSError):
+                held = [fd.name for fd in (entry / "fd").iterdir() if str(fd.readlink()) == needle]
+                if held and entry.name.isdigit() and entry.name != str(os.getpid()):
+                    stat = (entry / "stat").read_text(encoding="utf-8")
+                    command = (entry / "cmdline").read_bytes().replace(b"\0", b" ")
+                    found.append(
+                        f"pid {entry.name} state {stat.rpartition(') ')[2][:1]} "
+                        f"fds {','.join(held)} command {command.decode(errors='replace').strip()!r}"
+                    )
+        return found
+
     def close(self) -> None:
         self.seal()
         os.close(self.read_fd)
@@ -167,7 +199,7 @@ def _launch_guarded(
         capture_output=True,
         text=True,
         timeout=_LAUNCH_TIMEOUT_SECONDS,
-        env=_env_with(deadline=int(time.time()) + _WEEK_SECONDS),
+        env=_env_with(deadline=_FAR_FUTURE_EPOCH),
         pass_fds=(holders.write_fd,),
         check=False,
     )
@@ -195,6 +227,31 @@ def test_process_scan_tolerates_a_process_disappearing(
 
 
 @contextmanager
+def _adopting_orphans() -> Iterator[None]:
+    """Make this process the parent of every orphan the guarded launch leaves.
+
+    An orphaned descendant that is killed stays a zombie until its parent
+    collects it, and its parent is whatever runs as process 1 in the sandbox.
+    A process 1 that never collects (a bare `tail -f /dev/null` in a container
+    job) leaves the zombie in the guard's process group forever, so the reaper
+    keeps seeing a member and stays armed. Adopting the orphans lets the case
+    collect the one it kills, so the group empties for real.
+    """
+    libc = ctypes.CDLL(None, use_errno=True)
+    assert libc.prctl(_PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) == 0, os.strerror(ctypes.get_errno())
+    try:
+        yield
+    finally:
+        _ = libc.prctl(_PR_SET_CHILD_SUBREAPER, 0, 0, 0, 0)
+
+
+def _collect(*, pid: int) -> None:
+    """Collect a killed child's exit status; a pid that is not ours has none to collect."""
+    with contextlib.suppress(ChildProcessError):
+        _ = os.waitpid(pid, 0)
+
+
+@contextmanager
 def _owned_processes(*, guard: Path) -> Iterator[list[int]]:
     """Reap everything THIS case started, on every exit path including failure.
 
@@ -213,6 +270,7 @@ def _owned_processes(*, guard: Path) -> Iterator[list[int]]:
         for pid in (*extra_pids, *_processes_naming(guard=guard)):
             with contextlib.suppress(ProcessLookupError, PermissionError):
                 os.kill(pid, signal.SIGKILL)
+            _collect(pid=pid)
 
 
 def test_a_finished_group_disarms_rather_than_arming_a_multi_day_kill(
@@ -243,7 +301,7 @@ def test_a_finished_group_disarms_rather_than_arming_a_multi_day_kill(
         assert disarmed and stragglers == [], (
             "a reaper is still armed after the guarded group finished; it holds "
             f"a recyclable process-group id for up to {_WEEK_SECONDS}s "
-            f"(pids {stragglers})"
+            f"(pids {stragglers}); holders of the pipe: {holders.holders()}"
         )
 
 
@@ -275,7 +333,7 @@ def test_a_surviving_descendant_keeps_the_reaper_armed(tmp_path: Path) -> None:
         "sleep 600 >/dev/null 2>&1 </dev/null & child=$!; "
         f"printf '%s' \"$child\" > {pid_file}; exit 0"
     )
-    with _owned_processes(guard=guard) as owned, _holder_pipe() as holders:
+    with _owned_processes(guard=guard) as owned, _adopting_orphans(), _holder_pipe() as holders:
         result = _launch_guarded(guard=guard, command=["/bin/sh", "-c", adapter], holders=holders)
         assert result.returncode == 0, result.stderr
 
@@ -286,15 +344,39 @@ def test_a_surviving_descendant_keeps_the_reaper_armed(tmp_path: Path) -> None:
         # The adapter has returned, so the guard shell is gone. Anything still
         # naming the guard is the reaper -- and it MUST still be there, because
         # the descendant keeps the group alive.
-        assert _processes_naming(guard=guard) != [], (
+        reapers = _processes_naming(guard=guard)
+        assert reapers != [], (
             "the reaper disarmed while a descendant of the guarded group was "
             "still executing, so that descendant is now unbounded"
         )
+        # The reaper is an orphan this case adopted: it exits on its own below,
+        # and its status is collected with the descendant's.
+        owned.extend(reapers)
 
         # Release the group, and the reaper must now disarm: its lifetime is
         # tied to the group emptying, in that order, which is the event this
         # case ends on rather than any interval.
         os.kill(descendant, signal.SIGKILL)
-        assert holders.all_holders_gone(
-            budget_seconds=_DISARM_SETTLE_SECONDS
-        ), "the reaper stayed armed after the last descendant of the group exited"
+        _collect(pid=descendant)
+        assert holders.all_holders_gone(budget_seconds=_DISARM_SETTLE_SECONDS), (
+            "the reaper stayed armed after the last descendant of the group exited; "
+            f"holders of the pipe: {holders.holders()}"
+        )
+
+
+def test_the_holder_report_names_a_process_that_keeps_the_pipe_open() -> None:
+    """The failure message must say WHICH process held the pipe, not merely that one did."""
+    with _holder_pipe() as holders:
+        assert holders.write_fd is not None
+        assert holders.holders() == []
+        holder = subprocess.Popen(["/bin/sleep", "600"], pass_fds=(holders.write_fd,))
+        try:
+            holders.seal()
+            report = holders.holders()
+        finally:
+            holder.kill()
+            _ = holder.wait()
+
+    assert len(report) == 1
+    assert report[0].startswith(f"pid {holder.pid} state ")
+    assert "'/bin/sleep 600'" in report[0]
