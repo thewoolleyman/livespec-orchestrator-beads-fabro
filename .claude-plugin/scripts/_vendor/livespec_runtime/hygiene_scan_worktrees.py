@@ -83,16 +83,11 @@ def detect_stale_worktrees(
     boundary is therefore behaviour-preserving, not a swallow — nothing
     is discarded and no failure is converted into an empty list.
 
-    ⚠️ THE CANDIDATE SET NOW INCLUDES WORKTREES A PLAIN REMOVE REFUSES.
-    A worktree whose only dirt is UNTRACKED is a candidate (that is the
-    population that accumulates, and hiding it was the bug), but
-    `GitWorktree` carries no dirt, so a reaper indexing this list cannot
-    tell which entries need `git worktree remove --force`. An unforced
-    remove fails loudly on those rather than doing anything destructive.
-    Teaching the reapers to force is a coordinated multi-repo change, the
-    same class as widening the return type; `stale_worktree_findings`
-    already names the dirt and emits the forced command for the operator
-    path.
+    The returned list is the REMOVABLE candidate set. It never contains a
+    worktree with untracked entries, because the consuming reaper removes
+    every candidate with `git worktree remove --force`. Those worktrees
+    remain reportable through `stale_worktree_findings`, which names their
+    dirt and gives the forced command for the operator path.
     """
     context = unsafe_perform_io(
         build_context(
@@ -107,10 +102,14 @@ def detect_stale_worktrees(
     for worktree in unsafe_perform_io(worktrees(context=context).unwrap()):
         if worktree.path == context.primary_path:
             continue
+        if worktree.prunable_reason is not None:
+            candidates.append(worktree)
+            continue
         finding = unsafe_perform_io(
             stale_worktree_finding(context=context, worktree=worktree).unwrap()
         )
-        if finding is not None:
+        dirt = unsafe_perform_io(worktree_dirt(worktree=worktree, runner=context.runner).unwrap())
+        if finding is not None and dirt is not None and dirt.untracked_entries == ():
             candidates.append(worktree)
     return candidates
 
