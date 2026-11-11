@@ -50,6 +50,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_ruling import (
+    current_ruling_route,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     unobservable_measurements,
 )
@@ -65,6 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
     PRESERVED_WORK_ABSENT,
     PRESERVED_WORK_VERIFIED,
     RECOVERY_HELD_STAGE,
+    recovery_held_detail,
     recovery_held_record,
     recovery_held_report,
 )
@@ -87,7 +91,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_ruled_seed import (
     current_seed_ruling,
-    ruled_seed,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
@@ -215,7 +218,7 @@ class RecoveryRouting:
                 stage=RECOVERY_HELD_STAGE,
                 pr_number=None,
                 merge_sha=None,
-                detail=_held_detail(route=one),
+                detail=recovery_held_detail(route=one),
             )
             for one in self.routes
             if _is_held(route=one)
@@ -269,18 +272,6 @@ def route_recovery(
 def _is_held(*, route: RecoveryRoute | None) -> bool:
     """Whether this route is the hold; an absent route never is."""
     return route is not None and route.route == ROUTE_HELD
-
-
-def _held_detail(*, route: RecoveryRoute) -> str:
-    """Every reason one held item names, as one line for the deferred outcome."""
-    hold = route.hold
-    if hold is None:
-        return "recovery held"
-    named = (
-        *(f"{one.name}: {one.detail}" for one in hold.measurements),
-        *hold.refusals,
-    )
-    return "recovery held: " + "; ".join(named)
 
 
 def _released_route(
@@ -343,14 +334,6 @@ def _released_route(
         # would carry out a remedy the refusal exists to forbid, and would do it
         # with the record reading like an ordinary measured fallback.
         return _held_route(item=item, journal=journal, hold=hold)
-    if isinstance(ruling, FreshRuling):
-        return (
-            RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH)
-            if gather.anchor is not None
-            else _fallback_route(
-                gather=gather, item=item, repo=repo, runner=runner, journal=journal
-            )
-        )
     if ruling is not None:
         # A CURRENT SEED RULING takes the seed "ahead of a `resume` and ahead of the
         # preference order", so it sits past the two gradings above (which a ruling
@@ -358,16 +341,13 @@ def _released_route(
         # carry at the ruled commit holds the item: "Routing MUST NOT then fall
         # through to another preserved tree, to the observed published head, or to
         # `fresh`", which is why the hold returns here and not into the fallback.
-        ruled = ruled_seed(
-            runner=runner, repo=repo, ruling=ruling, earlier_run_ids=gather.earlier_run_ids
-        )
-        if isinstance(ruled, RecoveryHold):
-            return _held_route(item=item, journal=journal, hold=ruled)
-        return RecoveryRoute(
-            work_item_id=item.id,
-            route=ROUTE_SEEDED,
-            seed=ruled,
-            preserved_work=PRESERVED_WORK_VERIFIED,
+        return current_ruling_route(
+            runner=runner,
+            repo=repo,
+            item=item,
+            journal=journal,
+            gather=gather,
+            ruling=ruling,
         )
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
