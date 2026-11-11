@@ -200,5 +200,6 @@ def test_the_groom_judgement_labels_its_own_spawn_not_the_drift_run(
     )
 
     assert seen.read_text(encoding="utf-8").splitlines() == [
-        "service.namespace=livespec-family,livespec.caller=groom_spec_change_classification"
+        "service.namespace=livespec-family,livespec.caller=groom_spec_change_classification",
+        "service.namespace=livespec-family,livespec.caller=groom_spec_change_classification",
     ]
