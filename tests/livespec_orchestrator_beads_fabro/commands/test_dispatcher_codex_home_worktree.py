@@ -139,6 +139,12 @@ def test_the_projected_credential_is_still_readable_through_codex_home(
     assert projected.read_text(encoding="utf-8") == _SNAPSHOT
 
 
+def test_codex_auth_projection_is_absent_without_a_snapshot() -> None:
+    """Claude-only routing does not render a dangling Codex-home projection."""
+    assert codex_auth_prepare_steps_block(codex_auth_snapshot=None) == ""
+    assert codex_auth_env_lines(codex_auth_snapshot=None) == ""
+
+
 def _rendered_prepare_scripts(*, sandbox_root: Path) -> list[str]:
     """Every prepare-step script the two Codex-home blocks emit, in order.
 
