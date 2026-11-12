@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType
@@ -78,3 +79,36 @@ def test_a_drift_proposal_is_committed_and_opened_from_its_worktree(tmp_path: Pa
         ),
     ]
     assert list(primary.rglob("drift-one.md")) == []
+
+
+def test_open_drift_run_pull_requests_supply_filed_identities_and_queue_count(
+    tmp_path: Path,
+) -> None:
+    assert _MODULE_PATH.is_file()
+    publication = _publication()
+    marker = publication.drift_pull_request_body(finding_identities=("drift-one", "drift-two"))
+
+    @dataclass(kw_only=True)
+    class _ListRunner:
+        calls: list[tuple[list[str], Path]] = field(default_factory=list)
+
+        def run(self, *, argv: list[str], cwd: Path, timeout_seconds: float) -> CommandResult:
+            _ = timeout_seconds
+            self.calls.append((argv, cwd))
+            return CommandResult(
+                exit_code=0,
+                stdout=json.dumps([{"body": marker}, {"body": "ordinary pull request"}]),
+                stderr="",
+            )
+
+    runner = _ListRunner()
+
+    open_proposals = publication.open_drift_run_proposals(repo=tmp_path, runner=runner)
+
+    assert open_proposals == frozenset({"drift-one", "drift-two"})
+    assert runner.calls == [
+        (
+            ["gh", "pr", "list", "--state", "open", "--json", "body", "--limit", "100"],
+            tmp_path,
+        )
+    ]
