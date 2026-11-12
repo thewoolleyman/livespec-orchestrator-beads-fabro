@@ -37,13 +37,15 @@ In-flight alignment, all `align`:
 - #5036, #5037 and #5042, and the pending the-spec-change-tier-judgement, change how the judgement is taken, not where approve reads the hold.
 - raise-a-ready-item-refused concerns the attended-host refusal, a different refusal.
 
-Fleet scope: the valve and the passes are the orchestrator Dispatcher's, so every tenant inherits the change through the plugin.
+Fleet scope: the valve and the passes are the orchestrator Dispatcher's, so every beads tenant inherits the change through the plugin. livespec-orchestrator-git-jsonl has no `approve` path, so it is unaffected.
+
+Grade fixes applied (legacy-coordinator-agent, session 959b2f8b): a hold released by a non-void `release-spec-tier` attestation is exempt from both the refusal and the withdrawal, because that valve is the human's only route through. A pass that cannot read the spec history withdraws nothing. The no-linked-topic case has its own scenario. The hold reasons this text describes are the ones the Dispatcher names `no-linked-topic`, `unratified-topic` and `awaiting-rejudgement`.
 
 ### Proposed Changes
 
 **1. The approve valve and the passes read the hold (`contracts.md` §"Grooming and slice-size calibration", the "An autonomy tier is assigned" bullet).** After the sentence ending "the pre-dispatch wall MUST refuse a held item with exit code `5` naming the unratified topic," and before "and once both conditions hold", the clause continues as below. The current sentence is split, so the new sentences stand on their own and the "once both conditions hold" text keeps its meaning.
 
-> Every route into `ready` MUST read that same hold, and none may adopt a second hold rule. The `approve` valve MUST read it before it takes the Definition-of-Done judgement. It MUST refuse a `pending-approval` item that is held because the item has no linked topic, or because its linked topic has no revision record with decision `accept` or `modify`. The refusal names the linked topic and the reason, takes no Definition-of-Done judgement, makes no model call, and leaves the item at `pending-approval`. For a `pending-approval` item whose linked topic carries such a revision record but whose judgement has not yet been re-run against the ratified specification, `approve` MUST first take the item's spec-change tier classification again against the ratified specification. It then routes the item as the release below would when no hold stands afterwards, and otherwise refuses, naming the topic and the reason. An item whose newest spec-change tier record reads tier none, or that carries no such record, is approved exactly as it would be without this sentence. When the spec history cannot be read, `approve` MUST refuse an item whose newest spec-change tier record reads tier spec-change, and MUST NOT move it to `ready`. An intake or drain pass that reaches a `ready` item held because it has no linked topic, or because its linked topic has no revision record with decision `accept` or `modify`, MUST withdraw it to `backlog` through the journaled `move→backlog`. It records a ledger comment naming the linked topic and the reason. A `ready` item whose linked topic carries such a revision record, and that is due its re-run judgement, stays at `ready`, and the pass takes that judgement rather than withdrawing it. An item withdrawn this way re-enters only through intake routing.
+> Every route into `ready` MUST read that same hold, and none may adopt a second hold rule. The `approve` valve MUST read it before it takes the Definition-of-Done judgement. It MUST refuse a `pending-approval` item that is held because the item has no linked topic, or because its linked topic has no revision record with decision `accept` or `modify`. The refusal names the linked topic and the reason, takes no Definition-of-Done judgement, makes no model call, and leaves the item at `pending-approval`. For a `pending-approval` item whose linked topic carries such a revision record but whose judgement has not yet been re-run against the ratified specification, `approve` MUST first take the item's spec-change tier classification again against the ratified specification. It then routes the item as the release below would when no hold stands afterwards, and otherwise refuses, naming the topic and the reason. An item whose newest spec-change tier record reads tier none, or that carries no such record, is approved exactly as it would be without this sentence. When the spec history cannot be read, `approve` MUST refuse an item whose newest spec-change tier record reads tier spec-change, and MUST NOT move it to `ready`. An intake or drain pass that reaches a `ready` item held because it has no linked topic, or because its linked topic has no revision record with decision `accept` or `modify`, MUST withdraw it to `backlog` through the journaled `move→backlog`. It records a ledger comment naming the linked topic and the reason. A `ready` item whose linked topic carries such a revision record, and that is due its re-run judgement, stays at `ready`, and the pass takes that judgement rather than withdrawing it. When the spec history cannot be read, an intake or drain pass MUST leave every `ready` item where it is, withdraw nothing, and record on the item that the hold could not be read. An item whose hold a `release-spec-tier` attestation released, while that attestation is not void, is NOT held for this sentence: `approve` takes it as it would any other item, and no pass withdraws it. An item withdrawn this way re-enters only through intake routing.
 
 The existing text then resumes with "Once both conditions hold the item is no longer spec-change tier…", unchanged in substance. A withdrawn item whose topic later ratifies, and whose re-run judgement returns `stated`, is therefore routed by its effective `admission_policy` with no human valve, exactly as that text already says.
 
@@ -69,6 +71,20 @@ Feature: no spec-change-tier-held item waits at ready unable to launch
     And no Definition-of-Done judgement is taken and no model is called
     And the item stays at pending-approval
 
+  Scenario: approve refuses an item held with no linked topic
+    Given a pending-approval item whose newest spec-change tier record reads tier spec-change
+    And the item carries no linked proposed-change topic
+    When approve is driven for the item
+    Then approve refuses, naming the missing topic as the hold reason
+    And no model is called and the item stays at pending-approval
+
+  Scenario: approve takes an item whose hold a human attestation released
+    Given a pending-approval spec-change-tier item whose linked topic is unratified
+    And a release-spec-tier attestation released its hold and is not void
+    When approve is driven for the item
+    Then approve takes the item as it would any other item
+    And no intake or drain pass later withdraws it to backlog
+
   Scenario: approve re-judges an item whose linked topic has ratified
     Given a pending-approval item whose linked topic carries a revision record with decision accept
     And the item's judgement has not been re-run against the ratified specification
@@ -93,6 +109,13 @@ Feature: no spec-change-tier-held item waits at ready unable to launch
     When an intake or drain pass reaches the item
     Then the item is moved to backlog through the journaled move
     And a ledger comment on the item names the linked topic and the reason
+
+  Scenario: a pass that cannot read the spec history withdraws nothing
+    Given a ready item whose newest spec-change tier record reads tier spec-change
+    And the governed spec history cannot be read
+    When an intake or drain pass reaches the item
+    Then the item stays at ready
+    And the item records that its hold could not be read
 
   Scenario: a pass leaves a ratified item due its re-judgement at ready
     Given a ready item whose linked topic carries a revision record with decision accept
