@@ -2433,7 +2433,37 @@ at least one release tag. With it, each release tag belongs to the
 declared component whose `tag_prefix` it begins with, and a record MUST
 name, beside the default-branch commit, the repository paths of each
 artifact its steps ran from that tree, on an `artifact paths:` line in
-its build identity. A release then applies to the plan's work exactly
+its build identity. Those paths MUST include every repository path whose
+code the steps executed from that tree, including library code that an
+executing artifact imports or invokes from another declared component's
+`paths`, not only each artifact's own entry point. Where the steps reach
+a component's code solely through code imported or invoked by an
+executing artifact that has no released form, and the record names that
+component's release tag beside its default-branch commit, the
+requirement that the steps run the released artifact installed through
+its normal installation path is met for that component exactly when the
+commit's tree under the component's `paths` is byte-identical to the
+tag's tree under them, and the record MUST say so on an `imported code:`
+line in its build identity naming each such component. The posting
+primitive MUST accept, with the build identity it is given, an optional
+`imported_components` array of component names and, when that array is
+present and non-empty, render it as that line in the order given, render
+no such line when it is absent or empty, and refuse a value that is not
+an array of non-empty strings, naming the field, and post nothing. A
+step that runs a component's own released entry point MUST still run it
+installed through its normal installation path, and a replaying party
+MUST NOT verify a record whose steps ran such an entry point from the
+tree. In a repository that declares release components, the archive gate
+MUST, for every record whose `imported code:` line names a component,
+compare the record's default-branch commit's tree with the tree of the
+first release tag the record names that the component owns, under that
+component's `paths`, and MUST reject the record when they differ, naming
+the first differing path, including a path present on only one side. It
+MUST reject a record whose `imported code:` line names an undeclared
+component, or a component owning no release tag the record names, or
+that names no default-branch commit, naming the component. A record that
+carries no `imported code:` line is judged exactly as before. A release
+then applies to the plan's work exactly
 when one of those paths lies under a `paths` entry of a component that
 owns at least one release tag, and only that component's tags satisfy
 the rule for that artifact. A record stating `release: none` whose

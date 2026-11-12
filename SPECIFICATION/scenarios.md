@@ -14501,3 +14501,51 @@ Feature: The whole-run wall budget outlives the dispatch that watched the run
     Then its outcome record names the run and the factory
     And states that the run's whole-run wall budget is left to reconciliation
 ```
+
+## Scenario: a plan record that reaches a released component only through imported code is judged by tree identity
+
+```gherkin
+Feature: a plan record that reaches a released component only through imported code is judged by tree identity
+
+  Background:
+    Given a governed repository declaring the release component shared-credentials with tag_prefix shared-credentials-v and paths tools/shared_credentials/
+    And the repository carries the release tag shared-credentials-v0.2.0
+    And an unreleased artifact infra/shared-credentials/write-secret.sh runs tools/shared_credentials_provisioning/ from the default-branch tree and imports modules from tools/shared_credentials/
+
+  Scenario: identical trees under the component's paths satisfy the release rule
+    Given a captured plan record naming artifact paths infra/shared-credentials/write-secret.sh, tools/shared_credentials_provisioning/ and tools/shared_credentials/
+    And it names release shared-credentials-v0.2.0 beside a default-branch commit
+    And its build identity carries an imported code line naming shared-credentials
+    And the commit's tree under tools/shared_credentials/ is byte-identical to the tag's tree under it
+    When the archive gate judges the record's release rule
+    Then the record is evidence on the proof leg
+
+  Scenario: a differing tree under the component's paths is rejected naming the path
+    Given the same record
+    And the commit's tree under tools/shared_credentials/ carries a file that the tag's tree does not
+    When the archive gate judges the record's release rule
+    Then the record is rejected naming that file
+
+  Scenario: the posting primitive renders the imported code line
+    Given a captured plan Proof of Done payload whose build identity carries the imported_components array shared-credentials
+    When the posting primitive renders the record
+    Then the record's build identity carries an imported code line naming shared-credentials
+    And a payload whose imported_components value is not an array of non-empty strings is refused naming imported_components and posts nothing
+
+  Scenario: a record without an imported code line is judged exactly as before
+    Given a captured plan record naming release shared-credentials-v0.2.0 beside a default-branch commit and carrying no imported code line
+    And the commit's tree under tools/shared_credentials/ differs from the tag's tree
+    When the archive gate judges the record's release rule
+    Then no tree comparison is made and the record is judged by the release rule alone
+
+  Scenario: release none is still refused for a component reached through imported code
+    Given a captured plan record naming tools/shared_credentials/ among its artifact paths and stating release none
+    When the archive gate judges the record's release rule
+    Then the record is rejected because a release applies to component shared-credentials
+
+  Scenario: a component's own released entry point run from the tree is not verified
+    Given a captured plan record whose steps run the shared-credentials launcher from tools/shared_credentials/ in the default-branch tree rather than its installed released artifact
+    And it names release shared-credentials-v0.2.0 beside a default-branch commit whose tree under tools/shared_credentials/ is byte-identical to the tag's
+    When a different session replays the record
+    Then the replay does not publish a verified record for it
+```
