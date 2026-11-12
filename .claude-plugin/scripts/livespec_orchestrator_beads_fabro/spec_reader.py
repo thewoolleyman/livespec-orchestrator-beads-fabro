@@ -31,6 +31,7 @@ versions are returned as SpecSnapshots whose `files` map carries only the
 """
 
 import difflib
+import os
 import re
 from pathlib import Path
 
@@ -49,11 +50,17 @@ __all__: list[str] = [
 ]
 
 _VERSION_DIR_PATTERN = re.compile(r"^v(\d+)$")
+_INHERITED_SPECIFICATION_PATTERN = re.compile(
+    r"`(?P<path>[a-z0-9-]+/SPECIFICATION/[^`]+\.md)`\s+applies\s+.*?\s+without\s+restatement",
+    re.IGNORECASE | re.DOTALL,
+)
+_SIBLING_CLONES_ROOT_ENV_VAR = "LIVESPEC_SIBLING_CLONES_ROOT"
 
 
 def read_current_specification(*, spec_root: Path) -> SpecSnapshot:
     """Return a SpecSnapshot of the live <spec-root>/ tree."""
     files = _read_spec_directory(directory=spec_root, exclude={"history", "proposed_changes"})
+    files.update(_inherited_specifications(files=files))
     version = current_specification_version(spec_root=spec_root)
     return SpecSnapshot(version=version, files=files)
 
@@ -127,6 +134,17 @@ def _read_spec_directory(*, directory: Path, exclude: set[str]) -> dict[str, str
             continue
         files[str(relative)] = candidate.read_text(encoding="utf-8")
     return files
+
+
+def _inherited_specifications(*, files: dict[str, str]) -> dict[str, str]:
+    """The sibling specification files a local constraint declares binding."""
+    siblings_root = Path(os.environ.get(_SIBLING_CLONES_ROOT_ENV_VAR, "."))
+    paths = (
+        match["path"]
+        for text in files.values()
+        for match in _INHERITED_SPECIFICATION_PATTERN.finditer(text)
+    )
+    return {path: (siblings_root / path).read_text(encoding="utf-8") for path in paths}
 
 
 def _version_directory(*, spec_root: Path, version: int) -> Path:
