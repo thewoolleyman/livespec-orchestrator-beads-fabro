@@ -64,13 +64,42 @@ def test_the_host_timer_surveys_only_the_live_factories() -> None:
     assert declared_factory_names(block=configured) == ("candidate", "petri")
 
 
-def test_the_timer_fires_every_ten_minutes_and_catches_up_after_downtime() -> None:
-    timer = _TIMER.read_text(encoding="utf-8")
+def test_the_timer_counts_its_interval_from_the_end_of_the_previous_pass() -> None:
+    """The interval is counted from the end of a pass, never from its start.
 
-    assert "OnUnitActiveSec=10min" in timer
+    Counted from the start, any pass as long as the interval was followed by
+    the next one with no gap, which is how passes ran back to back on
+    vmi3006760 on 2026-11-11. The interval and boot delay are operator values
+    carried by the unit; this test asserts only which settings are used.
+    """
+    timer = _TIMER.read_text(encoding="utf-8")
+    settings = [line for line in timer.splitlines() if not line.startswith("#")]
+
+    assert any(line.startswith("OnUnitInactiveSec=") for line in settings)
+    assert not any(line.startswith("OnUnitActiveSec=") for line in settings)
+    # OnUnitInactiveSec has no previous pass to count from after boot.
+    assert any(line.startswith("OnBootSec=") for line in settings)
     assert "Persistent=true" in timer
     assert "Unit=reconcile-runs.service" in timer
     assert "WantedBy=timers.target" in timer
+
+
+def test_a_pass_yields_cpu_and_is_reclaimed_but_never_hard_capped() -> None:
+    """A hard MemoryMax near the measured peak would OOM-kill every pass."""
+    settings = [
+        line
+        for line in _SERVICE.read_text(encoding="utf-8").splitlines()
+        if not line.startswith("#")
+    ]
+
+    cpu_weights = [
+        int(line.removeprefix("CPUWeight=")) for line in settings if line.startswith("CPUWeight=")
+    ]
+    # systemd's default CPUWeight is 100; a pass must weigh less than that.
+    assert len(cpu_weights) == 1
+    assert cpu_weights[0] < 100
+    assert any(line.startswith("MemoryHigh=") for line in settings)
+    assert not any(line.startswith("MemoryMax=") for line in settings)
 
 
 def test_the_installer_refuses_without_the_project_env_wrapper(tmp_path: Path) -> None:
