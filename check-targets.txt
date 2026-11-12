@@ -1,0 +1,114 @@
+# `just check` aggregate inventory. Shipped checks declare CHECK_PURITY in
+# livespec-dev-tooling; repository-private entries declare it here. Tests keep
+# this file in the same order as the justfile's aggregate array.
+check-agents-ai-references-resolve
+check-aggregate-completeness
+check-all-declared
+check-assert-never-exhaustiveness
+check-branch-protection-alignment
+check-canonical-recipe-fidelity
+check-check-coverage-incremental
+check-check-mutation
+check-check-tools
+check-ci-gate-parity
+check-ci-matrix-completeness
+check-claude-md-coverage
+check-codex-hook-reconcilable
+check-comment-line-anchors
+check-commit-pairs-source-and-test
+check-delegated-gate-check-suite
+check-delegated-job-authority-skip
+check-file-lloc
+check-fleet-marketplace-relative-sources
+check-global-writes
+check-handoff-dispatch-routing
+check-heading-coverage
+check-heading-coverage-debt-register
+check-hook-trees-not-io-exempt
+check-keyword-only-args
+check-local-memory-drift-audit
+check-main-guard
+check-marketplace-ref-release-only
+check-master-ci-green
+check-match-keyword-only
+check-newtype-domain-primitives
+check-no-direct-destructive-cli
+check-no-direct-tool-invocation
+check-no-except-outside-io
+check-no-fmt-directives
+check-no-inheritance
+check-no-lloc-soft-warnings
+check-no-raise-outside-io
+check-no-shadow-ledger-body-identical
+check-no-shadow-ledger-body-typechecks
+check-no-todo-registry
+check-no-write-direct
+check-partition-completeness
+check-pbt-coverage-pure-modules
+check-per-file-coverage
+check-plan-anchor-declared
+check-plan-epic-parity
+check-plan-no-live-handoff-file
+check-plan-no-tombstone
+check-plan-record-conformance
+check-plugin-resolution
+check-primary-checkout-commit-refuse-hook-installed
+check-private-calls
+check-public-api-result-typed
+check-red-green-replay
+check-required-role-keys-declared
+check-rop-pipeline-shape
+check-rule-26-keep-out
+check-self-hosted-routing
+check-self-hosted-uv-lane
+check-shell-quality
+check-skill-invocation-paths
+check-source-trees-scoped-to-consumer
+check-supervisor-discipline
+check-tests-mirror-pairing
+check-tests-no-subprocess-spawn
+check-tool-backed-check-completeness
+check-vendor-manifest
+check-work-item-interpolation-delimiters
+check-work-item-status-vocabulary
+check-wrapper-shape
+check-format # purity: tree-pure
+check-lint # purity: tree-pure
+check-types # purity: tree-pure
+# The coverage producer consumes host-created coverage shards and runs pytest,
+# whose configured environment includes Beads-credential boundary fixtures.
+check-coverage # purity: world-reading
+# Verifies ancestry against the locally available origin/master ref.
+check-work-item-merge-evidence # purity: world-reading
+# The recipe forces the empty in-process fake Beads store.
+check-work-item-state-invariants # purity: tree-pure
+check-status-conformance # purity: tree-pure
+check-closed-item-integrity # purity: tree-pure
+# These become live-ledger checks when their credential-and-lever pair is set.
+check-plan-close-proof # purity: world-reading
+check-plan-continuation-ruling # purity: world-reading
+check-needs-attention-surface-ownership # purity: tree-pure
+check-spec-id-presence-discipline # purity: tree-pure
+check-no-fleet-toolchain-literals # purity: tree-pure
+check-codex-plugin-structure # purity: tree-pure
+check-pi-plugin-structure # purity: tree-pure
+check-purity-declarations # purity: tree-pure
+# Optional shellcheck reads the host-installed tool and its version.
+check-bd-guard # purity: world-reading
+check-fleet-launch # purity: world-reading
+# Exercises the installed Codex TUI discovery surface on the host.
+check-codex-skill-picker # purity: world-reading
+check-no-fleet-pat-dispatch-surface # purity: tree-pure
+check-spec-governance-default-block # purity: tree-pure
+check-seam-equivalence # purity: tree-pure
+check-ci-wires-repo-local-gates # purity: tree-pure
+# Resolves and invokes the host Fabro binary.
+check-fabro-graph-validity # purity: world-reading
+check-fabro-port-seam # purity: tree-pure
+# Reads refs, the worktree's uncommitted state, and a ledger authorization.
+check-no-workflow-edits # purity: world-reading
+check-fresh-clone-setup # purity: tree-pure
+# Resolves the released core plugin beneath the host's home directory.
+check-doctor-static # purity: world-reading
+check-acp-preflight-config # purity: tree-pure
+check-materialized-workflow-toml-size # purity: tree-pure

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from livespec_dev_tooling.check_inventory import inventory_members
 from livespec_dev_tooling.check_purity import audit_check_purity
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
@@ -43,3 +44,13 @@ def test_every_aggregate_member_declares_its_purity() -> None:
 
     assert is_successful(result)
     assert unsafe_perform_io(result.unwrap()).undeclared == ()
+
+
+def test_purity_inventory_matches_the_aggregate_members() -> None:
+    """The annotation inventory cannot silently drift from `just check`."""
+    inventory = _REPO_ROOT / "check-targets.txt"
+
+    assert inventory.is_file()
+    assert tuple(member.name for member in inventory_members(text=inventory.read_text())) == (
+        _aggregate_targets()
+    )

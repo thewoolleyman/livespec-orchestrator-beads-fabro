@@ -461,6 +461,7 @@ check:
         check-no-fleet-toolchain-literals
         check-codex-plugin-structure
         check-pi-plugin-structure
+        check-purity-declarations
         check-bd-guard
         check-fleet-launch
         check-codex-skill-picker
@@ -807,6 +808,11 @@ check-codex-plugin-structure:
 # Not a canonical livespec-dev-tooling slug, so it is wired in the private block.
 check-pi-plugin-structure:
     uv run python dev-tooling/checks/pi_plugin_structure.py
+
+# A missing declaration defaults to world-reading at pre-push.  Refuse it in
+# the aggregate so that an accidental omission cannot silently reduce savings.
+check-purity-declarations:
+    bash dev-tooling/just-check-purity-declarations.sh
 
 # `check-spec-governance-default-block` — consumer-side guard for the commented
 # spec_governance defaults block in `.livespec.jsonc`. The implementation lives
