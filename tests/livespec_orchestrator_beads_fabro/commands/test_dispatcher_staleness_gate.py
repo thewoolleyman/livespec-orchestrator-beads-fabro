@@ -159,10 +159,10 @@ def test_read_only_cache_build_predating_latest_release_warns_with_performable_r
     assert "claude plugin update" not in decision.warnings[0].detail
 
 
-def test_read_only_cache_build_newer_than_latest_release_never_warns_that_it_lags(
+def test_read_only_cache_build_newer_than_latest_release_names_the_newer_direction(
     tmp_path: Path,
 ) -> None:
-    """A release cache ahead of the latest release is not stale in the other direction."""
+    """A release cache ahead of the latest release says so, rather than calling it stale."""
     module = _module()
     cache_root = tmp_path / _NEWER_BUILD_SHA[:12]
     cache_root.mkdir()
@@ -188,7 +188,12 @@ def test_read_only_cache_build_newer_than_latest_release_never_warns_that_it_lag
     )
 
     assert decision.refusal is None
-    assert not [warning for warning in decision.warnings if "lags latest release" in warning.detail]
+    assert len(decision.warnings) == 1
+    warning = decision.warnings[0].detail
+    assert _NEWER_BUILD_SHA[:12] in warning
+    assert _RELEASE_SHA[:12] in warning
+    assert "newer than latest release" in warning
+    assert "lags latest release" not in warning
 
 
 def test_read_only_cache_build_with_unavailable_comparison_never_claims_known_lag(
