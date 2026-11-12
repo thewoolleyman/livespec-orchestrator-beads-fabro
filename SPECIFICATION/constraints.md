@@ -84,11 +84,23 @@ This section refines the pre-commit step ordering inherited from livespec; it ad
   until the server has written its port file, the server process has exited,
   or 30 seconds have elapsed, whichever comes first; it MUST NOT fail a
   telemetry case only because the server took longer than two seconds to
-  write its port file. When the server has not written its port file by the
-  end of that wait, the harness MUST fail the case with a line naming the
-  capture server's exit status (or that it was still running at the bound)
-  and its captured standard error, and MUST stop any capture server process
-  it started.
+  write its port file. The harness MUST treat the server process as exited
+  only on evidence that it has exited. A liveness probe that fails while the
+  process may still be alive, for example `kill -0` refused with a permission
+  error, MUST NOT be read as an exit, and the start wait MUST keep its
+  30-second bound. When the server has not written its port file by the end
+  of that wait, the harness MUST fail the case with a line naming the capture
+  server's exit status (or that it was still running at the bound) and its
+  captured standard error, and MUST stop any capture server process it
+  started. Every wait the harness performs on the capture server process MUST
+  be bounded. Stopping the server MUST end its wait at a stop bound of 10
+  seconds after the stop signal is sent, and the harness MUST NOT wait on the
+  process after that bound. Like the 30-second start bound, the stop bound is
+  observed through the diagnostic the harness emits when it is reached, not
+  by timing the harness. When the server is still running at the end of the
+  stop wait, the harness MUST fail the telemetry case that started it with a
+  line naming the capture server as still running after its stop, so that the
+  harness run ends with a failing verdict rather than never ending.
 - Server-mode auto-commit stays OFF and `bd config dolt.auto-start` is
   `false`. The plugin MUST NOT re-enable per-write commits and MUST NOT
   start, stop, or otherwise own the externally-managed server lifecycle
