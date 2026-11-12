@@ -99,4 +99,6 @@ Feature: A proof re-captured after a refresh is graded as the current proof
     And the cause names LIVESPEC_RECAPTURE_EXHAUSTED, head H1, the record's comment URL and head H2
 ```
 
-No existing H2 heading is renamed or removed. The revise that accepts this proposal MUST add one `tests/heading-coverage.json` row for the new `## Scenario 355` heading in the same change.
+No existing H2 heading is renamed or removed.
+
+3. **Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit. It carries `test: "TODO"`, `work_item: "bd-ib-rriwjr"` and a non-empty `reason` naming the tier the owed test runs at, which is integration or above. The same commit MUST add one matching `tests/heading-coverage-debt.json` entry carrying the key three (`spec_root`, `spec_file`, `heading`), `work_item: "bd-ib-rriwjr"` and `first_seen` set to the revise date. If the revise renumbers Scenario 355, the row and the entry MUST carry the renumbered heading text.
