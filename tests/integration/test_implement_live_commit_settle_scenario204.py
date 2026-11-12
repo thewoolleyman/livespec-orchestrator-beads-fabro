@@ -457,6 +457,7 @@ def test_fix_reaches_the_settle_before_the_janitor() -> None:
     assert (_FIX_SETTLE, "") in _targets(source="fix")
     assert ("janitor", "") not in _targets(source="fix")
     assert _targets(source=_FIX_SETTLE) == [
+        ("needs_human", "preferred_label=needs_human"),
         ("fix", "outcome=failed"),
         ("fix_open_red_route", ""),
     ]
@@ -512,6 +513,7 @@ def test_review_fixes_reenter_janitor_through_a_routable_admission_gate() -> Non
     assert _targets(source=_REVIEW_FIX_SETTLE) == [("review_fix_open_red_route", "")]
     assert (_JANITOR_ADMISSION, "") in _targets(source="review_fix_open_red_route")
     assert _targets(source=_FIX_SETTLE) == [
+        ("needs_human", "preferred_label=needs_human"),
         ("fix", "outcome=failed"),
         ("fix_open_red_route", ""),
     ]
