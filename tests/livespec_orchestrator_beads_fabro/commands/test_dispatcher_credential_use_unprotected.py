@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
     GUARD_REFUSAL_EXIT_CODE,
+    GUARD_TERM_GRACE_SECONDS,
     guard_script_text,
 )
 
@@ -97,7 +98,7 @@ def _hermetic_env() -> dict[str, str]:
         CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
         _UNPROTECTED_ENV_VAR,
     ):
-        env.pop(name, None)
+        _ = env.pop(name, None)
     return env
 
 
@@ -162,21 +163,51 @@ def test_an_unprotected_launch_preserves_stdin(tmp_path: Path) -> None:
 def test_an_unprotected_launch_outlives_any_deadline_a_protected_one_would_hit(
     tmp_path: Path,
 ) -> None:
-    """No deadline is enforced: the child runs past where a bound would kill it.
+    """No deadline is enforced: a protected TERM does not stop this child.
 
     The DISCRIMINATOR against the two cases above, which a guard that simply
-    exec'd fast commands would also pass. The child sleeps well past the TERM
-    grace a protected launch spends, so a build still arming a reaper -- against
-    an unset or zero deadline, both of which are instants already in the past --
-    would kill it and change the exit status.
+    exec'd fast commands would also pass.  Both children wait for test-controlled
+    input.  The protected companion receives the guard's TERM first; only then
+    does the test release the unprotected child.  A build that still armed a
+    reaper for an unprotected launch would kill that child too and change its
+    exit status.
     """
-    result = _run(
-        tmp_path=tmp_path,
-        unprotected=_UNPROTECTED_VALUE,
-        argv=["--", "/bin/sh", "-c", "sleep 7; exit 3"],
-    )
+    guard = _guard(tmp_path=tmp_path)
+    command = ["/bin/sh", "-c", "printf 'ready\\n'; IFS= read -r _; exit 3"]
 
-    assert result.returncode == 3
+    unprotected_env = _hermetic_env()
+    unprotected_env[_UNPROTECTED_ENV_VAR] = _UNPROTECTED_VALUE
+    unprotected = subprocess.Popen(
+        ["/bin/sh", str(guard), "--", *command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env=unprotected_env,
+    )
+    assert unprotected.stdout is not None
+    assert unprotected.stdout.readline() == "ready\n"
+
+    protected_env = _hermetic_env()
+    protected_env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(
+        int(time.time()) + GUARD_TERM_GRACE_SECONDS + 2
+    )
+    protected = subprocess.Popen(
+        ["/bin/sh", str(guard), "--", *command],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        env=protected_env,
+    )
+    assert protected.stdout is not None
+    assert protected.stdout.readline() == "ready\n"
+
+    assert protected.wait(timeout=_SETTLE_SECONDS) == 143
+
+    assert unprotected.stdin is not None
+    _ = unprotected.stdin.write("release\n")
+    unprotected.stdin.close()
+
+    assert unprotected.wait(timeout=_SETTLE_SECONDS) == 3
 
 
 def test_an_unprotected_start_check_admits_and_says_no_deadline_is_enforced(
