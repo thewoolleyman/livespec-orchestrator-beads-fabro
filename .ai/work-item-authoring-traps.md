@@ -145,3 +145,15 @@ repository root, and confirm it prints `{"outcome": "passed"}` before you hand
 the item to the dispatcher. (Measured 2026-11-08T23:06:33Z on `bd-ib-ysgz56`: it
 was filed with the advisory left in place, reached `ready`, and was refused at
 launch. Adding the second heading made the preflight pass.)
+
+Run the preflight even when the filing display reports `definition-of-done
+findings: none`. The display checks only the mechanical wall; it never runs the
+judgement, so it cannot report a heading the judgement would demand. Do not copy
+a sibling item's `References:` line either: a sibling can share the mechanism
+but not the governing clause. (Measured 2026-11-12 on `bd-ib-woiqjm`: it copied
+"## Scenario 176" from its sibling arms `bd-ib-lpdlsq` and `bd-ib-2zap56`, and
+the display reported no finding. The pre-dispatch judgement then refused it,
+because 176 governs refresh repair, not the `fix_commit_settle` route. One
+preflight run named the governing H2, `## ACP node timeouts`, and passed once it
+was added. Pass a candidate description file as the preflight's second argument
+to test an edit before writing it with `bd update --body-file`.)
