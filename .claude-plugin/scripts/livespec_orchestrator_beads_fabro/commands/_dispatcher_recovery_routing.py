@@ -54,6 +54,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted_
     recapture_exhausted_refusal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted_route import (
+    RecaptureSources,
     route_recapture_exhausted,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_ruling import (
@@ -61,6 +62,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_rulin
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_held_outcomes import (
     held_outcomes,
+    is_held,
+    recovery_held_route_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     unobservable_measurements,
@@ -77,7 +80,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records imp
     PRESERVED_WORK_ABSENT,
     PRESERVED_WORK_VERIFIED,
     recovery_held_record,
-    recovery_held_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     recapture_exhausted_for_recovery,
@@ -182,9 +184,7 @@ class RecoveryRouting:
         valve is the only thing that writes `ready -> active`, so an item it never
         sees keeps its status without anything having to put it back.
         """
-        return [
-            one for one in candidates if not _is_held(route=self.route_for(work_item_id=one.id))
-        ]
+        return [one for one in candidates if not is_held(route=self.route_for(work_item_id=one.id))]
 
     def held_report(self, *, work_item_id: str) -> str | None:
         """The refusal `dispatch --item` exits 3 with, or `None` for a live route.
@@ -205,10 +205,7 @@ class RecoveryRouting:
         test of the name could only ever disagree with the payload it is about
         to render.
         """
-        route = self.route_for(work_item_id=work_item_id)
-        if route is None or route.hold is None:
-            return None
-        return recovery_held_report(work_item_id=work_item_id, hold=route.hold)
+        return recovery_held_route_report(work_item_id=work_item_id, routes=self.routes)
 
     def held_outcomes(self) -> list[DispatchOutcome]:
         """One deferred outcome per held item, for the drain's own report.
@@ -243,7 +240,11 @@ def route_recovery(
                     item=item,
                     journal=journal,
                     runner=runner,
-                    gather_resume_fn=gather_resume,
+                    sources=RecaptureSources(
+                        gather_resume_fn=gather_resume,
+                        journal_records=journaled,
+                        preserved_seed=verified_preserved_seed,
+                    ),
                 )
             )
             continue
@@ -277,11 +278,6 @@ def route_recovery(
             )
         )
     return RecoveryRouting(routes=tuple(routes))
-
-
-def _is_held(*, route: RecoveryRoute | None) -> bool:
-    """Whether this route is the hold; an absent route never is."""
-    return route is not None and route.route == ROUTE_HELD
 
 
 def _released_route(
