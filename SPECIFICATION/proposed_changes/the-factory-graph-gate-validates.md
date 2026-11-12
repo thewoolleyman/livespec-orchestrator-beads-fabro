@@ -14,7 +14,7 @@ created_at: 2026-11-12T17:40:05Z
 
 ### Summary
 
-Extend the "CI graph-gate binary" bullet of constraints.md §"Fabro runtime constraints" so the factory-graph gate (`check-fabro-graph-validity`) is bound to the engine family the factory serves. The pinned upstream release MUST be a Petri-era release at or after `v0.396.0-nightly.0`. Wherever the gate runs, in CI or on a developer host, it MUST read the resolved client's version before validating anything. A client reporting no parseable version, or one older than `0.396.0`, MUST fail the gate with a control finding naming the version and the floor, and no graph is validated with it. Every graph the gate validates is reported together with the client version that validated it. A new Scenario 350 states these behaviours, including the regression they exist to catch: a committed graph whose exit node is unreachable fails the gate under a Petri-era client.
+Extend the "CI graph-gate binary" bullet of constraints.md §"Fabro runtime constraints" so the factory-graph gate (`check-fabro-graph-validity`) is bound to the rules of the engine the factory moves onto. The pinned upstream release's release triple MUST be at or after `0.396.0`, the first upstream release that refuses `run.prepare`; the factory's `0.393.0` carrier client is below that floor. Wherever the gate runs, in CI or on a developer host, it MUST read the resolved client's version before validating anything. A client reporting no parseable version, or one older than `0.396.0`, MUST fail the gate with a control finding naming the version and the floor (or, when none is parseable, saying so), and no graph is validated with it. Every graph the gate validates is reported together with the client version that validated it. A new scenario, numbered at revise, states these behaviours, including the regression they exist to catch: a committed graph whose exit node is unreachable fails the gate under a client at or above the floor.
 
 ### Motivation
 
@@ -38,11 +38,12 @@ Replace the bullet in full with:
   committed Fabro workflow graphs during CI. It validates with the pinned
   upstream `fabro-sh/fabro` release, not with the factory's carrier build,
   and that binary is outside "the factory" as this section scopes it. The
-  pinned release MUST be a Petri-era release: one published at or after
-  `v0.396.0-nightly.0`, the first upstream release whose validator is the
-  Petri-era engine's. A pre-Petri release, including `v0.254.0`, MUST NOT be
-  pinned, because its validator accepts graphs the factory's engine
-  rejects. The gate's installer MUST install the pinned release's static
+  pinned release's release triple MUST be at or after `0.396.0`, the first
+  upstream release that refuses `run.prepare`, so the gate judges graphs by
+  the rules of the engine the factory moves onto. An earlier release,
+  including `v0.254.0` and the factory's own `0.393.0` carrier client, MUST
+  NOT be the gate's client, because its validator accepts graphs that
+  engine rejects. The gate's installer MUST install the pinned release's static
   Linux asset whose architecture matches the CI runner's own (`x86_64` or
   `aarch64`). It MUST verify the downloaded asset against the sha256 that
   release publishes for that asset, pinned beside the version, before
@@ -52,19 +53,22 @@ Replace the bullet in full with:
   version the resolved `fabro` client reports before it validates any
   graph. When that client reports no parseable version, or a version whose
   release triple is older than `0.396.0`, the gate MUST fail with a control
-  finding naming the reported version (or its absence) and the `0.396.0`
-  floor, and MUST NOT validate any graph with that client. It MUST NOT fall
+  finding naming the reported version and the `0.396.0` floor, or, when
+  no version is parseable, saying so, and MUST NOT validate any graph with
+  that client. It MUST NOT fall
   back to another client. For every graph it validates, the gate MUST
   report the graph's location together with the client version that
   validated it.
 ```
 
-The bullet's first and installer sentences are unchanged. The added sentences fix the engine family of the pin, the version control that applies on every host, and the per-graph version report.
+The bullet's first and installer sentences are unchanged. The added sentences fix the release-triple floor of the pin, the version control that applies on every host, and the per-graph version report.
 
-### 2. `SPECIFICATION/scenarios.md`: add Scenario 350 after Scenario 349
+### 2. `SPECIFICATION/scenarios.md`: add one scenario, numbered at revise
+
+The heading is numberless here; the revise pass assigns the next free scenario number and updates the references in changes 3 and 4 to match.
 
 ~~~markdown
-## Scenario 350 — The factory-graph gate validates only with a Petri-era Fabro client and names the client version for each graph
+## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph
 
 ```gherkin
 Feature: The factory-graph gate validates with the engine family the factory serves
@@ -72,15 +76,15 @@ Feature: The factory-graph gate validates with the engine family the factory ser
   I want the graph gate to judge it with a Petri-era validator
   So that a graph the factory's engine rejects cannot merge green
 
-  Scenario: CI's pinned release is a Petri-era release
+  Scenario: CI's pinned release is at or above the floor
     Given CI's factory-graph gate installer pins one upstream fabro release
     When the installer runs on a supported runner
     Then the installed binary reports a version whose release triple is at or after 0.396.0
 
-  Scenario: A pre-Petri client fails the gate before any graph is validated
-    Given the factory-graph gate resolves a fabro client that reports version 0.254.0
+  Scenario: A client below the floor fails the gate before any graph is validated
+    Given the factory-graph gate resolves a fabro client that reports version 0.254.0 or 0.393.0-nightly.1
     When the gate runs in CI or on a developer host
-    Then the gate fails with a control finding naming 0.254.0 and the 0.396.0 floor
+    Then the gate fails with a control finding naming that version and the 0.396.0 floor
     And no graph is validated with that client
 
   Scenario: A client with no parseable version fails the gate
@@ -90,21 +94,35 @@ Feature: The factory-graph gate validates with the engine family the factory ser
     And no graph is validated with that client
 
   Scenario: Each validated graph is reported with its client version
-    Given the factory-graph gate resolves a Petri-era fabro client
+    Given the factory-graph gate resolves a fabro client whose release triple is at or after 0.396.0
     When the gate validates the repository's committed workflow graphs
     Then it reports each validated graph's location together with that client's version
 
   Scenario: A graph the Petri-era engine rejects fails the gate
     Given a committed workflow graph whose exit node is unreachable
-    When the factory-graph gate validates it with a Petri-era fabro client
+    When the factory-graph gate validates it with a fabro client whose release triple is at or after 0.396.0
     Then the gate fails naming that graph and attractor.exit_unreachable
 ```
 ~~~
 
 ### 3. `tests/heading-coverage.json`: add the new heading in the same revise
 
-Add one entry for `## Scenario 350 — The factory-graph gate validates only with a Petri-era Fabro client and names the client version for each graph`, spec file `SPECIFICATION/scenarios.md`, with `test` set to `"TODO"` and reason `"exercised by tests/dev-tooling/checks/test_fabro_graph_validity.py once bd-ib-3lxeqf lands; its preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e"`. The revise that ratifies this MUST co-edit that entry, per AGENTS.md §"Revise co-edit discipline". No existing heading changes.
+Add one entry to `tests/heading-coverage.json`, using the heading as numbered at revise:
+
+```json
+{"heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the scenario tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.", "work_item": "bd-ib-3lxeqf"}
+```
+
+Add the matching row to `tests/heading-coverage-debt.json`, as `check-heading-coverage-debt-register` requires:
+
+```json
+{"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "work_item": "bd-ib-3lxeqf", "first_seen": "<revise date>"}
+```
+
+The revise that ratifies this MUST co-edit both files, per AGENTS.md §"Revise co-edit discipline". No existing heading changes.
 
 ### 4. Follow-through outside the spec (not part of this revise)
 
-On ratification, bd-ib-3lxeqf's Definition of Done `References:` line names `## Scenario 350 — ...` beside `## Fabro runtime constraints` and `## Scenario 340 — ...`. Its tier is then re-classified (`dispatcher.py classify-tier`), and the Dispatcher relaunches it SEEDED from the preserved ref.
+On ratification, bd-ib-3lxeqf's Definition of Done `References:` line names the new scenario heading, as numbered at revise, beside `## Fabro runtime constraints` and `## Scenario 340 — ...`. Its tier is then re-classified (`dispatcher.py classify-tier`), and the Dispatcher relaunches it SEEDED from the preserved ref.
+
+The host-captured regression proof needs a client at or above the floor on the host. On the dispatching host vmi3006760 the gate's resolver returns `~/.fabro/bin/fabro`, which is 0.254.0, and the gate runs inside `just check` (justfile:472). Until `LIVESPEC_FABRO_BIN` names a 0.408 client there (`~/.local/state/fabro-web-prod/v0408-d22808f8e/fabro` or `v0408-85071c828/fabro`), the gate fails on the version control, not on `attractor.exit_unreachable`. The capture MUST set it and record the client it used.
