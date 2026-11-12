@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.324.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.323.1...v0.324.0) (2026-11-12)
+
+
+### Features
+
+* materialize the implement gate preview ([b8f6749](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b8f6749c425a4d38560afa9d85f62330de6ea88e))
+* preview implement commit gates ([3d5c628](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d5c62830edf55fbcc511f407a52a939d93763c0))
+* preview the exact red test path ([be75ee3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/be75ee366f5d8d8a816c817283d01d4249c2fcfe))
+
+
+### Bug Fixes
+
+* avoid scanning unrelated processes in CPU checkpoints (bd-ib-5d5aue) ([47069f1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/47069f10ad8942ef97107a269474fcdb22d37dc6))
+* count CPU of children started from drive worker threads (bd-ib-5d5aue) ([c1bb7db](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c1bb7dbc93757059a25e070316f8d014b990a2b8))
+
 ## [0.323.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.323.0...v0.323.1) (2026-11-12)
 
 
