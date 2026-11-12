@@ -491,6 +491,56 @@ def test_dispatch_journals_host_only_refusal(
     assert outcome_record["outcome"]["stage"] == "host-only-refused"
 
 
+@pytest.mark.parametrize(
+    "item",
+    [
+        _item(factory_safety="mutates-host-machinery"),
+        _item(
+            description=(
+                "Update `.github/workflows/ci.yml` for the new gate.\n"
+                "\n"
+                "## Definition of Done\n"
+                "\n"
+                "- The dispatched slice lands its change.\n"
+                "\n"
+                "References: ## Effective acceptance criteria\n"
+            )
+        ),
+    ],
+)
+def test_handpicked_loop_refuses_host_only_item_with_one_exit_five_line(
+    capsys: pytest.CaptureFixture[str],
+    item: WorkItem,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=item)
+    recording = _RecordingRunDispatch()
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
+
+    exit_code = main(
+        argv=[
+            "loop",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--budget",
+            "1",
+            "--workflow",
+            str(workflow),
+        ]
+    )
+
+    assert exit_code == 5
+    assert capsys.readouterr().err.splitlines() == [
+        f"REFUSED: work-item {item.id} is host-only; no claim was taken and no factory run was created."
+    ]
+    assert recording.calls == []
+    assert _stored()[item.id].status == "ready"
+
+
 def test_dispatch_does_not_refuse_ordinary_item(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
