@@ -31,7 +31,10 @@ def _materialize_script() -> str:
         set -eu
         acp="$(command -v codex-acp)"
         acp_root="$(CDPATH= cd -- "$(dirname "$(readlink -f "$acp")")/.." && pwd)"
-        codex="$acp_root/lib/node_modules/@agentclientprotocol/codex-acp/node_modules/@openai/codex/bin/codex.js"
+        codex="$(
+        node -p "require.resolve('@openai/codex/bin/codex.js', {{ paths: [process.argv[1]] }})" \
+            "$acp_root"
+        )"
         test -f "$codex"
         node "$codex" plugin marketplace add {_DRIVER_REPOSITORY} --ref release \\
             --sparse .agents/plugins --sparse livespec
