@@ -181,6 +181,7 @@ serves ON the host: `<binary_path> --version` and `sha256sum <binary_path>`, whe
 | Fork branch | `thewoolleyman/fabro` `carrier-v0.408.0-nightly.0-20261108` |
 | Integration commit | `d22808f8e6dd6ec5cc973c93cbc5a3e88a64542a`: the tag plus the 43 carried commits below |
 | Binary | `fabro 0.408.0-nightly.0 (d22808f 2026-11-12)`, sha256 `f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015`. Built by `carrier-build.yml` run 43149665912 on the `fabro-k3s` scale set; staged with `BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0408-d22808f8e/` on vps |
+| Container image | `livespec-orchestrator:fabro-v0.408-d22808f8e`, image ID `sha256:f854d8db45fc613863731bbbe1a7eb4a94ab0a8a37aeecbae352ba78fd79382d`, baked on vps on 2026-11-12 with `HOST_FABRO_BIN` set to the staged copy. The Dockerfile pins this binary's sha256 as `FABRO_BINARY_SHA256` and verifies it at bake time, and the baked `/usr/local/bin/fabro` reads back the same sha256 and `--version` as every gmktec instance. A run of the real entrypoint brought the in-container server up (`/health` 200). The image is local and not pushed to a registry, so the image ID is its content digest |
 | Petri | `thewoolleyman/petri` `fabro-integration-f30a12df-20261108` at `ac0b9fb3`: the seven fork carries on the `f30a12df` that the tag locks |
 | Rollback | `v0408-85071c828/fabro` (sha256 `e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04`), the same carrier without the SQLite bump |
 | Currency survey | at 2026-11-12 the newest published release was `v0.414.0-nightly.0` (2026-11-11T10:56:56Z), so the base is inside the 30-calendar-day window. It leaves the window once a release published after 2026-12-05T10:49:59Z exists. Re-survey before relying on this |
@@ -598,7 +599,9 @@ stat -Lc %i /proc/$PID/exe; stat -c %i ~/.fabro/bin/fabro   # must match
 
 **Then rebuild the orchestrator image — this step is REQUIRED, not optional.** The image
 bakes a COPY of the host binary (`COPY fabro` in the Dockerfile, staged from
-`$HOST_FABRO_BIN`, which defaults to `~/.fabro/bin/fabro`). Re-pinning the host alone
+`$HOST_FABRO_BIN`, which defaults to the staged serving carrier
+`~/.local/state/fabro-web-prod/v0408-d22808f8e/fabro`; the Dockerfile pins and verifies
+its sha256 as `FABRO_BINARY_SHA256`, so moving the pin means changing both). Re-pinning the host alone
 leaves an already-built image running the OLD fabro, so the containerized server and the
 host-direct server would silently disagree about which engine they run — exactly the split
 the ratified constraint forbids:

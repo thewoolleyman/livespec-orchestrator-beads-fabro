@@ -34,7 +34,9 @@ FABRO_PORT="${FABRO_PORT:-32276}"
 # orchestrator host runs one). In production with --network host the publish is
 # moot; here we map host:HOST_PUBLISH_PORT -> container:FABRO_PORT.
 HOST_PUBLISH_PORT="${HOST_PUBLISH_PORT:-32280}"
-HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.fabro/bin/fabro}"
+# The serving carrier build (bd-ib-qx45e6). The Dockerfile verifies its sha256,
+# so pointing this at any other binary fails the build.
+HOST_FABRO_BIN="${HOST_FABRO_BIN:-$HOME/.local/state/fabro-web-prod/v0408-d22808f8e/fabro}"
 
 log() { printf '\n=== %s ===\n' "$*"; }
 
@@ -115,13 +117,21 @@ log "waiting for in-container provisioning"
 PROVISION_WAIT_SECONDS="${PROVISION_WAIT_SECONDS:-90}"
 provisioned=""
 for _ in $(seq 1 "$PROVISION_WAIT_SECONDS"); do
-  if docker exec "$CONTAINER" docker info >/dev/null 2>&1; then provisioned=yes; break; fi
+  # BOTH legs: the entrypoint provisions fabro AFTER the inner dockerd is up
+  # (gh auth, then `fabro server start`), so a dockerd-only probe let T1.b/T1.c
+  # run in that gap and fail against a server that came up seconds later
+  # (measured 2026-11-12: /health 200 seven seconds after dockerd).
+  if docker exec "$CONTAINER" docker info >/dev/null 2>&1 \
+    && docker exec "$CONTAINER" curl -sf -o /dev/null "http://127.0.0.1:${FABRO_PORT}/health" >/dev/null 2>&1; then
+    provisioned=yes; break
+  fi
   sleep 1
 done
 if [ -z "$provisioned" ]; then
   {
     echo "FATAL: in-container provisioning never completed."
-    echo "  'docker exec $CONTAINER docker info' never succeeded within ${PROVISION_WAIT_SECONDS}s."
+    echo "  'docker exec $CONTAINER docker info' and the in-container fabro /health probe"
+    echo "  did not both succeed within ${PROVISION_WAIT_SECONDS}s."
     echo "  The tier-1 checks are ABORTED rather than run against a container that"
     echo "  never came up — they would verify nothing while reading as a pass."
     echo "  The container's own logs carry the real cause:"
