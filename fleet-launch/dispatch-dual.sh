@@ -53,6 +53,7 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 GMK_Q=$FLEET_LAUNCH_GMK_QUEUE_DIR
 GMK_LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
+wait_deadline=$(( SECONDS + FLEET_LAUNCH_MAX_WAIT_S ))
 ticket=""; ticket_number=""; lock=""; marker=""; FLEET_CAP=0; plugin=""
 # Non-run exit accounting: a launcher that exits before its run lists writes one terminal line and,
 # when its item still reads ready, one ledger comment naming the dropped ticket (Scenario 312).
@@ -72,6 +73,7 @@ bad_version=""
 if [ "${FLEET_LAUNCH_REEXEC_PID:-}" = "$$" ]; then
   [ -f "${FLEET_LAUNCH_REEXEC_TICKET:-}" ] && grep -q "pid=$$ " "$FLEET_LAUNCH_REEXEC_TICKET" && { ticket=$FLEET_LAUNCH_REEXEC_TICKET; ticket_number=${ticket##*/}; ticket_number=${ticket_number%%-*}; }
   case ${FLEET_LAUNCH_REEXEC_DEADLINE:-} in ''|*[!0-9]*) ;; *) deadline=$FLEET_LAUNCH_REEXEC_DEADLINE ;; esac
+  wait_deadline=$(( SECONDS + deadline - $(date +%s) ))
   echo "$(date -u +%FT%TZ) launcher re-executed on script version $START_VERSION: keeping ticket ${ticket##*/}"
 fi
 unset FLEET_LAUNCH_REEXEC_PID FLEET_LAUNCH_REEXEC_TICKET FLEET_LAUNCH_REEXEC_DEADLINE
@@ -430,12 +432,12 @@ descendant_pids() {
   for child in $(pgrep -P "$1" 2>/dev/null); do descendant_pids "$child"; echo "$child"; done
 }
 stop_drive() {
-  local pids deadline
+  local pids stop_deadline
   pids="$(descendant_pids "$drive_pid") $drive_pid"
   # shellcheck disable=SC2086 # a word-split pid list is the intent
   kill -TERM $pids 2>/dev/null
-  deadline=$(( $(date +%s) + FLEET_LAUNCH_STOP_GRACE_S ))
-  while kill -0 "$drive_pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do sleep 0.1; done
+  stop_deadline=$(( SECONDS + FLEET_LAUNCH_STOP_GRACE_S ))
+  while kill -0 "$drive_pid" 2>/dev/null && [ "$SECONDS" -lt "$stop_deadline" ]; do sleep 0.1; done
   # shellcheck disable=SC2086
   kill -KILL $pids 2>/dev/null
   wait "$drive_pid" 2>/dev/null
@@ -479,6 +481,8 @@ while :; do
     # bash reports a successful interrupted child wait to that cleanup.
     exit_cause="signal TERM (this exit was not a run ending)"
     if repository_hold_applies dispatch; then
+      [ "$evaluated" = 0 ] || [ "$SECONDS" -lt "$wait_deadline" ] || give_up
+      evaluated=1
       ensure_ticket
       yield_ticket repository-hold
       log_repository_hold
@@ -489,7 +493,7 @@ while :; do
     if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
       ahead=$(oldest_live_ticket "$GMK_Q")
       if [ -n "$ahead" ] && [ "$ahead" != "$ticket" ]; then
-        [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+        [ "$evaluated" = 0 ] || [ "$SECONDS" -lt "$wait_deadline" ] || give_up
         evaluated=1
         # Spend FIFO wait time on this launcher's own Definition-of-Done
         # preflight. Do it once while queued; launch_preflight decides whether
@@ -498,7 +502,7 @@ while :; do
         echo "$(date -u +%FT%TZ) queued behind an older gmktec ticket: $(cat "$ahead" 2>/dev/null)"; sleep "$FLEET_LAUNCH_POLL_S"; continue
       fi
     fi
-    [ "$evaluated" = 0 ] || [ "$(date +%s)" -lt "$deadline" ] || give_up
+    [ "$evaluated" = 0 ] || [ "$SECONDS" -lt "$wait_deadline" ] || give_up
     evaluated=1
     gmk_idle=
     if ! fleet_green; then echo "$(date -u +%FT%TZ) fleet not green: gmktec=$gmk_live hl=$hl_live markers=$markers fleet=$fleet cap=${FLEET_CAP:-?}"; sleep "$FLEET_LAUNCH_POLL_S"; continue; fi
