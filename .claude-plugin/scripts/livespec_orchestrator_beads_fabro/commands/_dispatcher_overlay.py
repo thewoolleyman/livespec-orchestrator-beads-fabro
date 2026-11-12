@@ -63,6 +63,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_git_author import (
     resolve_workflow_git_author,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_credential_helper import (
+    git_credential_helper_env_lines,
     git_credential_helper_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
@@ -427,6 +428,10 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
         + f"[environments.{env_environment_id}.env]\n"
         + f"CLAUDE_CODE_OAUTH_TOKEN = {token_literal}\n"
         + f"GITHUB_TOKEN = {github_token_literal}\n"
+        # Process-level github.com helper, so a fetch GitHub refuses anonymously
+        # is retried authenticated from ANY git process, the committed chain's
+        # `uv sync` included (bd-ib-awv2iu).
+        + git_credential_helper_env_lines()
         + author_env_lines
         + tmux_env_line
         + harness_shell_env

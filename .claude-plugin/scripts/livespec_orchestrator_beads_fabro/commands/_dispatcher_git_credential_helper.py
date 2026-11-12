@@ -58,6 +58,8 @@ import shlex
 __all__: list[str] = [
     "GITHUB_CREDENTIAL_HELPER_COMMAND",
     "GITHUB_CREDENTIAL_URL",
+    "PROCESS_GIT_CONFIG_ENV_VAR",
+    "git_credential_helper_env_lines",
     "git_credential_helper_prepare_steps_block",
 ]
 
@@ -72,6 +74,45 @@ GITHUB_CREDENTIAL_URL = "https://github.com"
 # resolved from PATH at that moment rather than by absolute path, which is what
 # makes the wrapper's in-place replacement of the real binary take effect.
 GITHUB_CREDENTIAL_HELPER_COMMAND = "!gh auth git-credential"
+# git's own command-line-scope config variable: what `git -c` exports to every
+# git process it starts, read AFTER any `GIT_CONFIG_COUNT` set (bd-ib-awv2iu).
+PROCESS_GIT_CONFIG_ENV_VAR = "GIT_CONFIG_PARAMETERS"
+
+
+def git_credential_helper_env_lines() -> str:
+    """Render the process-level github.com helper as one run-scoped env-table line.
+
+    WHY A SECOND, PROCESS-LEVEL COPY (bd-ib-awv2iu). The clone-local step below
+    is written by a Dispatcher setup node that runs AFTER the committed
+    run_prepare chain, and git reads clone-local config only inside that clone.
+    So it could never answer a fetch the committed chain makes, and least of all
+    `uv sync`'s fetch of git-sourced dependencies, which runs from uv's own cache
+    directory. Measured 2026-11-12: from about 13:20Z GitHub intermittently
+    answered 401 to ANONYMOUS fetches from the homelab egress, and every
+    orchestrator dispatch died at run_prepare_3 with "could not read Username".
+    An env-table variable reaches every git process the sandbox starts.
+
+    WHY `GIT_CONFIG_PARAMETERS` AND NOT `GIT_CONFIG_COUNT`. A Petri-era runner
+    may hand the sandbox its own `GIT_CONFIG_COUNT` set, one measured carrying an
+    EMPTY github.com helper that resets the accumulated list. A COUNT set written
+    here would clobber that one or be clobbered by it; git reads the PARAMETERS
+    variable after the COUNT set, so this helper survives the reset and leaves
+    the runner's own configuration intact.
+
+    WHY THE SAME COMMAND. `gh auth git-credential` answers from the ambient
+    GITHUB_TOKEN this same table projects until the refreshing wrapper is
+    installed, and mints per call once it is. The value names a command and no
+    token, and carries no `$`, so no engine-side expansion of env values can
+    reach it. git consults a helper only after a 401, so a fetch GitHub serves
+    anonymously stays anonymous, and the clone-local helper is still consulted
+    first for every push from the clone.
+
+    The value is git's own quoted `'key=value'` form, which needs no escaping
+    because neither the key nor the command contains a single quote.
+    """
+    key = f"credential.{GITHUB_CREDENTIAL_URL}.helper"
+    value = f"'{key}={GITHUB_CREDENTIAL_HELPER_COMMAND}'"
+    return f"{PROCESS_GIT_CONFIG_ENV_VAR} = {json.dumps(value)}\n"
 
 
 def git_credential_helper_prepare_steps_block() -> str:
