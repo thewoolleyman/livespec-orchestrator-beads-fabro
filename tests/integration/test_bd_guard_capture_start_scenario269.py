@@ -43,3 +43,14 @@ def test_scenario269_failure_diagnostic_is_bounded_on_an_event_not_host_speed() 
     regression_body = _REGRESSION.read_text(encoding="utf-8")
 
     assert "< 5.0" not in regression_body
+
+
+def test_scenario269_treats_a_denied_liveness_probe_as_unknown() -> None:
+    """A refused ``kill -0`` cannot turn a live capture server into an exit."""
+    regression_body = _REGRESSION.read_text(encoding="utf-8")
+    harness_body = _HARNESS.read_text(encoding="utf-8")
+
+    assert "CAPTURE_LIVENESS_PROBE_DENIED" in regression_body
+    assert "capture_process_is_running" in harness_body
+    assert "jobs -pr" in harness_body
+    assert 'kill -0 "$CAP_PID"' not in harness_body

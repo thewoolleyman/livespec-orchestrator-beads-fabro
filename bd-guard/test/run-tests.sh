@@ -187,6 +187,22 @@ CAP_EXIT_STATUS=""
 CAP_BOUND_REACHED=0
 CAP_ERR_FILE=""
 
+# capture_process_is_running — determine the background job's state without
+# signalling it. A denied `kill -0` is inconclusive (for example, EPERM from a
+# container profile), while Bash's job table knows whether this shell's child is
+# still running.
+capture_process_is_running() {
+    jobs -pr 2>/dev/null | grep -qx "$CAP_PID"
+}
+
+# reap_capture_after_exit — reap only after the job table observed the child
+# exit, so this `wait` cannot become an unbounded liveness probe.
+reap_capture_after_exit() {
+    wait "$CAP_PID"
+    CAP_EXIT_STATUS=$?
+    CAP_PID=""
+}
+
 # capture_start_detail — explain why start_capture returned without a port.
 capture_start_detail() {
     local captured_stderr
@@ -210,10 +226,8 @@ start_capture() {
     CAP_PID=$!
     local i=0
     while [ ! -s "$2" ] && [ "$i" -lt 600 ]; do
-        if ! kill -0 "$CAP_PID" 2>/dev/null; then
-            wait "$CAP_PID"
-            CAP_EXIT_STATUS=$?
-            CAP_PID=""
+        if ! capture_process_is_running; then
+            reap_capture_after_exit
             break
         fi
         sleep 0.05
@@ -221,13 +235,11 @@ start_capture() {
     done
     CAP_PORT="$(cat "$2" 2>/dev/null || echo "")"
     if [ -z "$CAP_PORT" ] && [ -n "$CAP_PID" ]; then
-        if kill -0 "$CAP_PID" 2>/dev/null; then
+        if capture_process_is_running; then
             CAP_BOUND_REACHED=1
             stop_capture
         else
-            wait "$CAP_PID"
-            CAP_EXIT_STATUS=$?
-            CAP_PID=""
+            reap_capture_after_exit
         fi
     fi
 }
