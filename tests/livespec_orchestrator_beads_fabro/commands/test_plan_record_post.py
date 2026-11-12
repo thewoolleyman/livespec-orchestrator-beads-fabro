@@ -318,7 +318,7 @@ def test_a_payload_imported_components_render_in_order_and_malformed_value_is_re
     assert code == 0
     body = str(_fake().list_comments(issue_id=created["epic_id"])[0]["text"])
     assert "- imported code: shared-credentials, state-backend" in body
-    document["build"]["imported_components"] = [""]
+    document["build"]["imported_components"] = ["   "]
     _ = record.write_text(json.dumps(document), encoding="utf-8")
 
     refused = _post(

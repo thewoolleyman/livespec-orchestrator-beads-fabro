@@ -181,6 +181,12 @@ class ReleaseReader(Protocol):
         """What the forge said about the release repository this body names."""
         ...
 
+    def component_tree_difference(
+        self, *, commit: str, tag: str, component: ReleaseComponent
+    ) -> str | None:
+        """The first differing path under one component, or ``None`` when identical."""
+        ...
+
 
 def release_repository_in(*, body: str) -> ExplicitRepository | BareRepository | None:
     """The release repository one record body names, or `None` for the governed one.
