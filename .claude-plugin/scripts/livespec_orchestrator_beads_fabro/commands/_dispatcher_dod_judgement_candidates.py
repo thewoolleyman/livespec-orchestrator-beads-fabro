@@ -49,7 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import 
 )
 from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
     HostJudgeSpendJournal,
-    append_assistant_event,
+    append_stream_event,
     is_claude_agent,
     spend_journal_name,
     start_spend_journal,
@@ -287,7 +287,7 @@ def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam inpu
         )
     if journal is not None:
         for line in result.stdout.splitlines():
-            append_assistant_event(journal=journal, line=line)
+            append_stream_event(journal=journal, line=line)
     usage = candidate_input_usage(output=result.stdout) if bound_input else _UNBOUNDED_USAGE
     return _CandidateRun(result=result, usage=usage, ended_by_input_limit=False)
 
@@ -316,5 +316,5 @@ def _observe_line(
     *, journal: HostJudgeSpendJournal, live_usage: _LiveUsage, bound_input: bool, line: str
 ) -> bool:
     """Journal a received response before optionally ending an over-budget candidate."""
-    append_assistant_event(journal=journal, line=line)
+    append_stream_event(journal=journal, line=line)
     return live_usage.observe(line=line) if bound_input else False

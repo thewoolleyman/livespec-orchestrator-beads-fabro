@@ -19,6 +19,8 @@ from uuid import uuid4
 __all__: list[str] = [
     "HostJudgeSpendJournal",
     "append_assistant_event",
+    "append_result_event",
+    "append_stream_event",
     "is_claude_agent",
     "spend_journal_name",
     "start_spend_journal",
@@ -50,6 +52,7 @@ def start_spend_journal(
         "cwd": str(cwd),
         "started_at": _utc_now(),
         "first_prompt": first_prompt[:_FIRST_PROMPT_LIMIT],
+        "final_usage_line": True,
     }
     _append(path=path, record=header, mode="x")
     return HostJudgeSpendJournal(path=path, session_id=session_id)
@@ -67,6 +70,37 @@ def append_assistant_event(*, journal: HostJudgeSpendJournal, line: str) -> None
     if not _is_spendable_assistant_event(record=record):
         return
     _append(path=journal.path, record={**record, "ts": _utc_now()}, mode="a")
+
+
+def append_result_event(*, journal: HostJudgeSpendJournal, line: str) -> None:
+    """Append Claude's closing usage and the assistant message ids it completes."""
+    try:
+        decoded: object = json.loads(line)
+    except ValueError:
+        return
+    if not isinstance(decoded, dict):
+        return
+    record = cast("dict[str, object]", decoded)
+    usage = record.get("usage")
+    if record.get("type") != "result" or not isinstance(usage, Mapping):
+        return
+    final_usage = cast("Mapping[str, object]", usage)
+    _append(
+        path=journal.path,
+        record={
+            "type": "result",
+            "usage": final_usage,
+            "message_ids": _assistant_message_ids(path=journal.path),
+            "ts": _utc_now(),
+        },
+        mode="a",
+    )
+
+
+def append_stream_event(*, journal: HostJudgeSpendJournal, line: str) -> None:
+    """Record whichever spend-relevant event one Claude stream line carries."""
+    append_assistant_event(journal=journal, line=line)
+    append_result_event(journal=journal, line=line)
 
 
 def is_claude_agent(*, agent_id: str | None) -> bool:
@@ -91,6 +125,13 @@ def _is_spendable_assistant_event(*, record: dict[str, object]) -> bool:
         and isinstance(payload.get("model"), str)
         and isinstance(payload.get("usage"), Mapping)
     )
+
+
+def _assistant_message_ids(*, path: Path) -> list[str]:
+    return [
+        cast(str, cast(Mapping[str, object], json.loads(line)["message"])["id"])
+        for line in path.read_text(encoding="utf-8").splitlines()[1:]
+    ]
 
 
 def _append(*, path: Path, record: Mapping[str, object], mode: str) -> None:

@@ -30,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
     HostJudgeSpendJournal,
     append_assistant_event,
+    append_result_event,
 )
 
 
@@ -308,6 +309,15 @@ def test_a_non_mapping_stream_record_is_not_journalled(tmp_path: Path) -> None:
     journal = HostJudgeSpendJournal(path=tmp_path / "spend.jsonl", session_id="session")
 
     append_assistant_event(journal=journal, line="[]")
+
+    assert not journal.path.exists()
+
+
+def test_an_invalid_result_stream_record_is_not_journalled(tmp_path: Path) -> None:
+    journal = HostJudgeSpendJournal(path=tmp_path / "spend.jsonl", session_id="session")
+
+    append_result_event(journal=journal, line="{")
+    append_result_event(journal=journal, line="[]")
 
     assert not journal.path.exists()
 
