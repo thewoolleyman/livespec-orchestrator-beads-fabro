@@ -1,0 +1,36 @@
+{
+    "id": "mMmMEEKb7ZR",
+    "name": "host CPU saturation \u2014 idle < 5% sustained 30 min",
+    "description": "livespec-3lev.1 host-usability safety net. system.cpu.utilization.idle carries the SUM of per-core idle fractions (~= idle-core count) on the 18-core host, so 0.9 = 5% x 18 cores. RE-DERIVE the threshold on hardware change (0.05 x core count). Validated against 9 days of sysstat history: fires exactly once (the 2026-07-18 load-270 incident), zero false positives.",
+    "disabled": false,
+    "query": {
+        "calculations": [
+            {
+                "column": "system.cpu.utilization.idle",
+                "op": "AVG"
+            }
+        ],
+        "time_range": 1800
+    },
+    "query_id": "kpTfWCYGC5Y",
+    "alert_type": "on_change",
+    "threshold": {
+        "value": 0.9,
+        "op": "<",
+        "exceeded_limit": 1
+    },
+    "recipients": [
+        {
+            "type": "email",
+            "target": "thewoolleyman@gmail.com",
+            "id": "jKw2EyfLJ3W"
+        }
+    ],
+    "frequency": 900,
+    "triggered": false,
+    "evaluation_schedule_type": "frequency",
+    "auto_investigate": false,
+    "created_at": "2026-07-23T22:42:09Z",
+    "updated_at": "2026-07-23T22:42:09Z",
+    "dataset_slug": "livespec-host-metrics"
+}
