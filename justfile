@@ -560,8 +560,10 @@ changed-files:
 # <set>`, which already (a) resolves each changed impl `.py` to its
 # mirror-paired test and runs that pytest SUBSET, and (b) applies the
 # path-scoped per-file coverage gate — i.e. it composes the existing
-# scoping plumbing rather than re-deriving it. An empty changed set is a
-# no-op (exit 0): nothing changed, nothing to gate.
+# scoping plumbing rather than re-deriving it. A change to the implement-work-item
+# `workflow.fabro` additionally selects every test that reads that graph. When
+# neither source nor graph selection applies, the recipe exits 75 so the
+# pre-commit hook conservatively runs the full aggregate.
 #
 # SCOPE — INNER-LOOP SPEEDUP ONLY, NOT a replacement for the final gate.
 # It runs only the test subset + path-scopable checks for the files this
