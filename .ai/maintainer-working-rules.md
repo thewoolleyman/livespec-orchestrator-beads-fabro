@@ -22,6 +22,16 @@ the sections they name now live in the `.ai/` files AGENTS.md routes to.
   look it up. The same applies to runs, gates and pull requests: say what each
   one is for before giving its identifier. Ledger comments and handoffs written
   for other agents may keep ids, because those readers do resolve them.
+  Strengthened 2026-11-12 (maintainer: "I don't know what the fuck F4 is, or
+  F3, or F5, or CSBITO. You need to fucking explain things without using plan
+  IDs or cryptic section IDs. Use only work item names or plan slugs"), after
+  a resumed plan session summarised its state as "csbito blocked on F4
+  evidence". In maintainer-facing text, use ONLY work-item names and plan
+  slugs. Never use a bare id fragment such as `csbito`. Never use a shorthand
+  label copied from a ledger comment or handoff, such as a Definition-of-Done
+  line ordinal (`F4`), a ruling number (`R301`) or an evidence tag (`H1`).
+  State in plain words what the label refers to. Before sending a summary built
+  from handoffs, rewrite every id and label those handoffs use.
 - **Maintainer-facing documents must explain their own notation.** Define
   every symbol before or beside its first use (an arrow, a column, a tally),
   make headings match their content, and write complete sentences over
