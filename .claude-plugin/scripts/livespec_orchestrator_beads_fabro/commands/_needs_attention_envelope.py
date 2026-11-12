@@ -27,8 +27,11 @@ the new fact classes a release was shipped to announce.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from typing import cast
+
+from livespec_runtime.attention_item import AttentionItem
 
 from livespec_orchestrator_beads_fabro.effects import JsonParseFailure, parse_json
 
@@ -38,6 +41,8 @@ __all__: list[str] = [
     "SkippedEntry",
     "parse_envelope",
     "render_envelope_markdown",
+    "render_json",
+    "render_markdown",
 ]
 
 # The `kind` values this consumer renders with its own shape. Anything else is
@@ -127,6 +132,19 @@ def render_envelope_markdown(*, envelope: str) -> str:
         lines.extend(["## Skipped malformed items", ""])
         lines.extend(_skipped_line(entry=entry) for entry in consumed.skipped)
     return "\n".join(lines) + "\n"
+
+
+def render_json(*, attention: list[AttentionItem]) -> str:
+    """Serialize the producer's attention facts into its wire envelope."""
+    return (
+        json.dumps({"attention": [asdict(item) for item in attention]}, indent=2, sort_keys=True)
+        + "\n"
+    )
+
+
+def render_markdown(*, attention: list[AttentionItem]) -> str:
+    """Render the producer's own wire envelope through the tolerant consumer."""
+    return render_envelope_markdown(envelope=render_json(attention=attention))
 
 
 def _item_lines(*, item: ConsumedItem) -> list[str]:

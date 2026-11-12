@@ -37,6 +37,9 @@ from livespec_orchestrator_beads_fabro._beads_client import (
 )
 from livespec_orchestrator_beads_fabro._beads_client_fake import FakeBeadsClient
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
+    CandidateAttempt,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     DodJudgement,
@@ -45,6 +48,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     STAGE_PRE_DISPATCH,
+    did_not_run_comment,
     verdict_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -393,3 +397,65 @@ def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
     assert len(held) == 1
     assert "restate assertion 1 as behaviour." in str(held[0].summary)
     assert unresolvable == []
+
+
+def _input_bound_attempt(*, candidate: str) -> CandidateAttempt:
+    agent, model = candidate.split(":", maxsplit=1)
+    return CandidateAttempt(agent=agent, model=model, exit_code=1, outcome="input-limit-reached")
+
+
+def _unpreflightable_facts(
+    *,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    comments: tuple[str, ...],
+) -> tuple[WorkItem, list[object]]:
+    """Read one item's host receipts through the real attention-lane seam."""
+    monkeypatch.setenv("LIVESPEC_BEADS_FAKE", "1")
+    reset_fake_singleton()
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"connection": {"prefix": "bd-ib"}}}',
+        encoding="utf-8",
+    )
+    item = _item(id="bd-ib-input-bound", description=_section(references=_SCENARIO_HEADING))
+    config = _config_for(root=repo)
+    append_work_item(path=config, item=item)
+    for comment in comments:
+        append_work_item_comment(path=config, work_item_id=item.id, body=comment)
+    module = importlib.import_module(_MODULE)
+    assert hasattr(module, "unpreflightable_definition_of_done_items")
+    facts = module.unpreflightable_definition_of_done_items(
+        project_root=repo, repo=_REPO_NAME, items=[item]
+    )
+    reset_fake_singleton()
+    return item, facts
+
+
+def test_the_lane_lists_an_item_when_every_host_candidate_hit_the_input_bound(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fact carries the measurements from the latest input-bound receipt."""
+    candidates = ("claude-acp:claude-opus-5", "codex-acp:gpt-5.6-terra")
+    receipt = did_not_run_comment(
+        item_id="bd-ib-input-bound",
+        stage=STAGE_PRE_DISPATCH,
+        digest="subject",
+        rubric_digest="rubric",
+        cause="input-limit-reached",
+        subject_characters=431,
+        carried_rider_count=2,
+        bound_ended_candidates=candidates,
+        attempts=tuple(_input_bound_attempt(candidate=candidate) for candidate in candidates),
+    )
+
+    item, facts = _unpreflightable_facts(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, comments=(receipt,)
+    )
+
+    assert [str(fact.id) for fact in facts] == [
+        "hygiene:unpreflightable-definition-of-done:bd-ib-input-bound"
+    ]
+    assert "431 characters" in str(facts[0].summary)
+    assert "2 carried riders" in str(facts[0].summary)
+    assert item.status == "ready"

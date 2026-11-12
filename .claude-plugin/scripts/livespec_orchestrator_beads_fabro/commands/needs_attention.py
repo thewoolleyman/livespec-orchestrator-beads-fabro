@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
-from dataclasses import asdict
 from functools import partial
 from pathlib import Path
 
@@ -43,7 +41,8 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_detection_stale
     detection_staleness_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_envelope import (
-    render_envelope_markdown,
+    render_json,
+    render_markdown,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_handoffs import (
     plans,
@@ -77,6 +76,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoptio
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_next_run import (
     spec_next,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_unpreflightable import (
+    unpreflightable_definition_of_done_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_unrunnable_acceptance import (
     unrunnable_acceptance_items,
@@ -274,6 +276,9 @@ def build_attention(
             + held_definition_of_done_items(
                 project_root=project_root, repo=repo_name, items=materialized
             )
+            + unpreflightable_definition_of_done_items(
+                project_root=project_root, repo=repo_name, items=materialized
+            )
             # The four Proof of Done hygiene rows, reached through the one entry
             # point that owns their grouping. A parked item awaiting its host replay
             # or its human attestation is otherwise indistinguishable from any other
@@ -351,23 +356,3 @@ def build_attention(
             + claim_token_missing_items(project_root=project_root, repo=repo_name, config=config)
             + hygiene_scan
         )
-
-
-def render_json(*, attention: list[AttentionItem]) -> str:
-    return (
-        json.dumps({"attention": [asdict(item) for item in attention]}, indent=2, sort_keys=True)
-        + "\n"
-    )
-
-
-def render_markdown(*, attention: list[AttentionItem]) -> str:
-    """Render the operator Markdown by consuming this producer's OWN wire envelope.
-
-    The consumer-tolerance posture binds this repository's own consuming
-    surfaces, so the operator view is not rendered from the in-memory
-    composition: it is rendered from exactly the bytes a downstream consumer
-    receives, through the same tolerant per-item parse. That is what makes the
-    posture executable here rather than merely advertised — a malformed item can
-    only ever cost itself, and an unknown `kind` renders generically.
-    """
-    return render_envelope_markdown(envelope=render_json(attention=attention))

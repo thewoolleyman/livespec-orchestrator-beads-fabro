@@ -61,6 +61,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate i
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
 )
+from livespec_orchestrator_beads_fabro.commands._needs_attention_unpreflightable import (
+    unpreflightable_definition_of_done_items as _unpreflightable_definition_of_done_items,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -89,6 +92,28 @@ _READY_STATUS = "ready"
 # hold, `ready` for the dispatch refusal — so keying the lane on one of them
 # would make exactly one of the two holds invisible.
 _HELDABLE_STATUSES = frozenset({"backlog", "pending-approval", "ready"})
+
+
+def unpreflightable_definition_of_done_items(
+    *, project_root: Path, repo: str, items: list[WorkItem]
+) -> list[AttentionItem]:
+    """Compatibility entry point for the input-bound hygiene lane."""
+    return _unpreflightable_definition_of_done_items(
+        project_root=project_root, repo=repo, items=items
+    )
+
+
+def definition_of_done_hygiene_items(
+    *, project_root: Path, repo: str, items: list[WorkItem]
+) -> list[AttentionItem]:
+    """Compose the three receipt-only Definition-of-Done hygiene lanes."""
+    return (
+        advisory_definition_of_done_items(project_root=project_root, repo=repo, items=items)
+        + held_definition_of_done_items(project_root=project_root, repo=repo, items=items)
+        + unpreflightable_definition_of_done_items(
+            project_root=project_root, repo=repo, items=items
+        )
+    )
 
 
 def held_definition_of_done_items(
