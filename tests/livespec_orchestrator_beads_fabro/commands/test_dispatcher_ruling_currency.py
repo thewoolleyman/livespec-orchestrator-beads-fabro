@@ -136,6 +136,14 @@ def test_the_latest_ruling_of_either_kind_governs() -> None:
     assert isinstance(fresh_then_seed, SeedRuling)
 
 
+def test_the_newer_ruling_governs_when_the_ledger_returns_comments_newest_first() -> None:
+    """The durable ruling instant, rather than an API listing order, decides currency."""
+    ruling = current_ruling(comments=(_fresh(instant=_SECOND), _seed(instant=_FIRST)))
+
+    assert isinstance(ruling, FreshRuling)
+    assert ruling.instant == _SECOND
+
+
 @pytest.mark.parametrize(
     ("ruling", "marker"),
     [
