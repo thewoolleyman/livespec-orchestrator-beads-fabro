@@ -121,6 +121,21 @@ def test_a_goal_template_opener_in_every_editable_item_field_is_a_mechanical_fin
         assert opener not in finding
 
 
+def test_a_goal_template_finding_names_only_the_first_delimiter_in_each_field(
+    tmp_path: Path,
+) -> None:
+    opener = "{" + "{"
+    item = _item(title=f"title {opener} first {{% later")
+
+    findings = definition_of_done_findings(item=item, cwd=_spec_tree(tmp_path=tmp_path))
+
+    template_findings = tuple(finding for finding in findings if "title carries" in finding)
+    assert template_findings == (
+        f"work-item {item.id}: title carries a goal-template opening delimiter "
+        "at 0-based character offset 6; edit that field",
+    )
+
+
 def test_a_reference_without_its_h2_marker_is_a_mechanical_finding(
     tmp_path: Path,
 ) -> None:
