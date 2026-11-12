@@ -111,6 +111,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones impo
     RUN_FROM_PROGRAM_FILENAME,
     run_from_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
+    WIP_CAPTURE_PROGRAM_FILENAME,
+    wip_capture_program_source,
+)
 
 __all__: list[str] = [
     "GH_REFRESH_ROOT",
@@ -225,6 +229,13 @@ def _gh_refresh_helpers(*, scripts_root: Path) -> tuple[Helper, ...]:
             path=GH_PUSH_HELPER_RELPATH,
             mode=_EXECUTABLE,
             compose=_constant(text=PUSH_ORIGIN_SOURCE),
+        ),
+        Helper(
+            name="gh-wip-capture",
+            root=GH_REFRESH_ROOT,
+            path=f"bin/{WIP_CAPTURE_PROGRAM_FILENAME}",
+            mode=_EXECUTABLE,
+            compose=_text(source=wip_capture_program_source),
         ),
         Helper(
             name="gh-wrapper-tail",

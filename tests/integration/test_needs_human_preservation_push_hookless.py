@@ -98,6 +98,34 @@ def test_a_tree_that_fails_the_check_suite_still_reaches_the_needs_human_ref(
     assert "pre-commit" not in _hooks_that_ran(marker=marker)
 
 
+def test_needs_human_preserves_the_run_branch_when_head_is_detached_on_master(
+    tmp_path: Path,
+) -> None:
+    """A default-branch checkout cannot replace the run's settled work at the terminal."""
+    work, origin, _marker = _sandbox(tmp_path=tmp_path)
+    run_branch = f"fabro/run/{_RUN_ID}"
+    run_work = "settled-run-work.txt"
+    run_body = "the committed work already held by the run branch\n"
+    _git(work, "switch", "--quiet", "-c", run_branch)
+    _ = (work / run_work).write_text(run_body, encoding="utf-8")
+    _git(work, "add", run_work)
+    _git(
+        work,
+        "-c",
+        "core.hooksPath=/dev/null",
+        "commit",
+        "--quiet",
+        "-m",
+        "settled run work",
+    )
+    _git(work, "checkout", "--quiet", "--detach", "master")
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    assert completed.returncode == 1
+    assert _preserved_blob(origin=origin, ref=_REF, path=run_work) == run_body
+
+
 def test_the_publish_draft_push_still_runs_the_repository_pre_push_check_suite(
     tmp_path: Path,
 ) -> None:

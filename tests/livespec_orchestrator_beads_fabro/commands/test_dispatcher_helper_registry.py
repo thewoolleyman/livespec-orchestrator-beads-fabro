@@ -31,6 +31,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plugin_cache_gate import (
     PLUGIN_GATE_PROGRAM_FILENAME,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
+    WIP_CAPTURE_PROGRAM_FILENAME,
+    wip_capture_program_source,
+)
 
 _REPOSITORY = "https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro.git"
 _COMMIT = "37e012335ed23ecba9bbcbb829e0fc90f2fdaf3b"
@@ -68,6 +72,21 @@ def test_the_registry_composes_each_helper_from_its_owning_module() -> None:
     assert mint.compose() == gh_mint_helper_source().encode("utf-8")
     assert helpers["plugin-cache-gate"].path == PLUGIN_GATE_PROGRAM_FILENAME
     assert helpers["plugin-cache-gate"].compose().endswith(b"\n")
+
+
+def test_the_wip_capture_program_is_a_digest_verified_gh_refresh_helper() -> None:
+    """Scenario 317's capture binary lands beside the credentialed push helper."""
+    helpers = _by_name()
+
+    assert "gh-wip-capture" in helpers
+    capture = helpers["gh-wip-capture"]
+
+    assert (capture.root, capture.path, capture.mode) == (
+        registry.GH_REFRESH_ROOT,
+        f"bin/{WIP_CAPTURE_PROGRAM_FILENAME}",
+        0o755,
+    )
+    assert capture.compose() == wip_capture_program_source().encode("utf-8")
 
 
 def test_the_gh_refresh_support_bundle_is_copied_file_by_file() -> None:
