@@ -19,11 +19,16 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_dod_judgement as _dod_judgement
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    origin_spec_h2_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     judgement_subject,
@@ -245,3 +250,39 @@ def test_an_unreadable_origin_refuses_and_names_the_remote_revision(tmp_path: Pa
     assert "origin/master" in findings[0]
     assert "unreadable" in findings[0]
     assert "does not resolve" not in findings[0]
+
+
+def test_one_judgement_taking_reads_origin_once_for_every_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    reads: list[Path] = []
+    real = _dod_judgement.origin_spec_h2_sections
+
+    def counting(*, repo: Path) -> object:
+        reads.append(repo)
+        return real(repo=repo)
+
+    monkeypatch.setattr(_dod_judgement, "origin_spec_h2_sections", counting)
+    item = _item(references=f"{_OLD_HEADING}, {_NEW_HEADING}")
+
+    subject = judgement_subject(item=item, cwd=primary)
+
+    assert len(reads) == 1
+    assert f"Prose for {_OLD_HEADING}." in subject
+    assert f"Prose for {_NEW_HEADING}." in subject
+
+
+def test_the_subject_and_the_wall_grade_one_supplied_revision(tmp_path: Path) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    snapshot = origin_spec_h2_sections(repo=primary)
+    assert isinstance(snapshot, dict)
+    earlier = {heading: body for heading, body in snapshot.items() if heading != _NEW_HEADING}
+    item = _item(references=_NEW_HEADING)
+
+    subject = judgement_subject(item=item, cwd=primary, origin_sections=earlier)
+    findings = definition_of_done_findings(item=item, cwd=primary, origin_sections=earlier)
+
+    assert "(this heading does not resolve in the governed spec tree)" in subject
+    assert len(findings) == 1
+    assert _NEW_HEADING in findings[0]
