@@ -231,6 +231,59 @@ the blocked state a replay can genuinely reach, and the deadline a hand-written
 `until` loop has no way to express. If you do write a condition by hand, accept
 either word and give it an arm for the target disappearing.
 
+## A proof that consumes the item it names cannot be replayed
+
+**A host-captured assertion must not name ONE fixed item when its steps change
+that item's state, because the capture uses the item up and the replay then
+has nothing to reproduce.** The replay runs the SAME steps against the SAME
+target. When the first run writes a record, moves a phase, closes the item or
+caches an answer on it, the second run meets a different starting state. It
+either refuses, reuses what the first run wrote, or reports
+`host_not_reproduced` for a fix that works.
+
+Measured 2026-11-12 on `bd-ib-hgaymd` (PR #4956). The assertion read "...
+`dispatcher.py classify-tier --repo . --item hxi-fekfuh` run in
+hetzner-xubuntu-info records a spec-change tier classification on the item
+...". The 01:50Z capture wrote that classification. `classify-tier` reuses an
+item's existing classification record, so the independent replay at 01:57Z
+did not run the code path under proof, and it posted `host_not_reproduced`.
+The code was right; the proof was wrong. The repair, made on the fleet
+coordinator's GO, rewrote the assertion to "... against an hxi item that
+carries no classification record yet writes a `livespec-spec-change-tier`
+record ...". Each leg then took its own fresh item: the capture used
+hxi-6u2bt7 and the replay used hxi-wv762e. The replay posted `host_verified`
+at 02:19Z and the item closed. The bd-ib-ht4c2m instance above is the same
+fault arriving through a seed: re-using a seed consumed `bd-ib-dk3u2p` as proof
+material.
+
+**When you author the assertion**, name the CLASS of target and the
+precondition each leg must establish, never a single id: "an item that carries
+no X record yet", "a drill item at phase reverting", "an item not yet
+dispatched". A fixed id is fine only when the steps are read-only on it: a
+read-only classification, a metadata read, a release-order check, a timing
+read.
+
+**When you replay**, check before you run anything whether the capture changed
+the named target. If it did, do not post a verdict from that target. Fix the
+proof, not the code: repair the assertion to the class form through the item's
+owner and the coordinator, then capture again on a fresh target. Do not
+dispatch rework, because nothing in the implementation is wrong.
+
+A related vacuous form: an assertion that repeats a judgement N times on an
+"unchanged subject" proves nothing if the judgement reuses a stored component
+keyed by that subject. All N takings then agree because they read one record.
+Name the reuse the proof must bypass, or vary the identity the reuse is keyed
+on.
+
+A fleet scan on 2026-11-12 of every open item's `### Host-captured` bullets
+across the ten livespec-family tenants found eight bullets naming a fixed item
+id. Five were read-only and safe. Three were at risk, and each now carries a
+ledger comment saying so: `livespec-dev-tooling-io6hyk` (a drill-close applied
+to four fixed drill items), `bd-ib-tzvtgc` (a factory dispatch of
+`bd-ib-qshcwc`, which a landing run closes) and `bd-ib-sq5oes` (five DoD
+judgements on `li-cyucz7`'s unchanged subject). The scan searched for
+`--item <id>` and for bare ledger-id tokens, and it excluded repository names.
+
 ## The record's release tag must belong to the item's own repository
 
 A host-captured proof record's `build.release_tag` must name a release tag
