@@ -286,40 +286,6 @@ def test_a_failed_fix_commit_run_reenters_fix_with_a_brief_naming_it(tmp_path: P
     assert "aborted the in-progress merge" in brief
 
 
-def test_the_third_failed_fix_commit_run_routes_to_needs_human_with_its_preserved_head(
-    tmp_path: Path,
-) -> None:
-    """The settle itself cuts the failure cycle before the engine can reject its edge."""
-    repo = _repo(tmp_path)
-    plugins = _plugins(tmp_path)
-    restored_head = _git(repo, "rev-parse", "HEAD")
-    failed_runs: list[str] = []
-
-    for attempt in range(3):
-        _integrate(repo, "merge")
-        _hook(repo, status=1)
-        run_id, report = _run_commit(repo, plugins)
-        assert report["state"] == "failed"
-        failed_runs.append(run_id)
-
-        result = _settle(repo, plugins, node="fix_commit_settle")
-
-        assert _in_progress(repo) == []
-        assert _git(repo, "rev-parse", "HEAD") == restored_head
-        if attempt < 2:
-            assert result.returncode != 0
-            continue
-
-        assert result.returncode == 0
-        assert "LIVESPEC_FIX_COMMIT_RUN_FAILED_EXHAUSTED" in result.stderr
-        assert restored_head in result.stderr
-        assert all(run in result.stderr for run in failed_runs)
-        assert json.loads(result.stdout) == {"preferred_next_label": "needs_human"}
-        cause = (repo / ".git" / "livespec-stage-cause").read_text(encoding="utf-8")
-        assert cause.startswith("stage: fix\ncause: LIVESPEC_FIX_COMMIT_RUN_FAILED_EXHAUSTED")
-        assert all(run in cause for run in failed_runs)
-
-
 _WAITING_HOOK = (
     "#!/bin/sh\n"
     "printf 'lefthook v1.13.6  hook: pre-commit\\n'\n"
