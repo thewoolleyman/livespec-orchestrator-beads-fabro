@@ -81,3 +81,30 @@ def test_the_overlay_no_longer_carries_the_escaper_at_all() -> None:
     """
     assert _ESCAPER not in _dispatcher_overlay.__all__
     assert not hasattr(_dispatcher_overlay, _ESCAPER)
+
+
+def test_the_opener_rewrite_leaves_no_live_opener_in_overlapping_brace_runs() -> None:
+    """A brace that closes one opener and opens the next is rewritten too.
+
+    A non-overlapping scan consumes the first two characters of two opening braces
+    and a percent, which leaves the second brace and the percent as a live statement
+    opener. Every opening brace that precedes a brace, percent or hash must become
+    a square bracket, so no run of such characters survives as an opener.
+    """
+    module = importlib.import_module(_MODULE)
+
+    rewritten = {
+        text: module.rewrite_minijinja_openers_for_goal(text=text)
+        for text in ("{{%", "{{{", "{{#", "{{{%", "a {{{{ b", "{ {%")
+    }
+
+    assert rewritten == {
+        "{{%": "[[%",
+        "{{{": "[[{",
+        "{{#": "[[#",
+        "{{{%": "[[[%",
+        "a {{{{ b": "a [[[{ b",
+        "{ {%": "{ [%",
+    }
+    for text in rewritten.values():
+        assert not any(opener in text for opener in ("{{", "{%", "{#"))
