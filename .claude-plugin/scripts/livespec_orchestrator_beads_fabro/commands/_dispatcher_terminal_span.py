@@ -13,8 +13,12 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_attempt_windows import attempt_windows
+from livespec_orchestrator_beads_fabro.commands._acp_fallback_event_types import (
+    ACP_STARTED_EVENT,
+)
 from livespec_orchestrator_beads_fabro.commands._acp_fallback_events import scan_acp_events
 from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     DispatchCorrelation,
@@ -72,13 +76,14 @@ def terminal_attempts(
 ) -> tuple[TerminalAttempt, ...] | None:
     """Read observed implementing-turn attempts from a Fabro events payload.
 
-    A malformed or unavailable stream yields ``None`` (the attempt set is
-    unobserved) rather than an empty tuple, which would claim zero attempts.
+    A malformed or unavailable stream, or one holding a started record that
+    did not parse, yields ``None`` (the attempt set is unobserved) rather than
+    a short or empty tuple, which would claim attempts that were not counted.
     The final successful candidate has no failover event
     to close it, so the terminal instant is its observable end boundary.
     """
     scan = scan_acp_events(payload=events_payload)
-    if isinstance(scan, str):
+    if isinstance(scan, str) or _started_record_count(payload=events_payload) != len(scan.starts):
         return None
     models = {
         (start.node, start.node_visit, start.candidate_index): start.confirmed_model
@@ -100,6 +105,22 @@ def terminal_attempts(
             model=models.get((window.node, window.node_visit, window.candidate_index)),
         )
         for index, window in enumerate(ordered)
+    )
+
+
+def _started_record_count(*, payload: object) -> int:
+    """How many ``agent.acp.started`` records the stream holds, parseable or not.
+
+    The reader drops a started record it cannot parse, so a count that exceeds
+    the parsed starts means an attempt existed that cannot be described.
+    """
+    records = (
+        cast("dict[str, object]", payload).get("events") if isinstance(payload, dict) else payload
+    )
+    return sum(
+        1
+        for record in cast("list[dict[str, object]]", records)
+        if record.get("type") == ACP_STARTED_EVENT
     )
 
 

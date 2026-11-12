@@ -229,6 +229,17 @@ def test_terminal_attempts_refuses_an_unreadable_event_payload() -> None:
     assert terminal_attempts(events_payload="not json", terminal_at_ns=1) is None
 
 
+def test_terminal_attempts_treats_an_unparseable_start_as_unobserved_not_zero() -> None:
+    """A started record the reader could not parse must not read as zero attempts."""
+    unparseable: dict[str, object] = {"type": "agent.acp.started", "node": "implement"}
+
+    assert terminal_attempts(events_payload=[unparseable], terminal_at_ns=1) is None
+    assert terminal_attempts(events_payload={"events": [unparseable]}, terminal_at_ns=1) is None
+    parseable = _start(index=0, instant="2026-11-05T10:00:00Z", model="m")
+    mixed = terminal_attempts(events_payload=[parseable, unparseable], terminal_at_ns=1)
+    assert mixed is None
+
+
 def test_terminal_span_names_an_unobserved_attempt_count_instead_of_reporting_zero() -> None:
     """Unobserved attempts omit the count, name it, and emit no child spans."""
     payload = json.loads(
