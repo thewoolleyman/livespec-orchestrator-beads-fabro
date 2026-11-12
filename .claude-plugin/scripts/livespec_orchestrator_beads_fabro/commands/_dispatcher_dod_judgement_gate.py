@@ -24,7 +24,6 @@ a listing into a fleet of model calls.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
@@ -38,15 +37,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse 
     with_governing_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
-    JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
-    first_remedy,
     judgement_subject,
     judgement_subject_digest,
     rubric_digest,
+    take_origin_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_comments import (
     judgement_comment_bodies,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_decision import (
+    DodJudgementDecision,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_held import held_judgement
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
@@ -65,7 +66,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
     run_dod_judgement,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    SpecIdentity,
     spec_identity_for_governing,
     whole_tree_identity,
 )
@@ -79,6 +79,9 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (  # noqa: E501
+        OriginSpecUnreadable,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
         CandidateAttempt,
     )
@@ -102,32 +105,6 @@ __all__: list[str] = [
 UNREADABLE_RUBRIC_DIGEST = "unreadable"
 
 
-@dataclass(frozen=True, kw_only=True)
-class DodJudgementDecision:
-    """What one call site learned, and whether anything was spent learning it.
-
-    `reused` is reported rather than inferred from `findings`, because a reused
-    verdict and a freshly-taken identical one are indistinguishable by outcome —
-    and the two caps the clause states are about the SPEND, not the answer.
-    """
-
-    work_item_id: str
-    outcome: str
-    findings: tuple[str, ...] = ()
-    reused: bool = False
-    spec_identity: SpecIdentity | None = None
-
-    @property
-    def holds(self) -> bool:
-        """Whether this decision rests the item at needs-human."""
-        return self.outcome == JUDGEMENT_HELD
-
-    @property
-    def first_remedy(self) -> str | None:
-        """The remedy a refusal and a hygiene fact name."""
-        return first_remedy(findings=self.findings)
-
-
 def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent seam input.
     *,
     item: WorkItem,
@@ -139,6 +116,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     payload_root: Path | None = None,
     governing_heading: GoverningHeadingReader | None = None,
     release_of_held_spec_tier: bool = False,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> DodJudgementDecision:
     """Reuse the recorded verdict, else take the judgement and record it.
 
@@ -171,17 +149,28 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     spec-change-tier item is released: it always keys on the whole-tree identity,
     because that judgement never reuses a verdict taken before the latest
     revision.
+
+    THE DEFAULT BRANCH'S SPEC IS READ ONCE FOR THE WHOLE TAKING. The digest, the
+    subject the judge grades and the length an unavailable record reports each
+    render the referenced heading bodies, and each used to fetch `origin` for
+    itself, so a remote advance between two of them put two specification
+    revisions into one taking. `origin_sections` is the reading a caller that
+    also ran the mechanical wall hands in so both surfaces share it; left
+    ABSENT, the taking takes its own once.
     """
+    reading = origin_sections
+    if reading is None:
+        reading = take_origin_reading(items=(item,), cwd=repo)
     rubric = judgement_rubric(payload_root=payload_root)
-    rubric_bytes_digest = (
-        UNREADABLE_RUBRIC_DIGEST if rubric is None else rubric_digest(rubric=rubric)
-    )
+    rubric_sha = UNREADABLE_RUBRIC_DIGEST if rubric is None else rubric_digest(rubric=rubric)
     if rubric is None:
         return _unavailable(
             item=item,
             stage=stage,
-            digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
-            rubric=rubric_bytes_digest,
+            digest=judgement_subject_digest(
+                item=item, cwd=repo, comments=comments, origin_sections=reading
+            ),
+            rubric=rubric_sha,
             cause=CAUSE_PROMPT_UNREADABLE,
             comments=comments,
             append=append,
@@ -200,9 +189,13 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
         else spec_identity_for_governing(item=item, cwd=repo, governing=governing)
     )
     digest = judgement_subject_digest(
-        item=item, cwd=repo, comments=comments, spec_identity=identity.value
+        item=item,
+        cwd=repo,
+        comments=comments,
+        spec_identity=identity.value,
+        origin_sections=reading,
     )
-    reused = reusable_verdict(comments=comments, digest=digest, rubric_digest=rubric_bytes_digest)
+    reused = reusable_verdict(comments=comments, digest=digest, rubric_digest=rubric_sha)
     if reused is not None:
         return DodJudgementDecision(
             work_item_id=item.id,
@@ -222,6 +215,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             payload_root=payload_root,
             governing=governing,
             caller=f"dod_judgement_{stage.replace('-', '_')}",
+            origin_sections=reading,
         ),
         governing=governing,
     )
@@ -230,14 +224,20 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             item=item,
             stage=stage,
             digest=digest,
-            rubric=rubric_bytes_digest,
+            rubric=rubric_sha,
             cause=verdict.cause,
             comments=comments,
             append=append,
             bound_ended_candidates=verdict.bound_ended_candidates,
             attempts=verdict.attempts,
             subject_characters=len(
-                judgement_subject(item=item, cwd=repo, comments=comments, governing=governing)
+                judgement_subject(
+                    item=item,
+                    cwd=repo,
+                    comments=comments,
+                    governing=governing,
+                    origin_sections=reading,
+                )
             ),
             carried_rider_count=sum(not is_receipt_comment(body=comment) for comment in comments),
         )
@@ -246,7 +246,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             item_id=item.id,
             stage=stage,
             digest=digest,
-            rubric_digest=rubric_bytes_digest,
+            rubric_digest=rubric_sha,
             judgement=verdict,
             spec_identity=identity,
             governing=(
@@ -276,6 +276,7 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
     runner: CommandRunner | None = None,
     payload_root: Path | None = None,
     governing_heading: GoverningHeadingReader | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> DodJudgementDecision:
     """The decision above, bound to this item's own ledger comment sidecar.
 
@@ -286,6 +287,9 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
     write that would say so is the one that cannot be deduplicated. The item
     then routes exactly as it would without the judgement, which is what the
     clause asks of every condition under which it cannot run.
+
+    `origin_sections` is the reading the caller's own mechanical wall graded, so
+    the wall and this judgement resolve one specification revision.
     """
 
     def append(*, body: str) -> None:
@@ -304,6 +308,7 @@ def judge_item_definition_of_done(  # noqa: PLR0913 - each argument is an indepe
         runner=runner,
         payload_root=payload_root,
         governing_heading=governing_heading,
+        origin_sections=origin_sections,
     )
     # A verdict recorded before the marker existed is found here and never
     # rewritten, so this is the only pass that can give it the label the held

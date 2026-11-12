@@ -55,6 +55,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
 if TYPE_CHECKING:
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (  # noqa: E501
+        OriginSpecUnreadable,
+    )
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
@@ -116,7 +119,11 @@ class AcceptanceEligibility:
 
 
 def acceptance_eligibility(
-    *, item: WorkItem, cwd: Path, workflow_name: str | None = None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    workflow_name: str | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> AcceptanceEligibility:
     """Decide whether one item may be dispatched, and why not when it may not.
 
@@ -124,6 +131,10 @@ def acceptance_eligibility(
     one; the rest of the variant precedence comes from the ONE resolution the
     launch itself uses, so the decision cannot judge a different graph than the
     one that would run.
+
+    `origin_sections` is an already-taken reading of the default branch's H2
+    sections, handed to the mechanical findings so a caller that also takes the
+    judgement shares one specification revision between the two.
     """
     variant = criteria_wall_variant(repo=cwd, work_item_id=item.id, workflow_name=workflow_name)
     criteria = effective_criteria(item=item)
@@ -133,7 +144,7 @@ def acceptance_eligibility(
         # that produces them — so it is exempt from the section requirement
         # entirely, not merely from the assertion count.
         return _verdict(item=item, variant=variant, criteria=criteria, findings=(), refusal=None)
-    findings = definition_of_done_findings(item=item, cwd=cwd)
+    findings = definition_of_done_findings(item=item, cwd=cwd, origin_sections=origin_sections)
     return _verdict(
         item=item,
         variant=variant,
@@ -184,6 +195,7 @@ def pre_dispatch_criteria_refusal(
     items: Sequence[WorkItem],
     cwd: Path,
     workflow_name: str | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str | None:
     """The pre-dispatch wall's operator-facing refusal, or `None` to proceed.
 
@@ -194,11 +206,16 @@ def pre_dispatch_criteria_refusal(
     rather than only for the ones that would otherwise refuse, because a wave
     dispatches item by item and the groom exemption is a property of the
     candidate, not of the wave.
+
+    `origin_sections` is the one reading of the default branch's H2 sections the
+    wall's Definition-of-Done judgement row shares (see `acceptance_eligibility`).
     """
     details = [
         detail
         for detail in (
-            acceptance_eligibility(item=item, cwd=cwd, workflow_name=workflow_name).refusal
+            acceptance_eligibility(
+                item=item, cwd=cwd, workflow_name=workflow_name, origin_sections=origin_sections
+            ).refusal
             for item in items
         )
         if detail is not None

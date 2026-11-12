@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "OriginSpecUnreadable",
     "origin_spec_h2_headings",
+    "origin_spec_h2_sections",
 ]
 
 _CANONICAL_BRANCH_KEY = "canonical_branch"
@@ -93,6 +94,12 @@ def origin_spec_h2_headings(*, repo: Path) -> frozenset[str] | OriginSpecUnreada
     agrees with the Definition-of-Done rubric before an item can consume a
     dispatch slot.
     """
+    sections = origin_spec_h2_sections(repo=repo)
+    return sections if isinstance(sections, OriginSpecUnreadable) else frozenset(sections)
+
+
+def origin_spec_h2_sections(*, repo: Path) -> dict[str, str] | OriginSpecUnreadable:
+    """The H2 sections of the default branch's governed spec tree, or why it is unreadable."""
     refs = _origin_spec_refs(repo=repo)
     fetched = _git(repo=repo, argv=["fetch", "--quiet", "origin", refs.fetch_refspec])
     if isinstance(fetched, OriginSpecUnreadable):
@@ -100,16 +107,34 @@ def origin_spec_h2_headings(*, repo: Path) -> frozenset[str] | OriginSpecUnreada
     listing = _git(repo=repo, argv=["ls-tree", "--name-only", refs.remote_ref, f"{_SPEC_DIRNAME}/"])
     if isinstance(listing, OriginSpecUnreadable):
         return _at_revision(unreadable=listing, revision=refs.revision)
-    headings: set[str] = set()
+    sections: dict[str, str] = {}
     for path in sorted(line for line in listing.splitlines() if _TOP_LEVEL_SPEC_FILE.match(line)):
         text = _git(repo=repo, argv=["show", f"{refs.remote_ref}:{path}"])
         if isinstance(text, OriginSpecUnreadable):
             return _at_revision(unreadable=text, revision=refs.revision)
-        for raw in text.splitlines():
-            match = _H2.match(raw)
-            if match is not None:
-                headings.add(f"## {match.group(1)}")
-    return frozenset(headings)
+        for heading, body in _h2_sections(text=text).items():
+            _ = sections.setdefault(heading, body)
+    return sections
+
+
+def _h2_sections(*, text: str) -> dict[str, str]:
+    """Extract each H2 section, retaining its heading and its first occurrence."""
+    sections: dict[str, str] = {}
+    body: list[str] | None = None
+    heading: str | None = None
+    for raw in text.splitlines():
+        match = _H2.match(raw)
+        if match is None:
+            if body is not None:
+                body.append(raw)
+            continue
+        if heading is not None and body is not None:
+            _ = sections.setdefault(heading, "\n".join(body))
+        heading = f"## {match.group(1)}"
+        body = [raw]
+    if heading is not None and body is not None:
+        _ = sections.setdefault(heading, "\n".join(body))
+    return sections
 
 
 def _origin_spec_refs(*, repo: Path) -> _OriginSpecRefs:

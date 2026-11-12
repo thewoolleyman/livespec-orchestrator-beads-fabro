@@ -17,14 +17,36 @@ from __future__ import annotations
 
 import os
 import subprocess
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
+import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_dod_judgement as _dod_judgement
+from livespec_orchestrator_beads_fabro.commands import _drive_approve_valve as _approve_valve
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    origin_spec_h2_sections,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    judgement_subject,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
+    judge_definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    STAGE_PRE_ADMISSION,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
+    dod_gate_prompt_path,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     MECHANICAL_FINDING_PREFIX,
     filing_display,
@@ -32,7 +54,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display impor
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     unjudged_governing_heading,
 )
-from livespec_orchestrator_beads_fabro.types import WorkItem
+from livespec_orchestrator_beads_fabro.commands._drive_approve_valve import approve_item
+from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from returns.io import IOSuccess
 
 _OLD_HEADING = "## Scenario 1 — The heading the primary checkout already carries"
 _NEW_HEADING = "## Scenario 2 — The heading only the remote carries"
@@ -68,7 +92,9 @@ def _run(*args: str, cwd: Path) -> None:
 def _publish(*, seed: Path, headings: tuple[str, ...], branch: str = "master") -> None:
     spec = seed / "SPECIFICATION"
     spec.mkdir(exist_ok=True)
-    body = "# Scenarios\n\n" + "".join(f"{heading}\n\nProse.\n\n" for heading in headings)
+    body = "# Scenarios\n\n" + "".join(
+        f"{heading}\n\nProse for {heading}.\n\n" for heading in headings
+    )
     _ = (spec / "scenarios.md").write_text(body, encoding="utf-8")
     _run("add", "-A", cwd=seed)
     _run("commit", "-m", "revise", cwd=seed)
@@ -127,6 +153,22 @@ def test_a_heading_only_origin_master_carries_is_admitted(tmp_path: Path) -> Non
     findings = definition_of_done_findings(item=_item(references=_NEW_HEADING), cwd=primary)
 
     assert findings == ()
+
+
+def test_judgement_subject_and_mechanical_wall_read_a_lagging_checkout_from_origin(
+    tmp_path: Path,
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    item = _item(references=_NEW_HEADING)
+
+    subject = judgement_subject(item=item, cwd=primary)
+    findings = definition_of_done_findings(item=item, cwd=primary)
+
+    assert f"Prose for {_NEW_HEADING}." in subject
+    assert "(this heading does not resolve in the governed spec tree)" not in subject
+    assert findings == ()
+    missing_subject = judgement_subject(item=_item(references=_MISSING_HEADING), cwd=primary)
+    assert "(this heading does not resolve in the governed spec tree)" in missing_subject
 
 
 def test_a_heading_neither_origin_master_nor_the_primary_carries_is_refused_by_name(
@@ -224,3 +266,146 @@ def test_an_unreadable_origin_refuses_and_names_the_remote_revision(tmp_path: Pa
     assert "origin/master" in findings[0]
     assert "unreadable" in findings[0]
     assert "does not resolve" not in findings[0]
+
+
+def test_one_judgement_taking_reads_origin_once_for_every_reference(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    reads: list[Path] = []
+    real = _dod_judgement.origin_spec_h2_sections
+
+    def counting(*, repo: Path) -> object:
+        reads.append(repo)
+        return real(repo=repo)
+
+    monkeypatch.setattr(_dod_judgement, "origin_spec_h2_sections", counting)
+    item = _item(references=f"{_OLD_HEADING}, {_NEW_HEADING}")
+
+    subject = judgement_subject(item=item, cwd=primary)
+
+    assert len(reads) == 1
+    assert f"Prose for {_OLD_HEADING}." in subject
+    assert f"Prose for {_NEW_HEADING}." in subject
+
+
+def test_the_subject_and_the_wall_grade_one_supplied_revision(tmp_path: Path) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    snapshot = origin_spec_h2_sections(repo=primary)
+    assert isinstance(snapshot, dict)
+    earlier = {heading: body for heading, body in snapshot.items() if heading != _NEW_HEADING}
+    item = _item(references=_NEW_HEADING)
+
+    subject = judgement_subject(item=item, cwd=primary, origin_sections=earlier)
+    findings = definition_of_done_findings(item=item, cwd=primary, origin_sections=earlier)
+
+    assert "(this heading does not resolve in the governed spec tree)" in subject
+    assert len(findings) == 1
+    assert _NEW_HEADING in findings[0]
+
+
+@dataclass
+class _PassingRunner:
+    """A CommandRunner double that passes every judgement it is asked to take."""
+
+    prompts: list[str] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+        start_new_session: bool = False,
+    ) -> CommandResult:
+        _ = (argv, cwd, timeout_seconds, env, start_new_session)
+        assert stdin is not None
+        self.prompts.append(os.read(stdin, 1_000_000).decode("utf-8"))
+        return CommandResult(exit_code=0, stdout='{"outcome": "passed"}', stderr="")
+
+
+def _judging_payload(*, tmp_path: Path) -> Path:
+    root = tmp_path / "payload"
+    prompts = root / ".fabro" / "workflows" / "implement-work-item" / "prompts"
+    prompts.mkdir(parents=True)
+    _ = (prompts / "dod-gate.md").write_text(
+        dod_gate_prompt_path().read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    return root
+
+
+def test_one_gate_taking_reads_origin_once_for_the_digest_the_judge_and_the_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    _ = (primary / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro": {"dispatcher": {"acp_nodes":'
+        ' {"dod_gate": {"agent": "claude-acp", "model": "claude-opus-5"}}}}}',
+        encoding="utf-8",
+    )
+    reads: list[Path] = []
+    real = _dod_judgement.origin_spec_h2_sections
+
+    def counting(*, repo: Path) -> object:
+        reads.append(repo)
+        return real(repo=repo)
+
+    monkeypatch.setattr(_dod_judgement, "origin_spec_h2_sections", counting)
+    runner = _PassingRunner()
+
+    decision = judge_definition_of_done(
+        item=_item(references=f"{_OLD_HEADING}, {_NEW_HEADING}"),
+        repo=primary,
+        stage=STAGE_PRE_ADMISSION,
+        comments=(),
+        append=lambda **_kwargs: None,
+        runner=runner,
+        payload_root=_judging_payload(tmp_path=tmp_path),
+        governing_heading=unjudged_governing_heading,
+    )
+
+    assert decision.reused is False
+    assert len(runner.prompts) == 1
+    assert f"Prose for {_NEW_HEADING}." in runner.prompts[0]
+    assert len(reads) == 1
+
+
+def test_the_approve_valve_hands_the_wall_and_the_judgement_one_origin_reading(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    seen: dict[str, object] = {}
+
+    def wall(**kwargs: Any) -> SimpleNamespace:
+        seen["wall"] = kwargs.get("origin_sections")
+        return SimpleNamespace(refusal=None, variant=SimpleNamespace(exempt=False), eligible=True)
+
+    def judge(**kwargs: Any) -> SimpleNamespace:
+        seen["judge"] = kwargs.get("origin_sections")
+        return SimpleNamespace(holds=True, findings=("held",))
+
+    monkeypatch.setattr(_approve_valve, "acceptance_eligibility", wall)
+    monkeypatch.setattr(_approve_valve, "judge_item_definition_of_done", judge)
+    config = StoreConfig(
+        tenant="t", prefix="bd", server_user="t", database="t", bd_path="bd", fake=True
+    )
+
+    monkeypatch.setattr(
+        _approve_valve,
+        "resolved_stored_factory_size_decision",
+        lambda **_kwargs: IOSuccess(SimpleNamespace(disposition="proceed", reason=None)),
+    )
+
+    refusal = approve_item(
+        repo=primary,
+        config=config,
+        item=replace(_item(references=_NEW_HEADING), status="pending-approval"),
+        action_id="approve:bd-ib-origin",
+    )
+
+    assert refusal["domain_error"] == "definition-of-done-held"
+    assert isinstance(seen["wall"], dict)
+    assert _NEW_HEADING in seen["wall"]
+    assert seen["judge"] is seen["wall"]

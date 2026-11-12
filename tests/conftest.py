@@ -50,11 +50,13 @@ from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_definition_of_done_findings as _dod_findings,
 )
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_dod_judgement as _dod_judgement
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
     OriginSpecUnreadable,
     origin_spec_h2_headings,
+    origin_spec_h2_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
@@ -1084,6 +1086,34 @@ class _EveryHeading(frozenset[str]):
         return True
 
 
+class _EverySections(dict[str, str]):
+    """The sections of a directory that built no spec tree: every heading resolves."""
+
+    def __contains__(self, key: object) -> bool:
+        return True
+
+
+def _sections_from_working_tree(*, repo: Path) -> dict[str, str]:
+    """Read the same top-level H2 sections that a plain test fixture built."""
+    sections: dict[str, str] = {}
+    for path in sorted((repo / "SPECIFICATION").glob("*.md")):
+        if not path.is_file():
+            continue
+        heading: str | None = None
+        body: list[str] | None = None
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("## "):
+                if heading is not None and body is not None:
+                    sections.setdefault(heading, "\n".join(body))
+                heading = f"## {line[3:].strip()}"
+                body = [line]
+            elif body is not None:
+                body.append(line)
+        if heading is not None and body is not None:
+            sections.setdefault(heading, "\n".join(body))
+    return sections
+
+
 @pytest.fixture(autouse=True)
 def _hermetic_origin_spec_headings(monkeypatch: pytest.MonkeyPatch) -> None:
     """Give a throwaway directory with no git repository of its own a spec tree to read.
@@ -1112,7 +1142,15 @@ def _hermetic_origin_spec_headings(monkeypatch: pytest.MonkeyPatch) -> None:
                     headings.add(f"## {line[3:].strip()}")
         return frozenset(headings)
 
+    def _sections(*, repo: Path) -> dict[str, str] | OriginSpecUnreadable:
+        if (repo / ".git").exists():
+            return origin_spec_h2_sections(repo=repo)
+        if not (repo / "SPECIFICATION").is_dir():
+            return _EverySections()
+        return _sections_from_working_tree(repo=repo)
+
     monkeypatch.setattr(_dod_findings, "origin_spec_h2_headings", _read)
+    monkeypatch.setattr(_dod_judgement, "origin_spec_h2_sections", _sections)
 
 
 @pytest.fixture(scope="session", autouse=True)

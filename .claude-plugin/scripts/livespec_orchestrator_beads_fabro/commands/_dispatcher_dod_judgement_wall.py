@@ -77,6 +77,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (  # noqa: E501
+        OriginSpecUnreadable,
+    )
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 __all__: list[str] = [
@@ -91,6 +94,7 @@ def dod_judgement_refusal(
     items: Sequence[WorkItem],
     workflow_name: str | None = None,
     journal: object | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str | None:
     """The wall's refusal for the FIRST held item of this selection, or `None`.
 
@@ -108,6 +112,10 @@ def dod_judgement_refusal(
     appended one and whether it admitted or refused, because the run is supplied
     that identity and the journal row is the dispatch's own account of which one.
     A taking that produced none — the judgement did not run — writes no row.
+
+    `origin_sections` is the reading of the default branch's H2 sections the
+    criteria row of the same wall graded, so the mechanical wall and every taking
+    here resolve one specification revision.
     """
     if not items:
         return None
@@ -118,7 +126,11 @@ def dod_judgement_refusal(
         if _exempt(repo=repo, item=item, workflow_name=workflow_name):
             continue
         decision = judge_item_definition_of_done(
-            item=item, repo=repo, path=config, stage=STAGE_PRE_DISPATCH
+            item=item,
+            repo=repo,
+            path=config,
+            stage=STAGE_PRE_DISPATCH,
+            origin_sections=origin_sections,
         )
         append = getattr(journal, "append", None)
         if append is not None and decision.spec_identity is not None:

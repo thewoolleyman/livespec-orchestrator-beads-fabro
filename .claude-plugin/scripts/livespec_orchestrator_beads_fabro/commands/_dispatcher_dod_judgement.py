@@ -37,7 +37,6 @@ renderer, because a second spelling of the marker is two answers to one question
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +45,10 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     DefinitionOfDone,
     definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    OriginSpecUnreadable,
+    origin_spec_h2_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     CandidateAttempt,
@@ -86,6 +89,7 @@ __all__: list[str] = [
     "parse_judgement_reply",
     "rubric_digest",
     "spec_tree_identity",
+    "take_origin_reading",
 ]
 
 JUDGEMENT_ADMITTED = "admitted"
@@ -93,7 +97,6 @@ JUDGEMENT_HELD = "rests-at-needs-human"
 JUDGEMENT_UNAVAILABLE = "did-not-run"
 CAUSE_UNPARSEABLE_VERDICT = "unparseable-verdict"
 
-_H2 = re.compile(r"^##\s+(.+?)\s*$")
 _H2_MARKER = "## "
 _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
@@ -154,6 +157,7 @@ def judgement_subject(
     cwd: Path,
     comments: Sequence[str] = (),
     governing: GoverningHeadingVerdict | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str:
     """Render the item's goal fields, criteria, referenced heading bodies and riders.
 
@@ -172,6 +176,14 @@ def judgement_subject(
     would leave the judge unable to tell a verdict of "nothing governs" from a
     judgement nobody took — and those have opposite consequences, the first
     foreclosing the finding and the second leaving the node its own search.
+
+    `origin_sections` is the default branch's H2 sections as ONE reading. Every
+    referenced heading body in this subject comes from it, so a remote advance
+    between two references cannot put bodies from two revisions into one subject.
+    A caller holding the reading the mechanical wall graded (see
+    `definition_of_done_findings`) hands it in so both surfaces share it; left
+    ABSENT, the subject takes the reading itself, once and only if a reference
+    needs a body.
     """
     criteria = effective_criteria(item=item)
     section = definition_of_done(description=item.description)
@@ -194,13 +206,14 @@ def judgement_subject(
         "",
         governing_heading_block(verdict=governing),
     ]
+    reading = _OriginReading(repo=cwd, sections=origin_sections)
     blocks.extend(
         bounded_reference_blocks(
             prefix=blocks,
             references=section.references,
             ending=ending,
             governing=governing,
-            heading_body=lambda reference: _heading_body(repo=cwd, reference=reference),
+            heading_body=lambda reference: _heading_body(reading=reading, reference=reference),
         )
     )
     return "\n".join([*blocks, *ending])
@@ -225,8 +238,28 @@ def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
     return fields
 
 
+def take_origin_reading(
+    *, items: Sequence[WorkItem], cwd: Path
+) -> dict[str, str] | OriginSpecUnreadable | None:
+    """ONE reading of the default branch's H2 sections, taken only if some item references one.
+
+    A dispatch-path caller grades the same references twice — the mechanical wall
+    and the judgement subject — and hands this reading to both, so they read one
+    specification revision. `None` means no item names a reference, so there is
+    nothing to read; each consumer then needs none either.
+    """
+    if not any(definition_of_done(description=item.description).references for item in items):
+        return None
+    return origin_spec_h2_sections(repo=cwd)
+
+
 def judgement_subject_digest(
-    *, item: WorkItem, cwd: Path, comments: Sequence[str] = (), spec_identity: str | None = None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    comments: Sequence[str] = (),
+    spec_identity: str | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str:
     """Return the stable byte digest used to determine verdict reuse.
 
@@ -243,7 +276,9 @@ def judgement_subject_digest(
     complete specification tree, in the same `tree:` form a run handed no clause
     provenance compares.
     """
-    subject = judgement_subject(item=item, cwd=cwd, comments=comments)
+    subject = judgement_subject(
+        item=item, cwd=cwd, comments=comments, origin_sections=origin_sections
+    )
     identity = "tree:" + spec_tree_identity(cwd=cwd) if spec_identity is None else spec_identity
     return hashlib.sha256(f"{subject}\n{_SPEC_IDENTITY_LABEL}{identity}".encode()).hexdigest()
 
@@ -347,33 +382,25 @@ def _last_non_empty_line(*, reply: str) -> str | None:
     return None
 
 
-def _heading_body(*, repo: Path, reference: str) -> str:
+class _OriginReading:
+    """One taking's lazy, single read of the default branch's H2 sections."""
+
+    def __init__(
+        self, *, repo: Path, sections: dict[str, str] | OriginSpecUnreadable | None
+    ) -> None:
+        self._repo = repo
+        self._sections = sections
+
+    def sections(self) -> dict[str, str] | OriginSpecUnreadable:
+        if self._sections is None:
+            self._sections = origin_spec_h2_sections(repo=self._repo)
+        return self._sections
+
+
+def _heading_body(*, reading: _OriginReading, reference: str) -> str:
     """Return an H2 section body, retaining an explicit absence when unresolved."""
-    title = reference.removeprefix(_H2_MARKER)
-    spec_root = repo / _SPEC_DIRNAME
-    if not spec_root.is_dir():
+    sections = reading.sections()
+    if isinstance(sections, OriginSpecUnreadable):
         return _UNRESOLVED_HEADING_BODY
-    for path in sorted(spec_root.glob("*.md")):
-        read = attempt(action=lambda p=path: p.read_text(encoding="utf-8"), exceptions=(OSError,))
-        if isinstance(read, AttemptFailure):
-            continue
-        body = _section_of(text=read, title=title)
-        if body is not None:
-            return body
-    return _UNRESOLVED_HEADING_BODY
-
-
-def _section_of(*, text: str, title: str) -> str | None:
-    """Extract an H2 section through, but not including, the following H2."""
-    collected: list[str] | None = None
-    for raw in text.splitlines():
-        match = _H2.match(raw)
-        if match is None:
-            if collected is not None:
-                collected.append(raw)
-            continue
-        if collected is not None:
-            break
-        if match.group(1) == title:
-            collected = [raw]
-    return "\n".join(collected) if collected is not None else None
+    heading = f"{_H2_MARKER}{reference.removeprefix(_H2_MARKER)}"
+    return sections.get(heading, _UNRESOLVED_HEADING_BODY)
