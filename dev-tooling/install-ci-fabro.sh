@@ -2,10 +2,13 @@
 # install-ci-fabro.sh — put a pinned, checksum-verified `fabro` where CI's
 # factory-graph gate (`check-fabro-graph-validity`) resolves it.
 #
-# WHY THE UPSTREAM RELEASE, NOT THE FACTORY'S FORK BUILD. The factory runs a fork
-# build (branch factory-integration on thewoolleyman/fabro) that exists only as a
-# host binary; nothing publishes it. The upstream fabro-sh/fabro v0.254.0 release
-# is the fork's own base commit, publishes a static musl asset with a sha256, and
+# WHY THE UPSTREAM RELEASE, NOT THE FACTORY'S FORK BUILD. The legacy 0.254
+# factory ran a fork build that exists only as a host binary; nothing publishes it.
+# Its line is archived on thewoolleyman/fabro as branch
+# legacy/factory-integration-0254 (8b82e99bb). Since 2026-11-12, factory-integration
+# itself carries the v0.408 carrier, and bd-ib-3lxeqf moves this pin to that
+# Petri-era engine. The upstream fabro-sh/fabro v0.254.0 release is that legacy
+# build's own base commit, publishes a static musl asset with a sha256, and
 # validates graphs by identical rules (the fork carries no change to
 # lib/crates/fabro-validate). Its one disagreement is that it cannot parse the
 # fork-only `run.checkpoint.commit_timeout` settings key; the gate validates a

@@ -281,10 +281,12 @@ needs (never a subset, so the branch is always the whole truth about what runs):
 
 #### Legacy 0.254 carrier set (`8869e88`): NOT part of the v0.382 bundle
 
-The table below describes ONLY the legacy `0.254.0 (8869e88)` build that still serves
-production `:32276` until `bd-ib-iud52v` retires it. `8869e88b2` stays reachable from
-`factory-integration` through the second parent of `28a65c09`, but the branch's tree is
-now the v0.382 bundle above. Nothing below is carried in that bundle.
+The table below describes ONLY the legacy `0.254.0 (8869e88)` build, which no gmktec
+instance serves. Its line is archived as branch `legacy/factory-integration-0254`
+(`8b82e99bb`), which is the ref to rebuild the 0.254 build from. On 2026-11-12,
+`factory-integration` took the serving v0.408 carrier as merge commit `93081e09d`: first
+parent `8b82e99bb`, second parent `d22808f8e`, and exactly the carrier's tree. So
+`8869e88b2` stays reachable from it, but nothing below is carried in the serving build.
 
 | Carried fix | What it is | Why the factory needs it |
 | --- | --- | --- |
