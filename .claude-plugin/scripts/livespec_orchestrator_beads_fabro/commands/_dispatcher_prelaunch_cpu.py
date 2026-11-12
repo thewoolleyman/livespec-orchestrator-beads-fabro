@@ -201,13 +201,28 @@ def _descendant_pids(*, root: Path, pid: int) -> list[int] | None:
 
 
 def _child_pids(*, root: Path, pid: int) -> list[int] | None:
-    """Read one process's direct children from Linux procfs."""
-    text = attempt(
-        action=lambda: (root / str(pid) / "task" / str(pid) / "children").read_text(
-            encoding="utf-8"
-        ),
-        exceptions=(OSError,),
+    """Read one process's direct children from every one of its threads.
+
+    The kernel lists a child under the thread that forked it, so a subprocess a
+    worker thread started appears only in that thread's `children` file. A thread
+    that exits between the listing and the read has no children left to report.
+    When no thread's file can be read, procfs child lists are unavailable and the
+    caller falls back to the whole-process scan.
+    """
+    threads = attempt(
+        action=lambda: sorted((root / str(pid) / "task").iterdir()), exceptions=(OSError,)
     )
+    if isinstance(threads, AttemptFailure):
+        return None
+    lists = [_read_children(path=thread / "children") for thread in threads]
+    if all(found is None for found in lists):
+        return None
+    return [child for found in lists if found is not None for child in found]
+
+
+def _read_children(*, path: Path) -> list[int] | None:
+    """Read one thread's `children` file, or None when it cannot be read."""
+    text = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(text, AttemptFailure):
         return None
     return [int(child) for child in text.split()]
