@@ -36,6 +36,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_comment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
     dispose_terminal_routing,
 )
+from livespec_orchestrator_beads_fabro.commands._drive_policy_valves import (
+    resolve_blocked_item,
+)
 from livespec_orchestrator_beads_fabro.store import (
     append_work_item,
     read_work_item_comments,
@@ -93,7 +96,7 @@ def _repo(*, tmp_path: Path) -> Path:
     return repo
 
 
-def _item() -> WorkItem:
+def _item(*, admission_policy: str | None = "auto") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="task",
@@ -110,7 +113,7 @@ def _item() -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
-        admission_policy="auto",
+        admission_policy=admission_policy,
         acceptance_policy="ai-only",
         acceptance_criteria="The dispatched slice is verified green by the check suite.",
     )
@@ -150,13 +153,20 @@ def _exceeded_line(**overrides: object) -> str:
     return json.dumps(record)
 
 
-def _dispose(*, tmp_path: Path, lines: tuple[str, ...], status: str) -> tuple[Path, JournalFile]:
+def _dispose(
+    *,
+    tmp_path: Path,
+    lines: tuple[str, ...],
+    status: str,
+    admission_policy: str | None = "auto",
+) -> tuple[Path, JournalFile]:
     repo = _repo(tmp_path=tmp_path)
-    append_work_item(path=_config(), item=_item())
+    item = _item(admission_policy=admission_policy)
+    append_work_item(path=_config(), item=item)
     journal = _journal(tmp_path=tmp_path, lines=lines)
     _disposition().dispose_run_wall_budget_cancel(
         repo=repo,
-        item=_item(),
+        item=item,
         outcome=_outcome(status=status),
         journal=journal,
     )
@@ -175,20 +185,30 @@ def _stages(*, journal: JournalFile) -> list[object]:
     ]
 
 
-def test_a_budget_cancel_rests_the_item_at_blocked_needs_human(tmp_path: Path) -> None:
-    """The item leaves `active` for `blocked` / `needs-human`, admission manual."""
+@pytest.mark.parametrize("admission_policy", ("auto", "manual", None))
+def test_a_budget_cancel_preserves_its_admission_policy_through_human_release(
+    tmp_path: Path, admission_policy: str | None
+) -> None:
+    """A budget rest and its ready release preserve the item's admission label."""
     disposition = _disposition()
     _, journal = _dispose(
         tmp_path=tmp_path,
         lines=(_exceeded_line(),),
         status=RUN_WALL_BUDGET_EXCEEDED_STAGE,
+        admission_policy=admission_policy,
     )
     rested = _only(item_id=_ITEM_ID)
     assert rested.status == "blocked"
     assert rested.blocked_reason == "needs-human"
-    # `blocked` alone is a status a drain could be configured to admit, so the
-    # policy rides the same write for the reason the stall terminal's does.
-    assert rested.admission_policy == "manual"
+    assert rested.admission_policy == admission_policy
+    resolution = resolve_blocked_item(
+        config=_config(),
+        item=rested,
+        aid=f"resolve-blocked:{_ITEM_ID}:ready",
+        target_status="ready",
+    )
+    assert resolution["status"] == "green"
+    assert _only(item_id=_ITEM_ID).admission_policy == admission_policy
     assert disposition.RUN_WALL_BUDGET_NEEDS_HUMAN_STAGE in _stages(journal=journal)
 
 
