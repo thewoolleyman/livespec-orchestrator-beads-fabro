@@ -109,6 +109,41 @@ def test_a_host_taking_with_only_some_candidates_input_bound_is_not_unpreflighta
     assert module.latest_input_bound_measurement(comments=(ignorable_candidate_detail,)) == (431, 2)
 
 
+def test_duplicate_candidate_labels_are_compared_by_occurrence_count() -> None:
+    duplicated = ("claude-acp:claude-opus-5", "claude-acp:claude-opus-5")
+    attempts = tuple(
+        CandidateAttempt(
+            agent="claude-acp",
+            model="claude-opus-5",
+            exit_code=1,
+            outcome="input-limit-reached",
+        )
+        for _ in duplicated
+    )
+
+    def receipt(*, bound_ended: tuple[str, ...]) -> str:
+        return did_not_run_comment(
+            item_id="bd-ib-input-bound",
+            stage=STAGE_PRE_DISPATCH,
+            digest="subject",
+            rubric_digest="rubric",
+            cause="input-limit-reached",
+            subject_characters=431,
+            carried_rider_count=2,
+            bound_ended_candidates=bound_ended,
+            attempts=attempts,
+        )
+
+    assert module.latest_input_bound_measurement(comments=(receipt(bound_ended=duplicated),)) == (
+        431,
+        2,
+    )
+    assert (
+        module.latest_input_bound_measurement(comments=(receipt(bound_ended=duplicated[:1]),))
+        is None
+    )
+
+
 def test_an_unconfigured_repository_has_no_receipt_lane(tmp_path: Path) -> None:
     assert (
         module.unpreflightable_definition_of_done_items(
