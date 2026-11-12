@@ -280,6 +280,61 @@ def test_a_payload_artifact_paths_render_in_their_given_order(tmp_path: Path) ->
     ) in body
 
 
+def test_a_payload_imported_components_render_in_order_and_malformed_value_is_refused(
+    tmp_path: Path,
+) -> None:
+    """Imported-code evidence is ordered, optional, and validated before posting."""
+    module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
+    reset_fake_singleton()
+    plan = importlib.import_module("livespec_orchestrator_beads_fabro.commands.plan")
+    created = plan.create_thread(
+        project_root=tmp_path,
+        config=_config(),
+        slug="imported-code-record",
+        title="Imported code record",
+        research_filename="initial.md",
+        research_text="research\n",
+        now="2026-11-12T00:00:00Z",
+        definition_of_done=PlanDefinitionOfDone(
+            statement="Done when the released build has been run in a real session.",
+            assertions=(_ASSERTION,),
+        ),
+    )
+    record = _payload(path=tmp_path / "imported-components.json", reproduced=None)
+    document = json.loads(record.read_text(encoding="utf-8"))
+    document["build"]["imported_components"] = ["shared-credentials", "state-backend"]
+    _ = record.write_text(json.dumps(document), encoding="utf-8")
+    emitted: list[str] = []
+
+    code = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=record,
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert code == 0
+    body = str(_fake().list_comments(issue_id=created["epic_id"])[0]["text"])
+    assert "- imported code: shared-credentials, state-backend" in body
+    document["build"]["imported_components"] = [""]
+    _ = record.write_text(json.dumps(document), encoding="utf-8")
+
+    refused = _post(
+        module=module,
+        epic_id=created["epic_id"],
+        verdict=VERDICT_CAPTURED,
+        record=record,
+        session=_CAPTURING,
+        emitted=emitted,
+    )
+
+    assert refused == 3
+    assert "imported_components" in "".join(emitted)
+    assert len(_fake().list_comments(issue_id=created["epic_id"])) == 1
+
+
 def test_a_payload_without_artifact_paths_renders_no_artifact_paths_line(tmp_path: Path) -> None:
     """An omitted optional artifact-paths array makes no claim about artifacts."""
     module = importlib.import_module("livespec_orchestrator_beads_fabro.commands._plan_record_post")
