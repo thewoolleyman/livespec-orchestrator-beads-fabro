@@ -249,6 +249,33 @@ def test_an_oversized_relevant_section_keeps_its_deep_stating_paragraph() -> Non
     assert stating in condensed["contracts.md"]
 
 
+def test_deep_relevant_paragraphs_precede_broad_clause_budget_spending() -> None:
+    """A lexically dominant earlier clause cannot crowd out a later stating paragraph."""
+    stating = (
+        "Repository-controlled code reaches a push only through a credential helper "
+        "that hooks and gates cannot read."
+    )
+    padding = (
+        "background xylophone kaleidoscope marigold nebula quartz rhubarb saffron "
+        "tundra umber velvet willow xenon yucca zephyr. "
+    ) * 1_000
+    tempting = "credential helper repository push hooks gates unrelated background. " * 175
+    tree = {
+        "scenarios.md": "## Lexically tempting background\n\n" + tempting,
+        "contracts.md": (
+            "## Self-contained plugin dispatch\n\n" + padding + "\n\n" + stating + "\n"
+        ),
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="credential helper repository push hooks gates",
+        ceiling=20_000,
+    )
+
+    assert stating in condensed["contracts.md"]
+
+
 def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:
     """A prior whole selection cannot make a later oversized section disappear."""
     first_heading = "## First governing section"
