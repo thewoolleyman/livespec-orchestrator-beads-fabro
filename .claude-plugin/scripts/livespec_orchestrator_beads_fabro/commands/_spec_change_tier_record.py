@@ -270,15 +270,19 @@ def reusable_spec_change_tier(
 ) -> RecordedSpecChangeTier | None:
     """The newest recorded classification, when it was taken against THIS pair.
 
-    `None` whenever the asked-for behaviour or the recorded clause provenance
-    differs. A version is audit evidence, not the reuse identity: a revision
-    outside the clauses the model saw or named must not spend another judgement.
+    `None` whenever the asked-for behaviour or a taken judgement's clause
+    provenance differs. A version is audit evidence, not the reuse identity: a
+    revision outside the clauses the model saw or named must not spend another
+    judgement. An exempt record names that no judgement was taken, so it has no
+    clause provenance to compare.
     """
     recorded = recorded_spec_change_tier(comments=comments)
     if recorded is None:
         return None
     if not recorded.provenance_complete or recorded.digest != digest:
         return None
+    if recorded.verdict_kind == _NOT_TAKEN:
+        return recorded
     named_clauses = clauses_named(
         spec_tree=spec_tree,
         headings=tuple(clause.heading for clause in recorded.named_clauses),
