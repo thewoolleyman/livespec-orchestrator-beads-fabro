@@ -541,6 +541,38 @@ def test_handpicked_loop_refuses_host_only_item_with_one_exit_five_line(
     assert _stored()[item.id].status == "ready"
 
 
+@pytest.mark.parametrize(
+    ("item", "expected_reason"),
+    [
+        (_item(), None),
+        (_item(factory_safety="mutates-host-machinery"), "factory_safety"),
+        (
+            _item(description="Update `.github/workflows/ci.yml` for the new gate."),
+            "workflow declaration",
+        ),
+    ],
+)
+def test_host_only_command_reports_the_shared_factory_safety_routing_verdict(
+    capsys: pytest.CaptureFixture[str],
+    item: WorkItem,
+    expected_reason: str | None,
+    tmp_path: Path,
+) -> None:
+    repo, _workflow = _repo_with_workflow(tmp_path=tmp_path)
+    append_work_item(path=_config(), item=item)
+
+    exit_code = main(argv=["host-only", "--repo", str(repo), "--item", item.id, "--json"])
+
+    assert exit_code == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["work_item_id"] == item.id
+    assert payload["host_only"] is (expected_reason is not None)
+    if expected_reason is None:
+        assert "reason" not in payload
+    else:
+        assert payload["reason"] == expected_reason
+
+
 def test_dispatch_does_not_refuse_ordinary_item(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
