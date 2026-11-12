@@ -65,7 +65,14 @@ tip_tree=$(git rev-parse "$tip^{tree}" 2>/dev/null) || {
 base=$(git merge-base "$tip" "refs/remotes/origin/$default_branch" 2>/dev/null) || base=''
 base_tree=''
 if test -n "$base"; then base_tree=$(git rev-parse "$base^{tree}" 2>/dev/null || true); fi
-default_tree=$(git rev-parse "refs/remotes/origin/$default_branch^{tree}" 2>/dev/null || true)
+default_tree=$(env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 git -C "$push_repository" fetch -q --no-tags origin \
+    "refs/heads/$default_branch" 2>/dev/null \
+    && git -C "$push_repository" rev-parse 'FETCH_HEAD^{tree}' 2>/dev/null) || {
+    echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
+        "tip=$tip reason=origin $default_branch head is unreadable" >&2
+    exit 0
+}
 prefix="refs/livespec/wip/$item/$run/"
 refs=$(env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
     GIT_CONFIG_NOSYSTEM=1 git -C "$push_repository" ls-remote origin "${prefix}*" 2>/dev/null) || {
