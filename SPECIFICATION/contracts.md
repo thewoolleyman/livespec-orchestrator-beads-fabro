@@ -8352,7 +8352,7 @@ Design record: plan `ledger-is-the-only-gate` (epic `bd-ib-n77djm`),
   Stranded-claim holds join `held` beside the parked runs the blocked-run grace already lists there. A held claim is observed again on the next pass.
 - **Status changes.** The absent-run release, the `run-absent-repeated` rest, the terminal-run completions, and the `blocked` / `needs-human` rest of a "Live-run wall budget" disposition are the only item status changes any reconciliation surface makes. A stale assignee clearance changes no status. The bullet of §"A factory run never awaits a human" that forbids reconciling or terminating a run from changing an item's status continues to govern runs, and does not govern these. The `already claimed by a dispatch` refusal, and the resume refusal of §"Resume from a published pull request (`resume --item`)", name `reconcile-runs` as the remedy for a stranded claim this subsection reconciles, and this subsection is what makes that remedy work; for an `active` item whose run is terminal and which this subsection does not reconcile, the resume refusal names the remedy of §"Resume from a published pull request (`resume --item`)" instead.
 
-Scenarios 196 and 210 in `scenarios.md` exercise this section.
+Scenarios 196, 210 and 349 in `scenarios.md` exercise this section.
 
 ### The human answer route: marker, poison preflight, run account, and write-before-transition ordering
 
