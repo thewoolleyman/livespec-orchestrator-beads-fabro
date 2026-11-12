@@ -6294,6 +6294,44 @@ Feature: The watchdog's poll cost does not grow with the factory's run history
     When a per-run read of the run fails or returns an answer the watchdog cannot interpret
     Then the watchdog does not report the run as disappeared
     And it treats the poll as unobservable
+  Scenario: A bound run's poll reads its status and stage list in one request
+    Given a dispatch whose run id the Dispatcher has bound
+    When the watchdog polls the run
+    Then the poll reads the run's status and its stage list by the run's id in one request to the factory
+  Scenario: An unchanged poll issues no other read
+    Given a dispatch whose run id the Dispatcher has bound
+    And the run's status and stage list are unchanged since this Dispatcher process's previous poll of the run
+    And neither the stall rule nor the budget rule would cancel the run at this poll
+    When the watchdog polls the run
+    Then the poll issues no fabro events read and no other read of the run
+  Scenario: A stage boundary triggers an incremental events read
+    Given a dispatch whose run id the Dispatcher has bound
+    And a stage of the run started or completed since the previous poll
+    When the watchdog polls the run
+    Then the poll reads the run's events since the newest event instant this Dispatcher process has observed
+  Scenario: A terminal run or a run needing a human triggers an incremental events read
+    Given a dispatch whose bound run reached a terminal state or came to need a human since the previous poll
+    When the watchdog polls the run
+    Then the poll reads the run's events since the newest event instant this Dispatcher process has observed
+  Scenario: An open command node read from the stage list holds off the stall cancel
+    Given a dispatch whose bound run's stage list reports a command-node stage started and not completed
+    And every source has been unchanged for the whole stall window
+    And the node's resolved timeout has not elapsed since that stage's start instant
+    When the watchdog polls the run
+    Then the run is not cancelled as stalled-no-progress
+  Scenario: Events are read before a stall cancel
+    Given a dispatch whose bound run's status and stage list have been unchanged for the whole stall window
+    And the agent heartbeat keyed on the dispatch has not advanced within the stall window
+    And no command node is open
+    When the watchdog polls the run
+    Then it reads the run's events since the newest event instant it has observed before it decides
+    And it does not cancel the run when that read reports a progress instant inside the stall window
+  Scenario: A failed events read before a cancel defers the decision
+    Given a dispatch whose bound run would be cancelled as stalled-no-progress or graded not progressing at this poll
+    And the events read taken before that decision fails
+    When the watchdog polls the run
+    Then the run is not cancelled as stalled-no-progress and is not graded not progressing at that poll
+    And the next events read of the run waits for the backoff of the bounded event-read rules
 ```
 
 ## Scenario 174 — The Definition-of-Done judgement runs before admission and holds an item it would rest at needs-human
