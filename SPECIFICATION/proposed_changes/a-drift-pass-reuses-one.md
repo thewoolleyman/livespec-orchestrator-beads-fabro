@@ -23,7 +23,7 @@ Work item bd-ib-kojs3t (plan bd-ib-ax3rds). It has been HELD at spec-change tier
 
 **1. One cached spec-tree prefix per drift run (`contracts.md` §"The skill surface", the drift-job paragraph).** After the sentence "Batching MUST NOT change what is filed: the run MUST still file one proposed change per `partial` or `unstated` behaviour per merge, under the same finding identity.", add:
 
-> Every judge prompt of one drift-job run MUST open with the same SPEC-TREE PREFIX, byte for byte. The prefix is a rendering of the ratified spec tree that does not depend on any merge or statement the run judges, and it MUST name every H2 heading of the governed spec tree verbatim. Each merge's own content, and any clause selection that depends on it, MUST follow the prefix. A Claude judge of a drift-job run MUST be launched with prompt caching on, and MUST receive the prefix as its system prompt, supplied from a file (for example `--append-system-prompt-file`), never on standard input and never as a single command-line argument. The Definition-of-Done judgement and the spec-stated governing-heading judgement, whose prompts differ per statement, MUST launch every Claude candidate with prompt caching off. Because both judgements and the drift run reach a shared judge entry, the choice of caching and of the system-prompt file MUST be made by the drift run as the caller, and MUST NOT be keyed off the shared entry.
+> Every judge prompt of one drift-job run MUST open with the same SPEC-TREE PREFIX, byte for byte. The prefix is a rendering of the ratified spec tree that does not depend on any merge or statement the run judges, and two drift-job runs judging against the same ratified spec revision MUST send the same prefix bytes. It MUST name every H2 heading of the governed spec tree at the ratified spec revision the run judges against, verbatim. When the judgement's text includes inherited specification files, their rendering belongs to the prefix too, because it is equally independent of the merges judged. Each merge's own content, and any clause selection that depends on it, MUST follow the prefix. A Claude judge of a drift-job run MUST be launched with prompt caching on, and MUST receive the prefix as its system prompt, supplied from a file (for example `--append-system-prompt-file`), never on standard input and never as a single command-line argument. The Definition-of-Done judgement and the spec-stated governing-heading judgement, whose prompts differ per statement, MUST launch every Claude candidate with prompt caching off. Because both judgements and the drift run reach the candidate chain of §"Effective acceptance criteria" → "Host judgements take the resolved `dod_gate` chain", the choice of caching and of the system-prompt file MUST be made by the drift run as the caller, and MUST NOT be decided inside that chain's shared launch.
 
 **2. Scenario (`scenarios.md`).** Append:
 
@@ -32,19 +32,24 @@ Work item bd-ib-kojs3t (plan bd-ib-ax3rds). It has been HELD at spec-change tier
 ```gherkin
 Feature: a drift pass pays for its spec tree once per cache lifetime
   Scenario: every prompt of a drift run opens with the same prefix
-    Given a drift-job run over at least two default-branch merges with a Claude judge
+    Given a drift-job run whose merges are judged across at least two judge prompts, with a Claude judge
     When the run builds its judge prompts
-    Then every judge prompt opens with a spec-tree prefix naming every H2 heading of the governed spec tree verbatim
+    Then every judge prompt opens with a spec-tree prefix naming every H2 heading of the governed spec tree at the run's ratified spec revision, verbatim
     And that prefix is byte-identical across every prompt of the run
+  Scenario: two runs at the same revision send the same prefix
+    Given two drift-job runs over different merges, judging against the same ratified spec revision
+    When each run builds its judge prompts
+    Then the two runs' spec-tree prefixes are byte-identical
   Scenario: the Claude judge receives the prefix as a cached system prompt file
-    Given a drift-job run with a Claude judge
+    Given a drift-job run whose merges are judged across at least two judge prompts, with a Claude judge
     When the run launches each judge call
     Then the call is launched with prompt caching on
     And the spec-tree prefix is supplied from a system prompt file, not on standard input
-    And every call after the first reports cache-read input tokens at least as large as the shared prefix
+    And every call after the first reports cache-read input tokens at least as large as the shared prefix's token count
+    And every call after the first reports cache-write input tokens fewer than the shared prefix's token count
   Scenario: the per-statement judgements keep caching off
     When the Definition-of-Done judgement or the governing-heading judgement launches a Claude candidate
     Then the candidate is launched with prompt caching off
 ```
 
-**3. **Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading, carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json` or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-kojs3t"` and a non-empty `reason` naming the tier the owed test runs at, integration or above; and one matching `tests/heading-coverage-debt.json` entry carrying the key three, `work_item: "bd-ib-kojs3t"` and `first_seen` set to the revise date. If the revise renumbers Scenario 356, the row and entry MUST carry the renumbered heading text.
+**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading, carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json` or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-kojs3t"` and a non-empty `reason` naming the tier the owed test runs at, integration or above; and one matching `tests/heading-coverage-debt.json` entry carrying the key three, `work_item: "bd-ib-kojs3t"` and `first_seen` set to the revise date. If the revise renumbers Scenario 356, the row and entry MUST carry the renumbered heading text.
