@@ -49,10 +49,10 @@ No other sentence of the bullet changes.
 
 ### 2. `SPECIFICATION/scenarios.md`: add one scenario after the last existing scenario
 
-The scenario takes the next free scenario number at revise time. The text below writes it as `Scenario 351`; renumber it if that number is taken.
+The heading is numberless here; the revise pass assigns the next free scenario number.
 
 ~~~markdown
-## Scenario 351 — A fork test waits on the state it needs, never on the clock
+## Scenario: a fork test waits on the state it needs, never on the clock
 
 ```gherkin
 Feature: A fork test's verdict never depends on host load or wall-clock time
@@ -77,7 +77,19 @@ Feature: A fork test's verdict never depends on host load or wall-clock time
 
 ### 3. `tests/heading-coverage.json`: add the new heading in the same revise
 
-Add one entry for the new scenario heading, with spec file `SPECIFICATION/scenarios.md`, `test` set to `"TODO"`, and reason `"the behaviour lives in the thewoolleyman/fabro fork's test tree, which this repository's suite cannot exercise; proved per item on the fork's Fork gates runs (first instance bd-ib-3edyng)"`. Use the heading's final number. The revise that ratifies this MUST co-edit that entry, per AGENTS.md §"Revise co-edit discipline". No existing heading changes.
+Add one entry to `tests/heading-coverage.json`, using the heading as numbered at revise:
+
+```json
+{"heading": "## Scenario: a fork test waits on the state it needs, never on the clock", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the scenario tier or above is owed for this heading: the thewoolleyman/fabro fork's worker_auth integration tests wait on server readiness, the run directory and completed events by observing those states, proved on a Fork gates Test run of the carrier branch carrying the fix, together with a mutation check that each still fails when its behaviour is removed. bd-ib-3edyng owns it.", "work_item": "bd-ib-3edyng"}
+```
+
+Add the matching row to `tests/heading-coverage-debt.json`, as `check-heading-coverage-debt-register` requires:
+
+```json
+{"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a fork test waits on the state it needs, never on the clock", "work_item": "bd-ib-3edyng", "first_seen": "<revise date>"}
+```
+
+The revise that ratifies this MUST co-edit both files, per AGENTS.md §"Revise co-edit discipline". No existing heading changes.
 
 ### 4. Follow-through outside the spec (not part of this revise)
 
