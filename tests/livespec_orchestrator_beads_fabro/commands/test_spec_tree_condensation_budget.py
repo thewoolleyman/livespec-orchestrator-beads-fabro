@@ -25,6 +25,7 @@ while still passing every fixed-size assertion.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     ELIDED_BODY_MARKER,
@@ -32,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     CondensedClause,
     condensed_spec_tree,
 )
+from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 from livespec_runtime.spec_stated import judge
 
 _UNSTATED_REPLY = (
@@ -274,6 +276,28 @@ def test_deep_relevant_paragraphs_precede_broad_clause_budget_spending() -> None
     )
 
     assert stating in condensed["contracts.md"]
+
+
+def test_real_spec_stating_paragraphs_survive_earlier_one_term_matches() -> None:
+    """The proof-capture phrasings reach both deep ratified statements in full."""
+    spec_tree = read_current_specification(spec_root=Path("SPECIFICATION")).files
+    cases = (
+        (
+            "Hooks and gates run without the GitHub token; the push credential reaches "
+            "origin only through the credential helper.",
+            "push only through a credential helper that the hooks and gates cannot read",
+        ),
+        (
+            "A run that is runnable across a fabro-server restart is re-admitted by the "
+            "scheduler and can be started; the server holds it in its own queue.",
+            "promoting waiting runs in FIFO order",
+        ),
+    )
+
+    for statement, stating_text in cases:
+        condensed = condensed_spec_tree(spec_tree=spec_tree, statement=statement)
+
+        assert stating_text in "\n".join(condensed.values())
 
 
 def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:

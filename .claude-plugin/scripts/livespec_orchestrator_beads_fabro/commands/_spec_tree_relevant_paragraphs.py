@@ -96,7 +96,7 @@ def combine_paragraphs(
 def select_by_relevance(
     *, sections: Sequence[RelevantSection], terms: Collection[str], remaining: int
 ) -> tuple[dict[tuple[str, int], tuple[tuple[int, str], ...]], int]:
-    """Reserve one share of ``remaining`` for matching paragraphs, in source order.
+    """Reserve one share of ``remaining`` for the strongest matching paragraphs.
 
     A complete clause can be lexically relevant while still being too broad to
     spend the entire prompt on.  This pass runs before complete-clause selection
@@ -104,26 +104,31 @@ def select_by_relevance(
     judgement.
     """
     budget = remaining // _SHARE
+    candidates = [
+        (-len(matches), order, index, section, paragraph)
+        for order, section in enumerate(sections)
+        for source in [section.body if section.heading is not None else section.full]
+        for index, paragraph in enumerate(PARAGRAPH.findall(source))
+        if (matches := _matching_terms(paragraph=paragraph, terms=terms))
+    ]
+    candidates.sort(key=lambda candidate: candidate[:3])
+
     selected: dict[tuple[str, int], list[tuple[int, str]]] = {}
-    for section in sections:
-        source = section.body if section.heading is not None else section.full
-        for index, paragraph in enumerate(PARAGRAPH.findall(source)):
-            if not _paragraph_matches(paragraph=paragraph, terms=terms):
-                continue
-            cost = len(paragraph)
-            if section.key not in selected:
-                cost += len(section.heading or "") + len(PARTIALLY_WITHHELD_BODY_MARKER)
-                cost -= len(section.elided)
-            if cost > budget:
-                continue
-            selected.setdefault(section.key, []).append((index, paragraph))
-            budget -= cost
+    for _matches, _order, index, section, paragraph in candidates:
+        cost = len(paragraph)
+        if section.key not in selected:
+            cost += len(section.heading or "") + len(PARTIALLY_WITHHELD_BODY_MARKER)
+            cost -= len(section.elided)
+        if cost > budget:
+            continue
+        selected.setdefault(section.key, []).append((index, paragraph))
+        budget -= cost
     return {key: tuple(paragraphs) for key, paragraphs in selected.items()}, remaining - (
         remaining // _SHARE - budget
     )
 
 
-def _paragraph_matches(*, paragraph: str, terms: Collection[str]) -> bool:
-    """Whether one paragraph shares a non-functional term with the behaviour."""
+def _matching_terms(*, paragraph: str, terms: Collection[str]) -> frozenset[str]:
+    """The non-functional behaviour terms a paragraph shares with the statement."""
     paragraph_terms = frozenset(_TERM.findall(paragraph.casefold()))
-    return bool(paragraph_terms & frozenset(terms))
+    return paragraph_terms & frozenset(terms)
