@@ -185,6 +185,20 @@ def test_render_run_config_overlay_projects_otel_env(tmp_path: Path) -> None:
         assert flag not in rendered
 
 
+def test_codex_projection_appends_the_release_verified_driver_hook_step() -> None:
+    """A Codex-routed sandbox receives the hook materializer in its prepare chain."""
+    overlay = (
+        Path(__file__).parents[3]
+        / ".claude-plugin"
+        / "scripts"
+        / "livespec_orchestrator_beads_fabro"
+        / "commands"
+        / "_dispatcher_overlay.py"
+    )
+
+    assert "codex_driver_hooks_prepare_steps_block" in overlay.read_text(encoding="utf-8")
+
+
 def test_render_run_config_overlay_image_override_requires_image_table(tmp_path: Path) -> None:
     """An image override refuses a workflow with no docker image target."""
     assert (
