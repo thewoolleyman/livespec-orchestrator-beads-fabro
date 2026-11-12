@@ -234,7 +234,15 @@ for argument in "$@"; do
                     fi
                     printf 'LEDGER-STATUS %s\n' "$(cat "$STUB_ITEM_STATUS_FILE")"
                     ;;
-                comment) printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS" ;;
+                comment)
+                    printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS"
+                    # A terminal line is written before its ledger comment.  Let a
+                    # case model a loaded comment write without delaying the
+                    # observed terminal evidence.
+                    if [ -n "${STUB_LEDGER_COMMENT_DELAY_S:-}" ]; then
+                        sleep "$STUB_LEDGER_COMMENT_DELAY_S"
+                    fi
+                    ;;
             esac
             exit 0
             ;;
@@ -653,6 +661,31 @@ stop_launcher() {
         done
         kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null
     done
+    return 0
+}
+
+# await_term_exit <pid> <label>: send TERM and await the launcher itself to
+# exit.  Its observed exit, not STOP_GRACE_S, decides a TERM assertion: the
+# shared grace is deliberately short so unrelated cleanup never holds the
+# harness, while a launcher that has begun its terminal cleanup can still be
+# finishing a loaded ledger write.  The general hang guard remains only a
+# safety valve for a launcher that genuinely never exits.
+await_term_exit() {
+    local pid="$1" label="$2" deadline
+    kill -TERM "$pid" 2>/dev/null
+    deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
+    while kill -0 "$pid" 2>/dev/null; do
+        if [ "$(date +%s)" -ge "$deadline" ]; then
+            echo "$label hung past the ${HARNESS_PREFLIGHT_HANG_GUARD_S}s exit guard after TERM" >&2
+            kill -KILL "$pid" 2>/dev/null
+            wait "$pid"
+            term_rc=$?
+            return 1
+        fi
+        sleep "$HARNESS_POLL_S"
+    done
+    wait "$pid"
+    term_rc=$?
     return 0
 }
 
@@ -2075,9 +2108,7 @@ TERM_SED
                 continue
             fi
             sleep "0.00$((RANDOM % 5))"
-            stop_launcher "$term_pid"
-            wait "$term_pid"
-            term_rc=$?
+            await_term_exit "$term_pid" "$label iteration $attempt"
             term_cause=no
             term_parse_error=no
             if grep -F -- 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE" >/dev/null; then
@@ -2097,13 +2128,50 @@ TERM_SED
             fi
         done
         if [ "$failures" = 0 ]; then
-            pass "$label exits within the stop bound for 100 jittered TERMs during repository-hold command substitutions, dropping its FIFO ticket"
+            pass "$label exits after its observed TERM for 100 jittered repository-hold command substitutions, dropping its FIFO ticket"
         fi
     }
 
     term_during_hold_substitution "$LAUNCHER" impl
     term_during_hold_substitution "$RESUME_LAUNCHER" resume
     unset STUB_TERM_SUBSTITUTION_GATE STUB_TERM_SUBSTITUTION_SED_DELAY_S
+
+    # A loaded ledger write can keep a launcher alive after it has already
+    # recorded TERM and dropped its ticket.  The substitution test must await
+    # that observed exit rather than treating the shared five-second cleanup
+    # grace as a product exit deadline.
+    prepare_312_case term-substitution-delayed-cleanup
+    export FLEET_LAUNCH_POLL_S=0.01
+    export STUB_LEDGER_COMMENT_DELAY_S=6
+    set_hold "$TENANT_HOLD" 'reason: substitution-term-delayed-cleanup'
+    gate="$CASE_DIR/substitution-gate"
+    export STUB_TERM_SUBSTITUTION_GATE="$gate"
+    export STUB_TERM_SUBSTITUTION_SED_DELAY_S=0.01
+    PATH="$STUB/term-sed:$PATH" ONLY_GMK=1 TICKET_NS=101 "$LAUNCHER" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+    term_pid=$!
+    if wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 5; then
+        : > "$gate"
+        gate_deadline=$(( $(date +%s) + 5 ))
+        while [ ! -s "$gate" ] && [ "$(date +%s)" -lt "$gate_deadline" ]; do
+            sleep "$HARNESS_POLL_S"
+        done
+    fi
+    if [ -s "$gate" ]; then
+        await_term_exit "$term_pid" 'delayed-cleanup launcher'
+        if [ "$term_rc" = 143 ] \
+            && grep -F -- 'cause=signal TERM' "$STUB_RM_PROBE_LOG_SOURCE" >/dev/null \
+            && [ -z "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ]; then
+            pass "a delayed post-terminal ledger write does not turn a TERM hold-substitution exit into KILL"
+        else
+            fail "a delayed post-terminal ledger write did not preserve the TERM hold-substitution exit (rc=$term_rc)"
+            tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+        fi
+    else
+        fail "the delayed-cleanup launcher never yielded on the repository hold"
+        stop_launcher "$term_pid"
+        wait "$term_pid" 2>/dev/null
+    fi
+    unset STUB_LEDGER_COMMENT_DELAY_S STUB_TERM_SUBSTITUTION_GATE STUB_TERM_SUBSTITUTION_SED_DELAY_S
 
     # signal_during_hold <launcher> <label> <signal> <rc> <expected cause>:
     # an INT or HUP that lands in the repository-hold wait must be recorded as
