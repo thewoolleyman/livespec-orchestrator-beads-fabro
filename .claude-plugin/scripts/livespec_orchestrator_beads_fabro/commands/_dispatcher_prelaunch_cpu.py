@@ -159,8 +159,16 @@ def process_tree_cpu_seconds(*, root: Path, pid: int, clock_ticks: int) -> float
     `os.times()` sees a child only once it is reaped, so a `fabro run` still
     running reads as zero there. Each live process carries the CPU of the
     children it has already reaped, which no ancestor has counted yet, so the sum
-    over the live tree counts every second exactly once.
+    over the live tree counts every second exactly once. Linux exposes each
+    process's direct children in its task `children` file, so the normal path
+    reads only the drive tree rather than every process on a busy factory host.
+    The whole-process scan remains a compatibility fallback for a procfs that
+    does not expose that Linux file.
     """
+    tree = _descendant_pids(root=root, pid=pid)
+    if tree is not None:
+        return sum(_ticks_for(path=root / str(child) / "stat") for child in tree) / clock_ticks
+
     ticks_by_pid: dict[int, int] = {}
     children: dict[int, list[int]] = {}
     for entry in root.iterdir():
@@ -176,6 +184,54 @@ def process_tree_cpu_seconds(*, root: Path, pid: int, clock_ticks: int) -> float
         total += ticks_by_pid.get(current, 0)
         pending.extend(children.get(current, ()))
     return total / clock_ticks
+
+
+def _descendant_pids(*, root: Path, pid: int) -> list[int] | None:
+    """Return the live tree through procfs child lists, or None when unavailable."""
+    pending = [pid]
+    tree: list[int] = []
+    while pending:
+        current = pending.pop()
+        children = _child_pids(root=root, pid=current)
+        if children is None:
+            return None
+        tree.append(current)
+        pending.extend(children)
+    return tree
+
+
+def _child_pids(*, root: Path, pid: int) -> list[int] | None:
+    """Read one process's direct children from every one of its threads.
+
+    The kernel lists a child under the thread that forked it, so a subprocess a
+    worker thread started appears only in that thread's `children` file. A thread
+    that exits between the listing and the read has no children left to report.
+    When no thread's file can be read, procfs child lists are unavailable and the
+    caller falls back to the whole-process scan.
+    """
+    threads = attempt(
+        action=lambda: sorted((root / str(pid) / "task").iterdir()), exceptions=(OSError,)
+    )
+    if isinstance(threads, AttemptFailure):
+        return None
+    lists = [_read_children(path=thread / "children") for thread in threads]
+    if all(found is None for found in lists):
+        return None
+    return [child for found in lists if found is not None for child in found]
+
+
+def _read_children(*, path: Path) -> list[int] | None:
+    """Read one thread's `children` file, or None when it cannot be read."""
+    text = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
+    if isinstance(text, AttemptFailure):
+        return None
+    return [int(child) for child in text.split()]
+
+
+def _ticks_for(*, path: Path) -> int:
+    """Return one process's CPU ticks, treating a process that exited as zero."""
+    row = _stat_row(path=path)
+    return 0 if row is None else row[1]
 
 
 def _stat_row(*, path: Path) -> tuple[int, int] | None:

@@ -94,6 +94,36 @@ def test_process_tree_cpu_counts_live_descendants_that_os_times_cannot_see(
     assert seconds == 4.2
 
 
+def test_process_tree_cpu_does_not_scan_unrelated_host_processes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A checkpoint walks only drive descendants, not every host PID."""
+    module = importlib.import_module(_MODULE)
+    rows = {
+        100: (1, 200),
+        101: (100, 100),
+        102: (101, 50),
+        103: (1, 9_999),
+    }
+    for pid, children in {100: "101", 101: "102", 102: "", 103: ""}.items():
+        task = tmp_path / str(pid) / "task" / str(pid)
+        task.mkdir(parents=True)
+        _ = (task / "children").write_text(children, encoding="utf-8")
+    read_pids: list[int] = []
+
+    def fake_stat_row(*, path: Path) -> tuple[int, int] | None:
+        pid = int(path.parent.name)
+        read_pids.append(pid)
+        return rows[pid]
+
+    monkeypatch.setattr(module, "_stat_row", fake_stat_row)
+
+    seconds = module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 3.5
+    assert read_pids == [100, 101, 102]
+
+
 def test_a_launch_profile_holds_its_rows_until_the_dispatched_item_is_named() -> None:
     """Phases that close before the drive knows its item are not lost."""
     module = importlib.import_module(_MODULE)
@@ -184,3 +214,85 @@ def test_a_forked_profile_restates_every_row_so_far_under_its_own_dispatch() -> 
         ("dispatch-2", "b-2", "record-dispatch"),
     ]
     assert {row["dispatch_id"] for row in journal.records} == {"dispatch-1"}
+
+
+def test_process_tree_cpu_counts_children_started_from_worker_threads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A child forked by a non-main thread is still part of the drive tree."""
+    module = importlib.import_module(_MODULE)
+    rows = {
+        100: (1, 200),
+        101: (100, 100),
+        102: (100, 50),
+        103: (1, 9_999),
+    }
+    children_by_task = {
+        (100, 100): "101",
+        (100, 150): "102",
+        (101, 101): "",
+        (102, 102): "",
+        (103, 103): "",
+    }
+    for (pid, tid), children in children_by_task.items():
+        task = tmp_path / str(pid) / "task" / str(tid)
+        task.mkdir(parents=True)
+        _ = (task / "children").write_text(children, encoding="utf-8")
+    read_pids: list[int] = []
+
+    def fake_stat_row(*, path: Path) -> tuple[int, int] | None:
+        pid = int(path.parent.name)
+        read_pids.append(pid)
+        return rows[pid]
+
+    monkeypatch.setattr(module, "_stat_row", fake_stat_row)
+
+    seconds = module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 3.5
+    assert sorted(read_pids) == [100, 101, 102]
+
+
+def test_process_tree_cpu_treats_an_exited_worker_thread_as_childless(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker thread that exits mid-walk drops out without abandoning the walk."""
+    module = importlib.import_module(_MODULE)
+    rows = {100: (1, 200), 101: (100, 100)}
+    (tmp_path / "100" / "task" / "100").mkdir(parents=True)
+    _ = (tmp_path / "100" / "task" / "100" / "children").write_text("101", encoding="utf-8")
+    (tmp_path / "100" / "task" / "150").mkdir(parents=True)
+    (tmp_path / "101" / "task" / "101").mkdir(parents=True)
+    _ = (tmp_path / "101" / "task" / "101" / "children").write_text("", encoding="utf-8")
+    read_pids: list[int] = []
+
+    def fake_stat_row(*, path: Path) -> tuple[int, int] | None:
+        pid = int(path.parent.name)
+        read_pids.append(pid)
+        return rows[pid]
+
+    monkeypatch.setattr(module, "_stat_row", fake_stat_row)
+
+    seconds = module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 3.0
+    assert sorted(read_pids) == [100, 101]
+
+
+def test_process_tree_cpu_falls_back_when_no_thread_exposes_children(
+    tmp_path: Path,
+) -> None:
+    """A procfs without `children` files still reads the tree by full scan."""
+    module = importlib.import_module(_MODULE)
+    rows = {
+        100: _stat_line(pid=100, comm="drive", ppid=1, ticks=(100, 50, 25, 25)),
+        101: _stat_line(pid=101, comm="fabro", ppid=100, ticks=(10, 10, 0, 0)),
+        103: _stat_line(pid=103, comm="unrelated", ppid=1, ticks=(999, 999, 999, 999)),
+    }
+    for pid, line in rows.items():
+        (tmp_path / str(pid) / "task" / str(pid)).mkdir(parents=True)
+        _ = (tmp_path / str(pid) / "stat").write_text(line, encoding="utf-8")
+
+    seconds = module.process_tree_cpu_seconds(root=tmp_path, pid=100, clock_ticks=100)
+
+    assert seconds == 2.2
