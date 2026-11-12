@@ -2109,8 +2109,8 @@ TERM_SED
     # an INT or HUP that lands in the repository-hold wait must be recorded as
     # that signal, not as the TERM description the wait loop preloads.
     signal_during_hold() {
-        local launcher="$1" label="$2" sig="$3" want_rc="$4" want_cause="$5" sig_pid sig_rc
-        prepare_312_case "signal-$sig-$label"
+        local launcher="$1" label="$2" sig="$3" want_rc="$4" want_cause="$5" attempt="$6" sig_pid sig_rc
+        prepare_312_case "signal-$sig-$label-$attempt"
         export FLEET_LAUNCH_POLL_S=0.01
         set_hold "$TENANT_HOLD" "reason: signal-$sig"
         # A background job of a non-interactive shell starts with INT ignored,
@@ -2147,12 +2147,12 @@ os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LO
     # HARNESS_SIGNAL_HOLD_ATTEMPTS=200 to repeat every launcher/signal case
     # without multiplying the unrelated Scenario 312 exercises.
     for signal_attempt in $(seq 1 "${HARNESS_SIGNAL_HOLD_ATTEMPTS:-1}"); do
-        signal_during_hold "$LAUNCHER" impl INT 130 'signal INT'
-        signal_during_hold "$LAUNCHER" impl TERM 143 'signal TERM'
-        signal_during_hold "$LAUNCHER" impl HUP 129 'signal HUP'
-        signal_during_hold "$RESUME_LAUNCHER" resume INT 130 'signal INT'
-        signal_during_hold "$RESUME_LAUNCHER" resume TERM 143 'signal TERM'
-        signal_during_hold "$RESUME_LAUNCHER" resume HUP 129 'signal HUP'
+        signal_during_hold "$LAUNCHER" impl INT 130 'signal INT' "$signal_attempt"
+        signal_during_hold "$LAUNCHER" impl TERM 143 'signal TERM' "$signal_attempt"
+        signal_during_hold "$LAUNCHER" impl HUP 129 'signal HUP' "$signal_attempt"
+        signal_during_hold "$RESUME_LAUNCHER" resume INT 130 'signal INT' "$signal_attempt"
+        signal_during_hold "$RESUME_LAUNCHER" resume TERM 143 'signal TERM' "$signal_attempt"
+        signal_during_hold "$RESUME_LAUNCHER" resume HUP 129 'signal HUP' "$signal_attempt"
     done
 
     # A separate gate pauses dispatch after it has recorded its mutex holder.
