@@ -325,6 +325,7 @@ def test_workflow_payload_directory_encodes_dotted_work_item_ids_injectively() -
     assert set(_dispatcher_goal.__all__) == {
         "GoalBriefMiniJinjaFinding",
         "minijinja_findings_detail",
+        "minijinja_openers_in_item_fields",
         "minijinja_openers_in_goal_sources",
         "minijinja_openers_in_text",
         "render_goal",
@@ -743,13 +744,10 @@ def test_ledger_checks_flag_minijinja_openers_in_goal_sources() -> None:
     findings = run_ledger_checks(items=items, comments_by_item=comments_by_item)
 
     assert [(finding.check, finding.item_id, finding.severity) for finding in findings] == [
-        ("goal-source-minijinja-opener", "comment-hit", "fail"),
         ("goal-source-minijinja-opener", "field-hit", "warn"),
     ]
-    assert "permanent comment contamination" in findings[0].message
-    assert "ledger comment comment-9 created 2026-08-22T10:11:12Z" in findings[0].message
-    assert "recoverable-by-editing" in findings[1].message
-    assert "description" in findings[1].message
+    assert "recoverable-by-editing" in findings[0].message
+    assert "description" in findings[0].message
 
 
 def test_ledger_checks_do_not_flag_clean_goal_sources() -> None:
@@ -5745,7 +5743,16 @@ def test_dispatch_failed_outcome_leaves_item_open(
         _dispatcher_loop, "run_dispatch", _FakeRunDispatch(outcomes={item.id: failed})
     )
     exit_code = main(
-        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
     )
     assert exit_code == 1
     assert "failed at fabro-run" in capsys.readouterr().out
@@ -5946,7 +5953,16 @@ def test_dispatch_blocked_outcome_marks_item_blocked_needs_human(
     )
 
     exit_code = main(
-        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
     )
 
     assert exit_code == 4
@@ -6821,7 +6837,7 @@ def test_goal_source_preflight_flags_each_minijinja_opener_kind(
         lessons="",
     )
 
-    expected_field = "acceptance" if field == "acceptance_criteria" else field
+    expected_field = "acceptance criteria" if field == "acceptance_criteria" else field
     assert finding.source == expected_field
     assert finding.opener == opener
     assert expected_field in _dispatcher_goal.minijinja_findings_detail(findings=(finding,))
@@ -6837,15 +6853,13 @@ def test_goal_source_preflight_names_comment_id_and_created_at() -> None:
         ),
     )
 
-    [finding] = _dispatcher_goal.minijinja_openers_in_goal_sources(
+    findings = _dispatcher_goal.minijinja_openers_in_goal_sources(
         item=_item(),
         comments=comments,
         lessons="",
     )
 
-    detail = _dispatcher_goal.minijinja_findings_detail(findings=(finding,))
-    assert finding.source == "ledger comment comment-9 created 2026-08-22T10:11:12Z"
-    assert "ledger comment comment-9 created 2026-08-22T10:11:12Z" in detail
+    assert findings == ()
 
 
 def test_goal_source_preflight_runs_before_escape_false_negative(tmp_path: Path) -> None:
@@ -6876,6 +6890,29 @@ def test_goal_source_preflight_allows_healthy_item() -> None:
         )
         == ()
     )
+
+
+def test_goal_rewrites_comment_and_lessons_openers_without_truncating_them(tmp_path: Path) -> None:
+    comment = "comment {{ keep }} then {% keep %} then {# keep #}"
+    lessons = "lesson {{ keep }} then {% keep %} then {# keep #}"
+
+    goal = render_goal(
+        item=_item(),
+        repo=tmp_path,
+        branch="feat/t",
+        comments=(
+            WorkItemComment(
+                text=comment,
+                author="operator",
+                created_at="2026-08-22T10:11:12Z",
+                comment_id="comment-9",
+            ),
+        ),
+        lessons=lessons,
+    )
+
+    assert "comment [{ keep }} then [% keep %} then [# keep #}" in goal
+    assert "lesson [{ keep }} then [% keep %} then [# keep #}" in goal
 
 
 def test_item_sizing_warnings_empty_for_small_item() -> None:
@@ -6941,6 +6978,10 @@ def test_dispatch_goal_text_carries_ledger_comments(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan.tempfile.gettempdir",
         lambda: str(tmp_path),
     )
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan.tempfile.gettempdir",
+        lambda: str(tmp_path),
+    )
     exit_code = main(
         argv=[
             "dispatch",
@@ -6992,14 +7033,11 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
 
 
 def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
-    capsys: pytest.CaptureFixture[str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
-    item = _item(
-        description="poisoned {{ goal }}\n\n## Definition of Done\n\n- The dispatched slice lands its change.\n\nReferences: ## Effective acceptance criteria\n"
-    )
+    item = _item()
     append_work_item(path=_config(), item=item)
     monkeypatch.setattr(
         _dispatcher_loop_record,
@@ -7013,6 +7051,42 @@ def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
             ),
         ),
     )
+    fake = _FakeRunDispatch(outcomes={item.id: _green_outcome(item_id=item.id)})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+
+    exit_code = main(
+        argv=[
+            "dispatch",
+            "--repo",
+            str(repo),
+            "--item",
+            item.id,
+            "--workflow",
+            str(workflow),
+            "--no-close-on-merge",
+        ]
+    )
+
+    assert exit_code == 0
+    assert len(fake.seen) == 1
+
+
+def test_dispatch_refuses_an_item_field_at_goal_preflight_with_exit_five(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    opener = "{" + "{"
+    item = _item(
+        description=(
+            f"poisoned {opener} goal\n\n"
+            "## Definition of Done\n\n"
+            "- The dispatched slice lands its change.\n\n"
+            "References: ## Effective acceptance criteria\n"
+        )
+    )
+    append_work_item(path=_config(), item=item)
     fake = _FakeRunDispatch(outcomes={})
     monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
 
@@ -7020,15 +7094,12 @@ def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
         argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
     )
 
-    assert exit_code == 1
+    assert exit_code == 5
     assert fake.seen == []
     out = capsys.readouterr().out
     assert "goal-minijinja-preflight" in out
-    assert "description" in out
-    assert "ledger comment comment-9 created 2026-08-22T10:11:12Z" in out
-    stored = _stored()[item.id]
-    assert stored.status == "ready"
-    assert stored.assignee is None
+    assert "description at 0-based character offset 9" in out
+    assert opener not in out
 
 
 def test_dispatch_warns_on_oversized_item_without_blocking(

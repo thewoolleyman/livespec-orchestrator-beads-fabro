@@ -58,6 +58,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal_recovery import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
     escape_minijinja_literal,
+    rewrite_minijinja_openers_for_goal,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import (
     bound_riders,
@@ -82,6 +83,7 @@ __all__: list[str] = [
     "GoalBriefMiniJinjaFinding",
     "minijinja_findings_detail",
     "minijinja_openers_in_goal_sources",
+    "minijinja_openers_in_item_fields",
     "minijinja_openers_in_text",
     "render_goal",
 ]
@@ -100,6 +102,21 @@ class GoalBriefMiniJinjaFinding:
 
     source: str
     opener: str
+    offset: int
+
+
+def minijinja_openers_in_item_fields(*, item: WorkItem) -> tuple[GoalBriefMiniJinjaFinding, ...]:
+    """Find goal-template openers in the item's editable goal-source fields."""
+    fields: list[tuple[str, str | None]] = [
+        ("title", item.title),
+        ("description", item.description),
+        ("acceptance criteria", item.acceptance_criteria),
+        ("notes", item.notes),
+    ]
+    findings: list[GoalBriefMiniJinjaFinding] = []
+    for source, text in fields:
+        findings.extend(minijinja_openers_in_text(source=source, text=text))
+    return tuple(findings)
 
 
 def minijinja_openers_in_goal_sources(
@@ -108,24 +125,13 @@ def minijinja_openers_in_goal_sources(
     comments: tuple[WorkItemComment, ...],
     lessons: str,
 ) -> tuple[GoalBriefMiniJinjaFinding, ...]:
-    """Find MiniJinja openers in the unescaped goal-brief source fields."""
-    fields: list[tuple[str, str | None]] = [
-        ("title", item.title),
-        ("description", item.description),
-        ("acceptance", item.acceptance_criteria),
-        ("notes", item.notes),
-        ("lessons", lessons),
-    ]
-    findings: list[GoalBriefMiniJinjaFinding] = []
-    for source, text in fields:
-        findings.extend(minijinja_openers_in_text(source=source, text=text))
-    for index, comment in enumerate(comments, start=1):
-        findings.extend(
-            minijinja_openers_in_text(
-                source=_comment_source(index=index, comment=comment), text=comment.text
-            )
-        )
-    return tuple(findings)
+    """Find refusal-worthy openers in editable item fields only.
+
+    Comments and lessons are immutable sources; `render_goal` rewrites their
+    openers in place rather than refusing an otherwise repairable dispatch.
+    """
+    _ = (comments, lessons)
+    return minijinja_openers_in_item_fields(item=item)
 
 
 def minijinja_openers_in_text(
@@ -146,7 +152,11 @@ def minijinja_openers_in_text(
     if text is None or text == "":
         return ()
     return tuple(
-        GoalBriefMiniJinjaFinding(source=source, opener=match.group(0))
+        GoalBriefMiniJinjaFinding(
+            source=source,
+            opener=match.group(0),
+            offset=match.start(),
+        )
         for match in _MINIJINJA_OPEN_DELIMITER_RE.finditer(text)
     )
 
@@ -155,12 +165,11 @@ def minijinja_findings_detail(
     *,
     findings: tuple[GoalBriefMiniJinjaFinding, ...],
 ) -> str:
-    """Render a refusal detail naming every offending goal-brief source."""
-    sources = ", ".join(f"{finding.source} ({finding.opener})" for finding in findings)
-    return (
-        "goal brief contains MiniJinja opening delimiter before escaping; "
-        f"offending source(s): {sources}"
+    """Render a safe refusal detail without copying an opener to the ledger."""
+    sources = ", ".join(
+        f"{finding.source} at 0-based character offset {finding.offset}" for finding in findings
     )
+    return f"goal-template opening delimiter in editable field(s): {sources}; edit that field"
 
 
 def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `repayment` are the two Dispatcher-authored sections handed in beside the item's own fields.
@@ -258,7 +267,7 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
         body += (
             "\nRatified lessons (human-merged via loop-reflection-gate/"
             "lessons.md; treat as standing guidance for this dispatch):\n"
-            f"{lessons}\n"
+            f"{rewrite_minijinja_openers_for_goal(text=lessons)}\n"
         )
     # Escape AFTER assembly so EVERY interpolated field (title, description,
     # lessons, comments, repo path) is neutralized in one place: the whole
@@ -316,7 +325,9 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     # carries no gap where a receipt was dropped — a gap reads as a comment the
     # renderer lost rather than one it deliberately omitted.
     for index, comment in enumerate(riders, start=1):
-        lines.append(f"[{index}] {_comment_entry(comment=comment)}")
+        lines.append(
+            f"[{index}] {rewrite_minijinja_openers_for_goal(text=_comment_entry(comment=comment))}"
+        )
     return escape_minijinja_literal(text=body + "\n".join(lines) + "\n" + verdict_block)
 
 
@@ -353,9 +364,3 @@ def _comment_entry(*, comment: WorkItemComment) -> str:
     if provenance == "":
         return comment.text
     return f"({provenance}) {comment.text}"
-
-
-def _comment_source(*, index: int, comment: WorkItemComment) -> str:
-    label = comment.comment_id or f"#{index}"
-    created = "" if comment.created_at is None else f" created {comment.created_at}"
-    return f"ledger comment {label}{created}"

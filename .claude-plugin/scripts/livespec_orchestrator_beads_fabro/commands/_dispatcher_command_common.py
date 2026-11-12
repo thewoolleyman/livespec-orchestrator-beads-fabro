@@ -45,6 +45,11 @@ def dispatch_exit_code(*, outcomes: list[DispatchOutcome]) -> int:
         return 0
     if all(outcome.status in {*_EXIT_ZERO_STATUSES, "blocked"} for outcome in outcomes):
         return EXIT_BLOCKED
+    if all(
+        outcome.status == "failed" and outcome.stage == "goal-minijinja-preflight"
+        for outcome in outcomes
+    ):
+        return EXIT_UNGRADEABLE_CRITERIA
     return EXIT_FAILURE
 
 

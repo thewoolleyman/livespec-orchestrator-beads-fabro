@@ -24,6 +24,9 @@ from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
+    goal_template_opening_delimiter_findings,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     judge_item_definition_of_done,
 )
@@ -90,6 +93,14 @@ def _definition_of_done_refusal(
     `.variant` the decision already carries is how that happened; binding the
     result is the repair.
     """
+    template_findings = goal_template_opening_delimiter_findings(item=item)
+    if template_findings:
+        return valve_refusal(
+            aid=action_id,
+            wid=item.id,
+            err="ungradeable-acceptance-criteria",
+            msg=f"approve refused: {'; '.join(template_findings)}.",
+        )
     eligibility = acceptance_eligibility(item=item, cwd=repo)
     refusal = eligibility.refusal
     if refusal is not None:

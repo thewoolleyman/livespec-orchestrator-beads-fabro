@@ -42,9 +42,12 @@ _DISPATCHER_STDERR_TAIL_LINES = 20
 _EXIT_FAILURE = 1
 EXIT_PRECONDITION_ERROR = 3
 _EXIT_BLOCKED = 4
+_EXIT_UNGRADEABLE_CRITERIA = 5
 
 
-def exit_code_for_status(*, status: str) -> int:
+def exit_code_for_status(*, status: str, dispatcher_exit_code: int | None = None) -> int:
+    if dispatcher_exit_code == _EXIT_UNGRADEABLE_CRITERIA:
+        return _EXIT_UNGRADEABLE_CRITERIA
     if status in {"green", HANDED_OFF_STATUS}:
         return 0
     if status == "blocked":
