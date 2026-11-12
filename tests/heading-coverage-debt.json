@@ -1276,6 +1276,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 359 — The spec-stated judgement places the stating paragraph in full, reads inherited specification files, and omits an absent one without failing",
+    "work_item": "bd-ib-lrjdlo",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 36 — Every needs-human block always escalates",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"

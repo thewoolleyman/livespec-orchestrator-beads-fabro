@@ -14600,3 +14600,42 @@ Feature: a plan record that reaches a released component only through imported c
     When a different session replays the record
     Then the replay does not publish a verified record for it
 ```
+
+## Scenario 359 — The spec-stated judgement places the stating paragraph in full, reads inherited specification files, and omits an absent one without failing
+
+```gherkin
+Feature: The judgement sees the clause that states the behaviour
+  Scenario: A paragraph stating the behaviour under a heading the item does not name is placed before the model in full
+    Given a ratified specification whose stating paragraph sits deep under a heading the item does not name
+    And the whole specification exceeds the judgement's prompt character ceiling
+    When the spec-stated judgement is taken for the item's asked-for behaviour
+    Then the clauses placed before the model in full include that stating paragraph
+    And the rendered prompt is under the prompt character ceiling
+  Scenario: An inherited specification file is part of the specification text
+    Given a repository whose constraints declare livespec/SPECIFICATION/non-functional-requirements.md as applying to it without restatement
+    And that file is present under the sibling-clones directory
+    When the spec-stated judgement is taken
+    Then the specification text includes that file
+    And a verdict may name one of its headings verbatim together with the file's declared path
+  Scenario: A driver repository's inherited constraints file is read too
+    Given a repository whose constraints state that every constraint in livespec/SPECIFICATION/constraints.md that applies to a Driver binding applies here unmodified
+    And that file is present under the sibling-clones directory
+    When the spec-stated judgement is taken
+    Then the specification text includes that file
+  Scenario: An absent inherited specification file is omitted and named, not raised on
+    Given a repository whose constraints declare an inherited specification file
+    And no sibling clone carries that file
+    When the spec-stated judgement is taken
+    Then the judgement completes with a verdict
+    And the specification text omits that file
+    And the verdict's clause provenance names that file as omitted
+  Scenario: Another mention of a sibling specification file adds nothing
+    Given a repository whose constraints mention a sibling repository's specification file in a form other than the two declaration forms
+    And that file is present under the sibling-clones directory
+    When the spec-stated judgement is taken
+    Then the specification text does not include that file
+  Scenario: The selection is deterministic
+    Given an unchanged subject and an unchanged specification text
+    When the selection is taken twice
+    Then both takings place the same clauses before the model in full
+```
