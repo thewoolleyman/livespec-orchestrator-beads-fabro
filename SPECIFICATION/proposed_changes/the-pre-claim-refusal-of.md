@@ -29,9 +29,9 @@ In-flight alignment: none of this seat's pending proposals touch ACP node routin
 
 > Until such an override is ratified, a per-dispatch `--acp-node` value of EITHER form for a new-grammar-enabled node MUST refuse before claim. This covers a legacy adapter string and a JSON object in the structured form, including a single structured entry. The refusal MUST name the form the value took. For a legacy adapter string, it states that the string carries no stable candidate or domain identity. For a structured value, it states that a structured per-dispatch chain override is not ratified. It MUST NOT call a structured value a legacy adapter string. The per-dispatch layer's acceptance of the structured form applies to nodes with no new-grammar metadata.
 
-**2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 366 are claimed by pending proposals and peer drafts.
+**2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
-## Scenario 367 — A per-dispatch override of a new-grammar-enabled node refuses before claim, naming the override's form
+## Scenario <number assigned at revise> — A per-dispatch override of a new-grammar-enabled node refuses before claim, naming the override's form
 
 ```gherkin
 Feature: a per-dispatch node override refuses by its own form
@@ -48,4 +48,4 @@ Feature: a per-dispatch node override refuses by its own form
     Then the dispatch refuses before claim, identifying the value as a legacy adapter string
 ```
 
-**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-gg3pyl"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. If the revise renumbers Scenario 367, the row and entry MUST carry the renumbered heading text.
+**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-gg3pyl"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row and entry MUST carry the heading as numbered at revise.
