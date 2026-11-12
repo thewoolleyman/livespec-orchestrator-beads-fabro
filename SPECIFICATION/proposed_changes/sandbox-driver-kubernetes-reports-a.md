@@ -30,7 +30,7 @@ The driver half is landing ahead of this ratification in sandbox-driver-kubernet
 Fleet scope: every factory node and every sandbox provider build. The paragraph names the Kubernetes form as one instance of a provider-reported capacity refusal, as the OOM paragraph does for its own class.
 
 In-flight survey (open spec PRs and pending in-tree proposals, 2026-11-12 ~20:50Z):
-- In-tree `transient-infra-release-and-re-dispatch` (bd-ib-cewr.6) defines its route over failures whose category is `transient_infra` "after every reclassification of §\"Provider-limit permanence and root-cause surfacing\"". This paragraph is one such reclassification and gives capacity refusals their own release, so the two compose in either revise order. Relation: `align`.
+- In-tree `transient-infra-release-and-re-dispatch` (bd-ib-cewr.6) reads the category in this exact sentence of its proposed **Transient infrastructure release and re-dispatch.** paragraph: "A *transient infrastructure failure* is a run's unrecovered failing node attempt, responsible for its terminal disposition, whose category the Dispatcher derives as `transient_infra` after every reclassification of §\"Provider-limit permanence and root-cause surfacing\", and which is neither an eligible availability failure of \"Provider-limit release and re-dispatch\", nor an adapter launch failure, nor an ACP turn ended by its node's resolved timeout under §\"ACP node timeouts\"; each of those keeps its own route." The paragraph below is one such reclassification, and it gives a quota refusal typed capacity state and its own release before that sentence reads the category. A revise of either topic MUST check that a refusal carrying typed capacity state never reaches that route as `transient_infra`. The two compose in either revise order. Relation: `align`.
 - No open spec PR (#5005 through #5088) touches this section or sandbox-acquire classification.
 
 ### Proposed Changes
@@ -39,7 +39,9 @@ In-flight survey (open spec PRs and pending in-tree proposals, 2026-11-12 ~20:50
 
 > **A sandbox refused for namespace quota is capacity.** When a run's sandbox acquire is refused because the sandbox provider reports that the namespace's resource quota is exceeded, the refusal is CAPACITY: the same request succeeds once the namespace has room. On the Kubernetes provider, the refusal is a pod create answered 403 Forbidden whose Status message reports an exceeded quota; sandbox-driver-kubernetes surfaces it as a retryable provider error with code `quota-exceeded`. The Dispatcher MUST carry the condition as typed capacity state on the failure detail, naming the quota and the requested, used and limited amounts the provider reported. The dispatch outcome and its journal record MUST name the same.
 >
-> The Dispatcher MUST NOT classify such a refusal as a credential or authentication fault, MUST NOT classify it permanent under this section, and MUST NOT rest the item at `blocked / needs-human` for it. Instead it MUST release the item to `ready` without a human, by the four ordered steps of §"Factory-configurable ACP fallback priority" → "Adapter launch release and re-dispatch", journaling a `capacity-release` record in place of `adapter-launch-release` that names the quota and amounts. It MUST NOT re-admit the item before the refusal's instant plus a backoff of 60 seconds doubled for each consecutive capacity release of the item, up to 960 seconds.
+> The Dispatcher MUST NOT classify such a refusal as a credential or authentication fault, and, except for a refusal that can never fit (below), MUST NOT classify it permanent under this section or rest the item at `blocked / needs-human` for it. Instead it MUST release the item to `ready` without a human, by the four ordered steps of §"Factory-configurable ACP fallback priority" → "Adapter launch release and re-dispatch", journaling a `capacity-release` record in place of `adapter-launch-release` that names the quota and amounts. It MUST NOT re-admit the item before the refusal's instant plus a backoff of 60 seconds doubled for each consecutive capacity release of the item, up to 960 seconds. The consecutive capacity release count MUST reset to zero when the item's sandbox acquire next succeeds.
+>
+> A quota refusal that can never fit is not capacity. A quota refusal whose requested amount exceeds the quota's limited amount, or that recurs while no factory run in the namespace holds quota it could release, is a permanent configuration cause, not capacity. For such a refusal the Dispatcher MUST rest the item at `blocked / needs-human`, with a cause naming the quota and the requested, used and limited amounts, and MUST NOT release it.
 >
 > A capacity release MUST NOT consume any budget of §"The three rework caps", is a known host-attributable terminal under §"Across-dispatch required-result progress", and MUST NOT be surfaced as a needs-human decision. A provider refusal that does NOT report an exceeded quota, including every other 403 Forbidden, keeps the classification it arrived with: a missing permission remains a credential fault. Scenario <number assigned at revise> in `scenarios.md` exercises this paragraph.
 
@@ -60,6 +62,21 @@ Feature: A sandbox acquire refused for an exceeded namespace quota is capacity, 
     And the failure is not classified as a credential or authentication fault
     And the item is released to `ready` with a `capacity-release` journal record, and does not rest at `blocked / needs-human`
     And the item is not re-admitted before the refusal's instant plus its backoff
+
+  Scenario: The consecutive capacity release count resets once a sandbox acquire succeeds
+    Given an item released twice in a row for an exceeded namespace quota
+    And whose next dispatch's sandbox acquire succeeded
+    When that dispatch's run is later refused at sandbox acquire for an exceeded namespace quota
+    Then the item's consecutive capacity release count is one
+    And its backoff is 60 seconds
+
+  Scenario: A quota refusal that can never fit rests at needs-human as a configuration cause
+    Given a dispatched run whose sandbox acquire was refused for an exceeded namespace quota
+    And the sandbox's requested amount alone exceeds the quota's limited amount
+    When the Dispatcher derives the run's outcome
+    Then the failure is classified as a permanent configuration cause, not capacity
+    And the item rests at `blocked / needs-human` with a cause naming the quota and the requested, used and limited amounts
+    And no `capacity-release` record is journaled
 
   Scenario: A missing permission is still a credential fault
     Given a dispatched run whose sandbox acquire the sandbox provider refused with 403 Forbidden for a missing permission
