@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.320.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.320.0...v0.320.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* **workflow:** restore the groom graph's Petri-valid review bound ([622eca9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/622eca9d8fb9773bb432adcdea71c30beb72ebe2))
+
 ## [0.320.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.319.0...v0.320.0) (2026-11-11)
 
 
