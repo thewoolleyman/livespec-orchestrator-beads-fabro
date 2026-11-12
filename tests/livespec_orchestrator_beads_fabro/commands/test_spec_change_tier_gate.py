@@ -35,8 +35,15 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
-from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_comments import (
+    append_work_item_comment,
+    read_work_item_comments,
+)
 from livespec_orchestrator_beads_fabro.commands import _spec_change_tier_record as record
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
+    behaviour_digest,
+    exempt_decision,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
     CAUSE_CLASSIFICATION_UNREADABLE,
     CAUSE_SPEC_TREE_UNREADABLE,
@@ -45,9 +52,11 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     STAGE_DISPATCH,
     STAGE_FILING,
+    spec_change_tier_comment,
 )
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
+from livespec_runtime.spec_stated import ItemClass
 
 _ITEM = "bd-ib-gate"
 _HEADING = "## A governing clause"
@@ -262,6 +271,45 @@ def test_a_bug_with_stated_behaviour_records_a_free_tier(
     assert outcome.recorded.classification == "bug"
     assert outcome.recorded.verdict_kind == "stated"
     assert outcome.recorded.linked_proposal_topic is None
+    assert _calls(ledger=ledger) == 2
+
+
+@pytest.mark.parametrize("classification", ["bug", "chore", "non_functional"])
+def test_an_exempt_record_is_reused_until_its_asked_for_behaviour_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, classification: ItemClass
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    ledger = _install_judge(
+        tmp_path=tmp_path, monkeypatch=monkeypatch, replies=("feature", _UNSTATED)
+    )
+    item = _item()
+    config = _config(repo=repo)
+    append_work_item(path=config, item=item)
+    append_work_item_comment(
+        path=config,
+        work_item_id=item.id,
+        body=spec_change_tier_comment(
+            item_id=item.id,
+            stage=STAGE_FILING,
+            decision=exempt_decision(classification=classification),
+            spec_version="1",
+            digest=behaviour_digest(item=item),
+        ),
+    )
+
+    reused = classify_item_spec_change_tier(item=item, repo=repo, path=config, stage=STAGE_DISPATCH)
+
+    assert reused.reused is True
+    assert _calls(ledger=ledger) == 0
+
+    changed = classify_item_spec_change_tier(
+        item=_item(description="Changed observable behaviour."),
+        repo=repo,
+        path=config,
+        stage=STAGE_DISPATCH,
+    )
+
+    assert changed.reused is False
     assert _calls(ledger=ledger) == 2
 
 
