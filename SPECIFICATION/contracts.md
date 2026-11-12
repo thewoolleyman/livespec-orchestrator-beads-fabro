@@ -8815,6 +8815,50 @@ address in the item's dispatch-factory record exactly as a `server` entry does.
 A factory's per-name settings — its dev token, its secret-channel declaration,
 its `bin` and its `environment` — stay keyed by the factory name, unchanged.
 
+**Factory reads take the Dispatcher's own factory credential.** Every read the
+Dispatcher takes of a declared factory on a surface the preceding paragraph
+lists MUST authenticate with that factory's own per-name dev token and MUST
+reach the server this one resolution names, both taken from the Dispatcher's
+own factory credential: the factory variables the default family wrapper (the
+default wrapper its host value in `fleet-launch/config.sh` names) injects. When
+the Dispatcher process itself runs inside a dispatch target's
+`credential_wrapper` child, as the tenant-wrapper rule of §"Provisional fleet
+launch scripts" starts it, it MUST take each such read in an environment the
+default family wrapper establishes for it, and not in the tenant wrapper's
+child environment. A Dispatcher whose own process environment carries the
+factory variables the default family wrapper injects, because it was not
+started inside a tenant wrapper's child, MAY take such a read in that
+environment, and need not invoke the default family wrapper again for each
+read. A Dispatcher running inside a tenant wrapper's child MUST NOT take such a
+read from its own process environment, even though §"Provisional fleet launch
+scripts" nests that tenant wrapper inside the default family wrapper, because a
+sealed tenant wrapper withholds that outer environment from its child; it MUST
+invoke the default family wrapper for the read. The same holds for the
+earlier-run liveness read of recovery routing (§"Factory-configurable ACP
+fallback priority" → "Recovery from the failed run's preserved work") and of
+`resume --item` (§"Resume from a published pull request (`resume --item`)"),
+and for every other recovery measurement that reads a factory. Such a read MUST
+NOT depend on the dispatch target's `credential_wrapper` forwarding any factory
+variable. When the dispatch target declares a `credential_wrapper` other than
+the host's default wrapper, the Dispatcher MUST take its reads and writes of
+that target's work-items store under that declared wrapper and MUST take every
+factory read this paragraph governs outside it. It MUST NOT pass a factory dev
+token, a factory server address or any other `FABRO_`-prefixed value into that
+wrapper's child in order to take such a read. A tenant wrapper that builds its
+child's environment afresh and drops `FABRO_`-prefixed variables (a *sealed*
+wrapper) MUST therefore leave every such factory read exactly as observable as
+it is for a tenant whose wrapper forwards them. A factory read MAY be reported
+unobservable only when the factory cannot be resolved, or cannot answer under
+the Dispatcher's own credential; a factory variable that a tenant wrapper
+withheld MUST NOT be the cause of an unobservable factory read, and so MUST
+NOT, by itself, hold a recovery route or refuse a resume. This paragraph
+governs factory READS only: it does not change the dispatch credential set a
+target's `credential_wrapper` injects (§"Self-contained plugin dispatch" → "The
+dispatch credential set"), or how a dispatch submits a run, and it does not
+change which wrapper §"Provisional fleet launch scripts" runs a launch-time
+command under. It applies to every tenant whose `credential_wrapper` seals its
+child's environment. Scenario 182 in `scenarios.md` exercises this paragraph.
+
 The registry refusal applies to resolving a DECLARED, registry-backed entry, a
 factory reached through the reserved default value `fleet`, and a preserved
 fleet-derived recorded factory selected by a resume; the fleet-default refusal

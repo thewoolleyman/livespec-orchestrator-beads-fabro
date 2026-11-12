@@ -7222,6 +7222,32 @@ Feature: Factory addresses come from a host registry, not from committed configu
     Then the unpinned item is dispatched to "next"
     And the item recorded to "petri" is dispatched to "next", because a fresh dispatch reads no recorded factory
     And when the item recorded to "petri" is instead resumed with resume --item, the resume is dispatched to "petri"
+
+  Scenario: A sealed tenant wrapper does not make an ended run's liveness unobservable
+    Given the factory registry maps "petri" to a server address
+    And the default family wrapper (the default wrapper its host value in `fleet-launch/config.sh` names) injects the dev token of "petri"
+    And a tenant repository whose credential_wrapper builds its child's environment afresh and drops every FABRO_ variable
+    And an item of that tenant released for recovery whose earlier run on "petri" the factory reports as ended
+    And the Dispatcher process runs inside that tenant wrapper's child
+    When recovery routing grades the item
+    Then the earlier run's liveness is read from "petri" with the dev token the default family wrapper injects, through the default family wrapper invoked for that read, and not from the tenant wrapper's child environment
+    And the run is observed as ended
+    And the item is not routed held for the factory-run-liveness measurement
+
+  Scenario: A sealed tenant's ledger IO still runs under its own wrapper, and no factory credential enters it
+    Given a tenant repository whose credential_wrapper builds its child's environment afresh and drops every FABRO_ variable
+    And an item of that tenant released for recovery whose earlier run's liveness the Dispatcher reads from a factory
+    When recovery routing grades the item and reads that earlier run's liveness
+    Then every read and write of that tenant's work-items store runs under the tenant's declared credential_wrapper
+    And no factory dev token, factory server address or other FABRO_ value is passed into that wrapper's child
+
+  Scenario: A factory that cannot answer under the Dispatcher's own credential is still unobservable
+    Given the default family wrapper (the default wrapper its host value in `fleet-launch/config.sh` names) injects the dev token of "petri"
+    And "petri" does not answer a run-liveness read
+    And an item released for recovery whose earlier run was dispatched to "petri"
+    When recovery routing grades the item
+    Then the earlier run's liveness is reported unobservable, naming "petri"
+    And the item is routed held
 ```
 
 ## Scenario 183 — A checkpoint-failed run whose tree nothing else carries is published to a preservation ref
