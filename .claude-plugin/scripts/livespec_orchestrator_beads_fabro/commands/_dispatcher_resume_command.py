@@ -63,6 +63,7 @@ default branch while the journal recorded a resume.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 from pathlib import Path
 from typing import cast
 
@@ -100,6 +101,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare, run_id
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overtaken_resume import (
+    bound_overtaken_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
@@ -135,6 +139,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "add_resume_arguments",
+    "overtaken_resume",
     "preserved_descendant_refusal",
     "resume_refusal_report",
     "run_resume_command",
@@ -381,3 +386,6 @@ def _admit_and_dispatch_resume(
         for admitted in admission.admitted
     ]
     return (admission.refused + admission.deferred + dispatched)[0]
+
+
+overtaken_resume = partial(bound_overtaken_resume, admit_and_dispatch=_admit_and_dispatch_resume)
