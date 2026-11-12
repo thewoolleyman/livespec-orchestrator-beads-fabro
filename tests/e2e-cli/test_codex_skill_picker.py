@@ -270,32 +270,44 @@ def _live_group_members(*, pgid: int) -> list[int]:
     ]
 
 
-def _wait_for_group_exit(*, pgid: int) -> None:
-    """Block until every writer in the group has terminated, by pidfd rather than by polling.
+def _wait_for_group_exit(*, pgid: int, group_exit_fd: int) -> None:
+    """Block until every writer in the group has terminated, without polling.
 
     A pidfd becomes readable when its process terminates, whoever its parent
     is, so the orphaned writers (reaped by init, not by this interpreter) are
-    waited on as events. The group was sent SIGKILL before this runs, so the
-    one snapshot of its members is complete; the 5s bound only keeps a writer
-    that somehow survived from hanging the suite.
+    waited on as events. When pidfds are unavailable, every writer inherits
+    the pipe's write end, so its read end reaches end-of-file after the last
+    writer exits. The group was sent SIGKILL before this runs, so the one
+    snapshot of its members is complete; the 5s bound only keeps a writer that
+    somehow survived from hanging the suite.
     """
     descriptors: list[int] = []
+    use_group_exit_event = not hasattr(os, "pidfd_open")
     try:
         for pid in _live_group_members(pgid=pgid):
-            with suppress(ProcessLookupError):
-                descriptors.append(os.pidfd_open(pid))
+            if not use_group_exit_event:
+                try:
+                    descriptors.append(os.pidfd_open(pid))
+                except OSError:
+                    use_group_exit_event = True
         pending = list(descriptors)
+        if use_group_exit_event:
+            pending.append(group_exit_fd)
         while pending:
             ready, _, _ = select.select(pending, [], [], 5.0)
             if not ready:
-                raise AssertionError(f"Picker process group {pgid} still has live writers")
+                live_writers = _live_group_members(pgid=pgid)
+                raise AssertionError(
+                    f"Picker process group {pgid} still has live writers: {live_writers}"
+                )
             pending = [descriptor for descriptor in pending if descriptor not in ready]
     finally:
         for descriptor in descriptors:
             os.close(descriptor)
+        os.close(group_exit_fd)
 
 
-def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
+def stop_codex(*, proc: subprocess.Popen[bytes], fd: int, group_exit_fd: int) -> None:
     try:
         if proc.poll() is None:
             try:
@@ -316,7 +328,7 @@ def _stop_codex(*, proc: subprocess.Popen[bytes], fd: int) -> None:
             # TemporaryDirectory removes their staging directories.
             with suppress(ProcessLookupError):
                 os.killpg(proc.pid, signal.SIGKILL)
-            _wait_for_group_exit(pgid=proc.pid)
+            _wait_for_group_exit(pgid=proc.pid, group_exit_fd=group_exit_fd)
         finally:
             os.close(fd)
 
@@ -325,25 +337,35 @@ def test_picker_cleanup_stops_writers_after_the_parent_exits(*, tmp_path: Path) 
     release = tmp_path / "release-writer"
     child_pid_file = tmp_path / "writer-pid"
     os.mkfifo(release)
-    proc = subprocess.Popen(
-        [
-            "sh",
-            "-c",
-            'read < "$1" & ' 'printf "%s\\n" "$!" > "$2"',
-            "--",
-            str(release),
-            str(child_pid_file),
-        ],
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        start_new_session=True,
-    )
+    group_exit_read_fd, group_exit_write_fd = os.pipe()
+    try:
+        proc = subprocess.Popen(
+            [
+                "sh",
+                "-c",
+                'read < "$1" & ' 'printf "%s\\n" "$!" > "$2"',
+                "--",
+                str(release),
+                str(child_pid_file),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            pass_fds=(group_exit_write_fd,),
+            start_new_session=True,
+        )
+    finally:
+        os.close(group_exit_write_fd)
     try:
         assert proc.wait(timeout=5) == 0
         child_pid = int(child_pid_file.read_text(encoding="utf-8"))
         os.kill(child_pid, 0)
-        _stop_codex(proc=proc, fd=os.open(os.devnull, os.O_WRONLY))
+        stop_codex(
+            proc=proc,
+            fd=os.open(os.devnull, os.O_WRONLY),
+            group_exit_fd=group_exit_read_fd,
+        )
         state = subprocess.run(
             ["ps", "-p", str(child_pid), "-o", "stat="],
             capture_output=True,
@@ -412,19 +434,30 @@ def test_skills_picker_finds_drive_by_short_name() -> None:
         codex_home = Path(codex_home_raw)
         _prepare_codex_home(codex_home=codex_home)
         env["CODEX_HOME"] = str(codex_home)
-        proc = subprocess.Popen(
-            [codex, "--no-alt-screen", "--dangerously-bypass-hook-trust", "-C", str(_REPO_ROOT)],
-            stdin=slave_fd,
-            stdout=slave_fd,
-            stderr=slave_fd,
-            env=env,
-            close_fds=True,
-            start_new_session=True,
-        )
+        group_exit_read_fd, group_exit_write_fd = os.pipe()
+        try:
+            proc = subprocess.Popen(
+                [
+                    codex,
+                    "--no-alt-screen",
+                    "--dangerously-bypass-hook-trust",
+                    "-C",
+                    str(_REPO_ROOT),
+                ],
+                stdin=slave_fd,
+                stdout=slave_fd,
+                stderr=slave_fd,
+                env=env,
+                close_fds=True,
+                pass_fds=(group_exit_write_fd,),
+                start_new_session=True,
+            )
+        finally:
+            os.close(group_exit_write_fd)
         os.close(slave_fd)
         try:
             transcript = _exercise_skills_picker(master_fd=master_fd)
         finally:
-            _stop_codex(proc=proc, fd=master_fd)
+            stop_codex(proc=proc, fd=master_fd, group_exit_fd=group_exit_read_fd)
 
     assert _has_result(plain=transcript), transcript
