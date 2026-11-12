@@ -92,10 +92,10 @@ _FAR_FUTURE_EPOCH = 4_102_444_800
 _LONG_PAST_EPOCH = 1
 
 
-def _guard(*, tmp_path: Path) -> Path:
+def _guard(*, tmp_path: Path, script_text: str | None = None) -> Path:
     """Render the SHIPPED guard script and make it executable."""
     script = tmp_path / "credential-use-guard.sh"
-    _ = script.write_text(guard_script_text(), encoding="utf-8")
+    _ = script.write_text(script_text or guard_script_text(), encoding="utf-8")
     script.chmod(0o755)
     return script
 
@@ -177,14 +177,20 @@ def _fixed_clock(*, tmp_path: Path, epoch: int) -> Path:
 
 
 def _controlled_clock(
-    *, tmp_path: Path, armed: Path, release: Path, start: float
+    *,
+    tmp_path: Path,
+    armed: Path,
+    release: Path,
+    start: float,
+    initial_advance_delay_seconds: int = 0,
 ) -> tuple[Path, Path]:
     """Create the guard's `date`/`sleep` seam on a deterministic clock.
 
     The first fake sleep announces that the detached reaper is armed, then
     waits for the test's FIFO release. Only that first sleep reads the FIFO; later
     sleeps advance the clock immediately, so the instant the guard signals is a reading of this
-    file rather than a measurement of host scheduling.
+    file rather than a measurement of host scheduling. A case can delay that first
+    advance in host time without advancing the controlled clock.
     """
     bin_dir = tmp_path / "controlled-clock-bin"
     bin_dir.mkdir()
@@ -198,6 +204,9 @@ def _controlled_clock(
         f'    : > "{armed}.once"\n'
         f'    printf armed > "{armed}"\n'
         f'    IFS= read -r _ < "{release}" || true\n'
+        f'    if [ "{initial_advance_delay_seconds}" -gt 0 ]; then\n'
+        f'        /bin/sleep "{initial_advance_delay_seconds}"\n'
+        "    fi\n"
         "fi\n"
         f'now="$(cat "{clock}")"\n'
         f'awk -v n="$now" -v d="$1" \'BEGIN{{printf "%.6f\\n", n+d}}\' > "{clock}.next"\n'
@@ -251,6 +260,8 @@ def _start_guarded_fixture(
     tmp_path: Path,
     child_script: Callable[[Path, Path], str] | None = None,
     start_fraction: float = 0.0,
+    initial_advance_delay_seconds: int = 0,
+    guard_text: str | None = None,
 ) -> _GuardedFixture:
     """Start a guarded child with controlled-clock rendezvous.
 
@@ -278,6 +289,7 @@ def _start_guarded_fixture(
         armed=armed_fifo,
         release=release_fifo,
         start=_CONTROLLED_EPOCH + start_fraction,
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
     )
     holder_read, holder_write = os.pipe()
     deadline = _CONTROLLED_EPOCH + _SOON_SECONDS
@@ -288,7 +300,14 @@ def _start_guarded_fixture(
         child_script or (lambda pid, ready: _term_resistant_child(pid_file=pid, ready=ready))
     )(pid_file, ready_fifo)
     guarded = subprocess.Popen(
-        ["/bin/sh", str(_guard(tmp_path=tmp_path)), "--", "/bin/sh", "-c", script],
+        [
+            "/bin/sh",
+            str(_guard(tmp_path=tmp_path, script_text=guard_text)),
+            "--",
+            "/bin/sh",
+            "-c",
+            script,
+        ],
         env=env,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -323,6 +342,9 @@ def _guarded_group_exit(
     tmp_path: Path,
     child_script: Callable[[Path, Path], str] | None = None,
     start_fraction: float = 0.0,
+    initial_advance_delay_seconds: int = 0,
+    guard_text: str | None = None,
+    max_empty_waits: int | None = None,
 ) -> tuple[int, float, int]:
     """Run the guard to the end of its group; return (guard status, clock reading, deadline).
 
@@ -334,7 +356,11 @@ def _guarded_group_exit(
     because only the reaper's `sleep` advances it.
     """
     fixture = _start_guarded_fixture(
-        tmp_path=tmp_path, child_script=child_script, start_fraction=start_fraction
+        tmp_path=tmp_path,
+        child_script=child_script,
+        start_fraction=start_fraction,
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
+        guard_text=guard_text,
     )
     try:
         _await_event(fd=fixture.armed_fd, expected=b"armed", what="the reaper's armed announcement")
@@ -345,11 +371,22 @@ def _guarded_group_exit(
         os.write(fixture.release_fd, b"release\n")
         os.close(fixture.holder_write)
         fixture.holder_write = -1
-        readable, _, _ = select.select([fixture.holder_read], [], [], _SETTLE_SECONDS)
-        assert readable and os.read(fixture.holder_read, 1) == b"", (
-            "the group stayed live past the deadline; "
-            f"controlled clock is {fixture.clock.read_text(encoding='utf-8').strip()}"
-        )
+        empty_waits = 0
+        while True:
+            readable, _, _ = select.select([fixture.holder_read], [], [], _SETTLE_SECONDS)
+            if readable:
+                assert os.read(fixture.holder_read, 1) == b""
+                break
+            empty_waits += 1
+            controlled_now = float(fixture.clock.read_text(encoding="utf-8").strip())
+            if max_empty_waits is not None and empty_waits >= max_empty_waits:
+                pytest.fail(
+                    "the reaper stopped advancing the controlled clock before the group ended; "
+                    f"controlled clock is {controlled_now}"
+                )
+            assert controlled_now < fixture.deadline, (
+                "the group stayed live past the deadline; " f"controlled clock is {controlled_now}"
+            )
         status = fixture.guarded.wait(timeout=_SETTLE_SECONDS)
         return status, float(fixture.clock.read_text(encoding="utf-8").strip()), fixture.deadline
     finally:
@@ -382,7 +419,10 @@ def test_a_sufficiently_fresh_deadline_lets_an_ordinary_command_finish(
     assert result.returncode == 7
 
 
-def test_a_running_child_stops_by_the_deadline_itself(tmp_path: Path) -> None:
+@pytest.mark.parametrize("initial_advance_delay_seconds", [0, _SETTLE_SECONDS + 1])
+def test_a_running_child_stops_by_the_deadline_itself(
+    tmp_path: Path, initial_advance_delay_seconds: int
+) -> None:
     """Execution stops BY the absolute epoch, read off the guard's controlled clock.
 
     The assertion is NOT "the process is gone eventually" -- that is satisfied by
@@ -398,6 +438,7 @@ def test_a_running_child_stops_by_the_deadline_itself(tmp_path: Path) -> None:
         tmp_path=tmp_path,
         child_script=lambda pid,
         ready: f"echo $$ > {pid}; echo ready > {ready}; exec /bin/sleep 600",
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
     )
 
     assert stopped_at <= deadline
@@ -408,7 +449,10 @@ def test_a_running_child_stops_by_the_deadline_itself(tmp_path: Path) -> None:
     assert status != 0
 
 
-def test_a_term_resistant_child_still_stops_by_the_deadline(tmp_path: Path) -> None:
+@pytest.mark.parametrize("initial_advance_delay_seconds", [0, _SETTLE_SECONDS + 1])
+def test_a_term_resistant_child_still_stops_by_the_deadline(
+    tmp_path: Path, initial_advance_delay_seconds: int
+) -> None:
     """TERM refusal buys no time at all, not even the escalation grace.
 
     The child traps TERM and idles, which is what an agent mid-turn with its own
@@ -417,15 +461,19 @@ def test_a_term_resistant_child_still_stops_by_the_deadline(tmp_path: Path) -> N
     nothing more: it must still stop by the same instant a compliant child
     would, and the clock reading shows the KILL, not the TERM, ended it.
     """
-    status, stopped_at, deadline = _guarded_group_exit(tmp_path=tmp_path)
+    status, stopped_at, deadline = _guarded_group_exit(
+        tmp_path=tmp_path,
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
+    )
 
     assert stopped_at <= deadline, f"a TERM-resistant child outlived the deadline: {stopped_at}"
     assert stopped_at > deadline - 1, "the child ended at the TERM, so it was not TERM-resistant"
     assert status != 0
 
 
+@pytest.mark.parametrize("initial_advance_delay_seconds", [0, _SETTLE_SECONDS + 1])
 def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_exits(
-    tmp_path: Path,
+    tmp_path: Path, initial_advance_delay_seconds: int
 ) -> None:
     """The ADAPTER PARENT EXITS and its child keeps the credential; both stop by the bound.
 
@@ -447,6 +495,7 @@ def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_ex
             f'/bin/sh -c \'trap "" TERM; echo $$ > {pid}; echo ready > {ready}; '
             "exec /bin/sleep 600' </dev/null >/dev/null 2>&1 & exit 0"
         ),
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
     )
 
     # The wrapper returned while the bound had not yet fallen.
@@ -457,6 +506,42 @@ def test_a_credential_using_grandchild_stops_by_the_deadline_after_its_parent_ex
     assert (
         stopped_at > deadline - 1
     ), "the grandchild ended before the KILL, so TERM was not refused"
+
+
+def test_a_guard_that_signals_only_its_direct_child_leaves_the_grandchild_running(
+    tmp_path: Path,
+) -> None:
+    """The grandchild case rejects a direct-child-only signal as a stalled reaper.
+
+    The mutated reaper reaches its KILL arm but signals the exited adapter parent,
+    not its process group. Its clock consequently stops short of the deadline
+    while the inherited pipe remains open. That is distinct from claiming the
+    group outlived a deadline the controlled clock never reached.
+    """
+    direct_child_only = (
+        guard_script_text()
+        .replace(
+            'kill -TERM "-$pgid" 2>/dev/null || kill -TERM "$pgid" 2>/dev/null',
+            'kill -TERM "$pgid" 2>/dev/null',
+        )
+        .replace(
+            'kill -KILL "-$pgid" 2>/dev/null || kill -KILL "$pgid" 2>/dev/null',
+            'kill -KILL "$pgid" 2>/dev/null',
+        )
+    )
+
+    with pytest.raises(
+        pytest.fail.Exception, match="reaper stopped advancing the controlled clock"
+    ):
+        _ = _guarded_group_exit(
+            tmp_path=tmp_path,
+            child_script=lambda pid, ready: (
+                f'/bin/sh -c \'trap "" TERM; echo $$ > {pid}; echo ready > {ready}; '
+                "exec /bin/sleep 600' </dev/null >/dev/null 2>&1 & exit 0"
+            ),
+            guard_text=direct_child_only,
+            max_empty_waits=1,
+        )
 
 
 def test_a_launch_after_the_deadline_is_refused_without_running_the_command(
@@ -740,8 +825,9 @@ def test_a_bidirectional_protocol_session_survives_the_guard(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize("start_fraction", [0.65, 0.95])
+@pytest.mark.parametrize("initial_advance_delay_seconds", [0, _SETTLE_SECONDS + 1])
 def test_a_fractional_start_still_stops_by_the_absolute_epoch(
-    tmp_path: Path, start_fraction: float
+    tmp_path: Path, start_fraction: float, initial_advance_delay_seconds: int
 ) -> None:
     """A guard entered PART-WAY THROUGH A SECOND must not kill late.
 
@@ -761,7 +847,9 @@ def test_a_fractional_start_still_stops_by_the_absolute_epoch(
     # the host's clock to reach it. The child ignores TERM, so the KILL is what
     # stops it.
     status, stopped_at, deadline = _guarded_group_exit(
-        tmp_path=tmp_path, start_fraction=start_fraction
+        tmp_path=tmp_path,
+        start_fraction=start_fraction,
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
     )
 
     assert (
