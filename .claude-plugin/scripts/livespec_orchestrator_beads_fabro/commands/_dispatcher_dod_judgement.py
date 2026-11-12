@@ -156,6 +156,7 @@ def judgement_subject(
     cwd: Path,
     comments: Sequence[str] = (),
     governing: GoverningHeadingVerdict | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str:
     """Render the item's goal fields, criteria, referenced heading bodies and riders.
 
@@ -174,6 +175,14 @@ def judgement_subject(
     would leave the judge unable to tell a verdict of "nothing governs" from a
     judgement nobody took — and those have opposite consequences, the first
     foreclosing the finding and the second leaving the node its own search.
+
+    `origin_sections` is the default branch's H2 sections as ONE reading. Every
+    referenced heading body in this subject comes from it, so a remote advance
+    between two references cannot put bodies from two revisions into one subject.
+    A caller holding the reading the mechanical wall graded (see
+    `definition_of_done_findings`) hands it in so both surfaces share it; left
+    ABSENT, the subject takes the reading itself, once and only if a reference
+    needs a body.
     """
     criteria = effective_criteria(item=item)
     section = definition_of_done(description=item.description)
@@ -196,13 +205,14 @@ def judgement_subject(
         "",
         governing_heading_block(verdict=governing),
     ]
+    reading = _OriginReading(repo=cwd, sections=origin_sections)
     blocks.extend(
         bounded_reference_blocks(
             prefix=blocks,
             references=section.references,
             ending=ending,
             governing=governing,
-            heading_body=lambda reference: _heading_body(repo=cwd, reference=reference),
+            heading_body=lambda reference: _heading_body(reading=reading, reference=reference),
         )
     )
     return "\n".join([*blocks, *ending])
@@ -349,9 +359,24 @@ def _last_non_empty_line(*, reply: str) -> str | None:
     return None
 
 
-def _heading_body(*, repo: Path, reference: str) -> str:
+class _OriginReading:
+    """One taking's lazy, single read of the default branch's H2 sections."""
+
+    def __init__(
+        self, *, repo: Path, sections: dict[str, str] | OriginSpecUnreadable | None
+    ) -> None:
+        self._repo = repo
+        self._sections = sections
+
+    def sections(self) -> dict[str, str] | OriginSpecUnreadable:
+        if self._sections is None:
+            self._sections = origin_spec_h2_sections(repo=self._repo)
+        return self._sections
+
+
+def _heading_body(*, reading: _OriginReading, reference: str) -> str:
     """Return an H2 section body, retaining an explicit absence when unresolved."""
-    sections = origin_spec_h2_sections(repo=repo)
+    sections = reading.sections()
     if isinstance(sections, OriginSpecUnreadable):
         return _UNRESOLVED_HEADING_BODY
     heading = f"{_H2_MARKER}{reference.removeprefix(_H2_MARKER)}"

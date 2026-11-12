@@ -67,13 +67,23 @@ _REASON_SUBJECTS = {
 }
 
 
-def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]:
+def definition_of_done_findings(
+    *,
+    item: WorkItem,
+    cwd: Path,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
+) -> tuple[str, ...]:
     """Every mechanical Definition-of-Done finding for one item, or an empty tuple.
 
     An absent section returns EARLY with the one finding that matters: every
     later check reads a section that is not there, so reporting "no section" and
     "no reference line" for the same item would name one fault twice and bury the
     remedy the operator actually needs.
+
+    `origin_sections` is an already-taken reading of the default branch's H2
+    sections. A caller that also renders the judgement subject hands the SAME
+    reading to both, so the wall and the subject grade one specification revision;
+    left ABSENT, the wall reads the remote itself.
     """
     section = definition_of_done(description=item.description)
     if not section.present:
@@ -81,7 +91,11 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
     findings: list[str] = []
     if not section.references:
         findings.append(_absent_reference_line_finding(item=item))
-    findings.extend(_reference_findings(item=item, references=section.references, cwd=cwd))
+    findings.extend(
+        _reference_findings(
+            item=item, references=section.references, cwd=cwd, origin_sections=origin_sections
+        )
+    )
     findings.extend(
         _malformed_proof_mode_finding(item=item, sub_heading=sub_heading)
         for sub_heading in section.malformed_proof_modes
@@ -91,7 +105,11 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
 
 
 def _reference_findings(
-    *, item: WorkItem, references: tuple[str, ...], cwd: Path
+    *,
+    item: WorkItem,
+    references: tuple[str, ...],
+    cwd: Path,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None,
 ) -> tuple[str, ...]:
     """One finding per reference `origin/master` carries no heading for, in order.
 
@@ -100,7 +118,13 @@ def _reference_findings(
     """
     if not references:
         return ()
-    headings = origin_spec_h2_headings(repo=cwd)
+    headings = (
+        origin_spec_h2_headings(repo=cwd)
+        if origin_sections is None
+        else origin_sections
+        if isinstance(origin_sections, OriginSpecUnreadable)
+        else frozenset(origin_sections)
+    )
     if isinstance(headings, OriginSpecUnreadable):
         return (_unreadable_origin_finding(item=item, unreadable=headings),)
     return tuple(
