@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.322.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.321.0...v0.322.0) (2026-11-12)
+
+
+### Features
+
+* capture settled run work on immutable refs ([a0fcfdc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a0fcfdce4f77060217c3a82c9cbe1848df72c231))
+* hold recapture-exhausted recovery routes ([47579f7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/47579f7ca8c1452588584983df292ae0b9169b4c))
+* journal host judge final usage ([e05f364](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e05f3642e7e20a3e8a23773734c7e9bfc97631aa))
+* mark host judge journals as awaiting final usage ([0d7e30f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0d7e30fc3723d4a492f15fa141d6e3c429cf9df8))
+* materialize the WIP capture helper ([0b3016b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0b3016b4e6cf71252b85cc2b857436d3f749321f))
+* name terminal preservation in recapture holds ([40b328b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/40b328b9e75fdad03114e658a8c084c8fc7abf52))
+* prevent blind stream watchdog stall confirmation (bd-ib-7e4d7t) ([9a97dcc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a97dcc1ec550422dd0e2c6d5fd37a4dde4a38d3))
+* release recapture-exhausted recovery routing ([171d121](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/171d121ce7cb9e2ea2411f2465214fde492247e5))
+
+
+### Bug Fixes
+
+* compare the WIP work-free guard to the default branch head on origin ([2a16993](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/2a16993dde02b87c56a040e2ae1710d5d6d25d65))
+* hold the production recapture-exhausted terminal stage ([1ce3b9d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1ce3b9dd2b5f30389c32ca6c1a72ed05fe41f5a7))
+* isolate WIP preservation from repository push URLs ([78bf804](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/78bf8048e7c4080b80ac6808ce06418ac3aeb5d3))
+
 ## [0.321.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.320.1...v0.321.0) (2026-11-12)
 
 
