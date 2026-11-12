@@ -53,6 +53,35 @@ def test_capture_program_preserves_only_a_work_carrying_run_branch_tip(tmp_path:
     assert f"LIVESPEC_WIP_SKIPPED: {ref} {tip} already captured" in repeated.stderr
 
 
+def test_capture_ignores_a_repository_local_pushurl(tmp_path: Path) -> None:
+    """Capture uses origin's configured URL, never its redirecting push URL."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture"
+    )
+    program = tmp_path / "capture-wip"
+    program.write_text(module.wip_capture_program_source(), encoding="utf-8")
+    program.chmod(0o755)
+
+    origin, work = _repository(tmp_path=tmp_path)
+    redirected = tmp_path / "redirected.git"
+    _git(tmp_path, "init", "--bare", str(redirected))
+    run = "01M6WIPPUSHURL"
+    item = "bd-ib-ofvsr3"
+    _git(work, "switch", "-c", f"fabro/run/{run}")
+    (work / "work.txt").write_text("settled work\n", encoding="utf-8")
+    _git(work, "add", "work.txt")
+    _git(work, "commit", "-m", "settled work")
+    tip = _git_stdout(work, "rev-parse", "HEAD")
+    _git(work, "config", "remote.origin.pushurl", str(redirected))
+
+    capture = _run(program=program, work=work, item=item, run=run)
+    ref = f"refs/livespec/wip/{item}/{run}/1"
+
+    assert capture.returncode == 0, capture.stderr
+    assert _git_stdout(origin, "rev-parse", ref) == tip
+    assert not _has_ref(redirected, ref=ref)
+
+
 def _repository(*, tmp_path: Path) -> tuple[Path, Path]:
     origin = tmp_path / "origin.git"
     work = tmp_path / "work"
@@ -90,6 +119,19 @@ def _workspace_state(work: Path) -> tuple[str, str, str]:
 
 def _refs(origin: Path, *, prefix: str) -> list[str]:
     return _git_stdout(origin, "for-each-ref", "--format=%(refname)", prefix).splitlines()
+
+
+def _has_ref(repository: Path, ref: str) -> bool:
+    return (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", ref],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).returncode
+        == 0
+    )
 
 
 def _git(work: Path, *args: str) -> None:
