@@ -3173,5 +3173,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier is owed for this heading: the owning work-item bd-ib-y2s76v adds cases in which, in a repository declaring release components, the posting primitive renders a build imported_components array as the record's imported code line and refuses a malformed value, and for a record whose imported code line names a component the archive gate accepts it when the commit's tree under that component's paths is byte-identical to the named tag's, rejects it naming the first differing path when the trees differ (including a path present on one side only), and makes no comparison for a record carrying no imported code line; release none is still rejected for a component its artifact paths reach. The replay case for a component's own entry point run from the tree is a verifying party's judgement and is not mechanized. bd-ib-y2s76v owns it.",
     "work_item": "bd-ib-y2s76v"
+  },
+  {
+    "heading": "## Scenario 359 \u2014 The spec-stated judgement places the stating paragraph in full, reads inherited specification files, and omits an absent one without failing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-lrjdlo adds cases in which the spec-stated judgement, over a specification larger than its prompt character ceiling, places in full a stating paragraph that sits under a heading the item does not name; reads an inherited specification file declared by either of the two closed constraints forms and resolved under the sibling-clones directory; omits and names in the clause provenance a declared inherited file that is absent, completing with a verdict; adds nothing for any other mention of a sibling specification file; and places the same clauses in full on two takings of an unchanged subject and specification text. bd-ib-lrjdlo owns it.",
+    "work_item": "bd-ib-lrjdlo"
   }
 ]
