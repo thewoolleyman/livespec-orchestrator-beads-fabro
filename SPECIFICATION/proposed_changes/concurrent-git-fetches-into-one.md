@@ -21,7 +21,9 @@ Work item bd-ib-zyu2ug, a child of plan bd-ib-ynnykl (legacy-dispatcher-agent), 
 
 Design choices, stated for the grade:
 - **One lock, in the common directory.** Every worktree of a checkout shares the common directory and the remote-tracking refs a fetch updates, so the lock lives there, not in a per-worktree directory.
-- **Held through the ref updates.** The race is between ref-update transactions, so releasing the lock before the fetch's updates complete would not remove it. For the launcher, the hold extends through its fast-forward.
+- **Held through what follows the fetch** (grade fix 2). The race is between ref-update transactions, and the janitor's `Cannot fast-forward to multiple branches` comes from its `FETCH_HEAD` read. So every caller holds the lock through any merge, fast-forward or `FETCH_HEAD` read after its fetch.
+- **flock, never a removed file** (grade fix 1). The kernel releases the lock when the holder dies, so there is no stale-lock cleanup to get wrong. The freeze-allowlist flock in this section is the precedent.
+- **Not provisional for the Dispatcher** (grade fix 3). The section is caller-side and provisional, so the bullet says outright that its Dispatcher and janitor duties outlive `fleet-launch/`.
 - **Fail without side effects.** A caller that times out never ran its fetch, so it leaves refs and `FETCH_HEAD` exactly as the holder will.
 - **A helper, so callers outside the orchestrator can join.** Seats and scripts fetch into the same checkouts; a committed command is the only way they can take the same lock.
 
@@ -31,7 +33,9 @@ Fleet scope: every repository's primary checkout on the control node, because la
 
 **1. One fetch lock per checkout (`contracts.md` §"Provisional fleet launch scripts").** Change the sentence "The refresh MUST be serialized per checkout, so that two launchers for one repository never fetch or merge in that checkout at once." in the "Checkout at the origin tip" bullet to "The refresh MUST be serialized under the checkout's fetch lock, as the next bullet states.", and add after that bullet:
 
-> - **One fetch lock per checkout.** Every `git fetch` the orchestrator runs in a repository's primary checkout MUST hold an exclusive lock on the file `livespec-fetch.lock` in that checkout's git common directory. It acquires the lock before the fetch starts and releases it only after the fetch's ref updates complete. This covers the launcher's checkout-at-the-origin-tip refresh, whose hold extends through its fast-forward, the launch-time Definition-of-Done preflight's fetch, the Dispatcher's source-staging fetch of §"Dispatch pre-launch step attribution and concurrency", and the post-merge and reconcile janitor's refresh of that checkout. A caller that has waited longer than its configured bound for the lock MUST exit non-zero, without fetching, with a message naming the lock file and the pid that holds it, and MUST leave the checkout's refs and `FETCH_HEAD` unchanged. The repository MUST commit one `fleet-launch/` helper command that runs a given git command in a given checkout under that same lock, with the same bounded wait, so that a seat or script outside the orchestrator that fetches into a primary checkout takes the same lock. With any number of these callers started at once against one checkout, including while the remote's default branch advances between them, each caller MUST either complete its fetch or make the bounded-wait exit above; no fetch may fail on a concurrent ref update. Scenario 363 in `scenarios.md` exercises this bullet.
+> - **One fetch lock per checkout.** Every `git fetch` the orchestrator runs in a repository's primary checkout MUST hold an exclusive lock on the file `livespec-fetch.lock` in that checkout's git common directory. The lock is taken with `flock`, which the kernel releases when the holder exits. The holder writes its pid into the file after acquiring, and no caller removes the file, so a holder that dies never leaves a stale lock. A caller acquires the lock before its fetch starts and holds it through any merge, fast-forward or `FETCH_HEAD` read that follows that fetch, releasing it only when all of them complete. This covers the launcher's checkout-at-the-origin-tip refresh, the launch-time Definition-of-Done preflight's fetch, the Dispatcher's source-staging fetch (the "Staged source checkout names" paragraph), and the post-merge and reconcile janitor's refresh of that checkout. The Dispatcher's and the janitor's duties under this bullet are NOT provisional: they bind the Dispatcher whether or not `fleet-launch/` exists, and outlive it. A caller that has waited longer than its configured bound for the lock MUST exit non-zero, without fetching, with a message naming the lock file and the pid recorded in it, and MUST leave the checkout's refs and `FETCH_HEAD` unchanged. The repository MUST commit one `fleet-launch/` helper command that runs a given command in a given checkout under that same lock, with the same bounded wait. That command may be a fetch followed by a merge, so that a seat or script outside the orchestrator that fetches into a primary checkout takes the same lock for its whole fetch-and-merge. With any number of these callers started at once against one checkout, including while the remote's default branch advances between them, each caller MUST either complete its fetch and what follows it, or make the bounded-wait exit above; no fetch, merge or `FETCH_HEAD` read may fail on a concurrent ref update. Scenario 363 in `scenarios.md` exercises this bullet.
+>
+> The `check-fleet-launch` harness cases MUST also cover the fetch lock. Eight concurrent fetch callers against one throwaway checkout, whose throwaway remote advances between them, each exit zero. A caller that outwaits its bound exits non-zero naming the lock file and the holder's pid, with refs and `FETCH_HEAD` unchanged. A lock file whose recorded pid is dead is acquired without waiting.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 362 are claimed by pending proposals and peer drafts.
 
@@ -52,6 +56,11 @@ Feature: concurrent fetches into one checkout never race on its refs
     When that caller's bound expires
     Then the caller exits non-zero naming the lock file and the holder's pid
     And the checkout's refs and FETCH_HEAD are unchanged by that caller
+
+  Scenario: a dead holder leaves no stale lock
+    Given a fetch lock file whose recorded pid names a process that has exited
+    When a fetch caller starts
+    Then it acquires the lock without waiting out its bound
 
   Scenario: the helper takes the same lock
     Given a process holding the checkout's fetch lock
