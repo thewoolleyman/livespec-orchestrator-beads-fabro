@@ -305,6 +305,7 @@ fail-closed-when-unobservable behavior 5v9 built stays the live path.
 
 import argparse
 from collections.abc import Callable
+from importlib import import_module
 
 from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
     add_clear_acp_availability_hold_arguments,
@@ -498,8 +499,10 @@ __all__: list[str] = [
     "warn_item_sizing",
 ]
 
-
 _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
+    "breakage-pass": lambda *, args: import_module(  # type: ignore[reportUnknownLambdaType]
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_breakage_pass"
+    ).run_breakage_pass_command(args=args),
     "claude-cred-status": run_claude_cred_status,
     "classify-tier": run_classify_tier_command,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
@@ -545,6 +548,7 @@ def _add_operator_valve_subcommands(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
+    _ = subparsers.add_parser("breakage-pass").add_argument("--repo", required=True)
     add_classify_tier_arguments(parser=subparsers.add_parser("classify-tier"))
     add_ledger_check_arguments(parser=subparsers.add_parser("ledger-check"))
     add_ledger_normalize_arguments(parser=subparsers.add_parser("ledger-normalize"))
