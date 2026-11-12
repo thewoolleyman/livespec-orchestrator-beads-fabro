@@ -1262,6 +1262,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 349 — Reconciliation applies the whole-run wall budget to a live run no dispatch still owns",
+    "work_item": "bd-ib-ag633q",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 35 — A failing AI acceptance pass reworks only in the AI-dispositive modes",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"

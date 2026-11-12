@@ -14400,3 +14400,66 @@ Feature: a ledger comment that quotes specification text carries each goal-templ
     When a ledger comment quoting Q is appended to a work item
     Then the quoted text in the comment is byte-for-byte Q's text
 ```
+
+## Scenario 349 — Reconciliation applies the whole-run wall budget to a live run no dispatch still owns
+
+```gherkin
+Feature: The whole-run wall budget outlives the dispatch that watched the run
+  As a maintainer whose factory slots are finite
+  I want a run whose dispatcher stopped watching it to be bounded by the same wall budget
+  So that no run holds a factory slot forever because its watcher gave up
+
+  Background:
+    Given an item active with assignee fabro, attributed by its run stamp to this host and a declared factory
+    And the factory reports the stamped run running, with the instant it first reported it running in the run's own record
+    And every ownership lock location for the item on this host was read and none is held by a live process
+
+  Scenario: An unowned run past its budget and not progressing is exported, cancelled and rested for a human
+    Given the run's slot-holding time is strictly greater than the resolved whole-run wall budget
+    And the run created no work-in-progress capture and completed no new workflow node within its progress window
+    When a reconcile-runs pass runs
+    Then the run's preserve-by-reference pointer is written and read back before the run is cancelled
+    And one run-wall-budget-exceeded record names the run, the elapsed seconds, the budget and the pointer
+    And the item rests at blocked with blocked_reason needs-human and a ledger comment naming the remedy resolve-blocked
+
+  Scenario: An unowned run within its budget is held
+    Given the run's slot-holding time is not greater than the resolved whole-run wall budget
+    When a reconcile-runs pass runs
+    Then the run is not cancelled
+    And the pass lists the claim in held with the reason run-live
+
+  Scenario: A run whose ownership lock a live process holds is left to its own watch
+    Given a live process holds the item's ownership lock
+    And the run's slot-holding time is strictly greater than the resolved whole-run wall budget
+    When a reconcile-runs pass runs
+    Then the run is not cancelled by the pass
+    And the pass lists the claim in held with the reason run-live
+
+  Scenario: An unowned run whose record carries no running instant is never cancelled on an unmeasured budget
+    Given the run's own record carries no instant at which it was first reported running
+    When a reconcile-runs pass runs
+    Then the run is not cancelled
+    And the pass lists the claim in held with the reason run-live
+
+  Scenario: An unowned run whose export cannot be read back is held, not cancelled
+    Given the run's slot-holding time is strictly greater than the resolved whole-run wall budget and the run is not progressing
+    And the preserve-by-reference pointer cannot be read back and no verified preservation ref of the run exists
+    When a reconcile-runs pass runs
+    Then the run is not cancelled
+    And one run-wall-budget-held record names the run and the failed measurement
+    And the pass lists the claim in held with the reason run-live
+
+  Scenario: The host's periodic pass bounds another dispatching repository's unowned run
+    Given the run was dispatched by another repository the host's plugin install registry names
+    And that repository's ledger and ownership lock locations are readable
+    And the run's slot-holding time is strictly greater than the resolved whole-run wall budget and the run is not progressing
+    When the periodic reconcile-runs pass started from this repository runs
+    Then the run is exported, cancelled and recorded with run-wall-budget-exceeded
+    And the item rests at blocked with blocked_reason needs-human in the ledger of the repository that dispatched it
+
+  Scenario: A dispatch that stops observing its run hands the budget to reconciliation
+    Given a dispatch's re-attach supervision can no longer read its bound run and retains the item's claim
+    When the dispatch ends
+    Then its outcome record names the run and the factory
+    And states that the run's whole-run wall budget is left to reconciliation
+```
