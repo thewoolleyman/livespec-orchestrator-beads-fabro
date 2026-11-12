@@ -8,6 +8,7 @@ report that every candidate could not preflight its oversized subject.
 from __future__ import annotations
 
 import shlex
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -86,7 +87,9 @@ def latest_input_bound_measurement(*, comments: tuple[str, ...]) -> tuple[int, i
         ):
             attempted_candidates = _candidate_ids(body=body)
             bound_ended_candidates = _field_values(body=body, name="bound-ended-candidate")
-            if not attempted_candidates or set(bound_ended_candidates) != set(attempted_candidates):
+            if not attempted_candidates or Counter(bound_ended_candidates) != Counter(
+                attempted_candidates
+            ):
                 return None
             subject_characters = _integer_field(fields=fields, name="subject-size-characters")
             carried_rider_count = _integer_field(fields=fields, name="carried-rider-count")
