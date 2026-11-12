@@ -39,9 +39,9 @@ In-flight alignment, all `align`: #5058 reads the hold this topic feeds and does
 
 > That derived stem MUST be unique when it is first recorded. It MUST differ from the linked topic recorded on every other work item of the tenant. It MUST NOT name a proposed change under `<spec-root>/proposed_changes/`, or a revision record under `<spec-root>/history/vNNN/proposed_changes/`, that exists when the stem is derived. When the title-derived stem collides with any of these, the Dispatcher MUST extend it with a suffix derived deterministically from the item's id, so deriving again for the same item yields the same topic. A topic already recorded on an item is never re-derived; a recorded topic that collides is repaired only through the `relink-spec-tier` route.
 
-**2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 365 are claimed by pending proposals and peer drafts.
+**2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
-## Scenario 366 — A held item's derived proposal topic is unique against other items and the spec tree
+## Scenario <number assigned at revise> — A held item's derived proposal topic is unique against other items and the spec tree
 
 ```gherkin
 Feature: one held item never inherits another's ratification through a shared topic
@@ -57,4 +57,4 @@ Feature: one held item never inherits another's ratification through a shared to
     And deriving the topic again for the same item yields the same topic
 ```
 
-**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-flvxx3"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. If the revise renumbers Scenario 366, the row and entry MUST carry the renumbered heading text.
+**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-flvxx3"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row and entry MUST carry the heading as numbered at revise.
