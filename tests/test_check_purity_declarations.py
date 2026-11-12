@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import pytest
 from livespec_dev_tooling.check_inventory import inventory_members
 from livespec_dev_tooling.check_purity import audit_check_purity
 from returns.pipeline import is_successful
@@ -54,3 +55,31 @@ def test_purity_inventory_matches_the_aggregate_members() -> None:
     assert tuple(member.name for member in inventory_members(text=inventory.read_text())) == (
         _aggregate_targets()
     )
+
+
+def test_aggregate_targets_ends_at_the_next_recipe_and_ignores_other_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only check targets in the aggregate declaration belong to its inventory."""
+    _ = (tmp_path / "justfile").write_text(
+        "\n".join(
+            (
+                "other:",
+                "    echo ignored",
+                "check:",
+                "    targets=(",
+                "        check-declared",
+                "        unrelated-value",
+                "next-recipe:",
+                "    echo ignored",
+            )
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setitem(globals(), "_REPO_ROOT", tmp_path)
+
+    assert _aggregate_targets() == ("check-declared",)
+    _ = (tmp_path / "justfile").write_text("other:\n    echo ignored\n", encoding="utf-8")
+
+    assert _aggregate_targets() == ()
