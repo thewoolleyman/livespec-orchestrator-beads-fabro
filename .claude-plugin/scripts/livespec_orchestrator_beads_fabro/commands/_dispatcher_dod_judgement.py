@@ -37,7 +37,6 @@ renderer, because a second spelling of the marker is two answers to one question
 from __future__ import annotations
 
 import hashlib
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,6 +45,10 @@ from typing import cast
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     DefinitionOfDone,
     definition_of_done,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
+    OriginSpecUnreadable,
+    origin_spec_h2_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
     CandidateAttempt,
@@ -93,7 +96,6 @@ JUDGEMENT_HELD = "rests-at-needs-human"
 JUDGEMENT_UNAVAILABLE = "did-not-run"
 CAUSE_UNPARSEABLE_VERDICT = "unparseable-verdict"
 
-_H2 = re.compile(r"^##\s+(.+?)\s*$")
 _H2_MARKER = "## "
 _VERDICT_PASSED = "passed"
 _VERDICT_FAILED = "failed"
@@ -349,31 +351,8 @@ def _last_non_empty_line(*, reply: str) -> str | None:
 
 def _heading_body(*, repo: Path, reference: str) -> str:
     """Return an H2 section body, retaining an explicit absence when unresolved."""
-    title = reference.removeprefix(_H2_MARKER)
-    spec_root = repo / _SPEC_DIRNAME
-    if not spec_root.is_dir():
+    sections = origin_spec_h2_sections(repo=repo)
+    if isinstance(sections, OriginSpecUnreadable):
         return _UNRESOLVED_HEADING_BODY
-    for path in sorted(spec_root.glob("*.md")):
-        read = attempt(action=lambda p=path: p.read_text(encoding="utf-8"), exceptions=(OSError,))
-        if isinstance(read, AttemptFailure):
-            continue
-        body = _section_of(text=read, title=title)
-        if body is not None:
-            return body
-    return _UNRESOLVED_HEADING_BODY
-
-
-def _section_of(*, text: str, title: str) -> str | None:
-    """Extract an H2 section through, but not including, the following H2."""
-    collected: list[str] | None = None
-    for raw in text.splitlines():
-        match = _H2.match(raw)
-        if match is None:
-            if collected is not None:
-                collected.append(raw)
-            continue
-        if collected is not None:
-            break
-        if match.group(1) == title:
-            collected = [raw]
-    return "\n".join(collected) if collected is not None else None
+    heading = f"{_H2_MARKER}{reference.removeprefix(_H2_MARKER)}"
+    return sections.get(heading, _UNRESOLVED_HEADING_BODY)

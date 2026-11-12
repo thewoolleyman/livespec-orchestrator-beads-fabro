@@ -25,6 +25,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibili
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_findings import (
     definition_of_done_findings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    judgement_subject,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_display import (
     MECHANICAL_FINDING_PREFIX,
     filing_display,
@@ -68,7 +71,9 @@ def _run(*args: str, cwd: Path) -> None:
 def _publish(*, seed: Path, headings: tuple[str, ...], branch: str = "master") -> None:
     spec = seed / "SPECIFICATION"
     spec.mkdir(exist_ok=True)
-    body = "# Scenarios\n\n" + "".join(f"{heading}\n\nProse.\n\n" for heading in headings)
+    body = "# Scenarios\n\n" + "".join(
+        f"{heading}\n\nProse for {heading}.\n\n" for heading in headings
+    )
     _ = (spec / "scenarios.md").write_text(body, encoding="utf-8")
     _run("add", "-A", cwd=seed)
     _run("commit", "-m", "revise", cwd=seed)
@@ -127,6 +132,22 @@ def test_a_heading_only_origin_master_carries_is_admitted(tmp_path: Path) -> Non
     findings = definition_of_done_findings(item=_item(references=_NEW_HEADING), cwd=primary)
 
     assert findings == ()
+
+
+def test_judgement_subject_and_mechanical_wall_read_a_lagging_checkout_from_origin(
+    tmp_path: Path,
+) -> None:
+    primary = _lagging_primary(tmp_path=tmp_path)
+    item = _item(references=_NEW_HEADING)
+
+    subject = judgement_subject(item=item, cwd=primary)
+    findings = definition_of_done_findings(item=item, cwd=primary)
+
+    assert f"Prose for {_NEW_HEADING}." in subject
+    assert "(this heading does not resolve in the governed spec tree)" not in subject
+    assert findings == ()
+    missing_subject = judgement_subject(item=_item(references=_MISSING_HEADING), cwd=primary)
+    assert "(this heading does not resolve in the governed spec tree)" in missing_subject
 
 
 def test_a_heading_neither_origin_master_nor_the_primary_carries_is_refused_by_name(
