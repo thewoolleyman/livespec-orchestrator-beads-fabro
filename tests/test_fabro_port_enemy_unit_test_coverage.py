@@ -48,7 +48,7 @@ _PORT_CLASSES = (FabroPort, FabroHttpPort)
 # POSITIVE CONTROL for the production scan: verbs this repository has called
 # for long enough that their disappearance would mean the scan broke, not that
 # the Dispatcher stopped calling them.
-_CONTROL_REQUIRED = frozenset({"events", "inspect", "ps", "rm", "run"})
+_CONTROL_REQUIRED = frozenset({"events", "inspect", "ps", "rm", "run", "stages"})
 
 # POSITIVE CONTROL for the enemy scan, same reasoning from the other side.
 _CONTROL_EXERCISED = frozenset({"inspect", "ps", "run"})
