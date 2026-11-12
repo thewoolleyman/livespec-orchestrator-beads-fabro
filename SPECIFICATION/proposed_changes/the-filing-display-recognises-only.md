@@ -13,7 +13,7 @@ created_at: 2026-11-12T06:50:39Z
 
 ### Summary
 
-The Definition of Done reference rules name a governing scenario only as a `## Scenario NN — <title>` heading, so the filing display treats a reference to an unnumbered `## Scenario: <title>` heading as naming no scenario, and never offers one as a candidate. This proposal defines a scenario heading as an H2 of scenarios.md whose title begins `Scenario`, numbered or unnumbered, and requires every surface that recognises scenario references to treat both alike.
+The Definition of Done reference rules name a governing scenario only as a `## Scenario NN — <title>` heading, so the filing display treats a reference to an unnumbered `## Scenario: <title>` heading as naming no scenario, and never offers one as a candidate. This proposal defines a scenario heading as an H2 of scenarios.md of exactly one of two forms, numbered or unnumbered, and requires every surface that recognises scenario references to treat both alike.
 
 ### Motivation
 
@@ -25,7 +25,7 @@ Work item bd-ib-yryub7 (plan bd-ib-ax3rds), routed by the fleet coordinator on 2
 
 In §"Dispatcher admission, WIP cap, and post-merge acceptance", in "The Definition of Done section" paragraph, replace "a `## Scenario NN — <title>` heading of `scenarios.md`" in the reference-line grammar with:
 
-> a SCENARIO HEADING of `scenarios.md`: an H2 whose title begins `Scenario`, in either form the family's specification trees use, numbered (`## Scenario NN — <title>`) or unnumbered (`## Scenario: <title>`)
+> a SCENARIO HEADING of `scenarios.md`: an H2 of exactly one of two forms, numbered (`## Scenario NN — <title>`) or unnumbered (`## Scenario: <title>`)
 
 In the same paragraph, the sentence "Where `scenarios.md` carries a `## Scenario NN — <title>` heading whose scenarios state the behaviour an assertion names, the reference line MUST include that heading" MUST read "Where `scenarios.md` carries a scenario heading whose scenarios state the behaviour an assertion names, …". The rest of the sentence is unchanged.
 
@@ -33,7 +33,7 @@ In §"Self-contained plugin dispatch", the reference-line clause "each `## Scena
 
 Add one sentence after the definition:
 
-> Every surface that decides whether a reference names a scenario, or that offers a scenario heading as the candidate governing an assertion, MUST treat both forms alike. The filing display, the host-side wall and the `dod_gate` node's rubric are such surfaces. A reference to an unnumbered scenario heading MUST NOT be reported as naming no scenario heading.
+> Every surface that decides whether a reference names a scenario, or that offers a scenario heading as the candidate governing an assertion, MUST treat both forms alike. The filing display, the host-side wall, the `dod_gate` node's rubric, and the approve and release valves' Definition-of-Done judgement are such surfaces. A reference to an unnumbered scenario heading MUST NOT be reported as naming no scenario heading.
 
 **2. Scenario (`scenarios.md`).**
 
