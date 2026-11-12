@@ -1,11 +1,2 @@
-# Workflow-edit exemption — one exemption binds to one reviewed change.
-#
-# The change: two purely additive pieces in .github/workflows/ci.yml for the
-# Scenario 279 size bound. One line runs check-materialized-workflow-toml-size in
-# check-metadata-batch, and one new job, check-fleet-materialized-workflow-toml-size,
-# shallow-clones the public fleet repositories anonymously (no token) and runs the
-# fleet-wide render, and ci-green's needs: list gains that job so a fleet
-# overrun blocks the merge. Logically additive: CI runs MORE, never less; the only
-# modified line is the needs: list, extended. Measured on vmi3006760: 7.5 s, 29 s.
-work_item=bd-ib-pwkhqz
-reason=STOP-THE-LINE retag, follow-up to bd-ib-pwkhqz (#4924): ci.yml job check-fleet-materialized-workflow-toml-size image python-v1.192.2 -> python-v1.197.0, the tag every other job uses (bot bump #4923 merged before #4924 and never saw the line), so render-gate-job stops refusing on two distinct container images. One modified line; logically additive (same checks, nothing removed, not slower). Authorized by legacy-coordinator-agent under the 2026-11-03 additive delegation, 2026-11-11 ~11:0xZ, stop-the-line; bd-ib-pwkhqz already carries approval:workflow-edit from its own authorization; plan dispatch-payload-packaging (bd-ib-x5ypbf).
+work_item=bd-ib-nu4sts
+reason=incident-ci job and incident-label-ci workflow so this repository can run expedited incident mode; logically additive (ci-green and export-telemetry require more), coordinator GO under coordinator-duties section 12 and the maintainer ruling of 2026-11-03
