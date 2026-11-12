@@ -36,7 +36,6 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_carry_forward_program import (
@@ -54,19 +53,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     proof_capture_asset_sources,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
-    GH_MINT_HELPER_RELPATH,
-    GH_PUSH_HELPER_RELPATH,
-    GH_WRAPPER_TAIL_RELPATH,
-    gh_mint_helper_source,
-    gh_wrapper_tail_source,
-    github_auth_support_relpaths,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_gate_preview_program import (
+    GATE_PREVIEW_PROGRAM_FILENAME,
+    gate_preview_program_source,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
+from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh_helpers import (
+    gh_refresh_helpers,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME,
     harness_settings_merge_program,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_model import Helper
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     HOOK_LIMIT_PROGRAM_FILENAME,
     hook_limit_program_source,
@@ -111,10 +109,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_from_clones impo
     RUN_FROM_PROGRAM_FILENAME,
     run_from_program_source,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
-    WIP_CAPTURE_PROGRAM_FILENAME,
-    wip_capture_program_source,
-)
 
 __all__: list[str] = [
     "GH_REFRESH_ROOT",
@@ -144,20 +138,14 @@ _READABLE = 0o644
 # The plugins-root programs a node executes directly rather than through an
 # interpreter; every other plugins-root program is read by `python3`.
 _PRIVATE_PROGRAMS = frozenset(
-    (PUBLICATION_PUSH_PROGRAM_FILENAME, COMMIT_RED_PROGRAM_FILENAME, COMMIT_GREEN_PROGRAM_FILENAME)
+    (
+        PUBLICATION_PUSH_PROGRAM_FILENAME,
+        COMMIT_RED_PROGRAM_FILENAME,
+        COMMIT_GREEN_PROGRAM_FILENAME,
+    )
 )
+_EXECUTABLE_PROGRAMS = frozenset((GATE_PREVIEW_PROGRAM_FILENAME,))
 _MERGE_FILENAME = HARNESS_SETTINGS_MERGE_PROGRAM_FILENAME
-
-
-@dataclass(frozen=True, kw_only=True)
-class Helper:
-    """One helper program: its name, where it lands, its mode, and what composes its bytes."""
-
-    name: str
-    root: str
-    path: str
-    mode: int
-    compose: Callable[[], bytes]
 
 
 def _text(*, source: Callable[[], str]) -> Callable[[], bytes]:
@@ -166,10 +154,6 @@ def _text(*, source: Callable[[], str]) -> Callable[[], bytes]:
 
 def _constant(*, text: str) -> Callable[[], bytes]:
     return lambda: text.encode("utf-8")
-
-
-def _file(*, path: Path) -> Callable[[], bytes]:
-    return path.read_bytes
 
 
 def _plugin_root_programs() -> tuple[Helper, ...]:
@@ -184,6 +168,7 @@ def _plugin_root_programs() -> tuple[Helper, ...]:
         ("record-file-merge", RECORD_FILE_MERGE_PROGRAM_FILENAME, record_file_merge_program_source),
         ("hook-limit", HOOK_LIMIT_PROGRAM_FILENAME, hook_limit_program_source),
         ("commit-runner", COMMIT_RUNNER_PROGRAM_FILENAME, commit_runner_program_source),
+        ("implement-gate-preview", GATE_PREVIEW_PROGRAM_FILENAME, gate_preview_program_source),
         ("commit-red", COMMIT_RED_PROGRAM_FILENAME, commit_red_program_source),
         ("commit-green", COMMIT_GREEN_PROGRAM_FILENAME, commit_green_program_source),
         ("review-guard", REVIEW_GUARD_PROGRAM_FILENAME, review_guard_program_source),
@@ -195,7 +180,13 @@ def _plugin_root_programs() -> tuple[Helper, ...]:
             name=name,
             root=PLUGINS_ROOT,
             path=path,
-            mode=_PRIVATE_EXECUTABLE if path in _PRIVATE_PROGRAMS else _READABLE,
+            mode=(
+                _PRIVATE_EXECUTABLE
+                if path in _PRIVATE_PROGRAMS
+                else _EXECUTABLE
+                if path in _EXECUTABLE_PROGRAMS
+                else _READABLE
+            ),
             compose=_text(source=source),
         )
         for name, path, source in named
@@ -211,51 +202,6 @@ def _plugin_root_programs() -> tuple[Helper, ...]:
         for module, source in proof_record_reader_sources()
     )
     return programs + readers
-
-
-def _gh_refresh_helpers(*, scripts_root: Path) -> tuple[Helper, ...]:
-    """The refreshing `gh` wrapper's fixed pieces and, file by file, its vendored support."""
-    fixed = (
-        Helper(
-            name="gh-mint-helper",
-            root=GH_REFRESH_ROOT,
-            path=GH_MINT_HELPER_RELPATH,
-            mode=_EXECUTABLE,
-            compose=_text(source=gh_mint_helper_source),
-        ),
-        Helper(
-            name="gh-push-origin",
-            root=GH_REFRESH_ROOT,
-            path=GH_PUSH_HELPER_RELPATH,
-            mode=_EXECUTABLE,
-            compose=_constant(text=PUSH_ORIGIN_SOURCE),
-        ),
-        Helper(
-            name="gh-wip-capture",
-            root=GH_REFRESH_ROOT,
-            path=f"bin/{WIP_CAPTURE_PROGRAM_FILENAME}",
-            mode=_EXECUTABLE,
-            compose=_text(source=wip_capture_program_source),
-        ),
-        Helper(
-            name="gh-wrapper-tail",
-            root=GH_REFRESH_ROOT,
-            path=GH_WRAPPER_TAIL_RELPATH,
-            mode=_READABLE,
-            compose=_text(source=gh_wrapper_tail_source),
-        ),
-    )
-    support = tuple(
-        Helper(
-            name=f"gh-refresh-support/{relpath.as_posix()}",
-            root=GH_REFRESH_ROOT,
-            path=relpath.as_posix(),
-            mode=_READABLE,
-            compose=_file(path=scripts_root / relpath),
-        )
-        for relpath in github_auth_support_relpaths(scripts_root=scripts_root)
-    )
-    return fixed + support
 
 
 def _credential_use_helpers() -> tuple[Helper, ...]:
@@ -294,7 +240,7 @@ def helper_registry(*, scripts_root: Path | None = None) -> tuple[Helper, ...]:
     """
     root = Path(__file__).resolve().parents[2] if scripts_root is None else scripts_root
     return (
-        _plugin_root_programs() + _gh_refresh_helpers(scripts_root=root) + _credential_use_helpers()
+        _plugin_root_programs() + gh_refresh_helpers(scripts_root=root) + _credential_use_helpers()
     )
 
 
