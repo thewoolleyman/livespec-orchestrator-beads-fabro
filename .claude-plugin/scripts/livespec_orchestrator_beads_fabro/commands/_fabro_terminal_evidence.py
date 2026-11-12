@@ -190,6 +190,8 @@ def _failed_stages(
         if fabro_stage_node(stage=node) != ESCALATION_NODE_ID and _node_failed(outcome=outcome)
     ]
     execution = _completed_nodes(checkpoint=checkpoint) or _conclusion_stages(record=record)
+    if _successful_terminal_predecessor(outcomes=outcomes, execution=execution):
+        return ()
     return _ordered_failures(failed=failed, execution=execution)
 
 
@@ -215,6 +217,30 @@ def _ordered_failures(*, failed: list[str], execution: tuple[str, ...]) -> tuple
                 ordered.append(remaining.pop(index))
                 break
     return tuple((*ordered, *remaining))
+
+
+def _successful_terminal_predecessor(
+    *, outcomes: dict[str, dict[str, Any]], execution: tuple[str, ...]
+) -> bool:
+    """Whether the run reached the terminal from a successful stage.
+
+    A Petri stage map preserves every earlier non-zero visit, including a
+    deliberately non-zero route such as `pr_refresh_head` after it has sent the
+    run onward. When the execution record then names a successful predecessor
+    immediately before `needs_human`, that predecessor is the ending's route;
+    the older failure is history rather than a cause.
+    """
+    if not execution or fabro_stage_node(stage=execution[-1]) != ESCALATION_NODE_ID:
+        return False
+    predecessor = fabro_stage_node(stage=execution[-2]) if len(execution) > 1 else None
+    if predecessor is None:
+        return False
+    for stage, outcome in outcomes.items():
+        if fabro_stage_node(stage=stage) != predecessor:
+            continue
+        status = _text(value=outcome.get("status"))
+        return status is not None and status.casefold() == "succeeded"
+    return False
 
 
 def _completed_nodes(*, checkpoint: dict[str, Any]) -> tuple[str, ...]:
