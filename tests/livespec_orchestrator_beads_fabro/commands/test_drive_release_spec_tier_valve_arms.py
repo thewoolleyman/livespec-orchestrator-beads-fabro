@@ -17,6 +17,7 @@ append-only and the valve says so in its own refusal.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,7 +28,17 @@ from livespec_orchestrator_beads_fabro._store_comments import (
     read_work_item_comments,
 )
 from livespec_orchestrator_beads_fabro.commands import _drive_release_spec_tier_valve as valve
-from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
+from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
+    ENV_SOURCE,
+    FALLBACK_SOURCE,
+    FLAG_SOURCE,
+    InvokerIdentity,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_identity import (
+    HUMAN_KIND,
+    SESSION_KIND,
+    PublishingIdentity,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier import (
     SpecChangeTierDecision,
@@ -153,6 +164,104 @@ def _attested() -> bool:
         comment.text.startswith("livespec-spec-tier-attestation")
         for comment in read_work_item_comments(path=_config(), work_item_id=_ITEM)
     )
+
+
+def _attestation_comment() -> str:
+    return next(
+        comment.text
+        for comment in read_work_item_comments(path=_config(), work_item_id=_ITEM)
+        if comment.text.startswith("livespec-spec-tier-attestation")
+    )
+
+
+def _attestation_journal(*, repo: Path) -> dict[str, object]:
+    return next(
+        json.loads(line)
+        for line in (repo / "tmp" / "fabro-dispatch-journal.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if json.loads(line).get("stage") == valve.RELEASE_SPEC_TIER_STAGE
+    )
+
+
+@pytest.mark.parametrize(
+    ("computed", "actor"),
+    [
+        (
+            PublishingIdentity(
+                kind=SESSION_KIND, identity="codex-session-123", source="CODEX_SESSION_ID"
+            ),
+            "session codex-session-123",
+        ),
+        (
+            PublishingIdentity(
+                kind=HUMAN_KIND,
+                identity="forge-chad",
+                source="gh api user --jq .login",
+            ),
+            "human forge-chad",
+        ),
+        (None, "unattributed:tester@host"),
+    ],
+)
+def test_a_fallback_invocation_attributes_the_attestation_with_its_computed_identity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    computed: PublishingIdentity | None,
+    actor: str,
+) -> None:
+    repo = _held_repo(tmp_path=tmp_path)
+    identity = InvokerIdentity(invoker="unattributed:tester@host", invoker_source=FALLBACK_SOURCE)
+    monkeypatch.setattr(
+        valve, "computed_publishing_identity", lambda **_kwargs: computed, raising=False
+    )
+
+    result = run_human_valve_action(
+        repo=repo,
+        action_id=f"release-spec-tier:{_ITEM}:{_HEADING}",
+        runner=_runner,
+        identity=identity,
+    )
+
+    assert result["status"] == "green", result
+    assert f"actor: {actor}" in _attestation_comment()
+    journal = _attestation_journal(repo=repo)
+    assert journal["actor"] == actor
+    assert journal["invoker"] == identity.invoker
+    assert journal["invoker_source"] == FALLBACK_SOURCE
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        InvokerIdentity(invoker="role:flag", invoker_source=FLAG_SOURCE),
+        InvokerIdentity(invoker="role:environment", invoker_source=ENV_SOURCE),
+    ],
+)
+def test_an_asserted_invoker_remains_the_attestation_actor(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, identity: InvokerIdentity
+) -> None:
+    repo = _held_repo(tmp_path=tmp_path)
+    monkeypatch.setattr(
+        valve,
+        "computed_publishing_identity",
+        lambda **_kwargs: pytest.fail("asserted invokers must not be recomputed"),
+        raising=False,
+    )
+
+    result = run_human_valve_action(
+        repo=repo,
+        action_id=f"release-spec-tier:{_ITEM}:{_HEADING}",
+        runner=_runner,
+        identity=identity,
+    )
+
+    assert result["status"] == "green", result
+    assert f"actor: {identity.invoker}" in _attestation_comment()
+    journal = _attestation_journal(repo=repo)
+    assert journal["actor"] == identity.invoker
+    assert journal["invoker"] == identity.invoker
+    assert journal["invoker_source"] == identity.invoker_source
 
 
 def test_an_unreadable_specification_tree_refuses_before_anything_is_written(
