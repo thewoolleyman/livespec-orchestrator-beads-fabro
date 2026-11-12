@@ -60,7 +60,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_attempts import
     attempt_cost_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_chain import run_attempt_windows
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandRunner,
+    JournalWriter,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import factory_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_limit_classify import (
     ProviderLimitRelease,
@@ -105,6 +108,7 @@ def released_run_attempt_cost_record(
     release: ProviderLimitRelease,
     occurred_at: str,
     runner: CommandRunner | None = None,
+    journal: JournalWriter | None = None,
 ) -> dict[str, object]:
     """The one attempt-cost observation this released run is recorded as."""
     factory = _factory(repo=repo, name=release.factory)
@@ -117,6 +121,8 @@ def released_run_attempt_cost_record(
             run_id=run_id,
             factory=factory,
             runner=ShellCommandRunner() if runner is None else runner,
+            work_item_id=work_item_id,
+            journal=journal,
         )
     )
     return attempt_cost_record(
@@ -147,10 +153,25 @@ def _factory(*, repo: Path, name: str) -> FactoryTarget | None:
     return resolved
 
 
-def _exposed(*, repo: Path, run_id: str, factory: FactoryTarget, runner: CommandRunner) -> _Exposed:
+def _exposed(
+    *,
+    repo: Path,
+    work_item_id: str,
+    run_id: str,
+    factory: FactoryTarget,
+    runner: CommandRunner,
+    journal: JournalWriter | None,
+) -> _Exposed:
     """Both halves of what this run's record exposes, each asked for on its own."""
     return _Exposed(
-        windows=run_attempt_windows(repo=repo, run_id=run_id, factory=factory, runner=runner),
+        windows=run_attempt_windows(
+            repo=repo,
+            work_item_id=work_item_id,
+            run_id=run_id,
+            factory=factory,
+            runner=runner,
+            journal=journal,
+        ),
         usd_micros=_engine_usd_micros(repo=repo, run_id=run_id, factory=factory, runner=runner),
     )
 

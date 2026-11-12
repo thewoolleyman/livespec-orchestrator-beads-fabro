@@ -8,6 +8,8 @@ seam module's docstring for the cycle. Only the admission valve imports this.
 
 from __future__ import annotations
 
+from functools import partial
+
 from livespec_orchestrator_beads_fabro.commands._acp_availability_probe_run import (
     run_availability_probe,
 )
@@ -35,5 +37,7 @@ def confirmation_for(
     if not evaluated:
         return None
     return ConfirmationTurns(
-        perform=run_availability_probe, journal=journal, work_item_id=evaluated[0].id
+        perform=partial(run_availability_probe, journal=journal),
+        journal=journal,
+        work_item_id=evaluated[0].id,
     )

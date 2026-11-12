@@ -57,6 +57,7 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port_records import (
     fabro_inspect_record,
     fabro_run_summaries_from_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroEventsResult
 
 __all__: list[str] = [
     "PROBE_READ_TIMEOUT_SECONDS",
@@ -77,7 +78,7 @@ PROBE_READ_TIMEOUT_SECONDS = 60.0
 
 
 def probe_run_observation(
-    *, port: FabroPort, run_id: str | None
+    *, port: FabroPort, run_id: str | None, events: FabroEventsResult | None
 ) -> tuple[AcpProbeObservation, int | None]:
     """Read one ended probe run, as `(observation, cost)`.
 
@@ -97,17 +98,17 @@ def probe_run_observation(
             None,
         )
     inspected = port.inspect(run_id=run_id, timeout_seconds=PROBE_READ_TIMEOUT_SECONDS)
-    events = port.events(run_id=run_id, timeout_seconds=PROBE_READ_TIMEOUT_SECONDS)
     record = fabro_inspect_record(payload=inspected.payload)
     return (
         AcpProbeObservation(
             turn_completed=_turn_completed(record=record),
-            acp_started=_acp_started(payload=events.payload),
+            acp_started=_acp_started(payload=None if events is None else events.payload),
             cancelled=(inspected.status_kind or "") in _CANCELLED_STATUS_KINDS,
             timed_out=False,
             failure=inspected.failure,
             authentication_failed=_authentication_failed(
-                inspect_payload=inspected.payload, events_payload=events.payload
+                inspect_payload=inspected.payload,
+                events_payload=None if events is None else events.payload,
             ),
         ),
         _cost(payload=inspected.payload),

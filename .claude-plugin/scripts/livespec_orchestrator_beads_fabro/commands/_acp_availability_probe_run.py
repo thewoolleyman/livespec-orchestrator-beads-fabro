@@ -107,6 +107,7 @@ from livespec_orchestrator_beads_fabro.commands._config import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_binary_record import (
     engine_binary,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_types import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import factory_fabro_bin
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment import (
     factory_environment_id,
@@ -120,6 +121,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_environment 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroRunner
 
@@ -132,6 +137,13 @@ __all__: list[str] = [
 # `ShellCommandRunner`'s own mapping of a timed-out command. Named here so the
 # bound's own test reads the runner's value rather than a literal beside it.
 PROBE_LAUNCH_TIMEOUT_EXIT_CODE = 124
+
+
+class _DiscardJournal:
+    """Compatibility sink for callers that do not own a dispatch journal."""
+
+    def append(self, *, record: dict[str, object]) -> None:
+        _ = record
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -181,6 +193,7 @@ def run_availability_probe(  # noqa: PLR0913 — kw-only probe inputs; each is o
     now_iso: str,
     timeout_seconds: int,
     runner: FabroRunner | None = None,
+    journal: JournalWriter | None = None,
 ) -> AcpAvailabilityProbeResult | str:
     """Run one confirmation turn for this candidate, or refuse saying why.
 
@@ -241,6 +254,8 @@ def run_availability_probe(  # noqa: PLR0913 — kw-only probe inputs; each is o
             now_iso=now_iso,
             timeout_seconds=timeout_seconds,
             manifest=AVAILABILITY_PROBE_MANIFEST + credential.manifest_tail,
+            repo=repo,
+            journal=_DiscardJournal() if journal is None else journal,
         )
     finally:
         credential.release()
@@ -257,6 +272,8 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
     now_iso: str,
     timeout_seconds: int,
     manifest: str,
+    repo: Path,
+    journal: JournalWriter,
 ) -> AcpAvailabilityProbeResult:
     """Launch the turn, observe its ending, and build the records it leaves."""
     launch = _launched(
@@ -268,7 +285,24 @@ def _performed(  # noqa: PLR0913 — the same kw-only probe inputs as above plus
     observation, cost = (
         (_timed_out_observation(), None)
         if timed_out
-        else probe_run_observation(port=port, run_id=run_id)
+        else probe_run_observation(
+            port=port,
+            run_id=run_id,
+            events=None
+            if run_id is None
+            else guarded_fabro_events_read(
+                port=port,
+                journal=journal,
+                slots_root=repo / "tmp" / "fabro-event-read-slots",
+                request=FabroEventsReadRequest(
+                    work_item_id=work_item_id,
+                    run_id=run_id,
+                    factory=factory,
+                    caller="availability-confirmation-reader",
+                    timeout_seconds=PROBE_READ_TIMEOUT_SECONDS,
+                ),
+            ),
+        )
     )
     ending = probe_ending(observation=observation)
     return AcpAvailabilityProbeResult(

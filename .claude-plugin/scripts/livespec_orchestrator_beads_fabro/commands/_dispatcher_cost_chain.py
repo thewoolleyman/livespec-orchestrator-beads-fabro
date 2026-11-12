@@ -37,6 +37,7 @@ to be mistaken for an observation.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._acp_attempt_price import attempt_price
@@ -69,6 +70,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_sink import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
+    JournalWriter,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_bin import (
     factory_fabro_bin,
@@ -78,10 +80,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_item_run_target impo
     ACP_EVENTS_TIMEOUT_SECONDS,
     resolve_item_run_factory,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 
 __all__: list[str] = [
+    "CostReadContext",
     "chain_costs",
     "run_attempt_windows",
     "run_chain_cost",
@@ -100,6 +107,21 @@ FactoryResolver = Callable[..., FactoryTarget | None]
 _PricingSources = tuple[Mapping[str, AcpModelEntry], Mapping[str, AcpNodeChain]]
 
 
+class _DiscardJournal:
+    """The compatibility sink used by direct, non-Dispatcher callers."""
+
+    def append(self, *, record: dict[str, object]) -> None:
+        _ = record
+
+
+@dataclass(frozen=True, kw_only=True)
+class CostReadContext:
+    """The host-local state one cost event read needs."""
+
+    repo: Path
+    journal: JournalWriter | None = None
+
+
 def chain_costs(
     *,
     repo: Path,
@@ -107,6 +129,7 @@ def chain_costs(
     sink: CostSink,
     runner: CommandRunner | None = None,
     factory_of: FactoryResolver | None = None,
+    journal: JournalWriter | None = None,
 ) -> dict[str, ChainCost]:
     """The per-attempt cost of every GREEN outcome whose run reports a chain.
 
@@ -120,15 +143,16 @@ def chain_costs(
     dispatch stamp, so every read of one run agrees about which host to ask.
     """
     resolver = resolve_item_run_factory if factory_of is None else factory_of
+    context = CostReadContext(repo=repo, journal=journal)
     costs: dict[str, ChainCost] = {}
     for outcome in outcomes:
         if outcome.status != "green" or outcome.fabro_run_id is None:
             continue
-        factory = _resolved_factory(resolver=resolver, repo=repo, outcome=outcome)
+        factory = _resolved_factory(resolver=resolver, repo=context.repo, outcome=outcome)
         if factory is None:
             continue
         cost = run_chain_cost(
-            repo=repo,
+            context=context,
             work_item_id=outcome.work_item_id,
             run_id=outcome.fabro_run_id,
             sink=sink,
@@ -142,7 +166,7 @@ def chain_costs(
 
 def run_chain_cost(
     *,
-    repo: Path,
+    context: CostReadContext,
     work_item_id: str,
     run_id: str,
     sink: CostSink,
@@ -151,17 +175,19 @@ def run_chain_cost(
 ) -> ChainCost | None:
     """One run's per-attempt cost, or None when the events establish no chain."""
     windows = run_attempt_windows(
-        repo=repo,
+        repo=context.repo,
         run_id=run_id,
         factory=factory,
         runner=ShellCommandRunner() if runner is None else runner,
+        work_item_id=work_item_id,
+        journal=context.journal,
     )
     if not windows:
         return None
     observations = _observations(sink=sink, work_item_id=work_item_id)
     if observations is None:
         return None
-    catalog, chains = _pricing_sources(repo=repo)
+    catalog, chains = _pricing_sources(repo=context.repo)
     return chain_cost(
         observations=observations,
         windows=windows,
@@ -188,7 +214,13 @@ def _resolved_factory(
 
 
 def run_attempt_windows(
-    *, repo: Path, run_id: str, factory: FactoryTarget, runner: CommandRunner
+    *,
+    repo: Path,
+    work_item_id: str,
+    run_id: str,
+    factory: FactoryTarget,
+    runner: CommandRunner,
+    journal: JournalWriter | None = None,
 ) -> tuple[AcpAttemptWindow, ...]:
     """The run's attempt windows, read server-qualified, or `()`.
 
@@ -204,7 +236,14 @@ def run_attempt_windows(
     with the windows, not how the stream is read.
     """
     scan = attempt(
-        action=lambda: _scan(repo=repo, run_id=run_id, factory=factory, runner=runner),
+        action=lambda: _scan(
+            repo=repo,
+            work_item_id=work_item_id,
+            run_id=run_id,
+            factory=factory,
+            runner=runner,
+            journal=_DiscardJournal() if journal is None else journal,
+        ),
         exceptions=_RECOVERABLE,
     )
     if isinstance(scan, AttemptFailure) or scan is None:
@@ -213,7 +252,13 @@ def run_attempt_windows(
 
 
 def _scan(
-    *, repo: Path, run_id: str, factory: FactoryTarget, runner: CommandRunner
+    *,
+    repo: Path,
+    work_item_id: str,
+    run_id: str,
+    factory: FactoryTarget,
+    runner: CommandRunner,
+    journal: JournalWriter,
 ) -> AcpEventScan | None:
     """Fetch and read the run's event stream, or None when it is unusable."""
     port = FabroPort(
@@ -222,8 +267,19 @@ def _scan(
         runner=runner,
         cwd=repo,
     )
-    events = port.events(run_id=run_id, timeout_seconds=ACP_EVENTS_TIMEOUT_SECONDS)
-    if events.command.exit_code != 0:
+    events = guarded_fabro_events_read(
+        port=port,
+        journal=journal,
+        slots_root=repo / "tmp" / "fabro-event-read-slots",
+        request=FabroEventsReadRequest(
+            work_item_id=work_item_id,
+            run_id=run_id,
+            factory=factory.name,
+            caller="cost-reader",
+            timeout_seconds=ACP_EVENTS_TIMEOUT_SECONDS,
+        ),
+    )
+    if events is None:
         return None
     read = scan_acp_events(payload=events.payload)
     return None if isinstance(read, str) else read

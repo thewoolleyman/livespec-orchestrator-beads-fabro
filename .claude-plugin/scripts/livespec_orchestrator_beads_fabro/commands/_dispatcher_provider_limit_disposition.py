@@ -257,9 +257,20 @@ def dispose_provider_limit_release(
     if owed.release_record:
         build = released_run_attempt_cost_record if attempt_cost_of is None else attempt_cost_of
         journal.append(record=provider_limit_release_record(release=release, work_item_id=item.id))
-        journal.append(
-            record=build(repo=repo, work_item_id=item.id, release=release, occurred_at=now_iso)
-        )
+        if attempt_cost_of is None:
+            journal.append(
+                record=build(
+                    repo=repo,
+                    work_item_id=item.id,
+                    release=release,
+                    occurred_at=now_iso,
+                    journal=journal,
+                )
+            )
+        else:
+            journal.append(
+                record=build(repo=repo, work_item_id=item.id, release=release, occurred_at=now_iso)
+            )
     _release_claim(repo=repo, item=item, journal=journal, release=release)
 
 

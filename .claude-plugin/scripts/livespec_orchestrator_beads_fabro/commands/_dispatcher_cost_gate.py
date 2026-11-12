@@ -142,7 +142,7 @@ def _cost_gate(
     # agree about each run's cost, and two reads of a live event stream cannot
     # be proven to agree — the disagreement would be invisible, because both
     # produce a well-formed cost.
-    chains = _chain_costs(args=args, repo=repo, outcomes=outcomes, runner=runner)
+    chains = _chain_costs(args=args, repo=repo, outcomes=outcomes, runner=runner, journal=journal)
     refusals = gate_wave(
         unattended=not bool(getattr(args, "items", None) or getattr(args, "item", None)),
         outcomes=tuple(outcomes),
@@ -178,6 +178,7 @@ def _chain_costs(
     repo: Path,
     outcomes: list[DispatchOutcome],
     runner: CommandRunner,
+    journal: JournalFile,
 ) -> dict[str, ChainCost]:
     """The per-attempt cost of every green outcome, or `{}` — never a raise.
 
@@ -192,6 +193,7 @@ def _chain_costs(
             outcomes=tuple(outcomes),
             sink=CostSink(path=cost_sink_path(args=args, repo=repo)),
             runner=runner,
+            journal=journal,
         ),
         exceptions=(AttributeError, OSError, RuntimeError, ValueError),
     )

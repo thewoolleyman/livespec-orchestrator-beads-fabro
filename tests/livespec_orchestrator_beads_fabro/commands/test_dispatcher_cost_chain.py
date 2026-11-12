@@ -131,7 +131,7 @@ def run_chain_cost(
     runner: Any,
 ) -> Any:
     return _chain_module().run_chain_cost(
-        repo=repo,
+        context=_chain_module().CostReadContext(repo=repo),
         work_item_id=work_item_id,
         run_id=run_id,
         sink=sink,
