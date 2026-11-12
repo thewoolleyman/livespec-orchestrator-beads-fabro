@@ -52,7 +52,9 @@ import shlex
 import subprocess
 import time
 from pathlib import Path
+from typing import cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._acp_catalogs import builtin_catalogs
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
@@ -281,6 +283,25 @@ def _wait_for_first_beat(*, beat_file: Path, process: subprocess.Popen[str]) -> 
         assert process.poll() is None, process.stderr.read() if process.stderr is not None else ""
         time.sleep(0.05)
     raise AssertionError("the launch never recorded its readiness heartbeat")
+
+
+def test_a_readiness_rendezvous_diagnoses_a_launch_that_never_beats(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A bounded readiness wait reports a launch that never becomes observable."""
+
+    class _StillRunning:
+        stderr = None
+
+        def poll(self) -> None:
+            return None
+
+    monkeypatch.setattr(time, "sleep", lambda _: None)
+    with pytest.raises(AssertionError, match="never recorded its readiness heartbeat"):
+        _wait_for_first_beat(
+            beat_file=tmp_path / "beats",
+            process=cast(subprocess.Popen[str], _StillRunning()),
+        )
 
 
 def test_every_resolved_adapter_launches_through_the_guard(tmp_path: Path) -> None:
