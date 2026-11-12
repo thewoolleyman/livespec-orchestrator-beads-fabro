@@ -388,6 +388,19 @@ exclude_also = [
 # MUST stay above the [[...mirror_pairings]] array-of-tables below, for the same
 # reason `file_lloc_hard_gate` must.
 delegated_gate = true
+# Gate Job resources, declared under livespec-dev-tooling's "Declared gate
+# resources" contract (livespec-dev-tooling >= 1.199.0). The values were
+# measured through the normal gate client on 2026-11-12, on poweredge-xubuntu
+# under near-equal node load (CPU P50 68.8 and 70.4 of 72):
+# - check-per-file-coverage test run: 929.22 s at 8 workers, 796.70 s at 12.
+# - working set: 4.10 GiB at 8 workers, 5.22 GiB at 12 (87% of the 6Gi default).
+# The 6Gi default leaves too little headroom at 12 workers, so 8Gi is declared.
+# gate_cpu stays at the renderer default of 5: the Job has no CPU limit, so the
+# request only reserves CPU and does not cap it.
+# Source: livespec-dev-tooling plan gate-job-resources, research note 003 (plan
+# assertion 5, epic livespec-dev-tooling-ukoeah).
+gate_parallelism = 12
+gate_memory = "8Gi"
 # The dev host delegates a hand commit's aggregate when it can submit a gates
 # Job; sandbox and credentialless hosts retain the local pre-commit gate. The
 # delegate reports the remote Job and staged-tree hash when it reaches a verdict.
