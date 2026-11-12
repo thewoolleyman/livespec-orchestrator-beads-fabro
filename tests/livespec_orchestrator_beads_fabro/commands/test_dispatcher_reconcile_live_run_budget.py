@@ -23,3 +23,16 @@ def test_an_unowned_running_claim_past_its_budget_is_a_wall_budget_candidate() -
         elapsed_seconds=3601.0,
         budget_seconds=3600.0,
     )
+
+
+def test_an_unowned_parked_live_claim_past_its_budget_is_a_wall_budget_candidate() -> None:
+    """A live run keeps its slot while parked, not only while executing."""
+    assert _MODULE_PATH.is_file()
+    module = importlib.import_module(_MODULE)
+
+    assert module.should_enforce_wall_budget(
+        run_status="blocked",
+        owner_liveness="none",
+        elapsed_seconds=3601.0,
+        budget_seconds=3600.0,
+    )

@@ -10,6 +10,15 @@ from __future__ import annotations
 
 __all__: list[str] = ["should_enforce_wall_budget"]
 
+_SLOT_HOLDING_STATUSES = frozenset(
+    {
+        "blocked",
+        "human_input_required",
+        "paused",
+        "running",
+    }
+)
+
 
 def should_enforce_wall_budget(
     *,
@@ -25,7 +34,7 @@ def should_enforce_wall_budget(
     within budget just as it is in the dispatch watch.
     """
     return (
-        run_status == "running"
+        run_status in _SLOT_HOLDING_STATUSES
         and owner_liveness == "none"
         and elapsed_seconds is not None
         and elapsed_seconds > budget_seconds
