@@ -129,7 +129,11 @@ def _git_file(*, repo: Path, name: str) -> Path:
 
 
 def _run_node(*, repo: Path, node: str, plugins: Path) -> subprocess.CompletedProcess[str]:
-    script = _attributes(node=node).get("script", "exit 2")
+    script = (
+        _attributes(node=node)
+        .get("script", "exit 2")
+        .replace("{{ inputs.default_branch }}", "master")
+    )
     env = dict(os.environ)
     env["LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT"] = str(plugins)
     return subprocess.run(
@@ -331,6 +335,110 @@ def test_review_fix_settle_records_the_failed_commit_run_brief(tmp_path: Path) -
     assert "repository commit hook ran" in brief
     assert _ERROR_LINE in brief
     assert brief in result.stderr
+
+
+def test_fix_settle_records_the_failed_brief_before_its_reentry_sentinel(tmp_path: Path) -> None:
+    """A failed fix run exports its runner brief before asking the graph to re-enter."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    path = _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    )
+    _ = path.with_suffix(".output").write_text(
+        f"lefthook hook: pre-commit\nFailed targets (1):\n  - {_FAILED_TARGET}\n{_ERROR_LINE}\n",
+        encoding="utf-8",
+    )
+
+    result = _run_node(repo=repo, node=_FIX_SETTLE, plugins=plugins)
+
+    assert result.returncode != 0
+    brief = _git_file(repo=repo, name=_FIX_LIVE_GIT_PATH).read_text(encoding="utf-8")
+    assert brief in result.stderr
+    assert result.stderr.index(brief) < result.stderr.index("LIVESPEC_FIX_COMMIT_RUN_FAILED")
+
+
+def test_review_fix_settle_records_a_git_refusal_after_a_passing_hook(tmp_path: Path) -> None:
+    """The settle output preserves the runner's `failed targets: none` Git refusal."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    refusal = "fatal: cannot amend during an unresolved merge"
+    path = _run_record(
+        repo=repo,
+        record={
+            "state": "failed",
+            "exit_code": 1,
+            "hook_ran": True,
+            "hook_passed": True,
+            "git_refusal_line": refusal,
+        },
+    )
+    _ = path.with_suffix(".output").write_text(
+        f"All 1 targets passed.\n{refusal}\n", encoding="utf-8"
+    )
+
+    result = _run_node(repo=repo, node=_REVIEW_FIX_SETTLE, plugins=plugins)
+
+    assert result.returncode == 0, result.stderr
+    assert "failed targets: none" in result.stderr
+    assert "the repository commit hook passed" in result.stderr
+    assert refusal in result.stderr
+
+
+def _open_review_fix_red(*, repo: Path) -> None:
+    """Create the authored open Red that the route recognizes above the default branch."""
+    _ = subprocess.run(["git", "config", "user.name", "Test User"], cwd=repo, check=True)
+    _ = subprocess.run(
+        ["git", "config", "user.email", "test@example.invalid"], cwd=repo, check=True
+    )
+    _ = (repo / "base.py").write_text("base = 1\n", encoding="utf-8")
+    _ = subprocess.run(["git", "add", "base.py"], cwd=repo, check=True)
+    _ = subprocess.run(["git", "commit", "-m", "base"], cwd=repo, check=True)
+    _ = subprocess.run(
+        ["git", "update-ref", "refs/remotes/origin/master", "HEAD"], cwd=repo, check=True
+    )
+    tests = repo / "tests"
+    tests.mkdir()
+    _ = (tests / "test_red.py").write_text(
+        "def test_red() -> None:\n    assert False\n", encoding="utf-8"
+    )
+    _ = subprocess.run(["git", "add", "tests/test_red.py"], cwd=repo, check=True)
+    _ = subprocess.run(
+        [
+            "git",
+            "commit",
+            "-m",
+            "test: leave an open Red\n\nTDD-Red-Test-File-Checksum: red\n",
+        ],
+        cwd=repo,
+        check=True,
+    )
+
+
+def test_review_fix_open_red_brief_carries_the_settled_failure_cause(tmp_path: Path) -> None:
+    """The Green-amend retry names the failed target and runner output tail."""
+    repo = _clone(tmp_path)
+    _open_review_fix_red(repo=repo)
+    tail = "the hook's final diagnostic"
+    _ = _git_file(repo=repo, name=_REVIEW_FIX_LIVE_GIT_PATH).write_text(
+        _brief(
+            state="failed",
+            body=(
+                f"failed targets: {_FAILED_TARGET}\n\nCommit run {_RUN_ID} ended FAILED with exit status 1.\n"
+                f"Its own error lines:\n\n{tail}\n"
+            ),
+        ),
+        encoding="utf-8",
+    )
+
+    result = _run_node(repo=repo, node="review_fix_open_red_route", plugins=tmp_path)
+
+    assert result.returncode == 0, result.stderr
+    brief = _git_file(repo=repo, name="livespec-review-fix-open-red-brief").read_text(
+        encoding="utf-8"
+    )
+    assert f"failed targets: {_FAILED_TARGET}" in brief
+    assert tail in brief
 
 
 def test_an_absent_runner_leaves_no_brief_and_still_exits_zero(tmp_path: Path) -> None:
