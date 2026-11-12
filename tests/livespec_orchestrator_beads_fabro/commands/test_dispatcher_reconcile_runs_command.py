@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_pass_snapshot as pass_snapshot
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_reconcile_runs_command as cli
 from livespec_orchestrator_beads_fabro.commands._config import FactoryTarget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_grace import HeldRun
@@ -267,6 +268,32 @@ def test_a_dry_run_reaches_the_reconciler_as_a_dry_run(
     assert calls["fabro_bin_cwd"] == tmp_path
 
 
+def test_a_standalone_pass_shares_its_journal_snapshot_with_later_readers(
+    *,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The timer command, not only its nested pass, owns the snapshot scope."""
+    _ = capsys
+    calls = _stub(monkeypatch=monkeypatch, summary=_summary())
+    journal = tmp_path / "journal.jsonl"
+    foreign_journal = tmp_path / "other" / "tmp" / "fabro-dispatch-journal.jsonl"
+    _ = journal.write_text('{"stage": "before"}\n', encoding="utf-8")
+    foreign_journal.parent.mkdir(parents=True)
+    _ = foreign_journal.write_text('{"stage": "foreign-before"}\n', encoding="utf-8")
+    probe = _StandaloneSnapshotProbe(journal=journal, foreign_journal=foreign_journal)
+    monkeypatch.setattr(pass_snapshot.json, "loads", probe.loads)
+    monkeypatch.setattr(cli, "reconcile_runs", probe.reconcile)
+    monkeypatch.setattr(cli, "emit_reconcile_pass_span", probe.emit_span)
+
+    exit_code = main(argv=["reconcile-runs", "--repo", str(tmp_path), "--journal", str(journal)])
+
+    assert exit_code == 0
+    assert probe.parsed == ['{"stage": "before"}', '{"stage": "foreign-before"}']
+    assert calls["factories"] == (tmp_path, None)
+
+
 def test_a_failure_on_either_leg_sets_the_nonzero_exit(
     *,
     capsys: pytest.CaptureFixture[str],
@@ -398,6 +425,39 @@ def test_an_unconfigured_grace_reaches_the_reconciler_as_the_documented_default(
     assert capsys.readouterr().out == "(no orphaned fabro runs found)\n"
     assert isinstance(inputs, dict)
     assert inputs["blocked_run_grace_seconds"] == 1800
+
+
+class _StandaloneSnapshotProbe:
+    def __init__(self, *, journal: Path, foreign_journal: Path) -> None:
+        self.journal = journal
+        self.foreign_journal = foreign_journal
+        self.parsed: list[str] = []
+        self._original_loads = pass_snapshot.json.loads
+
+    def loads(self, *args: Any, **kwargs: Any) -> Any:
+        document = args[0]
+        if isinstance(document, str):
+            self.parsed.append(document)
+        return self._original_loads(*args, **kwargs)
+
+    def reconcile(self, *, inputs: Any, factories: Any, dry_run: bool) -> ReconcileRunsSummary:
+        _ = (factories, dry_run)
+        own_first = pass_snapshot.snapshot_records(journal_path=inputs.journal.path)
+        own_second = pass_snapshot.snapshot_records(journal_path=inputs.journal.path)
+        foreign_first = pass_snapshot.snapshot_records(journal_path=self.foreign_journal)
+        foreign_second = pass_snapshot.snapshot_records(journal_path=self.foreign_journal)
+        inputs.journal.append(record={"stage": "during-reconcile"})
+        after_append = pass_snapshot.snapshot_records(journal_path=inputs.journal.path)
+        assert own_first == own_second == ({"stage": "before"},)
+        assert foreign_first == foreign_second == ({"stage": "foreign-before"},)
+        assert after_append is not None
+        assert after_append[-1]["stage"] == "during-reconcile"
+        return _summary()
+
+    def emit_span(self, **_: Any) -> None:
+        later_records = pass_snapshot.snapshot_records(journal_path=self.journal)
+        assert later_records is not None
+        assert later_records[-1]["stage"] == "reconcile-runs-pass"
 
 
 def _stub(
