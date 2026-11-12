@@ -16,8 +16,9 @@ note 004), then the CHECKOUT's own materializer (`_dispatcher_helper_materialize
 The manifest rides the step's `env` and reaches the materializer on standard
 input, which survives the setup-node splice renaming the variable.
 
-EVERY FAILURE IS NAMED. A commit the forge does not serve, a materializer missing at
-it, and anything the materializer refuses all end the step non-zero with
+EVERY FAILURE IS NAMED. A commit the forge does not serve, a fetch that outlives the
+step's `HELPER_FETCH_TIMEOUT_SECONDS` bound, a materializer missing at it, and
+anything the materializer refuses all end the step non-zero with
 `LIVESPEC_PREPARE_PAYLOAD_DIGEST_MISMATCH: <helper>: <reason>`, and a failed setup
 step ends the run before `dod_gate` (`_dispatcher_setup_nodes`).
 
@@ -60,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_plugins impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import ShellCommandRunner
 
 __all__: list[str] = [
+    "HELPER_FETCH_TIMEOUT_SECONDS",
     "HELPER_MANIFEST_ENV",
     "default_helper_roots",
     "helper_fetch_prepare_step",
@@ -67,6 +69,12 @@ __all__: list[str] = [
 ]
 
 HELPER_MANIFEST_ENV = "LIVESPEC_DISPATCH_HELPER_MANIFEST"
+# The step's own bound on the forge fetch, in seconds. The measured fetch takes
+# under a second (research note 004); without a bound of its own a fetch that
+# never returns waits out the setup node's 1800 s limit, and the run then reports
+# the node's limit rather than the fetch. `timeout` exits 124 when it fires, which
+# the script names as its own cause, apart from a fetch the forge refuses.
+HELPER_FETCH_TIMEOUT_SECONDS = 120
 _SPARSE_PATHS = ("/.claude-plugin/scripts/", "/.claude-plugin/.fabro/")
 _MATERIALIZER = "livespec_orchestrator_beads_fabro/commands/_dispatcher_helper_materialize.py"
 _ENTRY = (
@@ -95,6 +103,10 @@ def helper_fetch_prepare_step(
     arguments = " ".join(f'"{name}={spelled[name]}"' for name in sorted(spelled))
     fail = f"{HELPER_DIGEST_MISMATCH_CAUSE}: helper-manifest:"
     unfetchable = f"commit {source.commit} cannot be fetched from {source.repository}"
+    bound = HELPER_FETCH_TIMEOUT_SECONDS
+    timed_out = (
+        f"fetch of commit {source.commit} from {source.repository} timed out after {bound} s"
+    )
     unchecked = f"commit {source.commit} does not check out"
     no_materializer = f"source path {_MATERIALIZER} missing at commit {source.commit}"
     fetch = f"fetch -q --depth=1 --filter=blob:none --no-tags origin {commit}"
@@ -110,7 +122,9 @@ def helper_fetch_prepare_step(
             'git init -q "$c"',
             f'git -C "$c" sparse-checkout set --no-cone {" ".join(_SPARSE_PATHS)}',
             f'git -C "$c" remote add origin {repository}',
-            f'git -C "$c" {fetch} || fail "{unfetchable}"',
+            f'r=0; timeout {bound} git -C "$c" {fetch} || r=$?',
+            f'[ "$r" -ne 124 ] || fail "{timed_out}"',
+            f'[ "$r" -eq 0 ] || fail "{unfetchable}"',
             f'git -C "$c" checkout -q --detach FETCH_HEAD || fail "{unchecked}"',
             's="$c/.claude-plugin/scripts"',
             f'test -f "$s/{_MATERIALIZER}" || fail "{no_materializer}"',
