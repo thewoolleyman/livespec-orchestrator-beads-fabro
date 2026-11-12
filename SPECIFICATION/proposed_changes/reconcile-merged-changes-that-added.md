@@ -34,9 +34,9 @@ In-flight alignment, all `align`: #5054 changes how the drift judge receives its
 
 > When the repository's detection-coverage anchor carries no completed drift record, a drift-job run MUST take its declared scope from a BASELINE merge the operator names on that run, and process every default-branch merge after it exactly as this bullet states. The run MUST record the baseline merge SHA and the operator in its attempt record. Without a named baseline, such a run MUST refuse, writing only an attempt record that names the missing baseline, and MUST NOT scan the default branch's whole history. Once a completed record exists, its frontier governs, and a named baseline MUST be refused. A filed drift finding is RESOLVED by exactly one of three outcomes. The first is a revise that accepts or modifies its proposal, amending the clause its generalization target names when that clause exists. The second is a merged pull request that removes the behaviour from the default branch. The third is a revise that rejects its proposal together with a ledger comment on the detection-coverage anchor that names the finding identity and records the behaviour as accepted implementation detail. A finding with none of these outcomes stays unresolved.
 
-**2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 364 are claimed by pending proposals and peer drafts.
+**2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
-## Scenario 365 — A first drift run starts from a named baseline merge, and a filed drift finding ends in one of three resolutions
+## Scenario <number assigned at revise> — A first drift run starts from a named baseline merge, and a filed drift finding ends in one of three resolutions
 
 ```gherkin
 Feature: a drift backfill has a stated start and every finding a stated end
@@ -63,4 +63,4 @@ Feature: a drift backfill has a stated start and every finding a stated end
     Then the finding reads resolved
 ```
 
-**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-76ztny"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. If the revise renumbers Scenario 365, the row and entry MUST carry the renumbered heading text.
+**3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-76ztny"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row and entry MUST carry the heading as numbered at revise.
