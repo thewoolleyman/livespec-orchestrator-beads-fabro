@@ -4,7 +4,7 @@ author: claude:fabro-currency session e3e56105
 created_at: 2026-11-12T17:40:05Z
 ---
 
-## Proposal: The factory-graph gate validates only with a Petri-era Fabro client and reports the client version per graph
+## Proposal: The factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and reports the client version per graph
 
 ### Target specification files
 
@@ -24,7 +24,7 @@ The current bullet fixes only HOW the installer fetches the pinned release (arch
 
 FLEET SCOPE (searched 2026-11-12 ~17:35Z at HEAD of every git clone under /data/projects): livespec-orchestrator-beads-fabro is the ONLY repository whose CI runs `dev-tooling/install-ci-fabro.sh` (`.github/workflows/ci.yml` installs it through `just install-ci-fabro`, then runs `just check-fabro-graph-validity`). homelab, livespec-console-beads-fabro and openbrain mention `check-fabro-graph-validity` only in a comment inside their committed implement-work-item workflow graph, and their CI neither installs nor runs it. livespec-dev-tooling's `homelab-worker/prove-ci-installer.sh` takes an installer path as an argument to prove it on a homelab worker; it is an operator proof tool, not a CI caller. No other clone references the installer or the gate.
 
-A Red and an implementation for this behaviour are already preserved at `needs-human/f45193625cd243e5b39d7921ef8d295e` (0bf33fa60). It pins `v0.408.0-nightly.0` with per-architecture sha256 and asset ids, adds a Petri-era client-version control with the 0.396.0 floor, and emits one `validated with fabro <version>` record per graph. The clause below is worded to match that implementation, so the seeded relaunch satisfies it as preserved.
+A Red and an implementation for this behaviour are already preserved at `needs-human/f45193625cd243e5b39d7921ef8d295e` (0bf33fa60). It pins `v0.408.0-nightly.0` with per-architecture sha256 and asset ids, adds a client-version control with the 0.396.0 floor, and emits one `validated with fabro <version>` record per graph. The clause below is worded to match that implementation, so the seeded relaunch satisfies it as preserved.
 
 ### Proposed Changes
 
@@ -71,9 +71,9 @@ The heading is numberless here; the revise pass assigns the next free scenario n
 ## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph
 
 ```gherkin
-Feature: The factory-graph gate validates with the engine family the factory serves
+Feature: The factory-graph gate validates with the engine the factory moves onto
   As a maintainer merging a change to a committed Fabro workflow graph
-  I want the graph gate to judge it with a Petri-era validator
+  I want the graph gate to judge it with a validator whose release triple is at or after 0.396.0
   So that a graph the factory's engine rejects cannot merge green
 
   Scenario: CI's pinned release is at or above the floor
@@ -98,7 +98,7 @@ Feature: The factory-graph gate validates with the engine family the factory ser
     When the gate validates the repository's committed workflow graphs
     Then it reports each validated graph's location together with that client's version
 
-  Scenario: A graph the Petri-era engine rejects fails the gate
+  Scenario: A graph the engine the factory moves onto rejects fails the gate
     Given a committed workflow graph whose exit node is unreachable
     When the factory-graph gate validates it with a fabro client whose release triple is at or after 0.396.0
     Then the gate fails naming that graph and attractor.exit_unreachable
@@ -110,10 +110,10 @@ Feature: The factory-graph gate validates with the engine family the factory ser
 Add one entry to `tests/heading-coverage.json`, using the heading as numbered at revise:
 
 ```json
-{"heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the scenario tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.", "work_item": "bd-ib-3lxeqf"}
+{"heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the integration tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.", "work_item": "bd-ib-3lxeqf"}
 ```
 
-Add the matching row to `tests/heading-coverage-debt.json`, as `check-heading-coverage-debt-register` requires:
+Add the matching row to `tests/heading-coverage-debt.json`. The register has no generator: the row is authored, and `check-heading-coverage-debt-register` admits it under its v067 spec-first admission, because this same change introduces the heading:
 
 ```json
 {"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "work_item": "bd-ib-3lxeqf", "first_seen": "<revise date>"}
