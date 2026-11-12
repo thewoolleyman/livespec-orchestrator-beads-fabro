@@ -163,14 +163,14 @@ below (no instance serves it). Measured 2026-11-12.
 
 | Instance | Port | Serving build (2026-11-12) |
 | --- | --- | --- |
-| `fabro-server` (fleet, factory `petri`) | `:32276` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
-| `fabro-server-mi-homelab` | `:32277` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
+| `fabro-server` (fleet, factory `petri`) | `:32276` | `d22808f8e`, restarted 2026-11-12T13:00Z (widen part 2, a preserve-first cancel-to-idle window) |
+| `fabro-server-mi-homelab` | `:32277` | `d22808f8e`, restarted 2026-11-12T11:57Z (widen part 1, livespec-dev-tooling#4298) |
 | `fabro-server-candidate` (factory `candidate`) | `:32278` | `d22808f8e`, rolled 2026-11-12T06:46Z (livespec-dev-tooling#4262) |
-| `fabro-server-homelab-worker-arm64` | `:32279` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
+| `fabro-server-homelab-worker-arm64` | `:32279` | `d22808f8e`, restarted 2026-11-12T11:54Z (widen part 1, livespec-dev-tooling#4298) |
 
-The widen moves `:32276`, `:32277` and `:32279` together, after one candidate canary,
-under gmktec-factory-placement's GO (`bd-ib-qx45e6`). Read what an instance serves ON the
-host: `<binary_path> --version` and `sha256sum <binary_path>`, where `binary_path` and
+All four instances serve one binary, sha256 `f3259547…057cf015`. Each was read back on the
+host after its roll; the read-backs are recorded on `bd-ib-qx45e6`. Read what an instance
+serves ON the host: `<binary_path> --version` and `sha256sum <binary_path>`, where `binary_path` and
 `binary_sha256` come from `livespec-dev-tooling` `ansible/inventory/host_vars/gmktec-xubuntu.yml`.
 
 **Carrier manifest:**
