@@ -84,6 +84,10 @@ def latest_input_bound_measurement(*, comments: tuple[str, ...]) -> tuple[int, i
         if marker == UNAVAILABLE_COMMENT_MARKER and (
             fields.get("judgement-unavailable-cause") == _INPUT_BOUND_CAUSE
         ):
+            attempted_candidates = _candidate_ids(body=body)
+            bound_ended_candidates = _field_values(body=body, name="bound-ended-candidate")
+            if not attempted_candidates or set(bound_ended_candidates) != set(attempted_candidates):
+                return None
             subject_characters = _integer_field(fields=fields, name="subject-size-characters")
             carried_rider_count = _integer_field(fields=fields, name="carried-rider-count")
             if subject_characters is not None and carried_rider_count is not None:
@@ -107,6 +111,29 @@ def _integer_field(*, fields: dict[str, str], name: str) -> int | None:
     """A non-negative decimal receipt field, rejecting malformed evidence."""
     value = fields.get(name)
     return int(value) if value is not None and value.isdecimal() else None
+
+
+def _field_values(*, body: str, name: str) -> tuple[str, ...]:
+    """Every repeated receipt value carrying one field name."""
+    prefix = f"{name}{_FIELD_SEPARATOR}"
+    return tuple(raw[len(prefix) :] for raw in body.splitlines() if raw.startswith(prefix))
+
+
+def _candidate_ids(*, body: str) -> tuple[str, ...]:
+    """The resolved agent:model identifier of every candidate the receipt ran."""
+    identifiers: list[str] = []
+    for value in _field_values(body=body, name="candidate"):
+        fields: dict[str, str] = {}
+        for part in value.split():
+            key, separator, field_value = part.partition("=")
+            if separator:
+                fields[key] = field_value
+        agent = fields.get("agent")
+        model = fields.get("model")
+        if agent is None or model is None:
+            return ()
+        identifiers.append(f"{agent}:{model}")
+    return tuple(identifiers)
 
 
 def _unpreflightable_item(
