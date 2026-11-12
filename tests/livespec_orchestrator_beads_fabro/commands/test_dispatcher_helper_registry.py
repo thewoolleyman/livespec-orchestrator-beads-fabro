@@ -24,6 +24,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     GUARD_SCRIPT_PATH,
     guard_script_text,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_gate_preview_program import (
+    GATE_PREVIEW_PROGRAM_FILENAME,
+    gate_preview_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
     GH_MINT_HELPER_RELPATH,
     gh_mint_helper_source,
@@ -59,6 +63,13 @@ def test_the_registry_composes_each_helper_from_its_owning_module() -> None:
     runner = helpers["commit-runner"]
     assert (runner.root, runner.path) == (registry.PLUGINS_ROOT, COMMIT_RUNNER_PROGRAM_FILENAME)
     assert runner.compose() == commit_runner_program_source().encode("utf-8")
+    preview = helpers["implement-gate-preview"]
+    assert (preview.root, preview.path, preview.mode) == (
+        registry.PLUGINS_ROOT,
+        GATE_PREVIEW_PROGRAM_FILENAME,
+        0o755,
+    )
+    assert preview.compose() == gate_preview_program_source().encode("utf-8")
     guard = helpers["credential-use-guard"]
     assert f"{registry.LIVESPEC_SANDBOX_ROOT_PATH}/{guard.path}" == GUARD_SCRIPT_PATH
     assert guard.compose() == guard_script_text().encode("utf-8")
