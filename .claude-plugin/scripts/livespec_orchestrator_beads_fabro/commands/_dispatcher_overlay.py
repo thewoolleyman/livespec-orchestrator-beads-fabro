@@ -33,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth_projectio
     codex_auth_env_lines,
     codex_auth_prepare_steps_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_driver_hooks import (
+    codex_driver_hooks_prepare_steps_block,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
     codex_otel_env_lines,
     codex_otel_prepare_steps_block,
@@ -340,6 +343,9 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
     codex_env_lines = codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
     codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
     codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
+    codex_driver_steps = (
+        "" if codex_auth_snapshot is None else codex_driver_hooks_prepare_steps_block()
+    )
     # The hook-limit observer rides the SAME root as the plugin-cache gate's
     # publication helpers, and its limit is read back off the very file this run
     # will execute, whose `publish_draft` attribute carries the literal duration
@@ -413,6 +419,7 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
         + git_credential_helper_steps
         + codex_steps
         + codex_otel_steps
+        + codex_driver_steps
         + plugin_cache_steps
         + resume_checkout_steps
         + credential_use_steps
