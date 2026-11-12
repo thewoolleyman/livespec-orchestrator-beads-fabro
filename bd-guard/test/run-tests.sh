@@ -198,12 +198,13 @@ CAP_ERR_FILE=""
 # capture_process_is_running — determine the background job's state without
 # signalling it. A denied `kill -0` is inconclusive (for example, EPERM from a
 # container profile), while Bash's job table knows whether this shell's child is
-# still running.
+# still alive. A stopped child is alive (`jobs -pr` omits it, `jobs -ps` lists
+# it), so both are consulted; only a child in neither list has exited.
 capture_process_is_running() {
     local job_pid
     while IFS= read -r job_pid; do
         [ "$job_pid" = "$CAP_PID" ] && return 0
-    done < <(jobs -pr 2>/dev/null)
+    done < <(jobs -pr 2>/dev/null; jobs -ps 2>/dev/null)
     return 1
 }
 
