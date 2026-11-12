@@ -56,6 +56,9 @@ _NO_ASSERTION_REFUSAL = "ERROR: {surface} refused: the payload names no assertio
 _BAD_ARTIFACT_PATHS_REFUSAL = (
     "ERROR: {surface} refused: build.artifact_paths must be an array of non-empty strings.\n"
 )
+_BAD_IMPORTED_COMPONENTS_REFUSAL = (
+    "ERROR: {surface} refused: build.imported_components must be an array of non-empty strings.\n"
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,9 +97,12 @@ def read_evidence(  # noqa: PLR0913 — one read shared by the item and plan sur
     if payload is None:
         emit(_BAD_PAYLOAD_REFUSAL.format(surface=surface, path=record_path))
         return None
-    build, raw, artifact_paths_valid = payload
+    build, raw, artifact_paths_valid, imported_components_valid = payload
     if not artifact_paths_valid:
         emit(_BAD_ARTIFACT_PATHS_REFUSAL.format(surface=surface))
+        return None
+    if not imported_components_valid:
+        emit(_BAD_IMPORTED_COMPONENTS_REFUSAL.format(surface=surface))
         return None
     assertions: list[RecordAssertion] = []
     for one in raw:
@@ -180,7 +186,9 @@ def _assertion(
     )
 
 
-def _payload(*, path: Path) -> tuple[BuildIdentity, tuple[Mapping[str, object], ...], bool] | None:
+def _payload(
+    *, path: Path
+) -> tuple[BuildIdentity, tuple[Mapping[str, object], ...], bool, bool] | None:
     """The caller's payload as a build identity plus raw assertion mappings."""
     text = _read(path=path)
     if text is None:
@@ -195,6 +203,7 @@ def _payload(*, path: Path) -> tuple[BuildIdentity, tuple[Mapping[str, object], 
         return None
     build = cast("dict[str, Any]", build_raw)
     artifact_paths, artifact_paths_valid = _artifact_paths(build=build)
+    imported_components, imported_components_valid = _imported_components(build=build)
     entries = tuple(
         cast("Mapping[str, object]", one)
         for one in cast("list[object]", assertions_raw)
@@ -206,9 +215,11 @@ def _payload(*, path: Path) -> tuple[BuildIdentity, tuple[Mapping[str, object], 
             installed_build=_text(value=build.get("installed_build")),
             commit=_text(value=build.get("commit")),
             artifact_paths=artifact_paths,
+            imported_components=imported_components,
         ),
         entries,
         artifact_paths_valid,
+        imported_components_valid,
     )
 
 
@@ -238,3 +249,16 @@ def _artifact_paths(*, build: Mapping[str, Any]) -> tuple[tuple[str, ...] | None
     if not all(isinstance(path, str) and path for path in paths):
         return None, False
     return tuple(path for path in paths if isinstance(path, str)), True
+
+
+def _imported_components(*, build: Mapping[str, Any]) -> tuple[tuple[str, ...] | None, bool]:
+    """Validate the optional imported-components array before a record can be posted."""
+    if "imported_components" not in build:
+        return None, True
+    value: object = build["imported_components"]
+    components = cast("list[object]", value)
+    if not isinstance(value, list) or not all(
+        isinstance(component, str) and component for component in components
+    ):
+        return None, False
+    return tuple(component for component in components if isinstance(component, str)), True
