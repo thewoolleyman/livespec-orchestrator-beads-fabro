@@ -38,8 +38,9 @@ def _item() -> WorkItem:
     )
 
 
+@pytest.mark.parametrize("terminal_stage", ["non_converged", "fabro-run"])
 def test_a_recapture_exhausted_open_pull_request_is_held_with_its_resume_route(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    terminal_stage: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The passing resume is preserved, but only an explicit resume may take it."""
     journal = JournalFile(path=tmp_path / "journal.jsonl")
@@ -54,7 +55,7 @@ def test_a_recapture_exhausted_open_pull_request_is_held_with_its_resume_route(
                     "outcome": {
                         "work_item_id": _ITEM,
                         "status": "blocked",
-                        "stage": "non_converged",
+                        "stage": terminal_stage,
                         "detail": "LIVESPEC_RECAPTURE_EXHAUSTED",
                     },
                 },

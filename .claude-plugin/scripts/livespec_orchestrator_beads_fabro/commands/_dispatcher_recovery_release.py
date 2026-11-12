@@ -171,12 +171,14 @@ def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
 
 
 def _is_recapture_exhausted_terminal(*, record: Mapping[str, object]) -> bool:
-    """Whether this terminal is the bounded recapture ending, not another failure."""
+    """Whether this terminal is the bounded recapture ending, not another failure.
+
+    The producer records the terminal under stage `fabro-run`, so the stage is not read.
+    """
     terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
     detail = terminal.get(_DETAIL_KEY)
     return (
         terminal.get(_STATUS_KEY) == "blocked"
-        and terminal.get(_STAGE_KEY) == "non_converged"
         and isinstance(detail, str)
         and RECAPTURE_EXHAUSTED_MARKER in detail
     )
