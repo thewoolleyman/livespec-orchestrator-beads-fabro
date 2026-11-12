@@ -1,5 +1,5 @@
 ---
-topic: each-gmktec-fabro-server-s
+topic: each-gmktec-fabro-server-s-2
 author: claude-opus-5-5
 created_at: 2026-11-12T22:28:33Z
 ---
@@ -17,9 +17,11 @@ created_at: 2026-11-12T22:28:33Z
 
 - **Per-server limit.** For every gmktec Fabro server a launcher launches onto or counts (petri, candidate and mi-homelab today), the launcher takes that server's concurrent-run limit from the one value the server enforces: its `max_concurrent_runs`, read from the `<factory>.max_concurrent_runs` file livespec-dev-tooling renders in the run-cap directory from the same inventory value the `fabro_server` role renders into that server's `settings.toml`. `fleet-launch/config.sh` carries no cap value for any of them. Changing a server's limit is one committed change to that one value, and the launchers admit runs to that server up to the new limit with nothing else edited.
 - **Shared fleet cap derived, not stored.** The fleet-cap file is retired. The *runtime fleet cap* is the sum of the per-server limits of the servers the shared fleet count covers.
-- **Committed fleet cap bound.** The runtime fleet cap is bounded by the committed fleet cap that livespec-dev-tooling renders as `fleet-launch-cap` (`fabro_fleet_launch_cap`, livespec-dev-tooling#4385).
+- **Committed fleet cap bound.** The runtime fleet cap is bounded by the committed fleet cap that livespec-dev-tooling renders as `fleet-launch-cap` (`fabro_fleet_launch_cap`, livespec-dev-tooling#4385). A launch whose marker the shared fleet count skips, such as one held in the Dispatcher's master-CI wait, still counts against the committed fleet cap. A committed fleet cap that cannot be read holds every launch.
 
-**How the two are reconciled.** The staged "Committed fleet cap bound" text bound the fleet-cap file, and the per-server change deletes that file. Here the bound binds what remains: the sum of the per-server limits the launcher reads. It clamps the shared fleet cap to the committed value. It never lowers any one server's limit. An unreadable committed value leaves the sum in force. The two numbers count different things. A server's `max_concurrent_runs` is the one number for that server's queue. The committed fleet cap is the one number for runs across the servers that share one factory namespace quota, and that quota is derived from it. So "nothing else edited" holds for each server's own limit. A change meant to let the FLEET run more runs at once than the committed fleet cap is a raise of the shared quota, and it raises the committed fleet cap first, as livespec-dev-tooling#4385 rules. Today petri's limit alone (20) already equals the runtime fleet-cap file's 20, so the committed value stays the fleet's working ceiling, as that file was.
+**Dependency.** The committed fleet cap and its rendered `fleet-launch-cap` file are defined ONLY in livespec-dev-tooling#4385, which is open. Neither livespec-dev-tooling master nor this repository's master defines them. This proposal MUST NOT be ratified until #4385 has merged.
+
+**How the two are reconciled.** The staged "Committed fleet cap bound" text bound the fleet-cap file, and the per-server change deletes that file. Here the bound binds what remains: the sum of the per-server limits the launcher reads. It clamps the shared fleet cap to the committed value. It never lowers any one server's limit. An unreadable committed value holds every launch, as an unreadable server limit holds launches onto its server. The two numbers count different things. A server's `max_concurrent_runs` is the one number for that server's queue. The committed fleet cap is the one number for runs across the servers that share one factory namespace quota, and that quota is derived from it. So "nothing else edited" holds for each server's own limit. A change meant to let the FLEET run more runs at once than the committed fleet cap is a raise of the shared quota, and it raises the committed fleet cap first, as livespec-dev-tooling#4385 rules. Today petri's limit alone (20) already equals the runtime fleet-cap file's 20, so the committed value stays the fleet's working ceiling, as that file was.
 
 ### Motivation
 
@@ -27,14 +29,15 @@ Work item bd-ib-rtzhfc, Definition of Done bullets 1 and 2. Bullet 3 is the sibl
 
 Maintainer direction, 2026-11-04, verbatim on epic livespec-dev-tooling-6tgd2z and quoted in the item's Context: "why we have three different levers for the same fucking queue, do we really need that? Are they redundant and still necessary? ... IF any of this is the case, fix it." In short: one queue, one number. The item's Context lists the knobs that bound the same petri run count. The server's `max_concurrent_runs` is the only enforcing one; the uncommitted fleet-cap file and `FLEET_LAUNCH_GMK_CAP` duplicate it. As recorded on 2026-11-07: petri fleet-cap 18 / gmk-cap 20 / `max_concurrent_runs` 20; candidate candidate-cap 1 / server 16; mi-homelab server 2.
 
-What a second copy costs, measured. Run 01M78KW65M3F of bd-ib-t5aju3 failed at 2026-11-12T19:31Z at sandbox acquire with `exceeded quota: factory-runs, requested limits.cpu=6, used 114100m, limited 120`. The petri `factory-runs` ResourceQuota's `limits.cpu` 120 equals exactly 20 sandboxes at `limits.cpu` 6, the launchers' runtime fleet cap of 20, with no room for any other limits-bearing pod. The live quota is now `limits.cpu` 126, applied and read back at 21:56Z. The runtime fleet cap had no committed home, so nothing tied it to the quota. livespec-dev-tooling#4385 (topic the-factory-runs-resourcequota-restates, diff-checked and armed to merge) gives it one: `fabro_fleet_launch_cap` in `ansible/inventory/group_vars/dev_hosts.yml`, rendered on every `dev_hosts` host as the file `fleet-launch-cap` in the run-cap directory. It is NOT any server's `max_concurrent_runs`. That proposal states the dev-tooling half of the coordinator's rule ("Whoever raises such a runtime cap MUST raise `fabro_fleet_launch_cap` first") and names this proposal's "Committed fleet cap bound." as the launcher-side half.
+What a second copy costs, measured. Run 01M78KW65M3F of bd-ib-t5aju3 failed at 2026-11-12T19:31Z at sandbox acquire with `exceeded quota: factory-runs, requested limits.cpu=6, used 114100m, limited 120`. The petri `factory-runs` ResourceQuota's `limits.cpu` 120 equals exactly 20 sandboxes at `limits.cpu` 6, the launchers' runtime fleet cap of 20, with no room for any other limits-bearing pod. The live quota is now `limits.cpu` 126, applied and read back at 21:56Z. The runtime fleet cap had no committed home, so nothing tied it to the quota. livespec-dev-tooling#4385 (topic the-factory-runs-resourcequota-restates, diff-checked and armed to merge, but open and not yet merged) gives it one: `fabro_fleet_launch_cap` in `ansible/inventory/group_vars/dev_hosts.yml`, rendered on every `dev_hosts` host as the file `fleet-launch-cap` in the run-cap directory. It is NOT any server's `max_concurrent_runs`. That proposal states the dev-tooling half of the coordinator's rule ("Whoever raises such a runtime cap MUST raise `fabro_fleet_launch_cap` first") and names this proposal's "Committed fleet cap bound." as the launcher-side half.
 
 The per-server values already have a committed, rendered home. livespec-dev-tooling §"Run caps rendered beside the registry" renders `<factory>.max_concurrent_runs` in `/home/ubuntu/.local/state/livespec/fleet-limits` from the same inventory entry the `fabro_server` role writes into `settings.toml` (livespec-dev-tooling-o5xpdy, the build-order prerequisite the item names). Read on the dispatching host on 2026-11-12: petri 20, candidate 16, mi-homelab 2, homelab-worker-arm64 1.
 
 §"Host concurrency belongs to the Fabro scheduler" forbids the Orchestrator to enforce or report `max_concurrent_runs` as its own bound. The launcher's read here is caller-side under this section's first paragraph and feeds no Dispatcher surface, and the new bullet says so.
 
 Design choices, stated for the grade:
-- **Fail closed per server, fail open on the committed value.** An unreadable server limit holds launches onto that server, like the existing rule for an unreadable run count, because that limit is the only per-server bound the launcher has. An unreadable committed fleet cap leaves the runtime sum in force, as the staged text and #4385 require. The trade-off is that while `fleet-launch-cap` is unreadable the fleet may launch past the quota's one-sandbox slack. Each server still enforces its own `max_concurrent_runs`.
+- **Fail closed on every unreadable value.** An unreadable server limit holds launches onto that server, like the existing rule for an unreadable run count. An unreadable committed fleet cap holds every launch. Leaving the runtime sum in force would not be safe: the per-server limits sum to 38 (petri 20, candidate 16, mi-homelab 2), about twice what the `factory-runs` quota holds (`limits.cpu` 126, about 21 sandboxes at 6). It would also break #4385's "A runtime launch cap that a launcher reads from any other file MUST NOT exceed this value". This replaces the fail-open sentence of the staged text.
+- **Skipped markers still hold a committed slot.** A rule that skips a marker from the shared fleet count lowers only that count. The committed-cap count still includes the marker. A launch held in the Dispatcher's master-CI wait, which a-fleet-launcher-holds-its (#5088) skips, therefore keeps its committed slot, and a re-bind at the pass line can never take the fleet past the committed fleet cap. This needs no quota read. Clamping `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` to the quota's slack would.
 - **Read on every gate pass**, so a changed value governs the next pass with no launcher restart and no other edit.
 - **Unlisted markers count toward a server**, so binds queued between board reads cannot overshoot its limit.
 - **Resume launches are bounded too**, because a resumed run takes a slot on its server.
@@ -45,10 +48,10 @@ Fleet scope: every Fabro server the `fabro_factory_registry` places on gmktec-xu
 In-flight survey, 2026-11-12 ~22:25Z: in-tree proposals on origin/master, the 25 remote `spec/*` branches, and open PRs touching `SPECIFICATION/` or `fleet-launch/`.
 - each-gmktec-fabro-server-s (bd-ib-rtzhfc, in-tree, the WIP-cap half): edits §"Per-repo WIP cap" and Scenario 58 only. Relation: `align`.
 - the-launcher-holds-one-wip-number (bd-ib-5k2yq2, in-tree): rewrites **Breakage exception.** and adds **Capacity-deferred return.**. Its "MUST NOT raise the shared fleet cap or any per-factory cap" keeps its meaning, because both terms survive here with the values defined below. No sentence overlaps. Relation: `align`.
-- a-fleet-launcher-holds-its (bd-ib-4vwaty, PR #5088): `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` defaults to "the shared fleet cap". Under this proposal it reads the derived shared fleet cap. That ceiling bounds skipped markers, not runs, so it is not a cap value of the kind this proposal removes from `fleet-launch/config.sh`. Its "Over the cap" re-bind is not a launch, so "MUST NOT launch a run the committed value would hold" does not forbid it. The overshoot it tolerates is now past the committed fleet cap, though, and the quota's one-sandbox slack covers one such run. This proposal does not change that rule. Relation: `align`.
+- a-fleet-launcher-holds-its (bd-ib-4vwaty, PR #5088): its waiting markers are skipped from the shared fleet count, up to `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` of them, and that ceiling defaults to the shared fleet cap. Its "Over the cap" rule lets a drive proceed past the shared fleet cap at the pass line. Left alone, that overshoot could reach many runs past the committed fleet cap. This proposal bounds it without editing #5088's text: every marker the shared fleet count skips still counts in the committed-cap count. A launch therefore never starts while waiting launches fill the committed fleet cap, and the overshoot past the shared fleet cap can never pass the committed fleet cap. `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` bounds skipped markers, not runs, so it is not a cap value of the kind this proposal removes from `fleet-launch/config.sh`. The two compose in either revise order. Relation: `align`.
 - a-fleet-launcher-honours-a (bd-ib-aibd3u, in-tree): hold-file exemptions only. Relation: `align`.
 - fleet-launchers-log-and-retry (bd-ib-7itf42, PR #5073) and concurrent-git-fetches-into-one (bd-ib-zyu2ug, PR #5072): non-run exits and the fetch lock in this section, with no cap text. Relation: `align`.
-- Cross-repo, livespec-dev-tooling#4385: it renders `fleet-launch-cap`, and this proposal only reads it. Relation: `align`.
+- Cross-repo, livespec-dev-tooling#4385 (open): it defines and renders `fleet-launch-cap`, and this proposal only reads it. Relation: `align`, and this proposal depends on it. It MUST NOT be ratified until #4385 has merged (see the Dependency paragraph and change 9).
 No in-flight item is superseded or in conflict.
 
 ### Proposed Changes
@@ -69,10 +72,14 @@ All edits are in `contracts.md` §"Provisional fleet launch scripts" and in `sce
 >
 >   A server's *count* is its live run count, read from its factory board, plus the fleet in-flight markers of launches onto that server whose runs have not yet listed. An impl launcher or a resume launcher MUST NOT launch onto a server while that server's count is at or above its limit. At the binding re-count under the factory mutex, with its own marker counted, it MUST proceed only while that count is at or below the limit. Each of the following MUST hold every launch onto that server: a limit file that is absent or unreadable, a limit file that is not a non-negative decimal integer, and a count that cannot be read. The launcher MUST then log the cause and name the server. Where this section names a per-factory cap, it means that server's limit.
 >
->   Changing a server's limit is a change to that one committed value. The launchers then admit runs to that server up to the new limit with no other file or variable edited, bounded only by the shared fleet cap. This read is caller-side under this section's first paragraph. It is not an Orchestrator bound in the sense of §"Host concurrency belongs to the Fabro scheduler", and it MUST NOT feed any Dispatcher admission, gating or capacity-reporting surface.
+>   Changing a server's limit is a change to that one committed value. The launchers then admit runs to that server up to the new limit with no other file or variable edited, bounded only by the shared fleet cap and the committed fleet cap bound. This read is caller-side under this section's first paragraph. It is not an Orchestrator bound in the sense of §"Host concurrency belongs to the Fabro scheduler", and it MUST NOT feed any Dispatcher admission, gating or capacity-reporting surface.
 >
 >   The *runtime fleet cap* is the sum of the limits of the servers the shared fleet count counts, where a limit that cannot be read contributes 0. The *shared fleet cap* that every rule of this section compares the shared fleet count against is the runtime fleet cap as the "Committed fleet cap bound" bullet bounds it.
-> - **Committed fleet cap bound.** A launcher MUST read the committed fleet cap that livespec-dev-tooling renders as `fleet-launch-cap` in the run-cap directory at every read of the per-server limits. While the runtime fleet cap exceeds the committed fleet cap, the launcher MUST treat the shared fleet cap as the committed value, MUST log one line naming both values on each gate pass that applies the bound, and MUST NOT launch a run the committed value would hold. The bound MUST NOT raise the shared fleet cap above the runtime fleet cap, and MUST NOT change any one server's limit. A committed fleet cap that is absent, unreadable or not a positive decimal integer MUST leave the runtime fleet cap in force, so that an unreadable committed value never stops launches. A change meant to let the fleet run more runs at once than the committed fleet cap MUST raise the committed fleet cap first, in the same change or before it. Raising a server's `max_concurrent_runs` does not by itself lift the fleet past the committed fleet cap.
+> - **Committed fleet cap bound.** A launcher MUST read the committed fleet cap that livespec-dev-tooling renders as `fleet-launch-cap` in the run-cap directory at every read of the per-server limits. While the runtime fleet cap exceeds the committed fleet cap, the launcher MUST treat the shared fleet cap as the committed value, MUST log one line naming both values on each gate pass that applies the bound, and MUST NOT launch a run the committed value would hold.
+>
+>   The *committed-cap count* is the shared fleet count plus every live fleet in-flight marker that the shared fleet count skips under any rule of this section, such as a marker marked waiting during the Dispatcher's master-CI wait. An impl launcher or a resume launcher MUST NOT launch while the committed-cap count is at or above the committed fleet cap. At the binding re-count under the factory mutex, with its own marker counted, it MUST proceed only while the committed-cap count is at or below the committed fleet cap. A launch whose marker the shared fleet count skips therefore still holds a committed slot. No re-count or re-bind of a launch already started, under this or any other rule of this section, MAY take the committed-cap count past the committed fleet cap.
+>
+>   The bound MUST NOT raise the shared fleet cap above the runtime fleet cap, and MUST NOT change any one server's limit. A committed fleet cap that is absent, unreadable or not a positive decimal integer MUST hold every launch, of either kind and onto every server, exactly as an unreadable per-server limit holds launches onto its server. The launcher MUST then log one line naming the path it could not read. A change meant to let the fleet run more runs at once than the committed fleet cap MUST raise the committed fleet cap first, in the same change or before it. Raising a server's `max_concurrent_runs` does not by itself lift the fleet past the committed fleet cap.
 
 **4. Harness cases (`contracts.md`, the `check-fleet-launch` case lists).** In the paragraph beginning "The `check-fleet-launch` harness cases MUST also cover each of the gates above:", replace "and a gmktec launch sent to the instance the gmktec target setting names, launching onto the candidate only while its live run count is below the candidate cap." with:
 
@@ -86,7 +93,8 @@ Immediately after the paragraph beginning "The `check-fleet-launch` harness case
 > - the same launcher launching on its next gate pass once only that file's value is raised, and held again at the new limit;
 > - a launch held, with a log line naming the server, when that server's limit file is absent or does not hold an integer;
 > - a launch held while the shared fleet count equals a committed `fleet-launch-cap` that is below the runtime fleet cap, with one log line naming both values;
-> - a launch that proceeds at that same count when `fleet-launch-cap` is absent, because the runtime fleet cap is then in force;
+> - every launch, impl and resume, held when `fleet-launch-cap` is absent or does not hold a positive integer, with one log line naming the unreadable path;
+> - a launch held while the shared fleet count is below the committed fleet cap, but the committed-cap count equals it because of a stub marker carrying `master-ci-wait=1` that the shared fleet count skips;
 > - a `fleet-launch/config.sh` that assigns no per-factory, candidate or shared fleet cap value.
 >
 > Scenario 307 in `scenarios.md` exercises these cases.
@@ -97,7 +105,7 @@ Immediately after the paragraph beginning "The `check-fleet-launch` harness case
     Given a host value a fleet-launch script reads, such as a factory server URL, the run-cap directory, a queue, lock or in-flight directory, or the fabro binary path
 ```
 
-**6. Scenario 307 (`scenarios.md` §"Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target").** Inside its existing gherkin block, replace the scenario "The gmktec target setting selects the candidate only below its cap" (its heading line and its eight steps) with the following five scenarios:
+**6. Scenario 307 (`scenarios.md` §"Scenario 307 — The committed fleet-launch launchers enforce the repository hold, WIP gate, breakage exception, re-ticket, gmktec hold and candidate target").** Inside its existing gherkin block, replace the scenario "The gmktec target setting selects the candidate only below its cap" (its heading line and its eight steps) with the following six scenarios:
 
 ```gherkin
   Scenario: The gmktec target setting selects the candidate only below its own limit
@@ -136,14 +144,27 @@ Immediately after the paragraph beginning "The `check-fleet-launch` harness case
     Then it holds the launch
     And it logs one line naming the runtime fleet cap 5 and the committed fleet cap 4
 
-  Scenario: An unreadable committed fleet cap never stops launches
+  Scenario: An unreadable committed fleet cap holds every launch
     Given the servers the shared fleet count counts have limits summing to 5
     And the run-cap directory holds no fleet-launch-cap file
-    And the shared fleet count is 4 while the target server's count is below its limit
+    And the shared fleet count is 0 while the target server's count is below its limit
+    When an impl launcher and a resume launcher reach the shared fleet cap gate
+    Then both hold their launches
+    And each logs one line naming the fleet-launch-cap path it could not read
+
+  Scenario: A launch skipped from the shared fleet count still holds a committed slot
+    Given the servers the shared fleet count counts have limits summing to 5
+    And fleet-launch-cap holds 3
+    And the target server's count is below its limit
+    And two live runs listed on the boards and one live fleet in-flight marker carrying master-ci-wait=1
+    And the shared fleet count skips that marker and reads 2
     When a launcher reaches the shared fleet cap gate
-    Then it launches
+    Then the committed-cap count reads 3
+    And it holds the launch
 ```
 
 **7. Unchanged.** The resume launcher's bullet ("below the shared fleet cap"), Scenario 302, and the **Breakage exception.** and **gmktec factory hold.** bullets MUST keep their text. Their "shared fleet cap" and "per-factory cap" now read the values change 3 defines. No rule of this section MAY read a fleet cap or a per-factory cap from `fleet-launch/config.sh`.
 
 **8. Revise co-edit.** None is owed. No H2 heading changes, and Scenario 242's and Scenario 307's existing `tests/heading-coverage.json` rows cover the edited scenarios unchanged.
+
+**9. Dependency on livespec-dev-tooling#4385.** This proposal MUST NOT be ratified, by `revise` or any other path, until livespec-dev-tooling#4385 (topic the-factory-runs-resourcequota-restates) has merged. That proposal is the only definition of `fabro_fleet_launch_cap` and its rendered `fleet-launch-cap` file. If #4385 is withdrawn, or merges with a different file name or meaning, this proposal MUST be revised to match before it is ratified.
