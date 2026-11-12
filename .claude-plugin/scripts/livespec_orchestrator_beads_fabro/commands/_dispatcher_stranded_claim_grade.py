@@ -50,6 +50,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatching_host imp
 __all__: list[str] = [
     "ACTION_ABSENT_RUN_RELEASE",
     "ACTION_ABSENT_RUN_REPEATED",
+    "ACTION_LIVE_RUN_WALL_BUDGET",
     "ACTION_HANDOFF_RECONCILE_MERGED",
     "ACTION_HANDOFF_REQUIRED_CHECK_FAILED",
     "ACTION_HANDOFF_REST",
@@ -204,6 +205,7 @@ _SUCCEEDED_RUN_STATUS_KINDS: frozenset[str] = frozenset({"succeeded"})
 
 ACTION_ABSENT_RUN_RELEASE = "absent-run-release"
 ACTION_ABSENT_RUN_REPEATED = "absent-run-repeated"
+ACTION_LIVE_RUN_WALL_BUDGET = "live-run-wall-budget"
 ACTION_TERMINAL_COMPLETION = "terminal-run-completion"
 
 # The three routes a HANDED-OFF merge wait (Scenario 220) earns once the forge
@@ -356,6 +358,8 @@ def grade_claim(*, measurements: ClaimMeasurements) -> ClaimRoute | ClaimHold:
         return ClaimHold(reason=observation)
     if measurements.run_state == RUN_ABSENT:
         return _absent_run_grade(measurements=measurements)
+    if measurements.run_state == RUN_LIVE:
+        return ClaimRoute(action=ACTION_LIVE_RUN_WALL_BUDGET)
     if measurements.run_state == RUN_SUCCEEDED:
         return ClaimRoute(action=_HANDOFF_ROUTES[measurements.handoff])
     if not measurements.terminal_evidence_readable:
@@ -367,12 +371,12 @@ def _observation_hold(*, measurements: ClaimMeasurements) -> str | None:
     """Reasons 4-8: what the factory and this host's locks actually report."""
     if measurements.run_state == RUN_UNOBSERVABLE:
         return HOLD_FACTORY_UNOBSERVABLE
-    if measurements.run_state == RUN_LIVE:
-        return HOLD_RUN_LIVE
     if measurements.owner_liveness == OWNER_UNOBSERVABLE:
         return HOLD_LIVENESS_UNOBSERVABLE
     if measurements.owner_liveness == OWNER_LIVE:
         return HOLD_DISPATCH_LIVE
+    if measurements.run_state == RUN_LIVE:
+        return None
     if measurements.run_state == RUN_SUCCEEDED and measurements.handoff not in _HANDOFF_ROUTES:
         return HOLD_RUN_SUCCEEDED
     return None
