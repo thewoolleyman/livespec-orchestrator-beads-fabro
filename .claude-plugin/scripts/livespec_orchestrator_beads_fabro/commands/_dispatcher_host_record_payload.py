@@ -258,7 +258,7 @@ def _imported_components(*, build: Mapping[str, Any]) -> tuple[tuple[str, ...] |
     value: object = build["imported_components"]
     components = cast("list[object]", value)
     if not isinstance(value, list) or not all(
-        isinstance(component, str) and component for component in components
+        isinstance(component, str) and component.strip() for component in components
     ):
         return None, False
     return tuple(component for component in components if isinstance(component, str)), True
