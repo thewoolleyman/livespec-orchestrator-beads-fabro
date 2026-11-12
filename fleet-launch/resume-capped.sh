@@ -29,6 +29,7 @@ INFLIGHT=$FLEET_LAUNCH_INFLIGHT_DIR
 QUEUE=$FLEET_LAUNCH_GMK_QUEUE_DIR
 LOCK=$FLEET_LAUNCH_GMK_LOCK_DIR
 deadline=$(( $(date +%s) + FLEET_LAUNCH_MAX_WAIT_S ))
+wait_deadline=$(( SECONDS + FLEET_LAUNCH_MAX_WAIT_S ))
 ticket=""
 ticket_number=""
 lock=""
@@ -59,6 +60,7 @@ bad_version=""
 if [ "${FLEET_LAUNCH_REEXEC_PID:-}" = "$$" ]; then
   [ -f "${FLEET_LAUNCH_REEXEC_TICKET:-}" ] && grep -q "pid=$$ " "$FLEET_LAUNCH_REEXEC_TICKET" && { ticket=$FLEET_LAUNCH_REEXEC_TICKET; ticket_number=${ticket##*/}; ticket_number=${ticket_number%%-*}; }
   case ${FLEET_LAUNCH_REEXEC_DEADLINE:-} in ''|*[!0-9]*) ;; *) deadline=$FLEET_LAUNCH_REEXEC_DEADLINE ;; esac
+  wait_deadline=$(( SECONDS + deadline - $(date +%s) ))
   echo "$(date -u +%FT%TZ) launcher re-executed on script version $START_VERSION: keeping ticket ${ticket##*/}"
 fi
 unset FLEET_LAUNCH_REEXEC_PID FLEET_LAUNCH_REEXEC_TICKET FLEET_LAUNCH_REEXEC_DEADLINE
@@ -277,7 +279,7 @@ fi
 
 while :; do
   reexec_on_script_change
-  [ "$(date +%s)" -lt "$deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit_cause="resume gave up: no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s"; exit 75; }
+  [ "$SECONDS" -lt "$wait_deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit_cause="resume gave up: no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s"; exit 75; }
   # TERM uses bash's default action because bash 5.2 can fail to parse a TERM
   # trap while a command substitution is active.  Preserve TERM's non-run
   # description for EXIT cleanup across the repository-hold read and wait.
