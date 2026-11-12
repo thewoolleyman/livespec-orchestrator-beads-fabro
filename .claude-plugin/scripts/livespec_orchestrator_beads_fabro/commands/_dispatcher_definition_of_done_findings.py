@@ -118,13 +118,7 @@ def _reference_findings(
     """
     if not references:
         return ()
-    headings = (
-        origin_spec_h2_headings(repo=cwd)
-        if origin_sections is None
-        else origin_sections
-        if isinstance(origin_sections, OriginSpecUnreadable)
-        else frozenset(origin_sections)
-    )
+    headings = origin_spec_h2_headings(repo=cwd) if origin_sections is None else origin_sections
     if isinstance(headings, OriginSpecUnreadable):
         return (_unreadable_origin_finding(item=item, unreadable=headings),)
     return tuple(

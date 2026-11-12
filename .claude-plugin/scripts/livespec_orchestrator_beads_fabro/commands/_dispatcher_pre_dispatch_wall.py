@@ -36,6 +36,7 @@ import argparse
 import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
@@ -71,6 +72,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_wrapper i
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_workflow import (
     definition_of_done_workflow_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    take_origin_reading,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
     dod_judgement_refusal,
@@ -110,6 +114,11 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
 )
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
+
+if TYPE_CHECKING:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (  # noqa: E501
+        OriginSpecUnreadable,
+    )
 
 __all__: list[str] = [
     "post_admission_publish_branch_reclaim",
@@ -371,6 +380,16 @@ def _refusing_sequence(
     of these surfaces return one and the rest do not, and normalizing that here
     would change the bytes an operator reads from one group or the other.
     """
+    # The criteria row and the judgement row grade the same References, so they
+    # share ONE reading of the default branch's spec, taken when the first of them
+    # runs and not before: an earlier row's refusal must spend nothing.
+    taken: list[dict[str, str] | OriginSpecUnreadable | None] = []
+
+    def origin() -> dict[str, str] | OriginSpecUnreadable | None:
+        if not taken:
+            taken.append(take_origin_reading(items=items, cwd=repo))
+        return taken[0]
+
     return (
         (
             lambda: out_of_enum_factory_safety_refusal(items=items),
@@ -420,7 +439,10 @@ def _refusing_sequence(
         ),
         (
             lambda: pre_dispatch_criteria_refusal(
-                items=items, cwd=repo, workflow_name=args.workflow_name
+                items=items,
+                cwd=repo,
+                workflow_name=args.workflow_name,
+                origin_sections=origin(),
             ),
             EXIT_UNGRADEABLE_CRITERIA,
             False,
@@ -428,7 +450,11 @@ def _refusing_sequence(
         ),
         (
             lambda: dod_judgement_refusal(
-                repo=repo, items=items, workflow_name=args.workflow_name, journal=journal
+                repo=repo,
+                items=items,
+                workflow_name=args.workflow_name,
+                journal=journal,
+                origin_sections=origin(),
             ),
             EXIT_UNGRADEABLE_CRITERIA,
             False,

@@ -24,6 +24,9 @@ from livespec_orchestrator_beads_fabro import store
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     acceptance_eligibility,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    take_origin_reading,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     judge_item_definition_of_done,
 )
@@ -90,7 +93,10 @@ def _definition_of_done_refusal(
     `.variant` the decision already carries is how that happened; binding the
     result is the repair.
     """
-    eligibility = acceptance_eligibility(item=item, cwd=repo)
+    # ONE reading of the default branch's spec serves the mechanical half and the
+    # judgement, so both grade the same revision of the References.
+    origin = take_origin_reading(items=(item,), cwd=repo)
+    eligibility = acceptance_eligibility(item=item, cwd=repo, origin_sections=origin)
     refusal = eligibility.refusal
     if refusal is not None:
         return valve_refusal(
@@ -102,7 +108,7 @@ def _definition_of_done_refusal(
     if eligibility.variant.exempt:
         return None
     judgement = judge_item_definition_of_done(
-        item=item, repo=repo, path=config, stage=STAGE_PRE_ADMISSION
+        item=item, repo=repo, path=config, stage=STAGE_PRE_ADMISSION, origin_sections=origin
     )
     if judgement.holds:
         return valve_refusal(

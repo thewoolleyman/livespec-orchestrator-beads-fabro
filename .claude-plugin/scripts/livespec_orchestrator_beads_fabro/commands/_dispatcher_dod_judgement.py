@@ -89,6 +89,7 @@ __all__: list[str] = [
     "parse_judgement_reply",
     "rubric_digest",
     "spec_tree_identity",
+    "take_origin_reading",
 ]
 
 JUDGEMENT_ADMITTED = "admitted"
@@ -237,8 +238,28 @@ def _goal_fields(*, item: WorkItem, lessons: str) -> list[str]:
     return fields
 
 
+def take_origin_reading(
+    *, items: Sequence[WorkItem], cwd: Path
+) -> dict[str, str] | OriginSpecUnreadable | None:
+    """ONE reading of the default branch's H2 sections, taken only if some item references one.
+
+    A dispatch-path caller grades the same references twice — the mechanical wall
+    and the judgement subject — and hands this reading to both, so they read one
+    specification revision. `None` means no item names a reference, so there is
+    nothing to read; each consumer then needs none either.
+    """
+    if not any(definition_of_done(description=item.description).references for item in items):
+        return None
+    return origin_spec_h2_sections(repo=cwd)
+
+
 def judgement_subject_digest(
-    *, item: WorkItem, cwd: Path, comments: Sequence[str] = (), spec_identity: str | None = None
+    *,
+    item: WorkItem,
+    cwd: Path,
+    comments: Sequence[str] = (),
+    spec_identity: str | None = None,
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> str:
     """Return the stable byte digest used to determine verdict reuse.
 
@@ -255,7 +276,9 @@ def judgement_subject_digest(
     complete specification tree, in the same `tree:` form a run handed no clause
     provenance compares.
     """
-    subject = judgement_subject(item=item, cwd=cwd, comments=comments)
+    subject = judgement_subject(
+        item=item, cwd=cwd, comments=comments, origin_sections=origin_sections
+    )
     identity = "tree:" + spec_tree_identity(cwd=cwd) if spec_identity is None else spec_identity
     return hashlib.sha256(f"{subject}\n{_SPEC_IDENTITY_LABEL}{identity}".encode()).hexdigest()
 

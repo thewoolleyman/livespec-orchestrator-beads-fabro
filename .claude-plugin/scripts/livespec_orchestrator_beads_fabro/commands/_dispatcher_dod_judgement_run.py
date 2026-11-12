@@ -100,6 +100,9 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (  # noqa: E501
+        OriginSpecUnreadable,
+    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -133,6 +136,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     payload_root: Path | None = None,
     governing: GoverningHeadingVerdict | None = None,
     caller: str = "dod_judgement_pre_admission",
+    origin_sections: dict[str, str] | OriginSpecUnreadable | None = None,
 ) -> DodJudgement:
     """Take the judgement for ONE item, or report why it could not be taken.
 
@@ -159,6 +163,11 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     division: a host taking "MAY append only an ending contract stating the
     verdict form it must return", so anything that changes how a check is
     graded belongs in the rubric or in the subject the node also reads.
+
+    `origin_sections` is the default branch's H2 sections as ONE reading, which a
+    caller that also records the subject's digest hands in so the subject judged
+    and the digest recorded name one specification revision (see
+    `judgement_subject`).
     """
     gate_prompt = judgement_rubric(payload_root=payload_root) if rubric is None else rubric
     if gate_prompt is None:
@@ -166,7 +175,13 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     active_runner = ShellCommandRunner() if runner is None else runner
     prompt = judgement_prompt(
         gate_prompt=gate_prompt,
-        subject=judgement_subject(item=item, cwd=cwd, comments=comments, governing=governing),
+        subject=judgement_subject(
+            item=item,
+            cwd=cwd,
+            comments=comments,
+            governing=governing,
+            origin_sections=origin_sections,
+        ),
         sandbox_capabilities=_configured_capabilities(cwd=cwd),
     )
     result = run_dod_gate_prompt(

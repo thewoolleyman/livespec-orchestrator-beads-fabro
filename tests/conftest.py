@@ -1086,6 +1086,13 @@ class _EveryHeading(frozenset[str]):
         return True
 
 
+class _EverySections(dict[str, str]):
+    """The sections of a directory that built no spec tree: every heading resolves."""
+
+    def __contains__(self, key: object) -> bool:
+        return True
+
+
 def _sections_from_working_tree(*, repo: Path) -> dict[str, str]:
     """Read the same top-level H2 sections that a plain test fixture built."""
     sections: dict[str, str] = {}
@@ -1138,6 +1145,8 @@ def _hermetic_origin_spec_headings(monkeypatch: pytest.MonkeyPatch) -> None:
     def _sections(*, repo: Path) -> dict[str, str] | OriginSpecUnreadable:
         if (repo / ".git").exists():
             return origin_spec_h2_sections(repo=repo)
+        if not (repo / "SPECIFICATION").is_dir():
+            return _EverySections()
         return _sections_from_working_tree(repo=repo)
 
     monkeypatch.setattr(_dod_findings, "origin_spec_h2_headings", _read)
