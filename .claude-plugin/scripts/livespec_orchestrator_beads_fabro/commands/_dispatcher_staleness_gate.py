@@ -327,6 +327,15 @@ def _lag_warnings(
         master_sha is not None and build_matches_ref(build_id=build_id, ref_sha=master_sha)
     ):
         return ()
+    if comparison_status == "ahead":
+        return (
+            DispatcherStalenessMessage(
+                detail=(
+                    f"WARNING: dispatcher plugin build {build_id} is newer than latest release "
+                    f"{release_sha[:12]}; dispatch proceeds."
+                )
+            ),
+        )
     if comparison_status not in {"behind", "diverged"}:
         return ()
     return (
