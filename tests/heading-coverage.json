@@ -2474,8 +2474,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "tests.integration.test_bd_guard_capture_start_scenario269.test_scenario269_binds_the_declared_check_to_capture_start_observations",
-    "reason": "Integration-tier binding: the declared check reaches the black-box shell regression that exercises Scenario 269's slow-start and failed-start telemetry harness behaviours.",
-    "work_item": "bd-ib-qbwd7n"
+    "reason": "Integration-tier binding: the declared check reaches the black-box shell regression that exercises Scenario 269's slow-start and failed-start telemetry harness behaviours. The three cases added by revise topic bd-guard-harness-start-capture (a failed liveness probe is not an exit, the bounded stop, and the unstoppable server named as a failed case) are owed at the integration tier by bd-ib-w4bbbd, which extends this test and bd-guard/test/test-capture-start.sh to cover them.",
+    "work_item": "bd-ib-w4bbbd"
   },
   {
     "heading": "## Scenario 270 \u2014 A successor retires a dead owner's terminal wait without rewriting it",
