@@ -9,9 +9,15 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import BinaryIO, Protocol, TypeVar
+from typing import BinaryIO, Protocol, cast
 
-__all__: list[str] = ["FabroEventReadGuard"]
+from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroEventsResult
+
+__all__: list[str] = [
+    "FabroEventReadGuard",
+    "FabroEventsReadRequest",
+    "guarded_fabro_events_read",
+]
 
 _FAILURE_STAGE = "fabro-events-read-failed"
 _SUCCESS_STAGE = "fabro-events-read-succeeded"
@@ -22,6 +28,7 @@ _SLOT_COUNT = 2
 class _Command(Protocol):
     exit_code: int
     stdout: str
+    stderr: str
 
 
 class _EventsResult(Protocol):
@@ -33,7 +40,12 @@ class _Journal(Protocol):
         """Persist one dispatch-journal record."""
 
 
-Result = TypeVar("Result", bound=_EventsResult)
+class _EventsPort(Protocol):
+    def events(
+        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+    ) -> FabroEventsResult:
+        """Read one bounded Fabro event stream."""
+        ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -42,6 +54,17 @@ class _ReadIdentity:
     run_id: str
     factory: str
     caller: str
+
+
+@dataclass(frozen=True, kw_only=True)
+class FabroEventsReadRequest:
+    """The caller-owned identity and timeout of one event-stream read."""
+
+    work_item_id: str
+    run_id: str
+    factory: str
+    caller: str
+    timeout_seconds: float
 
 
 @dataclass(kw_only=True)
@@ -65,8 +88,8 @@ class FabroEventReadGuard:
         factory: str,
         caller: str,
         timeout_seconds: float,
-        read: Callable[[], Result],
-    ) -> Result | None:
+        read: Callable[[], object],
+    ) -> _EventsResult | None:
         """Read once, or return ``None`` for a backed-off/unobservable read."""
         identity = _ReadIdentity(
             work_item_id=work_item_id,
@@ -92,7 +115,7 @@ class FabroEventReadGuard:
                 state=state,
             )
         try:
-            result = read()
+            result = cast(_EventsResult, read())
         finally:
             slot.close()
         if result.command.exit_code != 0 or result.command.stdout == "":
@@ -178,3 +201,23 @@ class FabroEventReadGuard:
 
 def _digest(*parts: str) -> str:
     return hashlib.sha256("\x00".join(parts).encode()).hexdigest()
+
+
+def guarded_fabro_events_read(
+    *,
+    port: _EventsPort,
+    journal: _Journal,
+    slots_root: Path,
+    request: FabroEventsReadRequest,
+) -> FabroEventsResult | None:
+    """Read one stream through the shared backoff and concurrency boundary."""
+    guard = FabroEventReadGuard(journal=journal, slots_root=slots_root)
+    result = guard.read(
+        work_item_id=request.work_item_id,
+        run_id=request.run_id,
+        factory=request.factory,
+        caller=request.caller,
+        timeout_seconds=request.timeout_seconds,
+        read=lambda: port.events(run_id=request.run_id, timeout_seconds=request.timeout_seconds),
+    )
+    return cast(FabroEventsResult | None, result)

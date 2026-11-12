@@ -503,7 +503,23 @@ def test_emit_review_gate_from_fabro_events_does_not_false_positive_below_high_c
         )
     )
 
-    assert journal.records == [
+    assert journal.records[-1] == {
+        "stage": "review-gate-telemetry",
+        "work_item_id": "bd-1",
+        "run_id": "run-1",
+        "review_verdict": "unknown",
+        "review_fix_rounds": 2,
+        "review_hit_cap": False,
+        "pr_shipped_on_cap": False,
+    }
+    assert journal.records[0] == {
+        "stage": "fabro-events-read-succeeded",
+        "work_item_id": "bd-1",
+        "run_id": "run-1",
+        "factory": "default",
+        "caller": "review-gate-reader",
+    }
+    assert journal.records[1:] == [
         {
             "stage": "review-gate-telemetry",
             "work_item_id": "bd-1",
@@ -613,7 +629,15 @@ def test_emit_review_gate_from_fabro_events_propagates_span_write_failure(
         )
 
     assert runner.calls == [(["fabro", "events", "run-1", "--json", "--tail", "200"], tmp_path)]
-    assert journal.records == []
+    assert journal.records == [
+        {
+            "stage": "fabro-events-read-succeeded",
+            "work_item_id": "bd-1",
+            "run_id": "run-1",
+            "factory": "default",
+            "caller": "review-gate-reader",
+        }
+    ]
 
 
 def _jsonl(*events: dict[str, object]) -> str:

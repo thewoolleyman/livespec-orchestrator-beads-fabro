@@ -2746,6 +2746,7 @@ def test_engine_fabro_run_failure_surfaces_inspect_failure_detail(tmp_path: Path
         "fabro-run",
         "fabro-inspect",
         "fabro-reattach",
+        "fabro-events-read-succeeded",
         "fabro-terminal-events",
         "fabro-sandbox-termination",
     ]

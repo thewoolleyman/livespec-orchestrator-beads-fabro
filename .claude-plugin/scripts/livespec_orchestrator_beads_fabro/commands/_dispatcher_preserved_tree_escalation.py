@@ -63,6 +63,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_publi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserved_tree_record import (
     PRESERVED_TREE_RECORD_STAGE,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._fabro_port_events import (
     fabro_event_records_from_stdout,
@@ -171,7 +175,14 @@ def preserve_checkpoint_failed_tree(
             run_id=run_id,
             factory=str(getattr(target, "name", server_url)),
             failure_text=_failure_text(outcome=outcome),
-            event_records=_event_records(port=port, run_id=run_id),
+            event_records=_event_records(
+                port=port,
+                journal=journal,
+                repo=repo,
+                work_item_id=item.id,
+                factory=str(getattr(target, "name", server_url)),
+                run_id=run_id,
+            ),
         ),
         journal_records=inputs.journal_records,
         publish=_publication(
@@ -198,14 +209,33 @@ def _failure_text(*, outcome: DispatchOutcome) -> str:
     return "\n".join(part for part in (outcome.fabro_failure_cause, outcome.detail) if part)
 
 
-def _event_records(*, port: FabroPort, run_id: str) -> tuple[dict[str, object], ...] | None:
+def _event_records(
+    *,
+    port: FabroPort,
+    journal: JournalWriter,
+    repo: Path,
+    work_item_id: str,
+    factory: str,
+    run_id: str,
+) -> tuple[dict[str, object], ...] | None:
     """The run's event stream, or None for a read that did not work.
 
     `None` is load-bearing and is NOT an empty stream: the trigger reads it as a
     terminal patch unobserved rather than absent, and therefore still publishes.
     """
-    result = port.events(run_id=run_id, timeout_seconds=_EVENTS_TIMEOUT_SECONDS)
-    if result.command.exit_code != 0:
+    result = guarded_fabro_events_read(
+        port=port,
+        journal=journal,
+        slots_root=repo / "tmp" / "fabro-event-read-slots",
+        request=FabroEventsReadRequest(
+            work_item_id=work_item_id,
+            run_id=run_id,
+            factory=factory,
+            caller="preserved-tree-reader",
+            timeout_seconds=_EVENTS_TIMEOUT_SECONDS,
+        ),
+    )
+    if result is None:
         return None
     records = fabro_event_records_from_stdout(stdout=result.command.stdout)
     return None if records is None else tuple(dict(record) for record in records)

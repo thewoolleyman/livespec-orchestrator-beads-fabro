@@ -180,10 +180,12 @@ def test_failed_dispatch_reinspects_when_terminal_inspect_has_no_failure_yet(
         "fabro-run",
         "fabro-inspect",
         "fabro-reattach",
+        "fabro-events-read-succeeded",
         "fabro-terminal-events",
         "fabro-sandbox-termination",
         "fabro-inspect",
         "fabro-run-labels",
+        "fabro-events-read-succeeded",
         "fabro-terminal-events",
         "fabro-sandbox-termination",
     ]

@@ -8,9 +8,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import BinaryIO
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
     FabroEventReadGuard,
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_port_types import FabroEventsResult
 
 
 @dataclass(kw_only=True)
@@ -30,6 +34,19 @@ class _Journal:
 
     def append(self, *, record: dict[str, object]) -> None:
         self.records.append(record)
+
+
+@dataclass(kw_only=True)
+class _Port:
+    result: FabroEventsResult
+    calls: list[tuple[str, float]] = field(default_factory=list)
+
+    def events(
+        self, *, run_id: str, timeout_seconds: float, since: str | None = None
+    ) -> FabroEventsResult:
+        _ = since
+        self.calls.append((run_id, timeout_seconds))
+        return self.result
 
 
 def _lock_slots(*, root: Path, factory: str, count: int) -> list[BinaryIO]:
@@ -113,3 +130,26 @@ def test_zero_byte_success_is_a_failed_read(tmp_path: Path) -> None:
 
     assert result is None
     assert journal.records[0]["stage"] == "fabro-events-read-failed"
+
+
+def test_guarded_reader_delegates_one_read_to_the_fabro_port(tmp_path: Path) -> None:
+    result = FabroEventsResult(
+        command=CommandResult(exit_code=0, stdout="[]", stderr=""), payload=[]
+    )
+    port = _Port(result=result)
+
+    guarded = guarded_fabro_events_read(
+        port=port,
+        journal=_Journal(),
+        slots_root=tmp_path,
+        request=FabroEventsReadRequest(
+            work_item_id="bd-ib-2dlh7m",
+            run_id="01RUN",
+            factory="petri",
+            caller="terminal-events-reader",
+            timeout_seconds=3.0,
+        ),
+    )
+
+    assert guarded == result
+    assert port.calls == [("01RUN", 3.0)]

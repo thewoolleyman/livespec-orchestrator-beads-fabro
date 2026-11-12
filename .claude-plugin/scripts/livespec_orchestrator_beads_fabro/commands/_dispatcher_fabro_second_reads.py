@@ -29,6 +29,10 @@ from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import journal_stage
+from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_executed_candidate import (
     attributed_provider_limit_failure,
     executed_candidate_identity,
@@ -85,10 +89,20 @@ def terminal_events_attachment(
     """
     if inspect.command.exit_code != 0 or inspect.status_kind != "failed":
         return inspect
-    events = fabro_port_for_plan(plan=plan, runner=runner).events(
-        run_id=run_id,
-        timeout_seconds=_FABRO_EVENTS_TIMEOUT_SECONDS,
+    events = guarded_fabro_events_read(
+        port=fabro_port_for_plan(plan=plan, runner=runner),
+        journal=journal,
+        slots_root=plan.repo / "tmp" / "fabro-event-read-slots",
+        request=FabroEventsReadRequest(
+            work_item_id=plan.work_item_id,
+            run_id=run_id,
+            factory=plan.fabro_factory_name,
+            caller="terminal-events-reader",
+            timeout_seconds=_FABRO_EVENTS_TIMEOUT_SECONDS,
+        ),
     )
+    if events is None:
+        return inspect
     journal_stage(
         journal=journal,
         plan=plan,

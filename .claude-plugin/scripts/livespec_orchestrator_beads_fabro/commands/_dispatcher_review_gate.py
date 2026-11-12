@@ -26,6 +26,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_review_gate_span imp
     emit_review_gate_span,
     review_gate_request_line,
 )
+from livespec_orchestrator_beads_fabro.commands._fabro_event_read_guard import (
+    FabroEventsReadRequest,
+    guarded_fabro_events_read,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -118,15 +122,23 @@ def _emit_review_gate_from_fabro_events(*, emission: ReviewGateEmission) -> None
             exit_code=None,
         )
         return
-    events = fabro_port_for_plan(plan=emission.plan, runner=emission.runner).events(
-        run_id=emission.run_id,
-        timeout_seconds=_FABRO_EVENTS_TIMEOUT_SECONDS,
+    events = guarded_fabro_events_read(
+        port=fabro_port_for_plan(plan=emission.plan, runner=emission.runner),
+        journal=emission.journal,
+        slots_root=emission.plan.repo / "tmp" / "fabro-event-read-slots",
+        request=FabroEventsReadRequest(
+            work_item_id=emission.work_item_id,
+            run_id=emission.run_id,
+            factory=emission.dispatch_factory or emission.plan.fabro_factory_name,
+            caller="review-gate-reader",
+            timeout_seconds=_FABRO_EVENTS_TIMEOUT_SECONDS,
+        ),
     )
-    if events.command.exit_code != 0:
+    if events is None:
         _append_review_gate_skip(
             emission=emission,
             reason="fabro events command failed",
-            exit_code=events.command.exit_code,
+            exit_code=1,
         )
         return
     telemetry = parse_review_gate_events(
