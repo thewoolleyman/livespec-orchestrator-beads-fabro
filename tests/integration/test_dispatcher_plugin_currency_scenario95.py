@@ -86,9 +86,17 @@ class _Runner:
 
 
 def _release_head_runner() -> _Runner:
-    """Both remote heads answer with a sha that is NOT the executing build id."""
+    """Both remote heads answer with a sha that is NOT the executing build id, which lags it."""
     head = CommandResult(exit_code=0, stdout=f"{_RELEASE_SHA}\trefs/heads/release\n", stderr="")
-    return _Runner(results={gate.latest_release_ref_argv(): head, gate.master_ref_argv(): head})
+    behind = CommandResult(exit_code=0, stdout="behind\n", stderr="")
+    comparison = gate.release_comparison_argv(release_sha=_RELEASE_SHA, build_id=_BUILD_ID)
+    return _Runner(
+        results={
+            gate.latest_release_ref_argv(): head,
+            gate.master_ref_argv(): head,
+            comparison: behind,
+        }
+    )
 
 
 def _install_runner(*, monkeypatch: pytest.MonkeyPatch, runner: _Runner) -> None:

@@ -18,6 +18,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate impor
     dispatcher_staleness_decision,
     latest_release_ref_argv,
     master_ref_argv,
+    release_comparison_argv,
 )
 
 _RELEASE_SHA = "9532efb793bc1d2c3a4b5c6d7e8f901234567890"
@@ -112,10 +113,15 @@ def test_registered_install_warning_follows_the_ambient_release_warnings(tmp_pat
     registered = _build(root=tmp_path / "6edebb0b0c50", version="0.129.1")
     record = _registry(tmp_path=tmp_path, repo=tmp_path, registered=registered)
 
+    runner = _current_release_runner()
+    runner.results[release_comparison_argv(release_sha=_RELEASE_SHA, build_id="b6e4012cafed")] = (
+        CommandResult(exit_code=0, stdout="behind\n", stderr="")
+    )
+
     decision = dispatcher_staleness_decision(
         plugin_root=executing,
         executing_payload=executing,
-        runner=_current_release_runner(),
+        runner=runner,
         cwd=tmp_path,
         install_record=record,
     )

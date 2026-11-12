@@ -327,7 +327,7 @@ def _lag_warnings(
         master_sha is not None and build_matches_ref(build_id=build_id, ref_sha=master_sha)
     ):
         return ()
-    if comparison_status == "ahead":
+    if comparison_status not in {"behind", "diverged"}:
         return ()
     return (
         DispatcherStalenessMessage(

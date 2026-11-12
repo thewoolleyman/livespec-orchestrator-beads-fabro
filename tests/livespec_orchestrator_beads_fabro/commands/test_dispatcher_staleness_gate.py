@@ -191,6 +191,37 @@ def test_read_only_cache_build_newer_than_latest_release_never_warns_that_it_lag
     assert not [warning for warning in decision.warnings if "lags latest release" in warning.detail]
 
 
+def test_read_only_cache_build_with_unavailable_comparison_never_claims_known_lag(
+    tmp_path: Path,
+) -> None:
+    """An unobservable comparison is not evidence that the build lags the release."""
+    module = _module()
+    cache_root = tmp_path / _NEWER_BUILD_SHA[:12]
+    cache_root.mkdir()
+    runner = _Runner(
+        results={
+            module.latest_release_ref_argv(): _ls_remote(
+                ref="refs/heads/release",
+                sha=_RELEASE_SHA,
+            ),
+            module.master_ref_argv(): _ls_remote(ref="refs/heads/master", sha=_RELEASE_SHA),
+            module.release_comparison_argv(
+                release_sha=_RELEASE_SHA,
+                build_id=_NEWER_BUILD_SHA[:12],
+            ): CommandResult(exit_code=1, stdout="", stderr="gh: unavailable"),
+        }
+    )
+
+    decision = module.dispatcher_staleness_decision(
+        plugin_root=cache_root,
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    assert decision.refusal is None
+    assert not [warning for warning in decision.warnings if "lags latest release" in warning.detail]
+
+
 def test_current_release_build_proceeds_when_master_is_ahead_and_warns_with_commit(
     tmp_path: Path,
 ) -> None:

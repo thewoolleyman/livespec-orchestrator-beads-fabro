@@ -14,6 +14,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate impor
     dispatcher_staleness_decision,
     latest_release_ref_argv,
     master_ref_argv,
+    release_comparison_argv,
     unreleased_dispatcher_commits_argv,
 )
 
@@ -69,6 +70,10 @@ def test_apply_gate_records_ambient_lag_without_a_precondition_exit(
         results={
             latest_release_ref_argv(): _ls_remote(ref="refs/heads/release", sha=_RELEASE_SHA),
             master_ref_argv(): _ls_remote(ref="refs/heads/master", sha=_RELEASE_SHA),
+            release_comparison_argv(
+                release_sha=_RELEASE_SHA,
+                build_id="b6e4012cafed",
+            ): CommandResult(exit_code=0, stdout="behind\n", stderr=""),
         }
     )
 
