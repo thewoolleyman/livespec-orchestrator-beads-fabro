@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_disposition im
 __all__: list[str] = [
     "ADAPTER_LAUNCH_RELEASE_STAGE",
     "RELEASE_STAGES",
+    "recapture_exhausted_for_recovery",
     "released_for_recovery",
 ]
 
@@ -125,6 +126,22 @@ def released_for_recovery(*, records: Sequence[Mapping[str, object]], work_item_
     return released
 
 
+def recapture_exhausted_for_recovery(
+    *, records: Sequence[Mapping[str, object]], work_item_id: str
+) -> bool:
+    """Whether the latest dispatch ended at the recapture exhaustion terminal."""
+    exhausted = False
+    for record in records:
+        if _record_work_item_id(record=record) != work_item_id:
+            continue
+        stage = record.get(_STAGE_KEY)
+        if stage == _DISPATCH_ID_STAGE:
+            exhausted = False
+        elif stage == _OUTCOME_STAGE:
+            exhausted = _is_recapture_exhausted_terminal(record=record)
+    return exhausted
+
+
 def _record_work_item_id(*, record: Mapping[str, object]) -> object:
     """Read a journal row's item id across ordinary and terminal record shapes."""
     if record.get(_STAGE_KEY) != _OUTCOME_STAGE:
@@ -141,11 +158,25 @@ def _is_recovery_terminal(*, record: Mapping[str, object]) -> bool:
     terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
     detail = terminal.get(_DETAIL_KEY)
     if isinstance(detail, str) and RECAPTURE_EXHAUSTED_MARKER in detail:
-        return terminal.get(_STATUS_KEY) == "blocked"
+        return _is_recapture_exhausted_terminal(record=record) or isinstance(
+            terminal.get(_NEEDS_HUMAN_KIND_KEY), str
+        )
     if isinstance(terminal.get(_NEEDS_HUMAN_KIND_KEY), str):
         return True
     return terminal.get(_STATUS_KEY) in {"cancelled", RUN_WALL_BUDGET_EXCEEDED_STAGE} or (
         terminal.get(_STATUS_KEY) == "failed"
         and isinstance(detail, str)
         and NON_CONVERGED_MARKER in detail
+    )
+
+
+def _is_recapture_exhausted_terminal(*, record: Mapping[str, object]) -> bool:
+    """Whether this terminal is the bounded recapture ending, not another failure."""
+    terminal = cast("Mapping[str, object]", record[_OUTCOME_KEY])
+    detail = terminal.get(_DETAIL_KEY)
+    return (
+        terminal.get(_STATUS_KEY) == "blocked"
+        and terminal.get(_STAGE_KEY) == "non_converged"
+        and isinstance(detail, str)
+        and RECAPTURE_EXHAUSTED_MARKER in detail
     )

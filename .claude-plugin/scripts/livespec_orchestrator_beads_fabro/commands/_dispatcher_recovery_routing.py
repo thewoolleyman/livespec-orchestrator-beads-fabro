@@ -50,8 +50,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted_hold import (
+    recapture_exhausted_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted_route import (
+    route_recapture_exhausted,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_ruling import (
     current_ruling_route,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_held_outcomes import (
+    held_outcomes,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     unobservable_measurements,
@@ -67,12 +76,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved i
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
     PRESERVED_WORK_ABSENT,
     PRESERVED_WORK_VERIFIED,
-    RECOVERY_HELD_STAGE,
-    recovery_held_detail,
     recovery_held_record,
     recovery_held_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
+    recapture_exhausted_for_recovery,
     released_for_recovery,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
@@ -109,6 +117,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "RecoveryRouting",
+    "recapture_exhausted_refusal",
     "route_recovery",
 ]
 
@@ -211,18 +220,7 @@ class RecoveryRouting:
         tell the two apart. That pairing is the one `_dispatcher_rework_admission`
         already uses for its own deferral.
         """
-        return [
-            DispatchOutcome(
-                work_item_id=one.work_item_id,
-                status="capacity-deferred",
-                stage=RECOVERY_HELD_STAGE,
-                pr_number=None,
-                merge_sha=None,
-                detail=recovery_held_detail(route=one),
-            )
-            for one in self.routes
-            if _is_held(route=one)
-        ]
+        return held_outcomes(routes=self.routes)
 
 
 def route_recovery(
@@ -237,6 +235,18 @@ def route_recovery(
     runner = ShellCommandRunner()
     routes: list[RecoveryRoute] = []
     for item in candidates:
+        if recapture_exhausted_for_recovery(records=journaled, work_item_id=item.id):
+            routes.append(
+                route_recapture_exhausted(
+                    args=args,
+                    repo=repo,
+                    item=item,
+                    journal=journal,
+                    runner=runner,
+                    gather_resume_fn=gather_resume,
+                )
+            )
+            continue
         ruling = current_seed_ruling(repo=repo, item=item)
         if isinstance(ruling, RecoveryHold):
             routes.append(_held_route(item=item, journal=journal, hold=ruling))
