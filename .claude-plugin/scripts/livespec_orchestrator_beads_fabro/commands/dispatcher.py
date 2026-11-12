@@ -312,6 +312,10 @@ from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_breakage_pass import (
+    add_breakage_pass_arguments,
+    run_breakage_pass_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_emit import (
     emit_calibration,
 )
@@ -477,6 +481,7 @@ __all__: list[str] = [
     "ready_items",
     "reflector_oob_after_verdict",
     "requested_items_preflight_error",
+    "run_breakage_pass_command",
     "run_classify_tier_command",
     "run_claude_cred_status",
     "run_clear_acp_availability_hold_command",
@@ -504,11 +509,11 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "classify-tier": run_classify_tier_command,
     "clear-acp-availability-hold": run_clear_acp_availability_hold_command,
     "clear-provider-exhaustion": run_clear_provider_exhaustion_command,
+    "breakage-pass": run_breakage_pass_command,
     "codex-cred-refresh": run_codex_cred_refresh,
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
     "drift-run": _run_drift_run,
-    "breakage-pass": run_file_canary_command,
     "file-canary": run_file_canary_command,
     "fresh-ruling": run_fresh_ruling_command,
     "idle-slot-audit": run_idle_slot_audit_command,
@@ -555,7 +560,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
-    _ = subparsers.add_parser("breakage-pass")
+    add_breakage_pass_arguments(parser=subparsers.add_parser("breakage-pass"))
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))

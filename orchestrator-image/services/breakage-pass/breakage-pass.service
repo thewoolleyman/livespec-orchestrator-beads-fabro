@@ -1,0 +1,17 @@
+[Unit]
+# livespec `breakage-pass` — host timer unit TEMPLATE. `@PLUGIN_ROOT@`,
+# `@PRIMARY_REPO@` and `@RUN_AS_USER@` are substituted by `install.sh`.
+# The pass runs on the host because only it reaches the tenant's Dolt endpoint.
+Description=livespec scheduled-workflow breakage pass
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@RUN_AS_USER@
+WorkingDirectory=@PRIMARY_REPO@
+ExecStart=/usr/local/bin/with-livespec-env.sh -- /usr/bin/python3 @PLUGIN_ROOT@/scripts/bin/dispatcher.py breakage-pass --repo @PRIMARY_REPO@
+StandardOutput=journal
+StandardError=journal
+Restart=no

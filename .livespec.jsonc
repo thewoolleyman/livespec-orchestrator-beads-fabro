@@ -283,6 +283,7 @@
     // that surface round-trips the file through json.dumps and silently strips
     // every comment here while reporting green — tracked as bd-ib-lmi5.
     "dispatcher": {
+      "breakage_workflows": ["ci-root-uid.yml"],
       // INTERIM, RE-LANDED (2026-11-05, legacy-coordinator-agent ruling; plan
       // stall-watchdog-false-kills, bd-ib-laf735). The v0.287.0 watchdog stream leg reads
       // a route petri does not serve (404), so every stream poll is unobservable and the

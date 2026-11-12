@@ -1,0 +1,16 @@
+# Ask the forge once every half hour. A firing is one cached read pass, not a
+# poll loop; systemd journals its verdict lines from breakage-pass.service.
+
+[Unit]
+Description=Run livespec scheduled-workflow breakage pass every 30 minutes
+Documentation=https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=30min
+AccuracySec=1min
+Persistent=true
+Unit=breakage-pass.service
+
+[Install]
+WantedBy=timers.target
