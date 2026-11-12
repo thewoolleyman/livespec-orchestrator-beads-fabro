@@ -84,8 +84,17 @@ def test_the_timer_counts_its_interval_from_the_end_of_the_previous_pass() -> No
     assert "WantedBy=timers.target" in timer
 
 
-def test_a_pass_yields_cpu_and_is_reclaimed_but_never_hard_capped() -> None:
-    """A hard MemoryMax near the measured peak would OOM-kill every pass."""
+def _gigabytes(value: str) -> float:
+    units = {"K": 1 / 1024 / 1024, "M": 1 / 1024, "G": 1.0, "T": 1024.0}
+    return float(value[:-1]) * units[value[-1]]
+
+
+def test_a_pass_yields_cpu_and_is_reclaimed_and_only_backstopped_far_above_its_peak() -> None:
+    """A hard MemoryMax near the measured peak would OOM-kill every pass.
+
+    The backstop sits above the 4.7 GB measured max peak and above the 5G
+    reclaim watermark, so only a runaway pass reaches it.
+    """
     settings = [
         line
         for line in _SERVICE.read_text(encoding="utf-8").splitlines()
@@ -98,8 +107,14 @@ def test_a_pass_yields_cpu_and_is_reclaimed_but_never_hard_capped() -> None:
     # systemd's default CPUWeight is 100; a pass must weigh less than that.
     assert len(cpu_weights) == 1
     assert cpu_weights[0] < 100
-    assert any(line.startswith("MemoryHigh=") for line in settings)
-    assert not any(line.startswith("MemoryMax=") for line in settings)
+    highs = [
+        line.removeprefix("MemoryHigh=") for line in settings if line.startswith("MemoryHigh=")
+    ]
+    maxes = [line.removeprefix("MemoryMax=") for line in settings if line.startswith("MemoryMax=")]
+    assert len(highs) == 1
+    assert len(maxes) == 1
+    assert _gigabytes(maxes[0]) > _gigabytes(highs[0])
+    assert _gigabytes(maxes[0]) >= 8
 
 
 def test_the_installer_refuses_without_the_project_env_wrapper(tmp_path: Path) -> None:
