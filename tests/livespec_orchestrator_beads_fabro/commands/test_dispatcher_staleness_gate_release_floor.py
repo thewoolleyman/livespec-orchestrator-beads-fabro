@@ -60,6 +60,10 @@ def _release_head_runner() -> _Runner:
                 sha=_RELEASE_SHA,
             ),
             gate.master_ref_argv(): _ls_remote(ref="refs/heads/master", sha=_RELEASE_SHA),
+            gate.release_comparison_argv(
+                release_sha=_RELEASE_SHA,
+                build_id=_BUILD_ID,
+            ): CommandResult(exit_code=0, stdout="behind\n", stderr=""),
         }
     )
 
