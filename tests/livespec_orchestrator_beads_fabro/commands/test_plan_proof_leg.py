@@ -21,7 +21,7 @@ one offending property removed.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HOST_CAPTURED,
@@ -80,10 +80,18 @@ class _Reader:
     """A stub release reader: one reading for every record body it is handed."""
 
     answer: ReleaseReading
+    tree_difference: str | None = None
+    tree_calls: list[tuple[str, str, str]] = field(default_factory=list)
 
     def reading(self, *, body: str) -> ReleaseReading:
         del body
         return self.answer
+
+    def component_tree_difference(
+        self, *, commit: str, tag: str, component: ReleaseComponent
+    ) -> str | None:
+        self.tree_calls.append((commit, tag, component.name))
+        return self.tree_difference
 
 
 def _record(
@@ -93,6 +101,7 @@ def _record(
     assertion: str = _HOST,
     reproduced: bool | None = True,
     release: str | None = _TAG,
+    imported_components: tuple[str, ...] | None = None,
 ) -> dict[str, object]:
     """One plan record comment, rendered through the production renderer."""
     return {
@@ -101,7 +110,12 @@ def _record(
             verdict=verdict,
             identity=f"session {identity}",
             timestamp="2026-10-05T00:00:00Z",
-            build=BuildIdentity(release_tag=release, installed_build=None, commit="c0ffee1"),
+            build=BuildIdentity(
+                release_tag=release,
+                installed_build=None,
+                commit="c0ffee1",
+                imported_components=imported_components,
+            ),
             assertions=(
                 RecordAssertion(
                     text=assertion,
@@ -120,14 +134,21 @@ def _leg(
     *,
     comments: list[dict[str, object]],
     reading: ReleaseReading | None = None,
+    reader: _Reader | None = None,
     assertions: tuple[DefinitionOfDoneAssertion, ...] = _ASSERTIONS,
 ) -> object:
     return plan_proof_leg(
         assertions=assertions,
         entries=plan_proof_entries(comments=comments),
         carrier_map_position=last_carrier_map_position(comments=comments),
-        release_reader=_Reader(
-            answer=ReleaseTags(repository=_REPOSITORY, tags=_TAGS) if reading is None else reading
+        release_reader=(
+            _Reader(
+                answer=ReleaseTags(repository=_REPOSITORY, tags=_TAGS)
+                if reading is None
+                else reading
+            )
+            if reader is None
+            else reader
         ),
     )
 
@@ -307,6 +328,46 @@ def test_a_component_release_rule_applies_only_to_the_recorded_artifact_paths() 
     refusal = _leg(comments=wrong_tag, reading=reading)
     assert refusal.unproved == (_HOST,)
     assert ["other-v0.1.0" in one for one in refusal.rejected] == [True]
+
+
+def test_imported_code_with_an_owned_release_tag_is_proved_by_an_identical_component_tree() -> None:
+    """A component reached only through imported code is compared to its release tag."""
+    component = ReleaseComponent(
+        name="shared-credentials",
+        tag_prefix="shared-v",
+        paths=("tools/shared_credentials/",),
+    )
+    reader = _Reader(
+        answer=ReleaseTags(
+            repository=_REPOSITORY,
+            tags=frozenset({"shared-v1.0.0"}),
+            components=(component,),
+        )
+    )
+    timeline = _proved()
+    timeline[1] = _record(
+        verdict=VERDICT_CAPTURED,
+        identity="capturing",
+        reproduced=None,
+        release="shared-v1.0.0",
+    )
+    timeline[2] = _record(
+        verdict=VERDICT_VERIFIED,
+        identity="replaying",
+        release="shared-v1.0.0",
+        imported_components=(component.name,),
+    )
+    timeline[3] = _record(
+        verdict=VERDICT_HUMAN_ATTESTED,
+        identity="maintainer",
+        assertion=_HUMAN,
+        release="shared-v1.0.0",
+    )
+
+    leg = _leg(comments=timeline, reader=reader)
+
+    assert leg.met is True
+    assert reader.tree_calls == [("c0ffee1", "shared-v1.0.0", component.name)]
 
 
 def test_a_release_repository_the_gate_could_not_read_rejects_every_record_on_it() -> None:
