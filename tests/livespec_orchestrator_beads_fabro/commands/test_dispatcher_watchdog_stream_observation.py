@@ -161,6 +161,46 @@ def test_an_empty_successful_page_is_observable_and_keeps_the_quiet_window() -> 
     ]
 
 
+def test_an_unchanged_stage_projection_does_not_read_the_event_stream_again() -> None:
+    """A quiet bound poll costs its one by-id stages read and no stream read."""
+    api = _Api(
+        responses=[
+            _response(body=json.dumps([{"stream_seq": 7, "recorded_at": 10_000}])),
+            _response(body=json.dumps({"data": [], "meta": {"has_more": False}})),
+        ]
+    )
+    state = LivenessState()
+    record = {"data": [{"id": "implement@1", "status": "running"}]}
+
+    first = _sample(api=api, state=state, record=record, journal=_Journal())
+    second = _sample(api=api, state=state, record=record, journal=_Journal())
+
+    assert (first, second, api.calls) == (10.0, 10.0, [None])
+
+
+def test_a_stage_start_from_the_by_id_projection_is_liveness_progress() -> None:
+    """A failed event read does not hide the transition the stage read observed."""
+    api = _Api(responses=[_response(body="", succeeded=False)])
+
+    progress = _sample(
+        api=api,
+        state=LivenessState(),
+        record={
+            "data": [
+                {
+                    "id": "implement@1",
+                    "handler": "agent",
+                    "status": "running",
+                    "started_at_epoch": 15.0,
+                }
+            ]
+        },
+        journal=_Journal(),
+    )
+
+    assert progress == 15.0
+
+
 def test_a_poll_reads_all_event_pages_and_carries_the_newest_cursor() -> None:
     api = _Api(
         responses=[

@@ -84,11 +84,25 @@ class LivenessState:
     stream_seq: int | None = None
     run_record: object | None = None
     journal: JournalWriter | None = None
+    stage_states: tuple[tuple[str, str], ...] | None = None
 
     def observe_run(self, *, record: object | None, journal: JournalWriter) -> None:
         """Carry this poll's by-id record and journal into its liveness read."""
         self.run_record = record
         self.journal = journal
+
+    def stage_changed(self, *, record: object | None) -> bool:
+        """Remember the bound run's stage states and report a lifecycle transition."""
+        current = _stage_states(record=record)
+        if current is None:
+            # Only a readable `/stages` response can prove a quiet poll.  The
+            # direct probe seam also serves callers that have no projection;
+            # they retain its conservative event observation rather than
+            # treating an uninterpretable record as unchanged.
+            return True
+        changed = self.stage_states is None or current != self.stage_states
+        self.stage_states = current
+        return changed
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -103,8 +117,14 @@ class _WallClockEventProbe:
     def sample(self, *, observed_at: float) -> LivenessSample:
         if self.run_id is None:
             return LivenessSample(last_event_epoch=None, observed_at=observed_at)
-        records, observable, status = self._read_event_pages(run_id=self.run_id)
         stage_epoch = _stage_progress_epoch(record=self.state.run_record)
+        if not self.state.stage_changed(record=self.state.run_record):
+            return _quiet_stage_sample(
+                state=self.state,
+                stage_epoch=stage_epoch,
+                observed_at=observed_at,
+            )
+        records, observable, status = self._read_event_pages(run_id=self.run_id)
         if self.state.journal is not None:
             self.state.journal.append(
                 record={
@@ -255,8 +275,44 @@ def _stage_progress_sample(
     return LivenessSample(last_event_epoch=None, observed_at=observed_at)
 
 
+def _quiet_stage_sample(
+    *, state: LivenessState, stage_epoch: float | None, observed_at: float
+) -> LivenessSample:
+    """Carry a quiet stage projection forward without paying for an event read."""
+    if stage_epoch is not None and (
+        state.newest_event_epoch is None or stage_epoch > state.newest_event_epoch
+    ):
+        state.newest_event_epoch = stage_epoch
+    return LivenessSample(
+        last_event_epoch=state.newest_event_epoch,
+        observed_at=observed_at,
+        open_command_node=state.open_command_node,
+    )
+
+
+def _stage_states(*, record: object | None) -> tuple[tuple[str, str], ...] | None:
+    """Return the stable lifecycle fingerprint carried by `/stages`."""
+    if not isinstance(record, Mapping):
+        return None
+    raw_stages = cast("Mapping[str, object]", record).get("data")
+    if not isinstance(raw_stages, list):
+        return None
+    stages = cast("list[object]", raw_stages)
+    states = [
+        (stage_id, status)
+        for stage in stages
+        if isinstance(stage, Mapping)
+        and isinstance(stage_id := cast("Mapping[str, object]", stage).get("id"), str)
+        and isinstance(status := cast("Mapping[str, object]", stage).get("status"), str)
+    ]
+    return tuple(sorted(states))
+
+
 def _stage_progress_epoch(*, record: object | None) -> float | None:
     """Newest stage transition instant the bound run's status record names."""
+    projection_instants = _stage_projection_instants(record=record)
+    if projection_instants:
+        return max(projection_instants)
     inspected = fabro_inspect_record(payload=record)
     if inspected is None:
         return None
@@ -264,6 +320,20 @@ def _stage_progress_epoch(*, record: object | None) -> float | None:
         value=inspected.get("status")
     )
     return max(instants) if instants else None
+
+
+def _stage_projection_instants(*, record: object | None) -> list[float]:
+    """Read transition instants from the compact `/stages` response."""
+    if not isinstance(record, Mapping):
+        return []
+    raw_stages = cast("Mapping[str, object]", record).get("data")
+    if not isinstance(raw_stages, list):
+        return []
+    instants: list[float] = []
+    for stage in cast("list[object]", raw_stages):
+        if isinstance(stage, Mapping):
+            instants.extend(_stage_instants(value=cast("Mapping[str, object]", stage)))
+    return instants
 
 
 def _stage_instants(*, value: object) -> list[float]:

@@ -34,6 +34,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import WatchedFabroLauncher
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import build_plan
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
+    FabroHttpPort,
+    FabroHttpResult,
+)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -100,6 +104,7 @@ class _FactoryRunner:
     argvs: list[list[str]] = field(default_factory=list)
     run_done: threading.Event = field(default_factory=threading.Event)
     run_returned: threading.Event = field(default_factory=threading.Event)
+    stage_run_ids: list[str] = field(default_factory=list)
     _inspects: int = 0
 
     @property
@@ -141,6 +146,29 @@ class _FactoryRunner:
         self._inspects += 1
         exit_code, stdout, stderr = self.inspect_readings[index]
         return CommandResult(exit_code=exit_code, stdout=stdout, stderr=stderr)
+
+    def stages(self, *, run_id: str) -> FabroHttpResult:
+        self.stage_run_ids.append(run_id)
+        index = min(self._inspects, len(self.inspect_readings) - 1)
+        self._inspects += 1
+        exit_code, stdout, stderr = self.inspect_readings[index]
+        if exit_code != 0:
+            return FabroHttpResult(
+                status=404 if _NOT_FOUND in stderr else 0,
+                body=stderr,
+                error=stderr,
+                payload=None,
+                succeeded=False,
+            )
+        status = json.loads(stdout)[0]["status"]["kind"]
+        payload = {"data": [{"id": "implement@1", "status": status}]}
+        return FabroHttpResult(
+            status=200,
+            body=json.dumps(payload),
+            error=None,
+            payload=payload,
+            succeeded=True,
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -187,6 +215,7 @@ def _repo(*, tmp_path: Path) -> Path:
 def _launch(
     *,
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
     inspect_readings: list[tuple[int, str, str]],
     polls_before_the_run_ends: int,
 ) -> tuple[_FactoryRunner, _Journal]:
@@ -206,6 +235,25 @@ def _launch(
         slept["polls"] += 1
         if slept["polls"] > polls_before_the_run_ends:
             end_run_and_await_launcher_return(run_done=runner.run_done, work_item_id=_WORK_ITEM_ID)
+
+    def stages(_self: FabroHttpPort, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+        _ = timeout_seconds
+        return runner.stages(run_id=run_id)
+
+    def stream(
+        _self: FabroHttpPort, *, run_id: str, after: int | None, timeout_seconds: float
+    ) -> FabroHttpResult:
+        _ = (run_id, after, timeout_seconds)
+        return FabroHttpResult(
+            status=200,
+            body=_EVENTS,
+            error=None,
+            payload=json.loads(_EVENTS),
+            succeeded=True,
+        )
+
+    monkeypatch.setattr(FabroHttpPort, "stages", stages)
+    monkeypatch.setattr(FabroHttpPort, "stream", stream)
 
     repo = _repo(tmp_path=tmp_path)
     _ = WatchedFabroLauncher(sleep=_sleep, clock=lambda: 0.0).launch(
@@ -236,6 +284,7 @@ def _poll_records(*, journal: _Journal) -> list[dict[str, object]]:
 
 def test_scenario173_a_bound_run_is_polled_by_id_and_the_history_is_never_listed_again(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """One listing to discover the run; every poll after it reads that run by id.
 
@@ -252,16 +301,14 @@ def test_scenario173_a_bound_run_is_polled_by_id_and_the_history_is_never_listed
     """
     runner, journal = _launch(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         inspect_readings=[(0, _inspect_record(status_kind="running"), "")],
         polls_before_the_run_ends=3,
     )
 
-    first_inspect = runner.verbs.index("inspect")
     assert runner.verbs.count("ps") == 1
-    assert runner.verbs.index("ps") < first_inspect
-    assert "ps" not in runner.verbs[first_inspect:]
-    first_read = next(argv for argv in runner.argvs if argv[1] == "inspect")
-    assert first_read[:3] == ["fabro", "inspect", _RUN_ID]
+    assert "inspect" not in runner.verbs
+    assert runner.stage_run_ids == [_RUN_ID, _RUN_ID]
     stages = [record["stage"] for record in _poll_records(journal=journal)]
     assert len(stages) >= 3
     assert stages[0] == "watchdog-discovery-poll"
@@ -270,10 +317,13 @@ def test_scenario173_a_bound_run_is_polled_by_id_and_the_history_is_never_listed
     assert "rm" not in runner.verbs
 
 
-def test_scenario173_a_terminal_bound_run_is_still_detected(tmp_path: Path) -> None:
+def test_scenario173_a_terminal_bound_run_is_still_detected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The run reaches a terminal state and the per-run read reports it as one."""
     runner, journal = _launch(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         inspect_readings=[
             (0, _inspect_record(status_kind="running"), ""),
             (0, _inspect_record(status_kind="succeeded"), ""),
@@ -293,6 +343,7 @@ def test_scenario173_a_terminal_bound_run_is_still_detected(tmp_path: Path) -> N
 
 def test_scenario173_a_run_the_factory_no_longer_holds_is_still_detected(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The factory answers "no such run", and the poll names the disappearance.
 
@@ -304,6 +355,7 @@ def test_scenario173_a_run_the_factory_no_longer_holds_is_still_detected(
     """
     _, journal = _launch(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         inspect_readings=[(1, "", _NOT_FOUND)],
         polls_before_the_run_ends=3,
     )
@@ -314,7 +366,9 @@ def test_scenario173_a_run_the_factory_no_longer_holds_is_still_detected(
     assert {record["matched"] for record in bound} == {False}
 
 
-def test_scenario173_a_failed_per_run_read_is_not_a_disappearance(tmp_path: Path) -> None:
+def test_scenario173_a_failed_per_run_read_is_not_a_disappearance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """An unreachable factory has not lost the run, and the record must not say it has.
 
     The positive assertion and the two negative ones carry different weight.
@@ -324,6 +378,7 @@ def test_scenario173_a_failed_per_run_read_is_not_a_disappearance(tmp_path: Path
     """
     _, journal = _launch(
         tmp_path=tmp_path,
+        monkeypatch=monkeypatch,
         inspect_readings=[(1, "", _UNREACHABLE)],
         polls_before_the_run_ends=3,
     )

@@ -50,9 +50,14 @@ status could be read, and never on a reading that yielded one.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import cast
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    JournalWriter,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
     FABRO_PROBE_TIMEOUT_SECONDS,
 )
@@ -66,6 +71,10 @@ from livespec_orchestrator_beads_fabro.commands._fabro_port import (
     FabroInspectResult,
     FabroPort,
     FabroRunSummary,
+)
+from livespec_orchestrator_beads_fabro.commands._fabro_port_http import (
+    FabroHttpPort,
+    FabroHttpResult,
 )
 from livespec_orchestrator_beads_fabro.commands._run_attribution import RunAttribution
 
@@ -105,6 +114,27 @@ BOUND_POLL_REASON_UNOBSERVABLE = "run-read-unobservable"
 # only where no status could be read at all, which is the one reading it can
 # say anything about.
 _RUN_NOT_HELD_MARKER = "no run found"
+
+_STAGE_STATUS_PRIORITY = (
+    "running",
+    "retrying",
+    "pending",
+    "failed",
+    "cancelled",
+    "succeeded",
+    "partially_succeeded",
+    "skipped",
+)
+_STAGE_STATUS_KINDS = {
+    "running": "running",
+    "retrying": "running",
+    "pending": "runnable",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "succeeded": "succeeded",
+    "partially_succeeded": "succeeded",
+    "skipped": "succeeded",
+}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -168,10 +198,7 @@ def observed_run(
     can take the result without leaving the record.
     """
     if bound_run_id is not None:
-        inspect = port.inspect(
-            run_id=bound_run_id,
-            timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
-        )
+        inspect = _bound_run_read(port=port, run_id=bound_run_id)
         return ObservedRun(
             run=journaled_bound_poll(
                 work_item_id=work_item_id,
@@ -193,6 +220,67 @@ def observed_run(
         ),
         record=None,
     )
+
+
+def _bound_run_read(*, port: FabroPort, run_id: str) -> FabroInspectResult:
+    """Project a bound run from its compact HTTP stage read.
+
+    A non-HTTP server face is only an injected unit-test seam. It has no
+    factory target to observe, so retaining its CLI double avoids making a
+    hermetic fake claim that it exercised a live by-id server route.
+    """
+    api = _server_api_as_object(port=port)
+    if port.target.server_url is None or not isinstance(api, FabroHttpPort):
+        return port.inspect(run_id=run_id, timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS)
+    stages = api.stages(
+        run_id=run_id,
+        timeout_seconds=FABRO_PROBE_TIMEOUT_SECONDS,
+    )
+    return FabroInspectResult(
+        command=CommandResult(
+            exit_code=0 if stages.succeeded else 1,
+            stdout=stages.body if stages.succeeded else "",
+            stderr="" if stages.succeeded else stages.body,
+        ),
+        payload=stages.payload,
+        status_kind=_stages_status_kind(result=stages),
+        failure=None,
+    )
+
+
+def _server_api_as_object(*, port: FabroPort) -> object:
+    """Keep the test-double boundary explicit at the typed port edge."""
+    return port.server_api()
+
+
+def _stages_status_kind(*, result: FabroHttpResult) -> str | None:
+    """Infer the run state from the live stage projection the server returned."""
+    if not result.succeeded:
+        return None
+    statuses = _stage_statuses(payload=result.payload)
+    for status in _STAGE_STATUS_PRIORITY:
+        if status in statuses:
+            return _STAGE_STATUS_KINDS[status]
+    return None
+
+
+def _stage_statuses(*, payload: object) -> set[str]:
+    """Return the usable status strings in a stage-list response."""
+    if not isinstance(payload, dict):
+        return set()
+    response = cast("Mapping[str, object]", payload)
+    raw_stages = response.get("data")
+    if not isinstance(raw_stages, list):
+        return set()
+    stages = cast("list[object]", raw_stages)
+    statuses: set[str] = set()
+    for raw_stage in stages:
+        if not isinstance(raw_stage, Mapping):
+            continue
+        status = cast("Mapping[str, object]", raw_stage).get("status")
+        if isinstance(status, str):
+            statuses.add(status)
+    return statuses
 
 
 def journaled_bound_poll(

@@ -83,7 +83,7 @@ class _FakeResponse:
         _ = (exc_type, exc, traceback)
 
 
-def test_questions_answer_cancel_run_state_and_stream_hit_the_documented_routes() -> None:
+def test_questions_answer_cancel_stages_run_state_and_stream_hit_the_documented_routes() -> None:
     transport = _RecordingTransport(result=_ok(body='{"data": [], "meta": {"has_more": false}}'))
     port = FabroHttpPort(
         target=FabroTarget(server_url="https://hp.example:32276/", dev_token=_DEV_TOKEN_VALUE),
@@ -98,6 +98,7 @@ def test_questions_answer_cancel_run_state_and_stream_hit_the_documented_routes(
         timeout_seconds=5.0,
     )
     _ = port.cancel(run_id="01RUN", timeout_seconds=5.0)
+    stages = port.stages(run_id="01RUN", timeout_seconds=5.0)
     state = port.run_state(run_id="01RUN", timeout_seconds=5.0)
     stream = port.stream(run_id="01RUN", after=7, timeout_seconds=5.0)
     initial_stream = port.stream(run_id="01RUN", after=None, timeout_seconds=5.0)
@@ -107,6 +108,7 @@ def test_questions_answer_cancel_run_state_and_stream_hit_the_documented_routes(
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/questions"),
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/questions/q1/answer"),
         ("POST", "https://hp.example:32276/api/v1/runs/01RUN/cancel"),
+        ("GET", "https://hp.example:32276/api/v1/runs/01RUN/stages"),
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/state"),
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/events?after=7&limit=100"),
         ("GET", "https://hp.example:32276/api/v1/runs/01RUN/events?limit=100"),
@@ -123,6 +125,7 @@ def test_questions_answer_cancel_run_state_and_stream_hit_the_documented_routes(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {_DEV_TOKEN_VALUE}",
     }
+    assert stages.payload == {"data": [], "meta": {"has_more": False}}
     assert state.payload == {"data": [], "meta": {"has_more": False}}
     assert stream.payload == {"data": [], "meta": {"has_more": False}}
     assert initial_stream.payload == {"data": [], "meta": {"has_more": False}}
