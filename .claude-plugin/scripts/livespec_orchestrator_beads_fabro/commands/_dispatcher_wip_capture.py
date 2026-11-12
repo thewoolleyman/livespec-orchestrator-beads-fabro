@@ -30,6 +30,33 @@ tip=$(git rev-parse --verify "$branch" 2>/dev/null) || {
         "tip=unresolved reason=run branch $branch is absent" >&2
     exit 0
 }
+origin_url=$(env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 git config --local --get remote.origin.url 2>/dev/null) || {
+    echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
+        "tip=$tip reason=origin URL is unreadable" >&2
+    exit 0
+}
+push_repository=$(mktemp -d) || {
+    echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
+        "tip=$tip reason=an isolated push repository could not be created" >&2
+    exit 0
+}
+trap 'rm -rf "$push_repository"' EXIT
+objects=$(git rev-parse --path-format=absolute --git-path objects 2>/dev/null) || {
+    echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
+        "tip=$tip reason=the run object store is unreadable" >&2
+    exit 0
+}
+if ! env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 git init -q "$push_repository" \
+    || ! env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+        GIT_CONFIG_NOSYSTEM=1 git -C "$push_repository" remote add origin "$origin_url" \
+    || ! mkdir -p "$push_repository/.git/objects/info" \
+    || ! printf '%s\n' "$objects" > "$push_repository/.git/objects/info/alternates"; then
+    echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
+        "tip=$tip reason=an isolated origin remote could not be configured" >&2
+    exit 0
+fi
 tip_tree=$(git rev-parse "$tip^{tree}" 2>/dev/null) || {
     echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=refs/livespec/wip/$item/$run/unresolved" \
         "tip=$tip reason=tip tree is unreadable" >&2
@@ -40,7 +67,8 @@ base_tree=''
 if test -n "$base"; then base_tree=$(git rev-parse "$base^{tree}" 2>/dev/null || true); fi
 default_tree=$(git rev-parse "refs/remotes/origin/$default_branch^{tree}" 2>/dev/null || true)
 prefix="refs/livespec/wip/$item/$run/"
-refs=$(git ls-remote origin "${prefix}*" 2>/dev/null) || {
+refs=$(env GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+    GIT_CONFIG_NOSYSTEM=1 git -C "$push_repository" ls-remote origin "${prefix}*" 2>/dev/null) || {
     echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=${prefix}unresolved tip=$tip" \
         'reason=origin work-in-progress refs are unreadable' >&2
     exit 0
@@ -73,8 +101,14 @@ elif test -n "${GITHUB_APP_ID:-}"; then
 else
     runner=()
 fi
-if "${runner[@]}" env GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
-    GIT_CONFIG_NOSYSTEM=1 git -c core.hooksPath=/dev/null push origin "$tip:$ref"; then
+if (
+    cd "$push_repository" \
+        && env -u LIVESPEC_AGENT_STAGE \
+            GIT_CONFIG_COUNT=0 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+            GIT_CONFIG_NOSYSTEM=1 "${runner[@]}" env GIT_CONFIG_GLOBAL=/dev/null \
+            GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_NOSYSTEM=1 \
+            git -c core.hooksPath=/dev/null push origin "$tip:$ref"
+); then
     echo "LIVESPEC_WIP_CAPTURED: $ref $tip" >&2
 else
     echo "LIVESPEC_WIP_CAPTURE_FAILED: ref=$ref tip=$tip" \
