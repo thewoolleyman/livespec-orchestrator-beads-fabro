@@ -120,6 +120,23 @@ _CODEX_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
     all_literals=("model is not supported when using codex with a chatgpt account",),
 )
 
+# MEASURED 2026-11-04 on petri, run 01M6KVPC4B2J: Claude Code 2.1.170
+# rejected the requested model before an agent turn began. The adapter writes
+# both its own and required minimum version into the message, so those dynamic
+# values cannot be literal discriminators; the surrounding stable sentence is
+# the exact measured form. Candidate-scoped: a newer Claude adapter, or another
+# candidate, can still serve the same availability domain.
+_CLAUDE_MODEL_UNSUPPORTED = AcpAvailabilitySignature(
+    source=_MESSAGE_SOURCE,
+    cause="model_unsupported",
+    scope=_CANDIDATE_SCOPE,
+    all_literals=(
+        "claude code",
+        "does not support this model",
+        "or newer is required",
+    ),
+)
+
 # MEASURED 2026-08 on the Wave B fork validation (`plan/archive/
 # fabro-fork-control-plane-gaps/research/005-...`): `-m gpt-5.5` returned
 # `404 Not Found: The model 'gpt-5.5' does not exist or you do not have
@@ -203,6 +220,7 @@ _CODEX_USAGE_LIMIT_SNAKE_TOKEN = _quota_machine_code(machine_code="usage_limit_e
 
 _BUILTIN_SIGNATURES: dict[str, tuple[AcpAvailabilitySignature, ...]] = {
     ANTHROPIC_DOMAIN: (
+        _CLAUDE_MODEL_UNSUPPORTED,
         _ANTHROPIC_SESSION_LIMIT,
         _ANTHROPIC_GENERIC_LIMIT,
         _ANTHROPIC_WEEKLY_LIMIT,
