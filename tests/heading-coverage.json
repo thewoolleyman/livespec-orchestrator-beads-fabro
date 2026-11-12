@@ -3157,5 +3157,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-engf4h adds cases in which a governing-heading finding, a Definition-of-Done clause record and a dod_gate refusal comment that quote a specification clause carrying a goal-template opening delimiter are each appended as a ledger comment carrying the quote whole in bracket form, with the clause digest a record carries equal to the digest of the clause as read from the specification, and in which a clause with no opening delimiter is quoted byte-for-byte. bd-ib-engf4h owns it.",
     "work_item": "bd-ib-engf4h"
+  },
+  {
+    "heading": "## Scenario 349 \u2014 Reconciliation applies the whole-run wall budget to a live run no dispatch still owns",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the scenario tier or above is owed for this heading: the owning work-item bd-ib-ag633q adds cases in which a reconcile-runs pass, given a claim attributed to this host whose factory run is running and whose ownership lock no live process holds, exports, cancels and rests a run past its whole-run wall budget that is not progressing, holds as run-live a run within its budget, a run whose lock a live process holds, a run whose record carries no first-running instant, and a run whose export cannot be read back, applies the same budget to another dispatching repository's claim from the host's periodic pass, and in which a dispatch that stops observing its run names the run, the factory and the hand-off to reconciliation on its outcome record. bd-ib-ag633q owns it.",
+    "work_item": "bd-ib-ag633q"
   }
 ]
