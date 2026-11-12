@@ -307,6 +307,32 @@ def test_the_review_fix_settle_writes_its_own_brief_and_exits_zero(tmp_path: Pat
     assert not _git_file(repo=repo, name=_LIVE_GIT_PATH).exists()
 
 
+def test_review_fix_settle_records_the_failed_commit_run_brief(tmp_path: Path) -> None:
+    """Scenario 179: the exported settle output retains the runner's own refusal brief."""
+    repo = _clone(tmp_path)
+    plugins = _plugins(tmp_path)
+    path = _run_record(
+        repo=repo,
+        record={"state": "failed", "exit_code": 1, "hook_ran": True},
+    )
+    _ = path.with_suffix(".output").write_text(
+        f"lefthook hook: pre-commit\nFailed targets (1):\n  - {_FAILED_TARGET}\n{_ERROR_LINE}\n",
+        encoding="utf-8",
+    )
+
+    result = _run_node(repo=repo, node=_REVIEW_FIX_SETTLE, plugins=plugins)
+
+    assert result.returncode == 0, result.stderr
+    brief = _git_file(repo=repo, name=_REVIEW_FIX_LIVE_GIT_PATH).read_text(encoding="utf-8")
+    assert brief.startswith("failed\n")
+    assert _RUN_ID in brief
+    assert "exit status 1" in brief
+    assert f"failed targets: {_FAILED_TARGET}" in brief
+    assert "repository commit hook ran" in brief
+    assert _ERROR_LINE in brief
+    assert brief in result.stderr
+
+
 def test_an_absent_runner_leaves_no_brief_and_still_exits_zero(tmp_path: Path) -> None:
     """A run whose sandbox never materialized the runner has no commit run to wait on."""
     repo = _clone(tmp_path)
