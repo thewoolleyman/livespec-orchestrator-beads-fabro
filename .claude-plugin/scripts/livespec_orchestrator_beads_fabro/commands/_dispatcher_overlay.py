@@ -416,7 +416,6 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
         + gh_refresh_steps
         + git_credential_helper_steps
         + codex_steps
-        + codex_steps
         + plugin_cache_steps
         + resume_checkout_steps
         + credential_use_steps

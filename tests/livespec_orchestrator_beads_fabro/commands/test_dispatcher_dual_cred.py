@@ -77,6 +77,7 @@ from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 from tests.conftest import ResolveAcpNodes
+from tests.prepare_step_support import steps_in
 
 # The run budget these cases are POSITIONED AGAINST, and the figure the retired
 # `CODEX_FRESHNESS_RUN_BUDGET_SECONDS` module constant carried. Kept as a fixed
@@ -313,6 +314,30 @@ def test_render_overlay_projects_the_codex_otel_config(tmp_path: Path) -> None:
     assert json.loads(otel_line[len("CODEX_OTEL_CONFIG_TOML = ") :]) == (
         '[otel]\nenvironment = "livespec"\n'
     )
+
+
+def test_render_overlay_materializes_each_codex_prepare_projection_once(tmp_path: Path) -> None:
+    """The rendered TOML has one auth, telemetry, plugin, and trust step."""
+    rendered = render_run_config_overlay(
+        committed_text=_COMMITTED_WORKFLOW_TOML,
+        workflow_dir=tmp_path,
+        token=_FAKE_TOKEN,
+        github_token=_FAKE_GITHUB_TOKEN,
+        siblings=None,
+        codex_auth_snapshot=_FAKE_SNAPSHOT,
+        credential_use=_CREDENTIAL_USE,
+        codex_otel_config='[otel]\nenvironment = "livespec"\n',
+    )
+    assert rendered is not None
+
+    scripts = [step.script for step in steps_in(block=rendered)]
+    for marker in (
+        "CODEX_AUTH_JSON",
+        "CODEX_OTEL_CONFIG_TOML",
+        "plugin marketplace add",
+        "reconcile_trust",
+    ):
+        assert sum(marker in script for script in scripts) == 1
 
 
 def test_render_overlay_omits_codex_otel_config_when_absent(tmp_path: Path) -> None:
