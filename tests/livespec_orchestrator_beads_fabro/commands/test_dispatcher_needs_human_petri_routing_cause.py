@@ -266,7 +266,11 @@ def _plan(*, tmp_path: Path) -> DispatchPlan:
 
 
 def _outcome(
-    *, tmp_path: Path, inspect_payload: list[object], events_payload: list[object] | None
+    *,
+    tmp_path: Path,
+    inspect_payload: list[object],
+    events_payload: list[object] | None,
+    stderr: str = _STDERR,
 ) -> DispatchOutcome:
     """The terminal outcome, with both payloads read by the production parsers."""
     outcome = fabro_run_terminal_outcome(
@@ -281,7 +285,7 @@ def _outcome(
             events_payload=events_payload,
         ),
         exit_code=1,
-        stderr=_STDERR,
+        stderr=stderr,
     )
     assert outcome is not None
     return outcome
@@ -458,6 +462,41 @@ def test_a_timed_out_petri_stage_surfaces_its_own_completion_reason(tmp_path: Pa
 
     assert "failed stage: review_fix@1" in body
     assert f"innermost cause: {cause}" in body
+
+
+def test_a_designed_refresh_failure_is_not_the_cause_after_a_successful_needs_human_route(
+    tmp_path: Path,
+) -> None:
+    """The route-stage reason outranks a non-zero refresh that the run outlived."""
+    designed_route = "LIVESPEC_PR_REFRESH_HEAD_CHANGED: fresh proof is required"
+    route_reason = (
+        "LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED: the Green amend was not written"
+    )
+    stderr = (
+        f"{NEEDS_HUMAN_MARKER}_PRESERVED: refs/heads/needs-human/{_RUN}\n"
+        f"{NEEDS_HUMAN_MARKER}: {route_reason}; run terminated, work preserved by reference, "
+        "decision routed to the ledger (blocked / needs-human)\n"
+    )
+    outcome = _outcome(
+        tmp_path=tmp_path,
+        inspect_payload=_ordered_petri_inspect(
+            stages={
+                "pr_refresh_head@1": _failed_stage(output=designed_route),
+                "review_fix_open_red_route@3": _stage(handler="script", state="succeeded"),
+                _TERMINAL_STAGE: _stage(handler="script", state="failed"),
+            },
+            execution=["pr_refresh_head@1", "review_fix_open_red_route@3", _TERMINAL_STAGE],
+        ),
+        events_payload=None,
+        stderr=stderr,
+    )
+
+    body = needs_human_cause_body(outcome=outcome)
+
+    assert outcome.needs_human_kind == "agent-request"
+    assert outcome.needs_human_stages == ()
+    assert designed_route not in body
+    assert f"terminal reason: {route_reason}" in body
 
 
 def test_a_succeeded_step_on_the_routing_node_is_not_read_as_its_failure(
