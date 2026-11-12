@@ -196,3 +196,13 @@ def test_a_green_janitor_visit_clears_the_no_progress_marker(tmp_path: Path) -> 
     later_failure = _run(node="janitor_failure_route", repo=repo)
     assert later_failure.returncode == 0
     assert (state / "livespec-janitor-failed-head").read_text(encoding="utf-8").strip() == head
+
+
+def test_a_janitor_without_a_check_suite_verdict_does_not_enter_fix(tmp_path: Path) -> None:
+    """A failed janitor with no verdict is held out of the ordinary fix route."""
+    repo = _repo(tmp_path=tmp_path)
+
+    route = _run(node="janitor_refresh_route", repo=repo)
+
+    assert route.returncode == 0
+    assert json.loads(route.stdout) == {"preferred_next_label": "needs_human"}
