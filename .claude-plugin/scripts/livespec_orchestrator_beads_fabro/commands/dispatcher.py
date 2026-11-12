@@ -307,7 +307,6 @@ import argparse
 from collections.abc import Callable
 
 from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
-    add_clear_acp_availability_hold_arguments,
     run_clear_acp_availability_hold_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
@@ -353,7 +352,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect impo
     run_factory_inspect_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fresh_ruling import (
-    add_fresh_ruling_arguments,
     run_fresh_ruling_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
@@ -387,6 +385,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
     ready_items,
     run_id,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_operator_valve_args import (
+    add_operator_valve_subcommands,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
     ensure_otel_receiver,
     parse_janitor,
@@ -396,7 +397,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_probe import run_probe_command
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion_clear import (
-    add_clear_provider_exhaustion_arguments,
     run_clear_provider_exhaustion_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged import (
@@ -508,6 +508,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "codex-cred-status": run_codex_cred_status,
     "dispatch": run_dispatch_command,
     "drift-run": _run_drift_run,
+    "breakage-pass": run_file_canary_command,
     "file-canary": run_file_canary_command,
     "fresh-ruling": run_fresh_ruling_command,
     "idle-slot-audit": run_idle_slot_audit_command,
@@ -534,14 +535,6 @@ def main(*, argv: list[str] | None = None) -> int:
     return handler(args=args)
 
 
-def _add_operator_valve_subcommands(
-    *, add_parser: Callable[[str], argparse.ArgumentParser]
-) -> None:
-    add_clear_provider_exhaustion_arguments(parser=add_parser("clear-provider-exhaustion"))
-    add_clear_acp_availability_hold_arguments(parser=add_parser("clear-acp-availability-hold"))
-    add_fresh_ruling_arguments(parser=add_parser("fresh-ruling"))
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dispatcher")
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
@@ -551,7 +544,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
     add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
     add_claude_cred_status_arguments(parser=subparsers.add_parser("claude-cred-status"))
-    _add_operator_valve_subcommands(add_parser=subparsers.add_parser)
+    add_operator_valve_subcommands(add_parser=subparsers.add_parser)
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
@@ -562,6 +555,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
     add_post_host_record_arguments(parser=subparsers.add_parser("post-host-record"))
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
+    _ = subparsers.add_parser("breakage-pass")
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
