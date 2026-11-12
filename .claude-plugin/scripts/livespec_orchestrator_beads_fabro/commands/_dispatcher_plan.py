@@ -78,6 +78,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
     GoalBriefMiniJinjaFinding,
     minijinja_findings_detail,
     minijinja_openers_in_goal_sources,
+    minijinja_openers_in_item_fields,
     minijinja_openers_in_text,
     render_goal,
 )
@@ -190,6 +191,7 @@ __all__: list[str] = [
     "janitor_worktree_remove_argv",
     "minijinja_findings_detail",
     "minijinja_openers_in_goal_sources",
+    "minijinja_openers_in_item_fields",
     "minijinja_openers_in_text",
     "parse_fleet_members",
     "parse_pr_view",

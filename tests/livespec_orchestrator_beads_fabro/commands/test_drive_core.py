@@ -474,3 +474,45 @@ def test_main_run_impl_renders_markdown_with_dispatcher_exit_code(
     assert out.lstrip().startswith("#")
     assert "status: **green**" in out
     assert "dispatcher exit code: 0" in out
+
+
+def test_main_returns_goal_preflight_exit_five_and_emits_one_safe_refusal(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    detail = (
+        "goal-template opening delimiter in editable field(s): title at 0-based "
+        "character offset 7; edit that field"
+    )
+    runner = _Runner(
+        results=[
+            CommandRun(
+                argv=("dispatcher",),
+                returncode=5,
+                stdout=json.dumps(
+                    [
+                        {
+                            "work_item_id": "bd-ib-123",
+                            "status": "failed",
+                            "stage": "goal-minijinja-preflight",
+                            "detail": detail,
+                        }
+                    ]
+                ),
+                stderr="",
+            )
+        ]
+    )
+
+    exit_code = main(argv=["--repo", str(repo), "--action", "impl:bd-ib-123"], runner=runner)
+
+    captured = capsys.readouterr()
+    opener = "{" + "{"
+    assert exit_code == 5
+    assert "goal-minijinja-preflight" in captured.out
+    assert "title at 0-based character offset 7" in captured.out
+    assert captured.err.splitlines() == [
+        f"REFUSED: work-item bd-ib-123: {detail}; remedy: edit that field"
+    ]
+    assert opener not in captured.out + captured.err

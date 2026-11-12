@@ -74,6 +74,7 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
     result = resolved_runner(argv=argv, cwd=repo)
     parsed = _parse_json_object_or_array(text=result.stdout)
     status = _dispatch_status(returncode=result.returncode, parsed=parsed)
+    goal_template_refusal = _goal_template_refusal(parsed=parsed)
     return {
         "action_id": f"impl:{work_item_ref}",
         "kind": "impl",
@@ -85,7 +86,12 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
             "stdout_json": parsed,
             "stderr": result.stderr,
         },
-        "summary": _dispatch_summary(status=status, work_item_ref=work_item_ref),
+        "summary": _dispatch_summary(
+            status=status,
+            work_item_ref=work_item_ref,
+            goal_template_refusal=goal_template_refusal,
+        ),
+        "goal_template_refusal": goal_template_refusal,
     }
 
 
@@ -182,7 +188,7 @@ def _dispatch_status(*, returncode: int, parsed: object) -> str:
     return "failed"
 
 
-def _dispatch_summary(*, status: str, work_item_ref: str) -> str:
+def _dispatch_summary(*, status: str, work_item_ref: str, goal_template_refusal: str | None) -> str:
     if status == "green":
         return f"Dispatcher reported green for {work_item_ref}."
     if status == HANDED_OFF_STATUS:
@@ -192,7 +198,23 @@ def _dispatch_summary(*, status: str, work_item_ref: str) -> str:
         )
     if status == "blocked":
         return f"Dispatcher reported a human-gated blocked run for {work_item_ref}."
+    if goal_template_refusal is not None:
+        return f"Dispatcher refused at goal-minijinja-preflight: {goal_template_refusal}."
     return f"Dispatcher did not report green for {work_item_ref}."
+
+
+def _goal_template_refusal(*, parsed: object) -> str | None:
+    """Extract the safe preflight detail from one Dispatcher JSON outcome."""
+    if not isinstance(parsed, list):
+        return None
+    outcomes = cast("list[object]", parsed)
+    if len(outcomes) != 1 or not isinstance(outcomes[0], dict):
+        return None
+    outcome = cast("dict[str, object]", outcomes[0])
+    if outcome.get("stage") != "goal-minijinja-preflight":
+        return None
+    detail = outcome.get("detail")
+    return detail if isinstance(detail, str) else None
 
 
 def _parse_json_object_or_array(*, text: str) -> object:

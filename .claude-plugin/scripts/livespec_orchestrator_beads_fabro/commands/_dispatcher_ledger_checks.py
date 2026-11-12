@@ -213,35 +213,16 @@ def _check_goal_source_minijinja_openers(
             comments=comments_by_item.get(item.id, ()),
             lessons="",
         )
-        field_hits = tuple(
-            finding for finding in source_findings if not _is_comment_source(finding=finding)
-        )
-        comment_hits = tuple(
-            finding for finding in source_findings if _is_comment_source(finding=finding)
-        )
-        if comment_hits:
+        if source_findings:
             findings.append(
                 LedgerFinding(
                     check=_GOAL_SOURCE_MINIJINJA_CHECK,
                     item_id=item.id,
-                    message=_comment_contamination_message(findings=comment_hits),
-                    severity="fail",
-                )
-            )
-        if field_hits:
-            findings.append(
-                LedgerFinding(
-                    check=_GOAL_SOURCE_MINIJINJA_CHECK,
-                    item_id=item.id,
-                    message=_field_contamination_message(findings=field_hits),
+                    message=_field_contamination_message(findings=source_findings),
                     severity="warn",
                 )
             )
     return findings
-
-
-def _is_comment_source(*, finding: GoalBriefMiniJinjaFinding) -> bool:
-    return finding.source.startswith("ledger comment ")
 
 
 def _field_contamination_message(
@@ -254,15 +235,7 @@ def _field_contamination_message(
     )
 
 
-def _comment_contamination_message(
-    *,
-    findings: tuple[GoalBriefMiniJinjaFinding, ...],
-) -> str:
-    return (
-        "goal source contains MiniJinja opening delimiter; permanent comment "
-        f"contamination source(s): {_source_list(findings=findings)}"
-    )
-
-
 def _source_list(*, findings: tuple[GoalBriefMiniJinjaFinding, ...]) -> str:
-    return ", ".join(f"{finding.source} ({finding.opener})" for finding in findings)
+    return ", ".join(
+        f"{finding.source} at 0-based character offset {finding.offset}" for finding in findings
+    )

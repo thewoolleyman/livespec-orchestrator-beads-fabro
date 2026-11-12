@@ -41,6 +41,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_o
     OriginSpecUnreadable,
     origin_spec_h2_headings,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_goal import (
+    minijinja_openers_in_item_fields,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -49,6 +52,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "definition_of_done_findings",
+    "goal_template_opening_delimiter_findings",
 ]
 
 # What each opt-out mode's `Reason:` line owes, in the clause's own words. Keyed
@@ -67,7 +71,12 @@ _REASON_SUBJECTS = {
 }
 
 
-def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]:
+def definition_of_done_findings(
+    *,
+    item: WorkItem,
+    cwd: Path,
+    include_goal_template_openers: bool = True,
+) -> tuple[str, ...]:
     """Every mechanical Definition-of-Done finding for one item, or an empty tuple.
 
     An absent section returns EARLY with the one finding that matters: every
@@ -75,10 +84,12 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
     "no reference line" for the same item would name one fault twice and bury the
     remedy the operator actually needs.
     """
+    findings = list(goal_template_opening_delimiter_findings(item=item))
+    if not include_goal_template_openers:
+        findings = []
     section = definition_of_done(description=item.description)
     if not section.present:
-        return (_absent_section_finding(item=item),)
-    findings: list[str] = []
+        return (*findings, _absent_section_finding(item=item))
     if not section.references:
         findings.append(_absent_reference_line_finding(item=item))
     findings.extend(_reference_findings(item=item, references=section.references, cwd=cwd))
@@ -88,6 +99,26 @@ def definition_of_done_findings(*, item: WorkItem, cwd: Path) -> tuple[str, ...]
     )
     findings.extend(_stray_line_finding(item=item, line=line) for line in section.stray_lines)
     return tuple(findings)
+
+
+def goal_template_opening_delimiter_findings(*, item: WorkItem) -> tuple[str, ...]:
+    """Report every editable field that would become MiniJinja syntax in a goal.
+
+    The field text is never quoted: a filing finding is copied to an immutable
+    ledger comment, so echoing the delimiter would turn the record of a repair
+    into a future goal-rendering hazard.  The character offset gives the filer
+    a precise, editable repair location without carrying the unsafe bytes.
+    """
+    return tuple(
+        _goal_template_finding(item=item, source=finding.source, offset=finding.offset)
+        for finding in minijinja_openers_in_item_fields(item=item)
+    )
+
+
+def _goal_template_finding(*, item: WorkItem, source: str, offset: int) -> str:
+    """Render one safe finding without copying the delimiter into immutable text."""
+    subject = f"work-item {item.id}: {source} carries a goal-template opening delimiter"
+    return f"{subject} at 0-based character offset {offset}; edit that field"
 
 
 def _reference_findings(

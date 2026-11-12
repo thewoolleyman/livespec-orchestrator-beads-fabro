@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro._beads_client import FakeBeadsClient, make_beads_client
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import InvokerIdentity
 from livespec_orchestrator_beads_fabro.commands._drive_valves import run_human_valve_action
@@ -115,6 +116,34 @@ def test_approve_admits_unlabeled_pending_item_when_global_auto_enabled(
 
     assert result["status"] == "green"
     assert _fake().show_issue(issue_id="bd-ib-ready")["status"] == "ready"
+
+
+@pytest.mark.parametrize(
+    ("auto_approve_ready", "admission_policy"),
+    [(False, "manual"), (True, "auto")],
+)
+def test_approve_holds_a_goal_template_opener_for_both_admission_policies(
+    *, tmp_path: Path, auto_approve_ready: bool, admission_policy: str
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _write_fake_config(repo, auto_approve_ready=auto_approve_ready)
+    opener = "{" + "{"
+    append_work_item(
+        path=_config(),
+        item=_item(
+            status="pending-approval",
+            admission_policy=admission_policy,
+            title=f"Unsafe {opener} title",
+        ),
+    )
+
+    result = run_human_valve_action(repo=repo, action_id="approve:bd-ib-ready")
+
+    assert result["status"] == "failed"
+    assert "title" in result["summary"]
+    assert opener not in result["summary"]
+    assert _fake().show_issue(issue_id="bd-ib-ready")["status"] == "pending-approval"
 
 
 def test_run_human_valve_action_refuses_malformed_action(tmp_path: Path) -> None:
