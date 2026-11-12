@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.323.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.322.0...v0.323.0) (2026-11-12)
+
+
+### Features
+
+* accept pytest node ids in Red handoffs ([da6374d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/da6374dbbd090c8fbe4c0d9072f4bb09e8b74d33))
+* amend shell-test Red commits by factory provenance ([78eecbc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/78eecbc75a2c565364b44d385d81ff55e541f26d))
+* order recovery rulings by instant ([a7f1a7f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a7f1a7fe00664f7951a7ac3d57ecaee39c65a8e7))
+* read imported plan code ([0474db7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0474db75311e9b6d6c7059c23671ee3ee1a87641))
+* refuse Green without current Red provenance ([912f769](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/912f76903989a12f7f4a4b338f39ebda0736be8e))
+* render imported plan code ([6e542e6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6e542e6a3bc9e741ddc5b20ed079e4886cd1e1cd))
+* verify imported component trees ([c66e1a8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/c66e1a8203def87b488959fca800ac82a7d3e82a))
+
+
+### Bug Fixes
+
+* commit_green folds only the current run's checkpoints ([98869d3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98869d3a73b7451025c6448b0db3e9273bd01472))
+* judge imported components even when a record names an unowned release tag ([e7fa627](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e7fa62733a4a6abb625f45eaf653bfc555d1e26e))
+* reuse exempt spec-change tier records ([ca9a5ed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ca9a5ed0d3286226581b9b68fa78d95e1381da38))
+
 ## [0.322.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.321.0...v0.322.0) (2026-11-12)
 
 
