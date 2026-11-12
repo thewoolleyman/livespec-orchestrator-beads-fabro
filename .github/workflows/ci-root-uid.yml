@@ -100,7 +100,7 @@ jobs:
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.202.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -168,7 +168,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.202.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -215,7 +215,7 @@ jobs:
 
       - name: Publish the flake-retry records for the host-side reader
         if: ${{ !cancelled() }}
-        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.201.0
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.202.0
         with:
           suffix: per-file-${{ matrix.uid }}
 
@@ -255,7 +255,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.202.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(inputs.runner_labels || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -322,7 +322,7 @@ jobs:
     if: needs.decide.outputs.run == 'true'
     runs-on: ${{ fromJSON(inputs.runner_labels || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.201.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.202.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
