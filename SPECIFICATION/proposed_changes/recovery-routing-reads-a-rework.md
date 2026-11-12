@@ -13,7 +13,7 @@ created_at: 2026-11-12T17:55:12Z
 
 ### Summary
 
-Two gaps meet in one routing decision. First, the ratified text makes a merged pull request ALWAYS a non-fallback refusal (§"Factory-configurable ACP fallback priority"), yet the shipped router (bd-ib-nkoyln, cd98919a0) lifts it when a rework rejection was journaled after the merge. That exemption is right, because otherwise `reconcile-merged` closes out an unfinished rework, but it is unratified. Second, the router reads that rejection ONLY from the dispatching clone's journal. The journal is gitignored and local to one clone, and the ledger carries no timestamped rework return. This proposal ratifies the exemption, and makes both rework returns also write a timestamped `livespec-rework-rejection` ledger comment. Routing then reads a return from either source. Unreadable instants keep the hold. Four Scenario 185 scenarios exercise it.
+Two gaps meet in one routing decision. First, the ratified text makes a merged pull request ALWAYS a non-fallback refusal (§"Factory-configurable ACP fallback priority"), yet the shipped router (bd-ib-nkoyln, cd98919a0) lifts it when a rework rejection was journaled after the merge. That exemption is right, because otherwise `reconcile-merged` closes out an unfinished rework, but it is unratified. Second, the router reads that rejection ONLY from the dispatching clone's journal. The journal is gitignored and local to one clone, and the ledger carries no timestamped rework return. This proposal ratifies the exemption, and makes both rework returns also write a timestamped `livespec-rework-rejection` ledger comment. Routing then reads a return from either source. Unreadable instants keep the hold. Six new Scenario 185 scenarios exercise it, and two existing ones are qualified to match.
 
 ### Motivation
 
@@ -31,11 +31,13 @@ In-flight survey (2026-11-12 about 17:00Z): no remote spec/* branch or open pull
 
 2. contracts.md, §"Factory-configurable ACP fallback priority": in the sentence "Every other refusal is *non-fallback*: the earlier run is live, the item's dispatch-scoped ownership lock is held by a live process, or the pull request is merged (its remedy stays `reconcile-merged --item`).", replace "or the pull request is merged (its remedy stays `reconcile-merged --item`)" with "or the pull request is merged and no rework return of the item is recorded after the merge (its remedy stays `reconcile-merged --item`)". Then, IMMEDIATELY AFTER the sentence "The not-ready refusal cannot apply, because routing grades a `ready` item.", insert:
 
-"A pull request that merged BEFORE a recorded rework return of the item is a fallback-permitting refusal, not a non-fallback one. The merged change was returned to rework, so "no unmerged publication is left" no longer means the item's work is complete, and routing MUST grade the rework through the preference order this clause states. Routing MUST read rework returns from BOTH sources: the item's `livespec-rework-rejection` ledger comments, and the journal's `human-valve-reject-rework` and `acceptance-auto-rework` records for the item. A return from either source that is later than the merge instant the forge reports suffices. A return instant or merge instant that cannot be read MUST be treated as no return after the merge, so the merged refusal keeps its non-fallback precedence and the item is held."
+"A pull request that merged BEFORE a recorded rework return of the item is a fallback-permitting refusal, not a non-fallback one. The merged change was returned to rework, so "no unmerged publication is left" no longer means the item's work is complete, and routing MUST grade the rework through the preference order this clause states. Routing MUST read rework returns from BOTH sources: the item's `livespec-rework-rejection` ledger comments, and the journal's rework-return records for the item, either record: the reject valve's `human-valve-reject-rework` record, or the automatic disposition's record, which has stage `auto-disposition` and disposition `ai-fail-auto-rework`. A return from either source that is later than the merge instant the forge reports suffices. A return instant or merge instant that cannot be read MUST be treated as no return after the merge, so the merged refusal keeps its non-fallback precedence and the item is held."
 
-No other sentence of either section changes.
+Also in that paragraph, replace "so a merged pull request is never treated as a missing anchor" with "so a merged pull request with no later recorded rework return is never treated as a missing anchor".
 
-3. scenarios.md, §"Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch": inside that section's gherkin block, append these four scenarios at its END, IMMEDIATELY BEFORE the block's closing fence, after every scenario already in the block, including any that an earlier revise of this cycle appended. Separate them from the preceding scenario by one blank line:
+No other sentence of either contracts.md section changes.
+
+3. scenarios.md, §"Scenario 185 — A released item's recovery route is decided before admission and executed per item, and a deferred item keeps its branch": inside that section's gherkin block, append these six scenarios at its END, IMMEDIATELY BEFORE the block's closing fence, after every scenario already in the block, including any that an earlier revise of this cycle appended. Separate them from the preceding scenario by one blank line:
 
 ```gherkin
   Scenario: A rework return recorded on the ledger after a merge lets routing route the rework
@@ -64,6 +66,21 @@ No other sentence of either section changes.
     Given an item resting in acceptance
     When drive --action reject:<id>:rework succeeds
     Then the item carries one ledger comment whose first line is livespec-rework-rejection, naming reject:rework, the invoker and the UTC instant of the return
+
+  Scenario: The automatic rework disposition writes its ledger comment
+    Given an item resting in acceptance whose acceptance pass takes the AI-fail automatic rework disposition
+    When the Dispatcher returns the item to rework
+    Then the item carries one ledger comment whose first line is livespec-rework-rejection, naming acceptance-auto-rework, the disposition and the UTC instant of the return
+
+  Scenario: An unreadable rework return or merge instant leaves the route held
+    Given an item released for recovery whose pull request merged
+    And the merge instant, or the instant of every rework return recorded for the item, cannot be read
+    When the Dispatcher grades the item's recovery route
+    Then the route is held and the refusal names reconcile-merged --item
 ```
 
-No H2 heading is added, removed or renamed, so `tests/heading-coverage.json` needs no co-edit.
+4. scenarios.md, the same Scenario 185 gherkin block: qualify the two existing scenarios that the new rule would otherwise contradict.
+- In `Scenario: A merged pull request holds a released item and keeps the reconcile-merged remedy`, replace the step "Given a ready released item whose publish branch carries a merged pull request" with "Given a ready released item whose publish branch carries a merged pull request, and no rework return of the item is recorded after the merge".
+- In `Scenario: A non-fallback refusal still holds an item that carries a seed ruling`, replace the step "And the item's pull request is merged, or its earlier run is live" with "And the item's pull request is merged and no rework return of the item is recorded after the merge, or its earlier run is live".
+
+No other scenario changes. No H2 heading is added, removed or renamed, so `tests/heading-coverage.json` needs no co-edit.
