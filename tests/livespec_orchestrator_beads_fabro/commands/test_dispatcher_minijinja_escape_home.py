@@ -43,6 +43,7 @@ _MODULE_PATH = Path(
     "_dispatcher_minijinja_escape.py"
 )
 _ESCAPER = "escape_minijinja_literal"
+_OPENER_REWRITER = "rewrite_minijinja_openers_for_goal"
 # The three OPENING delimiters MiniJinja's lexer enters template mode at, each
 # paired with the text the escaper must render it as. A closing delimiter and every
 # other character are inert outside a tag, which is why only openers appear here.
@@ -65,9 +66,10 @@ def test_the_escaper_has_its_own_module_and_that_module_is_its_whole_surface() -
 
     module = importlib.import_module(_MODULE)
 
-    assert set(module.__all__) == {_ESCAPER}
+    assert set(module.__all__) == {_ESCAPER, _OPENER_REWRITER}
     for text, expected in _OPENERS:
         assert module.escape_minijinja_literal(text=text) == expected
+        assert module.rewrite_minijinja_openers_for_goal(text=text) == text.replace("{", "[", 1)
 
 
 def test_the_overlay_no_longer_carries_the_escaper_at_all() -> None:

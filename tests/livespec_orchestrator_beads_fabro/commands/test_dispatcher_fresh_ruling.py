@@ -118,6 +118,6 @@ def test_a_reason_the_template_opener_detector_flags_is_refused_and_writes_nothi
 
     assert _run(repo=repo, journal=journal, reason=_OPENER_REASON) == [3]
 
-    assert "{{" in capsys.readouterr().err
+    assert "{{" not in capsys.readouterr().err
     assert read_work_item_comments(path=store_config(repo=repo), work_item_id=_ITEM_ID) == ()
     assert not journal.exists()

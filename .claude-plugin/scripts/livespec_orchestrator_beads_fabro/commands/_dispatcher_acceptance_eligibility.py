@@ -133,7 +133,14 @@ def acceptance_eligibility(
         # that produces them — so it is exempt from the section requirement
         # entirely, not merely from the assertion count.
         return _verdict(item=item, variant=variant, criteria=criteria, findings=(), refusal=None)
-    findings = definition_of_done_findings(item=item, cwd=cwd)
+    # An editable opener is a filing- and approve-time mechanical finding, but
+    # a hand-picked legacy `ready` row reaches the goal preflight so that the
+    # Dispatcher can give its dedicated stage and exit-code diagnosis.
+    findings = definition_of_done_findings(
+        item=item,
+        cwd=cwd,
+        include_goal_template_openers=False,
+    )
     return _verdict(
         item=item,
         variant=variant,

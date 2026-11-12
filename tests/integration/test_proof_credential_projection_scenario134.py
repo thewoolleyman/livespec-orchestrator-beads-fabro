@@ -734,7 +734,7 @@ def test_a_goal_preflight_refusal_mints_nothing_and_leaves_no_overlay(
 
     exit_code, calls = _dispatch(repo=repo, monkeypatch=monkeypatch)
 
-    assert (exit_code, calls) == (1, [])
+    assert (exit_code, calls) == (5, [])
     assert "goal-minijinja-preflight" in capsys.readouterr().out
     assert _provider_ledger(ledger=ledger) == []
     assert not overlay_file_path(work_item_id=_ITEM_ID).exists()

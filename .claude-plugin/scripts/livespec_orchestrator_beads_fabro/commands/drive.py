@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
@@ -266,8 +266,24 @@ def main(*, argv: list[str] | None = None, runner: CommandRunner | None = None) 
         driver_session=args.driver_session,
         delegation=args.delegation,
     )
+    goal_template_refusal = result.get("goal_template_refusal")
+    if isinstance(goal_template_refusal, str):
+        _ = write_stderr(
+            text=(
+                f"REFUSED: work-item {args.action.removeprefix(_IMPL_PREFIX)}: "
+                f"{goal_template_refusal}; remedy: edit that field\n"
+            )
+        )
     emit_payload(payload=result, as_json=args.as_json)
-    return exit_code_for_status(status=str(result["status"]))
+    dispatcher = result.get("dispatcher")
+    dispatcher_data = cast("dict[str, object]", dispatcher) if isinstance(dispatcher, dict) else {}
+    dispatcher_exit_code = dispatcher_data.get("exit_code")
+    return exit_code_for_status(
+        status=str(result["status"]),
+        dispatcher_exit_code=dispatcher_exit_code
+        if isinstance(dispatcher_exit_code, int)
+        else None,
+    )
 
 
 def _invoker_refusal_exit(*, args: argparse.Namespace, repo: Path) -> int | None:
