@@ -157,3 +157,22 @@ because 176 governs refresh repair, not the `fix_commit_settle` route. One
 preflight run named the governing H2, `## ACP node timeouts`, and passed once it
 was added. Pass a candidate description file as the preflight's second argument
 to test an edit before writing it with `bd update --body-file`.)
+
+**A Definition-of-Done bullet the spec does not state holds the item at
+spec-change tier.** `dispatcher.py classify-tier` grades the Definition of Done
+against the ratified spec. Any bullet that no clause or scenario states reads
+`partial`, and the item is held for a linked proposal topic until that topic is
+ratified, even when `dod-preflight.sh` passes. So write each bullet as a
+paraphrase of the governing heading's own behaviour. Put numeric bars (exit
+statuses, trial counts, a CPU ceiling), import-structure properties and proof
+guidance in Context instead. A plan-level target belongs to the plan's own proof
+through its carrier map, never to a child's Definition of Done. After filing,
+run `with-livespec-env.sh python3 <plugin-root>/scripts/bin/dispatcher.py
+classify-tier --repo . --item <id>`. Treat anything but `tier none` as a
+Definition of Done to tighten. File a proposal only when the requirement
+genuinely belongs in the spec. (Measured 2026-11-12, three items in one plan
+session. `bd-ib-22j24v` was held for its 0.72 CPU ceiling, which the carrier map
+already gave to plan-level proof; moving it to Context gave `tier none`.
+`bd-ib-vc6o5q` was held for collect-alone and import-order bullets, which needed
+a proposal. `bd-ib-nq2wim` was held for exit statuses, HUP and a 200-trial bar;
+rewriting it to the ratified Terminal line clause released it.)
