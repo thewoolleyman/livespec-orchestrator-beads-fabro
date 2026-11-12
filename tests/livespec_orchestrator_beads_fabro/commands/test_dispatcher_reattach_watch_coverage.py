@@ -285,6 +285,27 @@ def test_unobservable_outcome_only_retains_a_nonterminal_unreadable_run(
         assert outcome.status == expected_status
 
 
+def test_unobservable_outcome_hands_the_whole_run_budget_to_reconciliation(
+    *, tmp_path: Path
+) -> None:
+    """A vanished watcher leaves the still-live run for the timer to bound."""
+    outcome = unobservable.unobservable_run_outcome(
+        outcome_type=DispatchOutcome,
+        plan=_plan(repo=tmp_path),
+        run_id="01DROPPED",
+        inspect=FabroInspectResult(
+            command=CommandResult(exit_code=1, stdout="", stderr=""),
+            payload=None,
+            status_kind=None,
+            failure=None,
+        ),
+        client_text="unreadable",
+    )
+
+    assert outcome is not None
+    assert "whole-run wall budget is left to reconciliation" in outcome.detail
+
+
 def test_post_run_terminal_returns_the_reattach_budget_disposition(
     *, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

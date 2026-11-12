@@ -64,6 +64,7 @@ def unobservable_run_outcome(
         detail=(
             f"run {run_id} on {plan.fabro_factory_server or 'the local factory'} "
             "is possibly still alive; re-attach observation budget exhausted; "
-            "work-item claim retained"
+            "work-item claim retained; its whole-run wall budget is left to "
+            "reconciliation"
         ),
     )
