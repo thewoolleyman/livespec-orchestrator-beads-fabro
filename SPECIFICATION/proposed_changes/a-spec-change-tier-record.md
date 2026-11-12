@@ -28,15 +28,17 @@ Design choices, stated for the grade:
 - **The rule is a version the build declares.** Each build carries, as a constant, the orchestrator spec version of the newest revision that amended the autonomy-tier bullet and that the build implements. That is decidable at build time and needs no model.
 - **Staleness is read from the forge, like a release.** The writer compares that version with the newest ratified orchestrator revision amending the bullet, read from the orchestrator repository's default branch on its forge remote. A tenant's own spec version cannot answer this, because the tier clause lives in the orchestrator's spec, not the tenant's.
 - **Flag, never refuse.** A stale-rule record keeps every existing field and adds the flag. This proposal changes what the record SAYS, not whether a dispatch proceeds. Whether a stale rule should refuse is a separate fleet decision.
+- **Byte-level amendment, worded honestly** (grade fix 1). The bullet also carries the relink, `release-spec-tier` and `close-duplicate` text, and #5058 adds more, so any edit to it moves the ratified version. Rather than carve out the tier-decision sentences, which has no stable boundary, the record says only what is mechanically true: the build's rule predates the bullet's latest ratified TEXT. A flag after an edit outside the tier decision is therefore accurate, not a false claim that the decision rule changed. Because the statement never refuses, that noise costs nothing.
+- **One read per invocation or pass** (grade fix 2). This matches the per-pass reads of recovery routing.
 - **Unobservable is its own reading.** It is distinct from both current and stale, as the plugin-currency check already distinguishes "could not determine" from "current".
 
-In-flight alignment, all `align`: #5058 amends the same bullet's hold reading, not the record's fields; #5036, #5042 and the-spec-change-tier-judgement change how the judgement is taken, not what the record names. Fleet scope: every tenant's tier records are written by the orchestrator plugin, so every tenant inherits the change.
+In-flight alignment, all `align`: #5058 amends the same bullet's hold reading, not the record's fields; #5036, #5042 and the-spec-change-tier-judgement change how the judgement is taken, not what the record names. Fleet scope: every beads tenant's tier records are written by this plugin, so every beads tenant inherits the change. livespec-orchestrator-git-jsonl writes tier records too (`spec_change_tier.py`, `store_codec.py`) and is OUT of this proposal's scope; it needs its own item in its own tenant. Nothing surfaces the flag yet, for example in `needs-attention`. Surfacing it is a separate decision this proposal does not make.
 
 ### Proposed Changes
 
 **1. The record names its build and rule (`contracts.md` §"Grooming and slice-size calibration", the "An autonomy tier is assigned" bullet).** Immediately before the bullet's last sentence, "Plan-child disposition refuses a held spec-change-tier child and admits an implementation follow-up.", add:
 
-> Every `livespec-spec-change-tier` record, whatever its stage, MUST name the plugin build that wrote it, as the build's commit, and its TIER RULE. The tier rule is the orchestrator specification version of the newest revision amending this bullet that the build implements, carried by the build as a constant. The writer MUST compare that version with the newest ratified orchestrator revision amending this bullet, read from the orchestrator repository's default branch on its forge remote. When the build's tier rule is older, the record MUST say that its tier rule predates the ratified clause, naming the build's rule version and the ratified version, so it cannot be read as a judgement made under the spec version it names. When the comparison cannot be taken, the record MUST say the rule's currency is unobservable, distinctly from saying it is current. When the build's tier rule equals the ratified version, the record reads exactly as it would without this sentence, plus the build and tier-rule fields. Naming a stale rule is a statement on the record. It neither refuses a dispatch nor changes the recorded tier.
+> Every `livespec-spec-change-tier` record, whatever its stage, MUST name the plugin build that wrote it, as the build's commit and, when the build carries one, its release tag, together with its TIER RULE. The tier rule is the orchestrator specification version at which this bullet's text last changed, byte for byte, among the versions the build implements, carried by the build as a constant. The writer MUST compare that version with the orchestrator specification version at which this bullet's text last changed among the ratified revisions on the orchestrator repository's default branch, read from its forge remote. It MUST take that read at most once per invocation or per pass, and share it across every record that invocation or pass writes. When the build's tier rule is older, the record MUST say that its tier rule predates the bullet's latest ratified text, naming both versions, so it cannot be read as a judgement made under the spec version it names. When the comparison cannot be taken, the record MUST say the rule's currency is unobservable, distinctly from saying it is current. When the two versions are equal, the record reads exactly as it would without this sentence, plus the build and tier-rule fields. Naming an older rule is a statement on the record. It neither refuses a dispatch nor changes the recorded tier.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 361 are claimed by pending proposals and peer drafts.
 
@@ -47,14 +49,19 @@ Feature: a tier record cannot claim a clause its build did not apply
   Scenario: a current build's record names its build and rule
     Given a plugin build whose tier rule equals the newest ratified orchestrator revision amending the autonomy-tier bullet
     When it writes a livespec-spec-change-tier record at any stage
-    Then the record names the build's commit and its tier rule
+    Then the record names the build's commit, its release tag when it has one, and its tier rule
     And the record otherwise reads as it did before this scenario
 
   Scenario: a stale build's record says its rule predates the ratified clause
     Given a plugin build whose tier rule is older than the newest ratified orchestrator revision amending the autonomy-tier bullet
     When it writes a livespec-spec-change-tier record
-    Then the record says its tier rule predates the ratified clause, naming the build's rule version and the ratified version
+    Then the record says its tier rule predates the bullet's latest ratified text, naming the build's rule version and the ratified version
     And the recorded tier and the dispatch outcome are unchanged by that statement
+
+  Scenario: one pass reads the forge once
+    Given one intake or drain pass that writes tier records for several items
+    When the pass writes those records
+    Then the orchestrator's default branch is read from its forge remote at most once in that pass
 
   Scenario: an unreadable comparison reads unobservable
     Given the orchestrator repository's default branch cannot be read from its forge remote
