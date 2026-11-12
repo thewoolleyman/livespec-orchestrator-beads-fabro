@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.321.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.320.1...v0.321.0) (2026-11-12)
+
+
+### Features
+
+* compose every dispatch helper from one registry and fetch it in the sandbox (bd-ib-jrawlp) ([db91219](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db91219879e0560d7d64ba3d6db41ffb3614c276))
+* fetch the run-from clones program as a helper and render only its plan (bd-ib-jrawlp) ([64dc23f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/64dc23ffcb6a0fea311daabdf7fe8a53f804497a))
+* refuse a dispatch whose helper build commit the forge does not serve (bd-ib-jrawlp) ([9f13bd1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9f13bd1a5fa01f63476f47bd7a2a8060c92424c8))
+* render the helper fetch and no helper source in every dispatch overlay (bd-ib-jrawlp) ([a992eed](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a992eede3d68a05a694104fc481f6d0de8a496d6))
+
+
+### Bug Fixes
+
+* attribute release-spec-tier attestations ([66bd562](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/66bd562c33c290e9b22ac95bcd106f54a596c3a5))
+* bound the sandbox helper fetch so a stuck forge fetch fails at 120 s naming the timeout (bd-ib-jrawlp) ([5bcbda8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/5bcbda84c7f7da7b21f56b223476be00b8f7cb94))
+
 ## [0.320.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.320.0...v0.320.1) (2026-11-12)
 
 
