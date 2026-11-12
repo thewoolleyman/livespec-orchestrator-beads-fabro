@@ -182,6 +182,29 @@ def _launch(
     timeout: int = _STEP_TIMEOUT_SECONDS,
 ) -> subprocess.CompletedProcess[str]:
     """Execute one rendered launch string as the engine would."""
+    process = _launch_process(
+        rendered=rendered,
+        sandbox=sandbox,
+        deadline=deadline,
+        extra_env=extra_env,
+    )
+    stdout, stderr = process.communicate(timeout=timeout)
+    return subprocess.CompletedProcess(
+        args=process.args,
+        returncode=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
+    )
+
+
+def _launch_process(
+    *,
+    rendered: str,
+    sandbox: Path,
+    deadline: int,
+    extra_env: dict[str, str] | None = None,
+) -> subprocess.Popen[str]:
+    """Start one rendered launch string as the engine would."""
     adapter_env, argv = _engine_launch(rendered=rendered, sandbox=sandbox)
     child_env = dict(os.environ)
     child_env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
@@ -190,13 +213,12 @@ def _launch(
     # as the engine's exec would, so a case can observe whether an adapter is able
     # to displace a projected value.
     child_env.update(adapter_env)
-    return subprocess.run(
+    return subprocess.Popen(
         argv,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         env=child_env,
-        check=False,
     )
 
 
@@ -209,6 +231,29 @@ def _heartbeat_adapter(*, beat_file: Path) -> str:
     """
     inner = f"while : ; do date +%s.%N >> {beat_file}; sleep 0.2; done"
     return _guarded(rendered=f"/bin/sh -c {shlex.quote(inner)}")
+
+
+def _rendezvoused_heartbeat_adapter(
+    *, beat_file: Path, deadline_file: Path, release_file: Path
+) -> str:
+    """Record an entry heartbeat before the guard reads this test's deadline.
+
+    The initial heartbeat is an observed readiness rendezvous, not a timed
+    allowance: only after it appears does the test choose the absolute deadline
+    and release the production guard around the continuously beating command.
+    """
+    deadline_name = CREDENTIAL_USE_DEADLINE_ENV_VAR
+    guarded = _heartbeat_adapter(beat_file=beat_file)
+    inner = "\n".join(
+        [
+            f"date +%s.%N >> {shlex.quote(str(beat_file))}",
+            f"while [ ! -f {shlex.quote(str(release_file))} ]; do sleep 0.05; done",
+            f"{deadline_name}=$(cat {shlex.quote(str(deadline_file))})",
+            f"export {deadline_name}",
+            f"exec {guarded}",
+        ]
+    )
+    return f"/bin/sh -c {shlex.quote(inner)}"
 
 
 def _beats(*, beat_file: Path) -> list[float]:
@@ -226,6 +271,16 @@ def _last_beat(*, beat_file: Path) -> float:
     beats = _beats(beat_file=beat_file)
     assert beats, "the command never recorded a heartbeat, so nothing was measured"
     return beats[-1]
+
+
+def _wait_for_first_beat(*, beat_file: Path, process: subprocess.Popen[str]) -> None:
+    """Bound the rendezvous only to diagnose a launch that never becomes live."""
+    for _ in range(100):
+        if _beats(beat_file=beat_file):
+            return
+        assert process.poll() is None, process.stderr.read() if process.stderr is not None else ""
+        time.sleep(0.05)
+    raise AssertionError("the launch never recorded its readiness heartbeat")
 
 
 def test_every_resolved_adapter_launches_through_the_guard(tmp_path: Path) -> None:
@@ -335,11 +390,27 @@ def test_a_guarded_launch_is_stopped_by_the_deadline(tmp_path: Path) -> None:
     """
     _ = _install_guard(sandbox=tmp_path)
     beat_file = tmp_path / "beats"
-    deadline = int(time.time()) + _SOON_SECONDS
-    result = _launch(
-        rendered=_heartbeat_adapter(beat_file=beat_file),
+    deadline_file = tmp_path / "deadline"
+    release_file = tmp_path / "release"
+    process = _launch_process(
+        rendered=_rendezvoused_heartbeat_adapter(
+            beat_file=beat_file,
+            deadline_file=deadline_file,
+            release_file=release_file,
+        ),
         sandbox=tmp_path,
-        deadline=deadline,
+        deadline=int(time.time()) + _STEP_TIMEOUT_SECONDS,
+    )
+    _wait_for_first_beat(beat_file=beat_file, process=process)
+    deadline = int(time.time()) + _SOON_SECONDS
+    _ = deadline_file.write_text(str(deadline), encoding="utf-8")
+    release_file.touch()
+    stdout, stderr = process.communicate(timeout=_STEP_TIMEOUT_SECONDS)
+    result = subprocess.CompletedProcess(
+        args=process.args,
+        returncode=process.returncode,
+        stdout=stdout,
+        stderr=stderr,
     )
     assert result.returncode != 0 or beat_file.exists(), result.stderr
     last_beat = _last_beat(beat_file=beat_file)
@@ -366,10 +437,24 @@ def test_a_retried_launch_does_not_get_a_fresh_budget(tmp_path: Path) -> None:
     guard does not produce.
     """
     _ = _install_guard(sandbox=tmp_path)
-    deadline = int(time.time()) + _SOON_SECONDS
     first = tmp_path / "beats-first"
     second = tmp_path / "beats-second"
-    _ = _launch(rendered=_heartbeat_adapter(beat_file=first), sandbox=tmp_path, deadline=deadline)
+    deadline_file = tmp_path / "deadline"
+    release_file = tmp_path / "release"
+    first_process = _launch_process(
+        rendered=_rendezvoused_heartbeat_adapter(
+            beat_file=first,
+            deadline_file=deadline_file,
+            release_file=release_file,
+        ),
+        sandbox=tmp_path,
+        deadline=int(time.time()) + _STEP_TIMEOUT_SECONDS,
+    )
+    _wait_for_first_beat(beat_file=first, process=first_process)
+    deadline = int(time.time()) + _SOON_SECONDS
+    _ = deadline_file.write_text(str(deadline), encoding="utf-8")
+    release_file.touch()
+    _ = first_process.communicate(timeout=_STEP_TIMEOUT_SECONDS)
     _ = _launch(rendered=_heartbeat_adapter(beat_file=second), sandbox=tmp_path, deadline=deadline)
 
     beats = _beats(beat_file=first) + _beats(beat_file=second)
