@@ -64,6 +64,25 @@ else
     exit 1
 fi
 
+# A capture server that ignores the stop signal must make the harness report a
+# failed telemetry case after its own stop bound.  The server exits shortly
+# after that bound so this regression leaves no process behind; the assertion
+# observes the harness diagnostic rather than timing the host.
+if output="$(CAPTURE_SERVER_IGNORE_STOP=1 \
+    CAPTURE_SERVER_EXIT_AFTER_SECONDS=10.5 \
+    bash "$HARNESS" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "FAIL: an unstoppable capture server did not fail the harness" >&2
+    exit 1
+fi
+if grep -qF 'telemetry: capture server still running after its stop (10-second bound)' <<<"$output"; then
+    printf '%s\n' 'ok: unstoppable capture server is named after the stop bound'
+else
+    printf '%s\n' "$output" >&2
+    echo "FAIL: unstoppable capture-server diagnostic was missing" >&2
+    exit 1
+fi
+
 # The failed-server diagnostic is bounded on an EVENT, not on host speed: the
 # harness names the server's exit status only when start_capture observed the
 # process exit BEFORE its own 30-second startup bound (600 polls of 0.05 s);

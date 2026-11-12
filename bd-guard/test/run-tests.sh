@@ -134,7 +134,7 @@ log_has() { [ -f "$CLOG" ] && grep -qF -- "$1" "$CLOG"; }
 # killed. Stdlib http.server only — no network, no external deps.
 CAP_PY="${WORK}/capture.py"
 cat > "$CAP_PY" <<'CAPPY'
-import http.server, os, sys, time
+import http.server, os, signal, sys, threading, time
 OUT, PORTF = sys.argv[1], sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -156,6 +156,14 @@ time.sleep(float(os.environ.get("CAPTURE_START_DELAY_SECONDS", "0")))
 srv = http.server.HTTPServer(("127.0.0.1", 0), H)
 with open(PORTF, "w") as f:
     f.write(str(srv.server_address[1]))
+ignore_stop_marker = os.path.join(os.path.dirname(PORTF), ".ignore-stop-used")
+if os.environ.get("CAPTURE_SERVER_IGNORE_STOP") and not os.path.exists(ignore_stop_marker):
+    with open(ignore_stop_marker, "x"):
+        pass
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+exit_after = os.environ.get("CAPTURE_SERVER_EXIT_AFTER_SECONDS")
+if exit_after:
+    threading.Timer(float(exit_after), srv.shutdown).start()
 srv.serve_forever()
 CAPPY
 
