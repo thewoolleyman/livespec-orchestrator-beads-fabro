@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.323.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.323.0...v0.323.1) (2026-11-12)
+
+
+### Bug Fixes
+
+* every factory sandbox git process authenticates a github.com fetch GitHub refuses anonymously (bd-ib-awv2iu) ([7e7feb0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7e7feb0e9b71e5743343a9610c24d3cd0f8a3636))
+
 ## [0.323.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.322.0...v0.323.0) (2026-11-12)
 
 
