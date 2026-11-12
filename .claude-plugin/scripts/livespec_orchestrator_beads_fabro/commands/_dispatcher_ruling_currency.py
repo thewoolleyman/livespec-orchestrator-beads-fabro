@@ -77,14 +77,16 @@ class FreshRuling:
 
 
 def current_ruling(*, comments: Sequence[str]) -> SeedRuling | FreshRuling | None:
-    """The ruling that governs, from the item's comments oldest first, or `None`.
+    """The ruling that governs, from the item's comments in any order, or `None`.
 
     `None` is any of: no ruling was ever written, the latest ruling has been
     consumed, or the comments carry only inert text.
     """
     latest: SeedRuling | FreshRuling | None = None
     for text in comments:
-        latest = _seed_ruling(comment=text) or _fresh_ruling(comment=text) or latest
+        candidate = _seed_ruling(comment=text) or _fresh_ruling(comment=text)
+        if candidate is not None and (latest is None or candidate.instant >= latest.instant):
+            latest = candidate
     if isinstance(latest, SeedRuling):
         consumed = SEED_RULING_CONSUMED_MARKER
     elif isinstance(latest, FreshRuling):
