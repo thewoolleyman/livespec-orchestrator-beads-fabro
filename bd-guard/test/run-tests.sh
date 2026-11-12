@@ -247,7 +247,16 @@ start_capture() {
 stop_capture() {
     if [ -n "$CAP_PID" ]; then
         kill "$CAP_PID" 2>/dev/null
-        wait "$CAP_PID" 2>/dev/null
+        local i=0
+        while capture_process_is_running && [ "$i" -lt 200 ]; do
+            sleep 0.05
+            i=$((i + 1))
+        done
+        if capture_process_is_running; then
+            fail "telemetry: capture server still running after its stop (10-second bound)"
+        else
+            reap_capture_after_exit
+        fi
     fi
     CAP_PID=""
 }
