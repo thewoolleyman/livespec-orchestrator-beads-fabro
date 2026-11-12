@@ -316,7 +316,16 @@ def _component_release_rejection(
         () if build is None or build.imported_components is None else build.imported_components
     )
     if has_unowned_tag or (not paths and not imported):
-        return _repository_release_rejection(reading=reading, named=named)
+        # Imported code is judged even here: naming an unrelated tag does not
+        # exempt a component the record claims to have imported.
+        return _imported_component_rejection(
+            imported=imported,
+            components=components,
+            named=named,
+            reading=reading,
+            build=build,
+            reader=reader,
+        ) or _repository_release_rejection(reading=reading, named=named)
     released = tuple(
         component
         for component in components

@@ -370,6 +370,38 @@ def test_imported_code_with_an_owned_release_tag_is_proved_by_an_identical_compo
     assert reader.tree_calls == [("c0ffee1", "shared-v1.0.0", component.name)]
 
 
+def test_imported_code_is_judged_even_when_the_record_names_an_unowned_tag() -> None:
+    """An unrelated repository tag does not exempt an imported component from its rule."""
+    component = ReleaseComponent(
+        name="shared-credentials",
+        tag_prefix="shared-v",
+        paths=("tools/shared_credentials/",),
+    )
+    reader = _Reader(
+        answer=ReleaseTags(
+            repository=_REPOSITORY,
+            tags=frozenset({"shared-v1.0.0", _TAG}),
+            components=(component,),
+        )
+    )
+    timeline = _proved()
+    timeline[2] = _record(
+        verdict=VERDICT_VERIFIED,
+        identity="replaying",
+        release=_TAG,
+        imported_components=(component.name,),
+    )
+
+    leg = _leg(comments=timeline, reader=reader)
+
+    assert _HOST in leg.unproved
+    assert [
+        f"names no release tag owned by imported component {component.name}" in one
+        for one in leg.rejected
+    ] == [True]
+    assert reader.tree_calls == []
+
+
 def test_a_release_repository_the_gate_could_not_read_rejects_every_record_on_it() -> None:
     # The reversal v148 landed. The retired reading answered an empty tag set for
     # a failed read, and an empty set MEANS "no release applies" — so an
