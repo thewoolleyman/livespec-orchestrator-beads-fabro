@@ -6,6 +6,8 @@ from pathlib import Path
 
 _COMMANDS = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
 _READERS = (
+    "_acp_availability_probe_run.py",
+    "_dispatcher_cost_chain.py",
     "_dispatcher_fabro_second_reads.py",
     "_dispatcher_review_gate.py",
     "_dispatcher_preserved_tree_escalation.py",
