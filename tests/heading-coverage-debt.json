@@ -1451,6 +1451,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario: a plan record that reaches a released component only through imported code is judged by tree identity",
+    "work_item": "bd-ib-y2s76v",
+    "first_seen": "2026-11-12"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario: a recorded scratch-branch drill closes through the drill-close action and a master incident is refused",
     "work_item": "bd-ib-z7ckf4",
     "first_seen": "2026-11-11"

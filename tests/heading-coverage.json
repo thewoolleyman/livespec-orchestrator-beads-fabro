@@ -3165,5 +3165,13 @@
     "test": "TODO",
     "reason": "A real test at the scenario tier or above is owed for this heading: the owning work-item bd-ib-ag633q adds cases in which a reconcile-runs pass, given a claim attributed to this host whose factory run is running and whose ownership lock no live process holds, exports, cancels and rests a run past its whole-run wall budget that is not progressing, holds as run-live a run within its budget, a run whose lock a live process holds, a run whose record carries no first-running instant, and a run whose export cannot be read back, applies the same budget to another dispatching repository's claim from the host's periodic pass, and in which a dispatch that stops observing its run names the run, the factory and the hand-off to reconciliation on its outcome record. bd-ib-ag633q owns it.",
     "work_item": "bd-ib-ag633q"
+  },
+  {
+    "heading": "## Scenario: a plan record that reaches a released component only through imported code is judged by tree identity",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier is owed for this heading: the owning work-item bd-ib-y2s76v adds cases in which, in a repository declaring release components, the posting primitive renders a build imported_components array as the record's imported code line and refuses a malformed value, and for a record whose imported code line names a component the archive gate accepts it when the commit's tree under that component's paths is byte-identical to the named tag's, rejects it naming the first differing path when the trees differ (including a path present on one side only), and makes no comparison for a record carrying no imported code line; release none is still rejected for a component its artifact paths reach. The replay case for a component's own entry point run from the tree is a verifying party's judgement and is not mechanized. bd-ib-y2s76v owns it.",
+    "work_item": "bd-ib-y2s76v"
   }
 ]
