@@ -200,7 +200,11 @@ CAP_ERR_FILE=""
 # container profile), while Bash's job table knows whether this shell's child is
 # still running.
 capture_process_is_running() {
-    jobs -pr 2>/dev/null | grep -qx "$CAP_PID"
+    local job_pid
+    while IFS= read -r job_pid; do
+        [ "$job_pid" = "$CAP_PID" ] && return 0
+    done < <(jobs -pr 2>/dev/null)
+    return 1
 }
 
 # reap_capture_after_exit — reap only after the job table observed the child

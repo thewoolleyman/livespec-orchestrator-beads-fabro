@@ -69,7 +69,7 @@ fi
 # after that bound so this regression leaves no process behind; the assertion
 # observes the harness diagnostic rather than timing the host.
 if output="$(CAPTURE_SERVER_IGNORE_STOP=1 \
-    CAPTURE_SERVER_EXIT_AFTER_SECONDS=10.5 \
+    CAPTURE_SERVER_EXIT_AFTER_SECONDS=12 \
     bash "$HARNESS" 2>&1)"; then
     printf '%s\n' "$output" >&2
     echo "FAIL: an unstoppable capture server did not fail the harness" >&2
