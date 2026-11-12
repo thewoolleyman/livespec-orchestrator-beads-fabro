@@ -164,14 +164,20 @@ RUN curl -fsSL -o /tmp/dolt.tar.gz \
 # --- Fabro binary. Pin the version + the glibc floor together. The binary is
 #     COPIED in (not apt-installed). It is fetched into the build context from
 #     $HOST_FABRO_BIN by build-and-verify.sh and is gitignored — NEVER
-#     committed (a 143MB blob; pinning the floor here documents the coupling).
-#     The pinned bundle is v0.382.0-nightly.0 (adeefec, bd-ib-sxcnj7; see the
-#     README's release-bundle section): bake it with HOST_FABRO_BIN pointed at
-#     that binary. The default ~/.fabro/bin/fabro is still the legacy 0.254. ---
-ENV FABRO_VERSION=0.382.0-nightly.0
+#     committed (a large blob; pinning the floor here documents the coupling).
+#     The pinned bundle is the v0.408 carrier d22808f8e (fabro
+#     0.408.0-nightly.0, bd-ib-qx45e6; see the README's "The v0.408 carrier"
+#     section), the build every gmktec Fabro instance serves. build-and-verify.sh
+#     stages it from ~/.local/state/fabro-web-prod/v0408-d22808f8e/fabro by
+#     default. Its sha256 is pinned and VERIFIED here, in the shape gh, mise,
+#     uv, bd and dolt use, so the image can only carry the serving binary: a
+#     different staged binary fails the build instead of baking silently. ---
+ENV FABRO_VERSION=0.408.0-nightly.0
+ARG FABRO_BINARY_SHA256=f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015
 COPY fabro /usr/local/bin/fabro
-RUN chmod +x /usr/local/bin/fabro \
- && /usr/local/bin/fabro version | head -1
+RUN echo "${FABRO_BINARY_SHA256}  /usr/local/bin/fabro" | sha256sum -c - \
+ && chmod +x /usr/local/bin/fabro \
+ && /usr/local/bin/fabro --version
 
 # --- LIVESPEC_BD_PATH: the impl-beads wrappers shell out to $LIVESPEC_BD_PATH.
 ENV LIVESPEC_BD_PATH=/usr/local/bin/bd

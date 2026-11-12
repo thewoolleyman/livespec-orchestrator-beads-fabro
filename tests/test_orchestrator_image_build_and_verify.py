@@ -40,7 +40,9 @@ _CONTAINER_LOG_SENTINEL = "entrypoint FATAL: no secrets to provision from"
 _FIRST_CHECK_BANNER = "T1.0 gh version"
 
 
-def _write_docker_stub(*, bin_dir: Path, readiness_probe_succeeds: bool) -> None:
+def _write_docker_stub(
+    *, bin_dir: Path, readiness_probe_succeeds: bool, fabro_health_succeeds: bool = True
+) -> None:
     """Install a `docker` whose readiness probe succeeds or fails on demand.
 
     `docker exec "$CONTAINER" docker info` is the script's readiness probe, so
@@ -51,7 +53,14 @@ def _write_docker_stub(*, bin_dir: Path, readiness_probe_succeeds: bool) -> None
     than dying earlier for an unrelated reason.
     """
     stub = bin_dir / "docker"
-    exec_arm = "  exec) : ;;\n" if readiness_probe_succeeds else "  exec) exit 1 ;;\n"
+    if not readiness_probe_succeeds:
+        exec_arm = "  exec) exit 1 ;;\n"
+    elif fabro_health_succeeds:
+        exec_arm = "  exec) : ;;\n"
+    else:
+        # dockerd answers, but the in-container fabro /health probe never does.
+        exec_arm = '  exec) case "$*" in *"/health"*) exit 7 ;; *) : ;; esac ;;\n'
+
     _ = stub.write_text(
         "#!/usr/bin/env bash\n"
         "set -uo pipefail\n"
@@ -103,11 +112,15 @@ def _stage_build_context(*, tmp_path: Path) -> Path:
 
 
 def _run_script(
-    *, tmp_path: Path, readiness_probe_succeeds: bool
+    *, tmp_path: Path, readiness_probe_succeeds: bool, fabro_health_succeeds: bool = True
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _write_docker_stub(bin_dir=bin_dir, readiness_probe_succeeds=readiness_probe_succeeds)
+    _write_docker_stub(
+        bin_dir=bin_dir,
+        readiness_probe_succeeds=readiness_probe_succeeds,
+        fabro_health_succeeds=fabro_health_succeeds,
+    )
     fabro = _write_fabro_stub(bin_dir=bin_dir)
     script = _stage_build_context(tmp_path=tmp_path)
     env = {
@@ -185,3 +198,22 @@ def test_provisioning_that_succeeds_is_not_refused_by_the_same_wait(
 
     assert "in-container provisioning never completed" not in result.stderr
     assert _FIRST_CHECK_BANNER in result.stdout
+
+
+def test_a_dockerd_that_answers_before_fabro_does_not_end_the_wait(
+    tmp_path: Path,
+) -> None:
+    """The wait covers fabro too, not only the inner dockerd.
+
+    The entrypoint starts fabro AFTER dockerd, so a dockerd-only probe let the
+    tier-1 fabro checks run in that gap (measured 2026-11-12: /health answered
+    seven seconds after dockerd). With dockerd up and /health never answering,
+    the wait must refuse exactly as it does for a container that never came up.
+    """
+    result = _run_script(
+        tmp_path=tmp_path, readiness_probe_succeeds=True, fabro_health_succeeds=False
+    )
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    assert "in-container provisioning never completed" in result.stderr
+    assert _FIRST_CHECK_BANNER not in result.stdout
