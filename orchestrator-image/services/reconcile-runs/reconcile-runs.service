@@ -48,9 +48,15 @@ Restart=no
 CPUWeight=20
 # A reclaim watermark, not a ceiling. Above 5G the kernel throttles the pass
 # and reclaims its memory before the host comes under memory pressure. Measured
-# memory peaks were 3.5 GB median and 4.7 GB max. There is deliberately NO
-# MemoryMax: a hard cap near that peak would OOM-kill the pass, and every later
-# pass would hit the same limit and be killed again. The real fix is to stop
-# re-parsing the dispatch journal in every pass (bd-ib-cwuxfi); this setting
-# only keeps the current cost from crowding out the rest of the host.
+# memory peaks were 3.5 GB median and 4.7 GB max. A hard cap NEAR that peak
+# would OOM-kill the pass, and every later pass would hit the same limit and be
+# killed again, so MemoryMax below sits well above the measured max. The real
+# fix is to stop re-parsing the dispatch journal in every pass (bd-ib-cwuxfi);
+# these settings only keep the current cost from crowding out the rest of the host.
 MemoryHigh=5G
+# A runaway backstop, not a budget. On 2026-11-12 vmi3006760 (no swap) hit a
+# host-wide OOM at 12:43Z, and the kernel killed this pass's python3 at 3.4 GB
+# rather than a cause it chose. At 8G a pass that runs away past every measured
+# peak is what the kernel kills inside this unit's own cgroup, instead of a
+# seat's user manager. Passes inside the measured range never reach it.
+MemoryMax=8G
