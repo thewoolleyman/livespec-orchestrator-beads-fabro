@@ -148,7 +148,7 @@ def build_identity_in(*, body: str) -> BuildIdentity | None:
         release_tag=None if release is None or release.casefold() == NO_RELEASE else release,
         installed_build=fields.get(INSTALLED_BUILD_LABEL),
         commit=fields.get(COMMIT_LABEL),
-        imported_components=None,
+        imported_components=_comma_delimited(value=fields.get(IMPORTED_CODE_LABEL)),
     )
 
 
@@ -172,3 +172,11 @@ def _bullet_fields(*, body: str) -> dict[str, str]:
             continue
         fields[label] = value
     return fields
+
+
+def _comma_delimited(*, value: str | None) -> tuple[str, ...] | None:
+    """Split an optional identity declaration without manufacturing blank values."""
+    if value is None:
+        return None
+    values = tuple(one.strip() for one in value.split(",") if one.strip())
+    return values or None

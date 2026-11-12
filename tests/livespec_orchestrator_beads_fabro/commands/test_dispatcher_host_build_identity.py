@@ -20,6 +20,7 @@ from __future__ import annotations
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     BUILD_IDENTITY_HEADING,
     COMMIT_LABEL,
+    IMPORTED_CODE_LABEL,
     INSTALLED_BUILD_LABEL,
     NO_RELEASE,
     RELEASE_TAG_LABEL,
@@ -118,3 +119,19 @@ def test_a_label_inside_another_bullets_prose_does_not_become_the_value() -> Non
     assert identity is not None
     assert identity.commit is None
     assert identity.containment_ref == _RELEASE_TAG
+
+
+def test_imported_code_components_round_trip_through_the_build_identity() -> None:
+    """The archive gate receives the record's ordered imported-code declaration."""
+    identity = BuildIdentity(
+        release_tag=_RELEASE_TAG,
+        installed_build=_INSTALLED_BUILD,
+        commit=_COMMIT,
+        imported_components=("shared-credentials", "state-backend"),
+    )
+
+    parsed = build_identity_in(body=identity.render())
+
+    assert parsed is not None
+    assert f"- {IMPORTED_CODE_LABEL}: shared-credentials, state-backend" in identity.render()
+    assert parsed.imported_components == ("shared-credentials", "state-backend")
