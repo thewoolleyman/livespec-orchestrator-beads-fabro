@@ -356,6 +356,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_fresh_ruling import 
     add_fresh_ruling_arguments,
     run_fresh_ruling_command,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only_command import (
+    add_host_only_arguments,
+    run_host_only_command,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
     add_post_host_record_arguments,
     run_post_host_record_cli,
@@ -509,6 +513,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "dispatch": run_dispatch_command,
     "drift-run": _run_drift_run,
     "file-canary": run_file_canary_command,
+    "host-only": run_host_only_command,
     "fresh-ruling": run_fresh_ruling_command,
     "idle-slot-audit": run_idle_slot_audit_command,
     "inspect": run_factory_inspect_command,
@@ -564,6 +569,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_post_plan_record_arguments(parser=subparsers.add_parser("post-plan-record"))
     add_file_canary_arguments(parser=subparsers.add_parser("file-canary"))
     add_factory_inspect_arguments(parser=subparsers.add_parser("inspect"))
+    add_host_only_arguments(parser=subparsers.add_parser("host-only"))
     add_probe_arguments(parser=subparsers.add_parser("probe"))
     add_dispatch_arguments(parser=subparsers.add_parser("dispatch"))
     add_resume_arguments(parser=subparsers.add_parser("resume"))

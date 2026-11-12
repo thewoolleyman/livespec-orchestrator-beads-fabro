@@ -15,9 +15,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_only import is_host_only_item
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
+    read_dispatch_labels,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
     emit_outcomes,
+    load_items,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
     candidates,
@@ -80,6 +85,9 @@ class _LoopStart:
 
 
 def run_loop_command(*, args: argparse.Namespace) -> int:
+    refusal_exit = _handpicked_host_only_refusal_exit(args=args, repo=Path(args.repo))
+    if refusal_exit is not None:
+        return refusal_exit
     with pass_snapshot():
         return _loop_in_pass(args=args)
 
@@ -160,6 +168,26 @@ def _loop_in_pass(*, args: argparse.Namespace) -> int:
         return 0
     emit_outcomes(outcomes=outcomes, as_json=args.as_json)
     return _post_verdict_stages(args=args, repo=repo, outcomes=outcomes, journal=journal)
+
+
+def _handpicked_host_only_refusal_exit(*, args: argparse.Namespace, repo: Path) -> int | None:
+    """Refuse a named host-only item before any mutating dispatch preparation."""
+    if args.items is None:
+        return None
+    requested = set(args.items)
+    for item in load_items(repo=repo):
+        if item.id not in requested:
+            continue
+        raw_labels = read_dispatch_labels(repo=repo, item=item)
+        if is_host_only_item(item=item, raw_labels=raw_labels):
+            _ = write_stderr(
+                text=(
+                    f"REFUSED: work-item {item.id} is host-only; no claim was taken and "
+                    "no factory run was created.\n"
+                )
+            )
+            return 5
+    return None
 
 
 def _post_verdict_stages(
