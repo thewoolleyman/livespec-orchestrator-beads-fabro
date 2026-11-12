@@ -21,7 +21,7 @@ One sentence of the existing recapture paragraph is amended to point at the new 
 
 ### Motivation
 
-Measured 2026-11-12 by gmktec-factory-placement (plan livespec-dev-tooling-me5aqz) on legacy-coordinator-agent's ruling (session cb187a57). The window was 72 hours, 2026-11-09 10:30Z to 2026-11-12 10:30Z, read from every fleet repository's dispatch journal (outcome rows carrying LIVESPEC_RECAPTURE_EXHAUSTED) and from the run durations `fabro ps -a` reports on petri. In that window, 5 runs ended LIVESPEC_RECAPTURE_EXHAUSTED on a proof-content finding that recurred unchanged across all three recapture verdicts, about 12.4 run-hours in all:
+Measured 2026-11-12 by gmktec-factory-placement (plan livespec-dev-tooling-me5aqz) on legacy-coordinator-agent's ruling (session cb187a57). The window was 72 hours, 2026-11-09 10:30Z to 2026-11-12 10:30Z, read from every fleet repository's dispatch journal (outcome rows carrying LIVESPEC_RECAPTURE_EXHAUSTED) and from the run durations `fabro ps -a` reports on petri. In that window, 5 runs ended LIVESPEC_RECAPTURE_EXHAUSTED on proof-content findings, about 12.4 run-hours in all. The filing described each run's finding as recurring unchanged across all three verdicts; the lap-by-lap measurement below corrects that. The third verdict of each run read:
 
 - bd-ib-qshcwc, run 01M73ZK6Z090: a proof that stops short of the refusal it claims to prove.
 - bd-ib-fde4ie, run 01M74D0JAMPM: a throwaway commit made with no hooks installed, in place of a fix-turn commit through the gate.
@@ -31,9 +31,21 @@ Measured 2026-11-12 by gmktec-factory-placement (plan livespec-dev-tooling-me5aq
 
 Each finding was specific, checkable against the recorded steps, and satisfiable in a sandbox, so no Definition-of-Done shape defeats capture and a filing-time screen would not help.
 
-The publish-draft-green-work-loss seat spot-checked the lrjdlo run on PR #5008. Its second and third captured records (07:11Z and 07:16Z) still carry the substitution the 07:09Z and 07:14Z review findings named. The lap therefore re-captured without answering the finding, and review read the newer record each time.
+Lap by lap, measured 2026-11-12 by the publish-draft-green-work-loss seat on each run's pull request. Each captured record and review verdict carrying the run's id was read in order, and each lap compared the judged assertion's section in the record the verdict judged with the same section in the next captured record. "Numbered steps" are the section's numbered lines; "programs" are the section's fenced blocks.
 
-The defect is that nothing obliges a lap to answer the finding it was sent back for, and nothing stops a lap that changed nothing from spending a review visit. Recovery after exhaustion (Scenarios 342 and 343, closed bd-ib-p6ammc) is unchanged; this proposal is about not exhausting.
+- bd-ib-qshcwc (PR #4841, run 9cac9bd4): lap 1 judged assertion 7, and the numbered steps and programs both changed. Lap 2 was a currency finding on the record, not an assertion. Verdict 3 judged assertion 5 for the first time.
+- bd-ib-fde4ie (PR #4895, run b729654d): laps 1 and 2 judged assertion 5, and the numbered steps and programs changed both times. Verdict 3 judged assertion 5 again, with a different finding.
+- bd-ib-lrjdlo (PR #5008, run da326f9c): lap 1 judged assertions 2 and 3, and both changed. Lap 2 judged assertion 2: its numbered steps were BYTE-IDENTICAL, but its programs changed. The record still carried the substitution the finding named.
+- livespec-dev-tooling-627xuz (PR #4281, run da75da9b): lap 1 judged assertion 1, and both changed. Lap 2 judged assertion 2: its programs were identical and its numbered steps changed. Verdict 3 judged assertion 1 again.
+- bd-ib-ngyfmi (PR #5023, run c9d8a40c): laps 1 and 2 judged assertion 1, and both changed each time. Verdict 3 judged assertion 1 with a third, different finding.
+
+So the filing's description of "the same finding verbatim across all three verdicts" does not hold for any of the five runs. Each verdict's finding differed from the one before: a new assertion, or a sharper finding on the same assertion. In 9 of the 10 answered laps the judged assertion's numbered steps changed. In the tenth (lrjdlo lap 2) they did not change, but the programs those steps run did, so the reproduction as a whole was not byte-identical.
+
+What the laps show is captures that moved without answering what was asked. lrjdlo's record changed its programs and still carried the substitution. 627xuz's record changed its consumer fixture and still declared the members the assertion excludes. ngyfmi's record fixed one step and broke the next. That is what the response obligation below targets: the brief carrying each finding verbatim with its assertion, and the record stating, per finding, the change made or why it was not answered.
+
+The byte-identical early ending is a deterministic guard for the degenerate lap, one that changed nothing at all. In this sample it would have ended no run early and recovered none of the 12.4 run-hours. The recapture laps themselves were short: first to third verdict took about 26, 28, 9, 7 and 60 minutes across the five runs. Most of the 12.4 run-hours is the whole run that the exhausted bound left unmerged. Any recovery this paragraph makes comes from the response obligation turning a lap into a converging one, and that is not measurable before the paragraph ships. The guard is kept because it costs one comparison, is computed without a model, and is the third assertion of bd-ib-gixqwz's Definition of Done.
+
+Recovery after exhaustion (Scenarios 342 and 343, closed bd-ib-p6ammc) is unchanged; this proposal is about not exhausting.
 
 Fleet scope: the `implement-work-item` workflow ships in this plugin's payload and runs for every tenant the Dispatcher admits, so the rule applies to every repository dispatched through it.
 
@@ -94,4 +106,6 @@ Feature: A recapture lap cannot spend a review visit on the proof it was sent ba
     Then the run enters review
 ```
 
-No existing H2 heading is renamed or removed. The revise that accepts this proposal MUST add one `tests/heading-coverage.json` row for the new `## Scenario 354` heading in the same change.
+No existing H2 heading is renamed or removed.
+
+3. **Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit. It carries `test: "TODO"`, `work_item: "bd-ib-gixqwz"` and a non-empty `reason` naming the tier the owed test runs at, which is integration or above. The same commit MUST add one matching `tests/heading-coverage-debt.json` entry carrying the key three (`spec_root`, `spec_file`, `heading`), `work_item: "bd-ib-gixqwz"` and `first_seen` set to the revise date. If the revise renumbers Scenario 354, the row and the entry MUST carry the renumbered heading text.
