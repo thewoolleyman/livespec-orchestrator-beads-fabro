@@ -38,9 +38,9 @@ Work item bd-ib-rtzhfc, bullet 3 ("`dispatcher.wip_cap` can no longer bind on it
 
 **3. Unchanged.** Term 2 and its fail-closed paragraph, the automatic-path scope and the hand-picked override, the tenant scope of term 1, and the value domain (a non-negative integer, `0` the dispatch-off posture) MUST remain as ratified. Liveness under the new term 1 MUST be read from the repository's own dispatch journal, consistent with §"Host concurrency belongs to the Fabro scheduler"'s tenant-scope clause; the counted-claim computation MUST NOT ask a factory whether a run is live.
 
-**4. Scenario (`scenarios.md`).** Append:
+**4. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
-## Scenario 365 — A live dispatch claim counts against wip_cap only while its factory run is live
+## Scenario <number assigned at revise> — A live dispatch claim counts against wip_cap only while its factory run is live
 
 ```gherkin
 Feature: wip_cap is a share of live factory runs, not of live dispatch processes
@@ -72,4 +72,4 @@ Feature: wip_cap is a share of live factory runs, not of live dispatch processes
     And the ready item is not admitted
 ```
 
-**5. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading, with `test: "TODO"`, `work_item: "bd-ib-rtzhfc"` and a non-empty `reason` naming the tier the owed test runs at (integration), and the matching `tests/heading-coverage-debt.json` entry, carried through `resulting_files[]` or edited directly in that commit. If the revise renumbers Scenario 365, the row and entry MUST carry the renumbered heading text. Scenario 58 MUST remain as ratified: its counted row holds a live lock and, under the new term 1, is counted only while that claim's factory run is live or not yet launched, which its Given already implies.
+**5. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading, with `test: "TODO"`, `work_item: "bd-ib-rtzhfc"` and a non-empty `reason` naming the tier the owed test runs at (integration), and the matching `tests/heading-coverage-debt.json` entry, carried through `resulting_files[]` or edited directly in that commit. The row and entry MUST carry the heading as numbered at revise. Scenario 58 MUST remain as ratified: its counted row holds a live lock and, under the new term 1, is counted only while that claim's factory run is live or not yet launched, which its Given already implies.
