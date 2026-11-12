@@ -38,6 +38,8 @@ __all__: list[str] = [
     "git_checkout_head",
     "latest_release_ref_argv",
     "master_ref_argv",
+    "release_comparison_argv",
+    "release_comparison_status",
     "remote_ref_sha",
 ]
 
@@ -62,6 +64,33 @@ def latest_release_ref_argv() -> tuple[str, ...]:
 def master_ref_argv() -> tuple[str, ...]:
     """Probe this plugin's own raw master, for the non-blocking unreleased-code warning."""
     return ("git", "ls-remote", RELEASE_REPOSITORY_URL, RELEASE_REPOSITORY_MASTER_REF)
+
+
+def release_comparison_argv(*, release_sha: str, build_id: str) -> tuple[str, ...]:
+    """Ask the forge whether the executing build is ahead of or behind a release."""
+    repository = "/".join(RELEASE_REPOSITORY_URL.removesuffix(".git").rsplit("/", maxsplit=2)[-2:])
+    return (
+        "gh",
+        "api",
+        f"repos/{repository}/compare/{release_sha}...{build_id}",
+        "--jq",
+        ".status",
+    )
+
+
+def release_comparison_status(
+    *, runner: CommandRunner, release_sha: str, build_id: str
+) -> str | None:
+    """The forge comparison status, or None when the comparison is unavailable."""
+    result = runner.run(
+        argv=list(release_comparison_argv(release_sha=release_sha, build_id=build_id)),
+        cwd=Path.cwd(),
+        timeout_seconds=_PROBE_TIMEOUT_SECONDS,
+    )
+    if result.exit_code != 0:
+        return None
+    status = result.stdout.strip()
+    return status if status in {"ahead", "behind", "identical", "diverged"} else None
 
 
 def remote_ref_sha(*, runner: CommandRunner, argv: tuple[str, ...]) -> str | None:

@@ -38,6 +38,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_currency_probe impor
     git_checkout_head,
     latest_release_ref_argv,
     master_ref_argv,
+    release_comparison_argv,
+    release_comparison_status,
     remote_ref_sha,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
@@ -70,6 +72,7 @@ __all__: list[str] = [
     "dispatcher_staleness_decision",
     "latest_release_ref_argv",
     "master_ref_argv",
+    "release_comparison_argv",
     "unreleased_dispatcher_commits_argv",
 ]
 
@@ -282,7 +285,16 @@ def _ambient_currency_decision(
     return DispatcherStalenessDecision(
         refusal=None,
         warnings=(
-            _lag_warnings(build_id=build_id, release_sha=release_sha, master_sha=master_sha)
+            _lag_warnings(
+                build_id=build_id,
+                release_sha=release_sha,
+                master_sha=master_sha,
+                comparison_status=release_comparison_status(
+                    runner=runner,
+                    release_sha=release_sha,
+                    build_id=build_id,
+                ),
+            )
             + (() if unreleased is None else (DispatcherStalenessMessage(detail=unreleased),))
         ),
     )
@@ -308,11 +320,14 @@ def _lag_warnings(
     build_id: str,
     release_sha: str,
     master_sha: str | None,
+    comparison_status: str | None,
 ) -> tuple[DispatcherStalenessMessage, ...]:
     """The ambient-staleness surfacing that replaced the retired blocking refusal."""
     if build_matches_ref(build_id=build_id, ref_sha=release_sha) or (
         master_sha is not None and build_matches_ref(build_id=build_id, ref_sha=master_sha)
     ):
+        return ()
+    if comparison_status == "ahead":
         return ()
     return (
         DispatcherStalenessMessage(

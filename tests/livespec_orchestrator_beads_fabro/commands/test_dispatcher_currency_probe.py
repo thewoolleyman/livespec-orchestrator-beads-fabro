@@ -44,6 +44,8 @@ _PROMOTED = (
     "git_checkout_head",
     "latest_release_ref_argv",
     "master_ref_argv",
+    "release_comparison_argv",
+    "release_comparison_status",
     "remote_ref_sha",
 )
 
