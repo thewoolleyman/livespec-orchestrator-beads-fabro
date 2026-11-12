@@ -6,6 +6,7 @@ import argparse
 import importlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -132,6 +133,65 @@ def test_a_pass_that_found_nothing_still_leaves_a_record(
 
     assert (summary.orphans_found, summary.errors) == (0, 0)
     assert [record["factories_surveyed"] for record in _pass_records(tmp_path=tmp_path)] == [1]
+
+
+def test_a_pass_backfills_the_missing_consumed_seed_ruling_receipt(
+    *,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The automatic pass repairs a ruled launch receipt through its ledger seam."""
+    module = importlib.import_module(_MODULE_NAME)
+    _ = _stub(
+        module=module,
+        monkeypatch=monkeypatch,
+        factories=(_HP,),
+        summary=ReconcileRunsSummary(reconciled=(), errors=(), dry_run=False),
+    )
+    comments: list[str] = []
+    records = (
+        {"stage": "dispatch-id", "work_item_id": "item", "dispatch_id": "dispatch"},
+        {
+            "stage": "recovery-route",
+            "work_item_id": "item",
+            "route": "seeded",
+            "preservation_ref": "refs/seed",
+            "commit_sha": "a" * 40,
+        },
+        {"stage": "fabro-run", "work_item_id": "item", "run_id": "run"},
+    )
+    monkeypatch.setattr(module, "read_journal_records", lambda **_: records)
+    monkeypatch.setattr(
+        module,
+        "read_work_item_comments",
+        lambda **_: [
+            SimpleNamespace(
+                text="\n".join(
+                    (
+                        "livespec-seed-ruling",
+                        "work-item: item",
+                        "preservation-ref: refs/seed",
+                        f"commit-sha: {'a' * 40}",
+                        "invoker: coordinator",
+                        "reason: preserve",
+                        "instant: 2026-11-11T00:00:00Z",
+                    )
+                )
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        module,
+        "append_work_item_comment",
+        lambda *, body, **_: comments.append(body),
+    )
+
+    _ = module.reconcile_runs_pass(args=_args(tmp_path=tmp_path), repo=tmp_path)
+
+    assert comments == [
+        "livespec-seed-ruling-consumed\nruling-instant: 2026-11-11T00:00:00Z"
+        "\ndispatch-id: dispatch\nrun-id: run"
+    ]
 
 
 def test_a_run_scoped_error_counts_as_an_orphan_a_factory_error_does_not(

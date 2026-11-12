@@ -66,11 +66,17 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 
 __all__: list[str] = [
+    "dispatch_artifact_paths",
     "dispatch_plan_for_item",
     "goal_file_path",
     "overlay_file_path",
     "workflow_payload_dir",
 ]
+
+
+def dispatch_artifact_paths(*, work_item_id: str) -> tuple[Path, Path]:
+    """Return the goal and default overlay paths scoped to one dispatch."""
+    return goal_file_path(work_item_id=work_item_id), overlay_file_path(work_item_id=work_item_id)
 
 
 def _readable_text(*, path: Path) -> str:

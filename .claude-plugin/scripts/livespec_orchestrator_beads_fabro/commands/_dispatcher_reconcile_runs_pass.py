@@ -84,7 +84,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_input
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_spans import (
     emit_reconcile_pass_span,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
+    read_journal_records,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_stamp import repo_run_attribution
+from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_consumption import (
+    backfill_seed_ruling_consumptions_from_ledger,
+)
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
     BeadsCommandError,
@@ -94,6 +100,10 @@ from livespec_orchestrator_beads_fabro.errors import (
     BeadsTenantMissingError,
     ConnectionPrefixMissingError,
     LivespecConfigUnreadableError,
+)
+from livespec_orchestrator_beads_fabro.store import (
+    append_work_item_comment,
+    read_work_item_comments,
 )
 
 __all__: list[str] = [
@@ -166,7 +176,11 @@ class ReconcilePassSummary:
 
 
 def reconcile_runs_pass(*, args: argparse.Namespace, repo: Path) -> ReconcilePassSummary:
-    """Reconcile every declared factory once, journal the pass, and never raise."""
+    """Reconcile every declared factory once, journal the pass, and never raise.
+
+    `_survey` also calls `backfill_seed_ruling_consumptions_from_ledger` while
+    its ledger configuration is available and still on this pass's fail-open rail.
+    """
     journal = JournalFile(
         path=journal_path(args=args, repo=repo),
         identity=invoker_from_args(args=args),
@@ -272,6 +286,16 @@ def _survey(
         ),
         factories=factories,
         dry_run=False,
+    )
+    backfill_seed_ruling_consumptions_from_ledger(
+        records=read_journal_records(journal_path=journal.path),
+        comments_for_item=lambda item_id: tuple(
+            comment.text for comment in read_work_item_comments(path=store, work_item_id=item_id)
+        ),
+        append_comment=lambda item_id, body: append_work_item_comment(
+            path=store, work_item_id=item_id, body=body
+        ),
+        append_journal=lambda record: journal.append(record=record),
     )
     return reconcile_pass_summary(factories=factories, summary=summary)
 
