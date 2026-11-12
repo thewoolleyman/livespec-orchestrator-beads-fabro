@@ -133,7 +133,7 @@ steps around. It is distinct from the containerized server the entrypoint
 provisions (below); the image's `COPY fabro` stages this same host binary from
 `$HOST_FABRO_BIN`, so the host install IS the image's staging source.
 
-**Current binary (measured 2026-10-01, S7a of plan `bd-ib-jxvgq5`, `bd-ib-q32gs5`):**
+**Historical, superseded 2026-11-12 (hp's legacy instance is retired; see "The v0.408 carrier" below).** **Current binary (measured 2026-10-01, S7a of plan `bd-ib-jxvgq5`, `bd-ib-q32gs5`):**
 hp `fabro 0.254.0 (8869e88 2026-10-01)`, the carrier tip, deployed 2026-10-01 with the
 outgoing `fabro.4b8cc85-pre-s7.bak` retained beside it; vps holds the SAME binary
 (sha256 `4edcc4407fa6…5c0afd1`, built on vps and copied to hp) at `~/.fabro/bin/fabro`
@@ -151,7 +151,76 @@ it stops being true. Check the property itself rather than a snapshot of it:
 `git merge-base --is-ancestor 8869e88b2 origin/factory-integration`. The
 hp-candidate instance serves the v0.382 release bundle instead; see the next section.
 
+### The v0.408 carrier (serving on gmktec; plan `fabro-currency`)
+
+**This section is the current truth about what serves.** It supersedes the hp
+"Current binary" paragraph above (hp's legacy instance is retired) and the v0.382 bundle
+below (no instance serves it). Measured 2026-11-12.
+
+**Where the factory runs.** Every factory instance runs on `gmktec-xubuntu`, and
+`.livespec.jsonc` `dispatcher.factories` declares exactly `petri` (the default) and
+`candidate`, both registry-backed. hp carries no factory role.
+
+| Instance | Port | Serving build (2026-11-12) |
+| --- | --- | --- |
+| `fabro-server` (fleet, factory `petri`) | `:32276` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
+| `fabro-server-mi-homelab` | `:32277` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
+| `fabro-server-candidate` (factory `candidate`) | `:32278` | `d22808f8e`, rolled 2026-11-12T06:46Z (livespec-dev-tooling#4262) |
+| `fabro-server-homelab-worker-arm64` | `:32279` | `bbe693847` (0.393), pending the widen to `d22808f8e` |
+
+The widen moves `:32276`, `:32277` and `:32279` together, after one candidate canary,
+under gmktec-factory-placement's GO (`bd-ib-qx45e6`). Read what an instance serves ON the
+host: `<binary_path> --version` and `sha256sum <binary_path>`, where `binary_path` and
+`binary_sha256` come from `livespec-dev-tooling` `ansible/inventory/host_vars/gmktec-xubuntu.yml`.
+
+**Carrier manifest:**
+
+| Field | Value |
+| --- | --- |
+| Upstream tag | `v0.408.0-nightly.0`, a published `fabro-sh/fabro` prerelease, published 2026-11-05T10:49:59Z (tag object `08ef6b429`, commit `77df2763f996f480f63156de55da281973fc40fd`) |
+| Fork branch | `thewoolleyman/fabro` `carrier-v0.408.0-nightly.0-20261108` |
+| Integration commit | `d22808f8e6dd6ec5cc973c93cbc5a3e88a64542a`: the tag plus the 43 carried commits below |
+| Binary | `fabro 0.408.0-nightly.0 (d22808f 2026-11-12)`, sha256 `f32595473ecb0e476fb5b907d56a24aef7afe41040015379c1b88905057cf015`. Built by `carrier-build.yml` run 43149665912 on the `fabro-k3s` scale set; staged with `BUILD_INFO` and `SHA256SUMS` at `~/.local/state/fabro-web-prod/v0408-d22808f8e/` on vps |
+| Petri | `thewoolleyman/petri` `fabro-integration-f30a12df-20261108` at `ac0b9fb3`: the seven fork carries on the `f30a12df` that the tag locks |
+| Rollback | `v0408-85071c828/fabro` (sha256 `e5c98af4bd1db97253cb7a51bef0a61f3a37e0d05341183a07bcdaeeb5d04d04`), the same carrier without the SQLite bump |
+| Currency survey | at 2026-11-12 the newest published release was `v0.414.0-nightly.0` (2026-11-11T10:56:56Z), so the base is inside the 30-calendar-day window. It leaves the window once a release published after 2026-12-05T10:49:59Z exists. Re-survey before relying on this |
+| `factory-integration` | NOT yet: the carrier is not reachable from `origin/factory-integration`. The merge waits for `bd-ib-qx45e6` to close, then follows the coordinator's option-(a) conditions in plan research note 027 (archive `8b82e99bb` as `legacy/factory-integration-0254` first; merge with the carrier's tree; never force-push) |
+
+**Carried patch set (the 43 commits over the tag, by work-item).** List it with
+`git log --reverse v0.408.0-nightly.0..d22808f8e` in the fork.
+
+| Carry | Commits | What it is |
+| --- | --- | --- |
+| registered sandbox providers | `07b761189`, `26be684d2` | run configured sandbox plugins through Petri's registered providers (the second is the TEMPORARY Petri build pin) |
+| `bd-ib-6vhgqg` | `8f9c85ec4`, `a760f0d11`, `2d04300fb`, `f1ff3f095`, `b2207e806`, `4a445c25d` | opt-in OTLP span export, server and worker span joining, and the per-attempt `run_turn` span with its launch digest and dispatch labels |
+| Docker sizing | `99ede35bc` | size a Docker sandbox from the environment's resources |
+| `bd-ib-voozdp` | `d26344420` | select a run's GitHub App per run on a shared server |
+| `bd-ib-motuct` | `847e76f53` | name a Kubernetes sandbox pod's node on each `run_turn` span |
+| `bd-ib-h7kbco` | `6bd0050cc` | retry a locked write; delete a run in short batches |
+| `bd-ib-6r3yax`, `bd-ib-bpucez` | `9308fa059`, `2eaf6efbd`, `674b22ad5` | report sandbox-provider transport and run-store failures as `transient_infra` |
+| `bd-ib-ljw2xg` | `e97ef8c4a` | re-run a run's prepare steps on a re-acquired sandbox |
+| `bd-ib-q3xszn`, `bd-ib-gmuxd4`, `bd-ib-oeckki`, `bd-ib-4uge7u`, `bd-ib-sltfyg` | `23b3213f6`, `330bd0e6d`, `1aad15e22`, `94fc0abac`, `e34e4b5fa`, `5e43903db` | tests wait on events or driven clocks, never wall-clock deadlines |
+| `bd-ib-xoh477` | `40e831747`, `f140a110c` | compressed board reads, server-side `ps` filtering, and a 1 KiB goal preview in run lists |
+| `bd-ib-uctbct` | `dba0f48fa` | retry a transiently rejected source-branch push and keep its stderr |
+| `bd-ib-dmjsmd` | `f35fbf4b8` | read the event stream's tail and pages without node scripts |
+| `bd-ib-m7lxgn` | `39915215b` | keep one plugin supervisor per provider configuration for the server's life |
+| `bd-ib-dqxcsh` | `aff14aca3`, `e1dc339e3`, `557ab5c95`, `3cdb42b5d`, `dc7ae0cb1`, `e871d18ab`, `6e719df13` | Fork gates and carrier builds on the `fabro-k3s` ARC scale set |
+| `bd-ib-aqcgxz` | `a8ef4a939` | pin the Petri fix whose output drain waits out a stalled consumer |
+| `bd-ib-adrhkf` | `2e6c26c81` | the nextest `ci` profile flags slow tests and kills none |
+| `bd-ib-dpsiwz` | `95ef0a8d2`, `62754c360` | authored `run_prepare_<N>` nodes re-run on a re-acquired sandbox (tests) |
+| `bd-ib-qx45e6` | `496e3d171`, `703596e5d`, `cd0b77338`, `85071c828` | the v0.408 rebase's own fixes: the Petri pin, rustfmt, Fabro's own `run_prepare_` prefix, and deadline-free harness polls |
+| `bd-ib-tcdmkr` | `d22808f8e` | bundle SQLite 3.54.1 through libsqlite3-sys 0.39.1 (RUSTSEC-2026-0459), via a `[patch.crates-io]` of the sqlx crates at `launchbadge/sqlx` `10462fa4`; replace it with the first sqlx release that carries #4502 |
+
+**The legacy hp instance is RETIRED (2026-11-12).** hp's legacy `fabro 0.254.0
+(8869e88)` server unit is gone, and its binary and storage directory remain on disk
+read-only (`~/.fabro`, `~/.fabro/bin` and `~/.fabro/storage` are `dr-xr-xr-x`). Its docker
+image-warm timer from PR #2688 and its `tailscale serve` listeners for `:32276`-`:32278`
+were removed through livespec-dev-tooling#4235 (`bd-ib-iud52v`). The vps binary remains
+the Dispatcher's local client, not a serving engine.
+
 ### The v0.382 release bundle (`bd-ib-sxcnj7`, plan `fabro-currency`)
+
+**Superseded (2026-11-12):** no instance serves this bundle; see "The v0.408 carrier" above.
 
 This is the Petri-era build the factory is cutting over to. It is pinned as ONE exact
 published upstream tag plus a small, named carried set, and it is the build that
