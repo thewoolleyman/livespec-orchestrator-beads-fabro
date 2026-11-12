@@ -4,18 +4,25 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import JournalWriter
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io_liveness_probe import (
     STREAM_POLL_JOURNAL_STAGE,
     LivenessState,
     liveness_sample,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog import (
+    StallVerdict,
+    decide_stall,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 from livespec_orchestrator_beads_fabro.commands._fabro_port_http import FabroHttpResult
+from livespec_orchestrator_beads_fabro.commands._otel_receive import HeartbeatSink
 
 
 @dataclass(kw_only=True)
@@ -56,7 +63,7 @@ def _response(*, body: str, succeeded: bool = True, status: int | None = None) -
 
 
 def _sample(
-    *, api: _Api, state: LivenessState, record: object | None, journal: _Journal
+    *, api: _Api, state: LivenessState, record: object | None, journal: JournalWriter
 ) -> float | None:
     return liveness_sample(
         plan=cast("DispatchPlan", SimpleNamespace(node_timeouts={})),
@@ -262,6 +269,42 @@ def test_a_paginated_page_without_a_new_cursor_is_unobservable() -> None:
         "status": 200,
         "reason": "stream-read-unobservable",
     }
+
+
+def test_frozen_heartbeat_cannot_confirm_a_stall_while_every_stream_read_is_unobservable(
+    tmp_path: Path,
+) -> None:
+    """A stale heartbeat alone cannot make a blind event stream look stalled."""
+    api = _Api(responses=[_response(body="", succeeded=False) for _ in range(3)])
+    state = LivenessState()
+    journal = _Journal()
+    heartbeat_path = tmp_path / "otel-heartbeat.json"
+    HeartbeatSink(path=heartbeat_path).beat(key="bd-ib-7e4d7t", at=10.0)
+    plan = cast(
+        "DispatchPlan",
+        SimpleNamespace(node_timeouts={}, work_item_id="bd-ib-7e4d7t"),
+    )
+
+    samples = tuple(
+        liveness_sample(
+            plan=plan,
+            port=cast("FabroPort", _Port(api=api)),
+            run_id="01RUN",
+            heartbeat_path=heartbeat_path,
+            dispatch_id=None,
+            observed_at=observed_at,
+            state=state,
+            journal=journal,
+        )
+        for observed_at in (0.0, 900.0, 1500.0)
+    )
+
+    assert decide_stall(samples=samples, stall_seconds=1500.0) is StallVerdict.CONTINUE
+    assert [(record["stage"], record["observable"]) for record in journal.records] == [
+        (STREAM_POLL_JOURNAL_STAGE, False),
+        (STREAM_POLL_JOURNAL_STAGE, False),
+        (STREAM_POLL_JOURNAL_STAGE, False),
+    ]
 
 
 def test_newer_stage_transition_progresses_when_the_stream_read_fails() -> None:
