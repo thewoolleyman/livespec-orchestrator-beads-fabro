@@ -376,6 +376,7 @@ def test_the_dispatch_record_hands_its_verdict_to_materialization(
         return MaterializationRefusal(stage="captured", detail="captured")
 
     monkeypatch.setattr(record_module, "read_dispatch_labels", _no_labels)
+    monkeypatch.setattr(record_module, "read_dispatch_comments", lambda **_: ())
     monkeypatch.setattr(record_module, "materialize_dispatch", _materialize)
     evaluated = no_fallback_verdict()
 

@@ -350,7 +350,13 @@ def _committed_graph(*, committed: Path) -> Path | str:
     return graph
 
 
-def _copy_payload(*, source: Path, payload_dir: Path, graph: Path, text: str) -> None:
+def _copy_payload(
+    *,
+    source: Path,
+    payload_dir: Path,
+    graph: Path,
+    text: str,
+) -> None:
     """Replace `payload_dir` with a fresh copy of `source`, graph rendered.
 
     The destination is removed first so a payload left behind by an earlier

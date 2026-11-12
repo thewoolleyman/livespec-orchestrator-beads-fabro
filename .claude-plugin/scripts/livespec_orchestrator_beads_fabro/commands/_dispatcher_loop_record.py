@@ -72,8 +72,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_plan import (
     dispatch_plan_for_item,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import WorkflowPayload
+from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
+    WorkflowPayload,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_payload_stage_riders import (
+    prefix_stage_riders,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan_build import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rider_bound import prior_claim_instant
+from livespec_orchestrator_beads_fabro.commands._dispatcher_stage_riders import stage_rider_sections
 from livespec_orchestrator_beads_fabro.commands._fabro_client import (
     materialized_workflow_config,
 )
@@ -130,6 +137,11 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
         return failed_dispatch_outcome(
             journal=journal, work_item_id=item.id, stage="ledger-labels", detail=raw_labels
         )
+    comments = read_dispatch_comments(repo=repo, item=item)
+    if isinstance(comments, str):
+        return failed_dispatch_outcome(
+            journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
+        )
     materialized = materialize_dispatch(
         args=args,
         repo=repo,
@@ -147,6 +159,22 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
         )
     committed_workflow = materialized.committed_workflow
     payload = materialized.payload
+    rider_error = prefix_stage_riders(
+        payload_dir=payload.payload_dir,
+        graph=payload.graph,
+        stage_riders=stage_rider_sections(
+            comments=comments,
+            claim_at=prior_claim_instant(
+                journal_path=journal.path,
+                item_id=item.id,
+                own_dispatch_id=identity.dispatch_id,
+            ),
+        ),
+    )
+    if rider_error is not None:
+        return failed_dispatch_outcome(
+            journal=journal, work_item_id=item.id, stage="stage-rider-payload", detail=rider_error
+        )
     plan = dispatch_plan_for_item(
         args=args,
         repo=repo,
@@ -171,11 +199,6 @@ def record_dispatch(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict` is 
     # undeclared conformance premise is a legitimate no-op that would otherwise
     # be indistinguishable from a chosen one.
     emit_conformance_premise_notices(resolved=plan.integration, journal=journal)
-    comments = read_dispatch_comments(repo=repo, item=item)
-    if isinstance(comments, str):
-        return failed_dispatch_outcome(
-            journal=journal, work_item_id=item.id, stage="ledger-comments", detail=comments
-        )
     engine = engine_binary(fabro_bin=plan.fabro_bin, runner=ShellCommandRunner(), cwd=repo)
     plan = replace(
         plan,
