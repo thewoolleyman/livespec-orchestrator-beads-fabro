@@ -24,7 +24,7 @@ That file is the rule's only carrier, and it is not part of the governed spec tr
 
 The fleet coordinator (legacy-coordinator-agent, ~18:0xZ 2026-11-12) gave GO to codify the ruling here as a one-clause proposal. It takes the orchestrator revise slot right after the-factory-graph-gate-validates. On ratification the coordinator releases bd-ib-3edyng's tier against this clause.
 
-FLEET SCOPE: the clause binds every test file in the fork's carrier tree (`thewoolleyman/fabro`, any branch a pinned factory build is cut from, together with the Petri fork tree that carrier locks). That includes bd-ib-3edyng's two 30 s `COMMAND_TIMEOUT` deadlines beside its 5 s readiness bound. It governs only the fork, which is the factory's engine; it adds nothing for adopter repositories or this repository's own Python suite.
+FLEET SCOPE: the clause binds every test file in the fork's carrier tree (`thewoolleyman/fabro`, any branch a pinned factory build is cut from). That includes bd-ib-3edyng's two 30 s `COMMAND_TIMEOUT` deadlines beside its 5 s readiness bound. It governs only the fork, which is the factory's engine; it adds nothing for adopter repositories or this repository's own Python suite.
 
 ### Proposed Changes
 
@@ -80,10 +80,10 @@ Feature: A fork test's verdict never depends on host load or wall-clock time
 Add one entry to `tests/heading-coverage.json`, using the heading as numbered at revise:
 
 ```json
-{"heading": "## Scenario: a fork test waits on the state it needs, never on the clock", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the scenario tier or above is owed for this heading: the thewoolleyman/fabro fork's worker_auth integration tests wait on server readiness, the run directory and completed events by observing those states, proved on a Fork gates Test run of the carrier branch carrying the fix, together with a mutation check that each still fails when its behaviour is removed. bd-ib-3edyng owns it.", "work_item": "bd-ib-3edyng"}
+{"heading": "## Scenario: a fork test waits on the state it needs, never on the clock", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the integration tier or above is owed for this heading: the thewoolleyman/fabro fork's worker_auth integration tests wait on server readiness, the run directory and completed events by observing those states, proved on a Fork gates Test run of the carrier branch carrying the fix, together with a mutation check that each still fails when its behaviour is removed. bd-ib-3edyng owns it.", "work_item": "bd-ib-3edyng"}
 ```
 
-Add the matching row to `tests/heading-coverage-debt.json`, as `check-heading-coverage-debt-register` requires:
+Add the matching row to `tests/heading-coverage-debt.json`. The register has no generator: the row is authored, and `check-heading-coverage-debt-register` admits it under its v067 spec-first admission, because this same change introduces the heading:
 
 ```json
 {"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a fork test waits on the state it needs, never on the clock", "work_item": "bd-ib-3edyng", "first_seen": "<revise date>"}
