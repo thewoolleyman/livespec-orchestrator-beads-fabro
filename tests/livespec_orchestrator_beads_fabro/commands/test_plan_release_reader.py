@@ -27,6 +27,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     PROOF_MODE_HOST_CAPTURED,
 )
@@ -50,9 +51,12 @@ from livespec_orchestrator_beads_fabro.commands._plan_release_forge import (
     repository_tags_argv,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_release_reader import (
+    ForgeReleaseReader,
     forge_release_reader,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_release_repository import (
+    ExplicitRepository,
+    ReleaseComponent,
     ReleaseTags,
     UnreadableRelease,
 )
@@ -278,6 +282,76 @@ def test_every_record_naming_one_build_identifier_costs_one_resolution() -> None
     # build identifier, so the resolution is taken once and the forge is asked
     # three times rather than three times per record.
     assert len(forge.calls) == 3
+
+
+@dataclass(frozen=True, kw_only=True)
+class _TreeRunner:
+    """One controlled git-diff result for the component-tree reader seam."""
+
+    result: CommandResult
+    calls: list[tuple[str, ...]] = field(default_factory=list)
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: dict[str, str] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        del cwd, timeout_seconds, env, stdin
+        self.calls.append(tuple(argv))
+        return self.result
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        (CommandResult(exit_code=0, stdout="", stderr=""), None),
+        (
+            CommandResult(exit_code=0, stdout="tools/shared_credentials/changed.py\n", stderr=""),
+            "tools/shared_credentials/changed.py",
+        ),
+        (
+            CommandResult(exit_code=1, stdout="", stderr="unknown revision"),
+            "could not compare trees: unknown revision",
+        ),
+    ],
+)
+def test_component_tree_difference_reports_the_first_changed_or_one_sided_path(
+    *, result: CommandResult, expected: str | None
+) -> None:
+    """The comparison is limited to component paths and exposes git's first path."""
+    component = ReleaseComponent(
+        name="shared-credentials",
+        tag_prefix="shared-v",
+        paths=("tools/shared_credentials/",),
+    )
+    runner = _TreeRunner(result=result)
+    reader = ForgeReleaseReader(
+        project_root=_ROOT,
+        runner=runner,
+        governed=ExplicitRepository(owner="thewoolleyman", repository="livespec"),
+        components=None,
+    )
+
+    difference = reader.component_tree_difference(
+        commit="c0ffee1", tag="shared-v1.0.0", component=component
+    )
+
+    assert difference == expected
+    assert runner.calls == [
+        (
+            "git",
+            "diff",
+            "--name-only",
+            "c0ffee1",
+            "shared-v1.0.0",
+            "--",
+            "tools/shared_credentials/",
+        )
+    ]
 
 
 def test_two_records_naming_different_repositories_are_resolved_separately() -> None:

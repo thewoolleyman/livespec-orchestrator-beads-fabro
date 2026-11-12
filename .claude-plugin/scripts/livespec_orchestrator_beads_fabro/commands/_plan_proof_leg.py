@@ -69,6 +69,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done i
     DefinitionOfDoneAssertion,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
+    BuildIdentity,
     build_identity_in,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
@@ -285,7 +286,9 @@ def _release_rejection(*, record: ProofRecord, reader: ReleaseReader) -> str | N
     build = build_identity_in(body=record.body)
     named = None if build is None else build.release_tag
     if reading.components is not None:
-        return _component_release_rejection(record=record, reading=reading, named=named)
+        return _component_release_rejection(
+            record=record, reading=reading, named=named, reader=reader
+        )
     return _repository_release_rejection(reading=reading, named=named)
 
 
@@ -299,7 +302,7 @@ def _repository_release_rejection(*, reading: ReleaseTags, named: str | None) ->
 
 
 def _component_release_rejection(
-    *, record: ProofRecord, reading: ReleaseTags, named: str | None
+    *, record: ProofRecord, reading: ReleaseTags, named: str | None, reader: ReleaseReader
 ) -> str | None:
     """Judge a governed repository's declaration without weakening the legacy rule."""
     components = cast("tuple[ReleaseComponent, ...]", reading.components)
@@ -308,16 +311,30 @@ def _component_release_rejection(
         for tag in reading.tags
     )
     paths = artifact_paths_in(body=record.body)
-    if has_unowned_tag or not paths:
+    build = build_identity_in(body=record.body)
+    imported = (
+        () if build is None or build.imported_components is None else build.imported_components
+    )
+    if has_unowned_tag or (not paths and not imported):
         return _repository_release_rejection(reading=reading, named=named)
     released = tuple(
         component
         for component in components
         if any(tag.startswith(component.tag_prefix) for tag in reading.tags)
-        and any(path.startswith(prefix) for prefix in component.paths for path in paths)
+        and (
+            component.name in imported
+            or any(path.startswith(prefix) for prefix in component.paths for path in paths)
+        )
     )
     if not released:
-        return None
+        return _imported_component_rejection(
+            imported=imported,
+            components=components,
+            named=named,
+            reading=reading,
+            build=build,
+            reader=reader,
+        )
     names = ", ".join(component.name for component in released)
     if named is None:
         return f"states release none, and a release applies to component {names}"
@@ -326,11 +343,47 @@ def _component_release_rejection(
         for tag in reading.tags
         if any(tag.startswith(component.tag_prefix) for component in released)
     )
-    return (
-        None
-        if named in allowed
-        else (f"names a release tag no artifact component carries: {names} does not carry {named}")
+    if named not in allowed:
+        return f"names a release tag no artifact component carries: {names} does not carry {named}"
+    return _imported_component_rejection(
+        imported=imported,
+        components=components,
+        named=named,
+        reading=reading,
+        build=build,
+        reader=reader,
     )
+
+
+def _imported_component_rejection(
+    *,
+    imported: tuple[str, ...],
+    components: tuple[ReleaseComponent, ...],
+    named: str | None,
+    reading: ReleaseTags,
+    build: BuildIdentity | None,
+    reader: ReleaseReader,
+) -> str | None:
+    """Verify every imported component against the named release tree.
+
+    Imported code is intentionally judged before a record can fall through the
+    artifact-path rule: importing an undeclared component is itself a release
+    claim, even when no artifact path happens to select a component.
+    """
+    for component_name in imported:
+        component = next((one for one in components if one.name == component_name), None)
+        if component is None:
+            return f"names undeclared imported component {component_name}"
+        if named is None or named not in reading.tags or not named.startswith(component.tag_prefix):
+            return f"names no release tag owned by imported component {component_name}"
+        if build is None or build.commit is None:
+            return f"names no default-branch commit for imported component {component_name}"
+        difference = reader.component_tree_difference(
+            commit=build.commit, tag=named, component=component
+        )
+        if difference is not None:
+            return f"imported component {component_name} differs at {difference}"
+    return None
 
 
 def _rejected_line(*, entry: PlanProofEntry, rejection: str) -> str:

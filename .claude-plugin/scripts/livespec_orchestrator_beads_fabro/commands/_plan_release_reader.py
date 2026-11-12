@@ -107,6 +107,19 @@ class ForgeReleaseReader:
         self.readings[key] = resolved
         return resolved
 
+    def component_tree_difference(
+        self, *, commit: str, tag: str, component: ReleaseComponent
+    ) -> str | None:
+        """Compare the named commit and tag only beneath the component's paths."""
+        result = self.runner.run(
+            argv=["git", "diff", "--name-only", commit, tag, "--", *component.paths],
+            cwd=self.project_root,
+            timeout_seconds=30.0,
+        )
+        if result.exit_code != 0:
+            return f"could not compare trees: {result.stderr.strip() or result.stdout.strip()}"
+        return next((path for path in result.stdout.splitlines() if path), None)
+
 
 def forge_release_reader(*, project_root: Path, runner: CommandRunner) -> ForgeReleaseReader:
     """A reader for one archive, with the governed repository's identity resolved.
