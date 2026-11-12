@@ -89,6 +89,7 @@ latest_red_test_file() {
             sub(/^Red test file:[[:space:]]*/, "", value)
             sub(/^`/, "", value)
             sub(/`$/, "", value)
+            sub(/::.*/, "", value)
             latest = value
         }
         END { print latest }
