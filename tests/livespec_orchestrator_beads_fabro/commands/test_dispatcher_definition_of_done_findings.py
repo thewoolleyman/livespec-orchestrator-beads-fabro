@@ -95,6 +95,32 @@ def test_a_reference_to_a_heading_the_spec_tree_carries_produces_no_finding(
     assert definition_of_done_findings(item=item, cwd=repo) == ()
 
 
+def test_a_goal_template_opener_in_every_editable_item_field_is_a_mechanical_finding(
+    tmp_path: Path,
+) -> None:
+    opener = "{" + "{"
+    item = _item(
+        title=f"title {opener}",
+        description=f"description {opener}",
+        acceptance_criteria=f"acceptance {opener}",
+        notes=f"notes {opener}",
+    )
+
+    findings = definition_of_done_findings(item=item, cwd=_spec_tree(tmp_path=tmp_path))
+
+    assert len(findings) == 5
+    template_findings = findings[:4]
+    for field, offset, finding in zip(
+        ("title", "description", "acceptance criteria", "notes"),
+        (6, 12, 11, 6),
+        template_findings,
+        strict=True,
+    ):
+        assert field in finding
+        assert f"offset {offset}" in finding
+        assert opener not in finding
+
+
 def test_a_reference_without_its_h2_marker_is_a_mechanical_finding(
     tmp_path: Path,
 ) -> None:
