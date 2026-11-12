@@ -24,13 +24,15 @@ def test_a_node_refusal_names_the_run_and_yields_one_disagreement_journal_row() 
     )
 
     result = module.record_dod_gate_judgement(
-        comments=(host,),
-        run_id="01RUN",
-        subject_digest="a" * 64,
-        rubric_digest="b" * 64,
-        outcome="rests-at-needs-human",
-        findings=("the assertion needs a reference",),
-        timestamp="2026-11-12T17:01:00Z",
+        judgement=module.DodGateJudgementInput(
+            comments=(host,),
+            run_id="01RUN",
+            subject_digest="a" * 64,
+            rubric_digest="b" * 64,
+            outcome="rests-at-needs-human",
+            findings=("the assertion needs a reference",),
+            timestamp="2026-11-12T17:01:00Z",
+        )
     )
 
     assert result.comment.startswith("livespec-dod-judgement\n")
@@ -47,3 +49,34 @@ def test_a_node_refusal_names_the_run_and_yields_one_disagreement_journal_row() 
             "second_taken_at": "2026-11-12T17:01:00Z",
         },
     )
+
+
+def test_a_replayed_node_outcome_appends_no_second_receipt_or_row() -> None:
+    module = importlib.import_module(_MODULE)
+    first = module.record_dod_gate_judgement(
+        judgement=module.DodGateJudgementInput(
+            comments=(),
+            run_id="01RUN",
+            subject_digest="a" * 64,
+            rubric_digest="b" * 64,
+            outcome="admitted",
+            findings=(),
+            timestamp="2026-11-12T17:01:00Z",
+        )
+    )
+
+    replay = module.record_dod_gate_judgement(
+        judgement=module.DodGateJudgementInput(
+            comments=(first.comment,),
+            run_id="01RUN",
+            subject_digest="a" * 64,
+            rubric_digest="b" * 64,
+            outcome="admitted",
+            findings=(),
+            timestamp="2026-11-12T17:01:00Z",
+        )
+    )
+
+    assert replay.comment is None
+    assert replay.disagreement_comments == ()
+    assert replay.journal_records == ()
