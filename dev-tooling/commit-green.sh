@@ -45,11 +45,27 @@ red_commit_for_current_run() {
         && grep -qxF "Factory-Run-Id: $run_id" <<<"$message"
 }
 
+current_engine_run_id() {
+    local branch=""
+    if [[ -n "${FABRO_RUN_ID:-}" ]]; then
+        printf '%s\n' "$FABRO_RUN_ID"
+        return 0
+    fi
+    branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+    if [[ "$branch" == fabro/run/?* ]]; then
+        printf '%s\n' "${branch#fabro/run/}"
+    fi
+}
+
 fold_checkpoints() {
     local depth=0
     local ref="HEAD"
     local checkpoint_run=""
-    checkpoint_run="$(checkpoint_run_id "$ref")"
+    checkpoint_run="$(current_engine_run_id)"
+    if [[ -z "$checkpoint_run" ]]; then
+        printf '%s\n' "current engine run id is unknown, so no checkpoint commit can be attributed to this run"
+        return 2
+    fi
     while (( depth < CHECKPOINT_LIMIT )) && checkpoint_for_run "$ref" "$checkpoint_run"; do
         ((depth += 1))
         ref="HEAD~${depth}"
