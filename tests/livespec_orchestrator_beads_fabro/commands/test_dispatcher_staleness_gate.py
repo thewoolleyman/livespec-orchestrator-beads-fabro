@@ -16,6 +16,7 @@ _MODULE_PATH = Path(
 _MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_staleness_gate"
 _RELEASE_SHA = "9532efb793bc1d2c3a4b5c6d7e8f901234567890"
 _MASTER_SHA = "8eb81fae1234567890abcdefabcdefabcdefabcd"
+_NEWER_BUILD_SHA = "2164ff74e19f1a2b3c4d5e6f7890123456789abc"
 
 
 @dataclass(kw_only=True)
@@ -139,6 +140,10 @@ def test_read_only_cache_build_predating_latest_release_warns_with_performable_r
                 sha=_RELEASE_SHA,
             ),
             module.master_ref_argv(): _ls_remote(ref="refs/heads/master", sha=_RELEASE_SHA),
+            module.release_comparison_argv(
+                release_sha=_RELEASE_SHA,
+                build_id="b6e4012cafed",
+            ): CommandResult(exit_code=0, stdout="behind\n", stderr=""),
         }
     )
 
@@ -152,6 +157,38 @@ def test_read_only_cache_build_predating_latest_release_warns_with_performable_r
     assert _RELEASE_SHA[:12] in decision.warnings[0].detail
     assert "just adopt-orchestrator-build <clone> <build>" in decision.warnings[0].detail
     assert "claude plugin update" not in decision.warnings[0].detail
+
+
+def test_read_only_cache_build_newer_than_latest_release_never_warns_that_it_lags(
+    tmp_path: Path,
+) -> None:
+    """A release cache ahead of the latest release is not stale in the other direction."""
+    module = _module()
+    cache_root = tmp_path / _NEWER_BUILD_SHA[:12]
+    cache_root.mkdir()
+    assert hasattr(module, "release_comparison_argv")
+    runner = _Runner(
+        results={
+            module.latest_release_ref_argv(): _ls_remote(
+                ref="refs/heads/release",
+                sha=_RELEASE_SHA,
+            ),
+            module.master_ref_argv(): _ls_remote(ref="refs/heads/master", sha=_RELEASE_SHA),
+            module.release_comparison_argv(
+                release_sha=_RELEASE_SHA,
+                build_id=_NEWER_BUILD_SHA[:12],
+            ): CommandResult(exit_code=0, stdout="ahead\n", stderr=""),
+        }
+    )
+
+    decision = module.dispatcher_staleness_decision(
+        plugin_root=cache_root,
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    assert decision.refusal is None
+    assert not [warning for warning in decision.warnings if "lags latest release" in warning.detail]
 
 
 def test_current_release_build_proceeds_when_master_is_ahead_and_warns_with_commit(
