@@ -26,7 +26,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 
-def _input_bound_receipt(*, subject_characters: int | None = 431) -> str:
+def _input_bound_receipt(
+    *,
+    subject_characters: int | None = 431,
+    bound_ended_candidates: tuple[str, ...] | None = None,
+) -> str:
     """One host receipt whose two configured candidates each hit the bound."""
     candidates = ("claude-acp:claude-opus-5", "codex-acp:gpt-5.6-terra")
     attempts = tuple(
@@ -46,7 +50,9 @@ def _input_bound_receipt(*, subject_characters: int | None = 431) -> str:
         cause="input-limit-reached",
         subject_characters=subject_characters,
         carried_rider_count=2,
-        bound_ended_candidates=candidates,
+        bound_ended_candidates=(
+            candidates if bound_ended_candidates is None else bound_ended_candidates
+        ),
         attempts=attempts,
     )
 
@@ -85,6 +91,22 @@ def test_malformed_input_bound_measurements_do_not_create_a_hygiene_fact() -> No
     assert module.latest_input_bound_measurement(comments=(malformed,)) is None
     assert module.latest_input_bound_measurement(comments=(non_decimal,)) is None
     assert module.latest_input_bound_measurement(comments=(another_cause,)) is None
+
+
+def test_a_host_taking_with_only_some_candidates_input_bound_is_not_unpreflightable() -> None:
+    partial = _input_bound_receipt(bound_ended_candidates=("claude-acp:claude-opus-5",))
+    malformed_candidate = _input_bound_receipt().replace(
+        "candidate: agent=claude-acp model=claude-opus-5",
+        "candidate: agent=claude-acp",
+    )
+    ignorable_candidate_detail = _input_bound_receipt().replace(
+        "candidate: agent=claude-acp model=claude-opus-5",
+        "candidate: agent=claude-acp model=claude-opus-5 telemetry",
+    )
+
+    assert module.latest_input_bound_measurement(comments=(partial,)) is None
+    assert module.latest_input_bound_measurement(comments=(malformed_candidate,)) is None
+    assert module.latest_input_bound_measurement(comments=(ignorable_candidate_detail,)) == (431, 2)
 
 
 def test_an_unconfigured_repository_has_no_receipt_lane(tmp_path: Path) -> None:
