@@ -52,7 +52,20 @@ def test_select_by_relevance_keeps_each_fitting_matching_paragraph() -> None:
         remaining=1_000,
     )
 
-    assert selected == {("contracts", 0): ((1, "\n\n" + second), (2, "\n\n" + third))}
+    assert selected == {("contracts", 0): ((0, first), (1, "\n\n" + second), (2, "\n\n" + third))}
+
+
+def test_select_by_relevance_keeps_the_first_paragraph_of_a_headed_body() -> None:
+    """A real headed body opens with blank lines, and its first paragraph can state the behaviour."""
+    stating = "A credential helper is private to repository hooks."
+    broad = "credential helper " * 100
+    selected, _ = select_by_relevance(
+        sections=(_relevant_section(key=("contracts", 0), body=f"\n\n{stating}\n\n{broad}"),),
+        terms={"credential", "helper"},
+        remaining=1_000,
+    )
+
+    assert selected == {("contracts", 0): ((1, "\n\n" + stating),)}
 
 
 def test_select_by_relevance_ignores_paragraphs_without_a_matching_term() -> None:

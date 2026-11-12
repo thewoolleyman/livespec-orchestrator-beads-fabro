@@ -58,7 +58,7 @@ _TREE = {
 
 # Measured against this fixture: the four budgets at which one more clause body
 # is read in full than at the one before it, plus a budget under which none is.
-_GRADED_CEILINGS = (0, 9900, 10250, 11850, 12650)
+_GRADED_CEILINGS = (0, 9900, 10250, 12275, 12650)
 
 
 @dataclass(kw_only=True)

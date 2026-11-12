@@ -107,10 +107,7 @@ def select_by_relevance(
     selected: dict[tuple[str, int], list[tuple[int, str]]] = {}
     for section in sections:
         source = section.body if section.heading is not None else section.full
-        paragraphs = (paragraph for paragraph in PARAGRAPH.findall(source) if paragraph.strip())
-        for index, paragraph in enumerate(paragraphs):
-            if index == 0:
-                continue
+        for index, paragraph in enumerate(PARAGRAPH.findall(source)):
             if not _paragraph_matches(paragraph=paragraph, terms=terms):
                 continue
             cost = len(paragraph)
