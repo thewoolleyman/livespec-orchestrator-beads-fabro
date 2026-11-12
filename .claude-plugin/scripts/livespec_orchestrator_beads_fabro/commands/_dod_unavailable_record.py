@@ -22,6 +22,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_input_record import (
     bound_ended_lines,
     input_bound_detail_lines,
+    total_input_lines,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     UNAVAILABLE_COMMENT_MARKER,
@@ -49,7 +50,9 @@ class _DidNotRunDetails(TypedDict, total=False):
     subject_characters: int | None
     carried_rider_count: int | None
     bound_ended_candidates: Sequence[str]
+    bound_ended_input_tokens: Sequence[int | None]
     attempts: Sequence[CandidateAttempt]
+    total_input: tuple[int | None, str]
 
 
 def did_not_run_comment(
@@ -79,7 +82,15 @@ def did_not_run_comment(
                 subject_characters=details.get("subject_characters"),
                 carried_rider_count=details.get("carried_rider_count"),
             ),
-            *bound_ended_lines(candidates=details.get("bound_ended_candidates", ())),
+            *total_input_lines(
+                total_tokens=details.get("total_input", (None, "unreported"))[0],
+                usage=details.get("total_input", (None, "unreported"))[1],
+                input_limited=cause == "input-limit-reached",
+            ),
+            *bound_ended_lines(
+                candidates=details.get("bound_ended_candidates", ()),
+                input_tokens=details.get("bound_ended_input_tokens", ()),
+            ),
             *unavailable_record_lines(attempts=details.get("attempts", ())),
         )
     )

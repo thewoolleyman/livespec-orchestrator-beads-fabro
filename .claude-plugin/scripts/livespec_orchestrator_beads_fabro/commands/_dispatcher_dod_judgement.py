@@ -134,7 +134,10 @@ class DodJudgement:
     deciding_candidate: str | None = None
     input_tokens: int | None = None
     input_usage: str = "unreported"
+    total_input_tokens: int | None = None
+    total_input_usage: str = "unreported"
     bound_ended_candidates: tuple[str, ...] = ()
+    bound_ended_input_tokens: tuple[int | None, ...] = ()
     attempts: tuple[CandidateAttempt, ...] = ()
 
     @property

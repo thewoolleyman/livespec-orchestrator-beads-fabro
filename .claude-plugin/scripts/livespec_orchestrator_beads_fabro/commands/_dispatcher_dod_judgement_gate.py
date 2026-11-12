@@ -40,6 +40,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
     JUDGEMENT_HELD,
     JUDGEMENT_UNAVAILABLE,
+    DodJudgement,
     first_remedy,
     judgement_subject,
     judgement_subject_digest,
@@ -79,9 +80,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
-        CandidateAttempt,
-    )
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -182,7 +180,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             stage=stage,
             digest=judgement_subject_digest(item=item, cwd=repo, comments=comments),
             rubric=rubric_bytes_digest,
-            cause=CAUSE_PROMPT_UNREADABLE,
+            judgement=DodJudgement(outcome=JUDGEMENT_UNAVAILABLE, cause=CAUSE_PROMPT_UNREADABLE),
             comments=comments,
             append=append,
         )
@@ -231,7 +229,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             stage=stage,
             digest=digest,
             rubric=rubric_bytes_digest,
-            cause=verdict.cause,
+            judgement=verdict,
             comments=comments,
             append=append,
             bound_ended_candidates=verdict.bound_ended_candidates,
@@ -320,7 +318,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     stage: str,
     digest: str,
     rubric: str,
-    cause: str | None,
+    judgement: DodJudgement,
     comments: Sequence[str],
     append: Callable[..., None],
     bound_ended_candidates: Sequence[str] = (),
@@ -330,7 +328,7 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
 ) -> DodJudgementDecision:
     """Record that the judgement did not run, unless this cause already stands.
 
-    `cause` is typed optional because `DodJudgement` carries it only on the
+    `judgement.cause` is optional because `DodJudgement` carries it only on the
     unavailable outcome; an unavailable verdict with no cause would be a bug in
     the layer above, and recording "it did not run, reason unstated" is worse
     than recording nothing — it is a row an operator cannot act on.
@@ -340,7 +338,9 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
     any rubric exists. Two call sites each composing the write and the return was
     how the second arm came to record nothing at all.
     """
-    if cause is not None and cause not in recorded_did_not_run_causes(comments=comments):
+    if (cause := judgement.cause) is not None and cause not in recorded_did_not_run_causes(
+        comments=comments
+    ):
         append(
             body=did_not_run_comment(
                 item_id=item.id,
@@ -352,6 +352,8 @@ def _unavailable(  # noqa: PLR0913 - each argument is one field of the record it
                 carried_rider_count=carried_rider_count,
                 bound_ended_candidates=bound_ended_candidates,
                 attempts=attempts,
+                bound_ended_input_tokens=judgement.bound_ended_input_tokens,
+                total_input=(judgement.total_input_tokens, judgement.total_input_usage),
             )
         )
     return DodJudgementDecision(work_item_id=item.id, outcome=JUDGEMENT_UNAVAILABLE)

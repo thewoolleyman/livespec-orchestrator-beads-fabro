@@ -181,6 +181,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     if result.reply is not None:
         parsed = parse_judgement_reply(reply=result.reply)
         usage = result.usage
+        total_usage = result.total_usage
         return DodJudgement(
             outcome=parsed.outcome,
             findings=parsed.findings,
@@ -188,7 +189,10 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
             deciding_candidate=result.deciding_candidate,
             input_tokens=None if usage is None else usage.total_tokens,
             input_usage="unreported" if usage is None else usage.status,
+            total_input_tokens=None if total_usage is None else total_usage.total_tokens,
+            total_input_usage="unreported" if total_usage is None else total_usage.status,
             bound_ended_candidates=result.bound_ended_candidates,
+            bound_ended_input_tokens=result.bound_ended_input_tokens,
             attempts=result.attempts,
         )
     cause = result.cause or CAUSE_NO_ELIGIBLE_MODEL
@@ -196,7 +200,14 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     return DodJudgement(
         outcome=JUDGEMENT_UNAVAILABLE,
         cause=cause,
+        total_input_tokens=(
+            None if result.total_usage is None else result.total_usage.total_tokens
+        ),
+        total_input_usage=(
+            "unreported" if result.total_usage is None else result.total_usage.status
+        ),
         bound_ended_candidates=result.bound_ended_candidates,
+        bound_ended_input_tokens=result.bound_ended_input_tokens,
         attempts=result.attempts,
     )
 

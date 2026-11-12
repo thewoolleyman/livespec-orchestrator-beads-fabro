@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -26,33 +26,26 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates 
     dod_gate_candidates,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidate_command import (
-    candidate_command,
     candidate_label,
     candidate_model,
-    is_codex_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_prompt import (
     resolve_judge_timeout_seconds,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage import (
+    INPUT_USAGE_COMPLETE,
+    INPUT_USAGE_PARTIAL,
     INPUT_USAGE_UNREPORTED,
     CandidateInputUsage,
-    candidate_input_usage,
     candidate_reply,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
-from livespec_orchestrator_beads_fabro.commands._dispatcher_host_judge_candidate import (
-    isolated_launch,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_shell_runner import (
-    ShellCommandRunner,
+from livespec_orchestrator_beads_fabro.commands._dod_judgement_execution import (
+    CandidateRun,
+    run_candidate,
 )
 from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
-    HostJudgeSpendJournal,
-    append_assistant_event,
     is_claude_agent,
     spend_journal_name,
-    start_spend_journal,
 )
 
 if TYPE_CHECKING:
@@ -82,7 +75,6 @@ CAUSE_INPUT_LIMIT = "input-limit-reached"
 # two numbers come from rather than from any convention restated here.
 _EXIT_TIMED_OUT = 124
 _EXIT_EXECUTABLE_ABSENT = 127
-_UNBOUNDED_USAGE = CandidateInputUsage(total_tokens=None, status=INPUT_USAGE_UNREPORTED)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -97,36 +89,15 @@ class CandidateChainResult:
     cause: str
     deciding_candidate: str | None = None
     usage: CandidateInputUsage | None = None
+    total_usage: CandidateInputUsage | None = None
     bound_ended_candidates: tuple[str, ...] = ()
+    bound_ended_input_tokens: tuple[int | None, ...] = ()
     attempts: tuple[CandidateAttempt, ...] = ()
 
     def __iter__(self) -> Iterator[str | None]:
         """Yield the established reply/cause pair for existing host consumers."""
         yield self.reply
         yield self.cause
-
-
-@dataclass(frozen=True, kw_only=True)
-class _CandidateRun:
-    """One candidate's final result and live budget disposition."""
-
-    result: CommandResult
-    usage: CandidateInputUsage
-    ended_by_input_limit: bool
-
-
-@dataclass(kw_only=True)
-class _LiveUsage:
-    """State owned by the streaming callback while it measures a candidate."""
-
-    output: list[str] = field(default_factory=list)
-    ended_by_input_limit: bool = False
-
-    def observe(self, *, line: str) -> bool:
-        """Record a line and say whether its cumulative use ends this candidate."""
-        self.output.append(line)
-        self.ended_by_input_limit = candidate_input_usage(output="".join(self.output)).reached_limit
-        return self.ended_by_input_limit
 
 
 def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam input.
@@ -166,9 +137,11 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
     )
     last_cause = CAUSE_NO_ELIGIBLE_MODEL
     bound_ended: list[str] = []
+    bound_ended_input_tokens: list[int | None] = []
     attempts: list[CandidateAttempt] = []
+    usages: list[CandidateInputUsage] = []
     for candidate in resolved:
-        attempt = _run_candidate(
+        attempt = run_candidate(
             candidate=candidate,
             prompt=prompt,
             cwd=cwd,
@@ -185,6 +158,7 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
             else attempt.result.stdout
         )
         outcome = _candidate_outcome(attempt=attempt, reply=reply, is_verdict=is_verdict)
+        usages.append(attempt.usage)
         attempts.append(
             CandidateAttempt(
                 agent=candidate.agent_id or candidate.adapter.command,
@@ -195,26 +169,31 @@ def run_candidate_chain(  # noqa: PLR0913 - each argument is an independent seam
         )
         if outcome == CAUSE_INPUT_LIMIT:
             bound_ended.append(candidate_label(candidate=candidate))
+            bound_ended_input_tokens.append(attempt.usage.total_tokens)
         if outcome == OUTCOME_VERDICT:
             return CandidateChainResult(
                 reply=reply,
                 cause="",
                 deciding_candidate=candidate_label(candidate=candidate),
                 usage=attempt.usage,
+                total_usage=_total_usage(usages=usages),
                 bound_ended_candidates=tuple(bound_ended),
+                bound_ended_input_tokens=tuple(bound_ended_input_tokens),
                 attempts=tuple(attempts),
             )
         last_cause = outcome
     return CandidateChainResult(
         reply=None,
         cause=last_cause,
+        total_usage=_total_usage(usages=usages),
         bound_ended_candidates=tuple(bound_ended),
+        bound_ended_input_tokens=tuple(bound_ended_input_tokens),
         attempts=tuple(attempts),
     )
 
 
 def _candidate_outcome(
-    *, attempt: _CandidateRun, reply: str, is_verdict: Callable[[str], bool]
+    *, attempt: CandidateRun, reply: str, is_verdict: Callable[[str], bool]
 ) -> str:
     """What one candidate's run amounted to: a verdict, or the cause that moved on."""
     if attempt.ended_by_input_limit or attempt.usage.reached_limit:
@@ -224,72 +203,17 @@ def _candidate_outcome(
     return OUTCOME_VERDICT if is_verdict(reply) else "unparseable-verdict"
 
 
-def _run_candidate(  # noqa: PLR0913 - each argument is an independent seam input.
-    *,
-    candidate: AcpCandidate,
-    prompt: str,
-    cwd: Path,
-    runner: CommandRunner,
-    environ: dict[str, str],
-    timeout_seconds: float,
-    bound_input: bool,
-    journal_name: str,
-    journal_spend: bool,
-) -> _CandidateRun:
-    """Run one configured host candidate with a prompt file as its only stdin."""
-    argv, judge_environ = candidate_command(
-        candidate=candidate,
-        environ=environ,
-        bound_input=bound_input,
-        journal_spend=journal_spend,
-        journal_name=journal_name,
-        allowed_directory=cwd,
+def _total_usage(*, usages: list[CandidateInputUsage]) -> CandidateInputUsage:
+    """The taking's input across every candidate it launched."""
+    if not usages or all(usage.total_tokens is None for usage in usages):
+        return CandidateInputUsage(total_tokens=None, status=INPUT_USAGE_UNREPORTED)
+    total = sum(usage.total_tokens or 0 for usage in usages)
+    status = (
+        INPUT_USAGE_COMPLETE
+        if all(usage.status == INPUT_USAGE_COMPLETE for usage in usages)
+        else INPUT_USAGE_PARTIAL
     )
-    journal = (
-        start_spend_journal(
-            home=Path(environ.get("HOME", str(Path.home()))),
-            name=journal_name,
-            cwd=cwd,
-            first_prompt=prompt,
-        )
-        if is_claude_agent(agent_id=candidate.agent_id) and (bound_input or journal_spend)
-        else None
-    )
-    with isolated_launch(
-        is_codex=is_codex_candidate(candidate=candidate),
-        prompt=prompt,
-        candidate_environ=judge_environ,
-        ambient_environ=environ,
-    ) as isolated:
-        if journal is not None and isinstance(runner, ShellCommandRunner):
-            live_usage = _LiveUsage()
-            result = runner.run_streaming(
-                argv=argv,
-                cwd=isolated.cwd,
-                timeout_seconds=timeout_seconds,
-                on_stdout_line=lambda line: _observe_line(
-                    journal=journal, live_usage=live_usage, bound_input=bound_input, line=line
-                ),
-                env=isolated.environ,
-                stdin=isolated.stdin,
-            )
-            return _CandidateRun(
-                result=result,
-                usage=candidate_input_usage(output=result.stdout),
-                ended_by_input_limit=live_usage.ended_by_input_limit,
-            )
-        result = runner.run(
-            argv=argv,
-            cwd=isolated.cwd,
-            timeout_seconds=timeout_seconds,
-            env=isolated.environ,
-            stdin=isolated.stdin,
-        )
-    if journal is not None:
-        for line in result.stdout.splitlines():
-            append_assistant_event(journal=journal, line=line)
-    usage = candidate_input_usage(output=result.stdout) if bound_input else _UNBOUNDED_USAGE
-    return _CandidateRun(result=result, usage=usage, ended_by_input_limit=False)
+    return CandidateInputUsage(total_tokens=total, status=status)
 
 
 def _invocation_cause(*, exit_code: int) -> str:
@@ -310,11 +234,3 @@ def _caller_environ(*, caller: str | None, environ: dict[str, str]) -> dict[str,
         **environ,
         "OTEL_RESOURCE_ATTRIBUTES": label if inherited is None else f"{inherited},{label}",
     }
-
-
-def _observe_line(
-    *, journal: HostJudgeSpendJournal, live_usage: _LiveUsage, bound_input: bool, line: str
-) -> bool:
-    """Journal a received response before optionally ending an over-budget candidate."""
-    append_assistant_event(journal=journal, line=line)
-    return live_usage.observe(line=line) if bound_input else False

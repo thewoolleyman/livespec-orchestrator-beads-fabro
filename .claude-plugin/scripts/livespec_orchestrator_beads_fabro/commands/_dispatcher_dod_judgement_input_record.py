@@ -37,6 +37,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import DodJudgement
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_usage import (
+    HOST_JUDGEMENT_INPUT_LIMIT,
+)
 
 __all__: list[str] = [
     "BOUND_ENDED_CANDIDATE_FIELD",
@@ -48,6 +51,9 @@ __all__: list[str] = [
 _DECIDING_CANDIDATE_FIELD = "deciding-candidate"
 _DECIDING_INPUT_TOKENS_FIELD = "deciding-candidate-input-tokens"
 _DECIDING_INPUT_USAGE_FIELD = "deciding-candidate-input-usage"
+_TOTAL_INPUT_TOKENS_FIELD = "total-input-tokens"
+_TOTAL_INPUT_USAGE_FIELD = "total-input-usage"
+_HOST_INPUT_LIMIT_FIELD = "host-judgement-input-limit"
 BOUND_ENDED_CANDIDATE_FIELD = "bound-ended-candidate"
 _SUBJECT_SIZE_FIELD = "subject-size-characters"
 _CARRIED_RIDER_COUNT_FIELD = "carried-rider-count"
@@ -63,20 +69,58 @@ def input_usage_lines(*, judgement: DodJudgement) -> list[str]:
     if judgement.input_tokens is not None:
         lines.append(f"{_DECIDING_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{judgement.input_tokens}")
     lines.append(f"{_DECIDING_INPUT_USAGE_FIELD}{_FIELD_SEPARATOR}{judgement.input_usage}")
-    lines.extend(bound_ended_lines(candidates=judgement.bound_ended_candidates))
+    lines.extend(
+        total_input_lines(
+            total_tokens=judgement.total_input_tokens,
+            usage=judgement.total_input_usage,
+        )
+    )
+    lines.extend(
+        bound_ended_lines(
+            candidates=judgement.bound_ended_candidates,
+            input_tokens=judgement.bound_ended_input_tokens,
+        )
+    )
     return lines
 
 
-def bound_ended_lines(*, candidates: Sequence[str]) -> list[str]:
+def bound_ended_lines(
+    *, candidates: Sequence[str], input_tokens: Sequence[int | None] = ()
+) -> list[str]:
     """One record line per candidate the input bound ended, in chain order.
 
     Shared by the taken-verdict record and the did-not-run record, because a
     chain the bound exhausted returns no verdict and its only record is the
     second one.
     """
-    return [
-        f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}" for candidate in candidates
-    ]
+    lines: list[str] = []
+    for index, candidate in enumerate(candidates):
+        lines.append(f"{BOUND_ENDED_CANDIDATE_FIELD}{_FIELD_SEPARATOR}{candidate}")
+        tokens = input_tokens[index] if index < len(input_tokens) else None
+        if tokens is not None:
+            candidate_usage = f"candidate={candidate} total-input-tokens={tokens}"
+            lines.extend(
+                (
+                    f"bound-ended-candidate-input-tokens{_FIELD_SEPARATOR}{candidate_usage}",
+                    f"{_TOTAL_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{tokens}",
+                )
+            )
+    return lines
+
+
+def total_input_lines(
+    *, total_tokens: int | None, usage: str, input_limited: bool = False
+) -> list[str]:
+    """Render the taking-wide input total and its optional governing bound."""
+    lines = (
+        []
+        if total_tokens is None
+        else [f"{_TOTAL_INPUT_TOKENS_FIELD}{_FIELD_SEPARATOR}{total_tokens}"]
+    )
+    lines.append(f"{_TOTAL_INPUT_USAGE_FIELD}{_FIELD_SEPARATOR}{usage}")
+    if input_limited:
+        lines.append(f"{_HOST_INPUT_LIMIT_FIELD}{_FIELD_SEPARATOR}{HOST_JUDGEMENT_INPUT_LIMIT}")
+    return lines
 
 
 def input_bound_detail_lines(
