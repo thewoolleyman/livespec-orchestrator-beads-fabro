@@ -32,6 +32,12 @@ _COMMIT_PROGRAMS_PATH = (
 )
 
 
+@pytest.fixture(autouse=True)
+def _current_fabro_run(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Name the engine run whose checkpoints the command scripts may fold."""
+    monkeypatch.setenv("FABRO_RUN_ID", "run")
+
+
 def _run(*, repo: Path, argv: list[str], check: bool = True) -> subprocess.CompletedProcess[str]:
     """Run one git or command-script invocation in the temporary repository."""
     return subprocess.run(argv, cwd=repo, check=check, capture_output=True, text=True)
@@ -221,6 +227,45 @@ def test_commit_green_refuses_a_red_without_current_run_provenance(tmp_path: Pat
     )
     _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
     _checkpoint(repo=repo, name="green")
+    before = _git(repo=repo, argv=["rev-parse", "HEAD"])
+    handoff = _handoff(repo=repo, text="## green\nImplementation changed.\n")
+
+    completed = _run(repo=repo, argv=["bash", str(_GREEN)], check=False)
+
+    assert completed.returncode != 0
+    assert _git(repo=repo, argv=["rev-parse", "HEAD"]) == before
+    assert "Cause: current run's own Red commit was not found" in handoff.read_text(
+        encoding="utf-8"
+    )
+
+
+def test_commit_green_does_not_fold_a_foreign_runs_checkpoint_above_the_current_red(
+    tmp_path: Path,
+) -> None:
+    """Only checkpoints of the current engine run are folded into the Red amend."""
+    repo = _initialize_repository(tmp_path=tmp_path)
+    _git(repo=repo, argv=["config", "livespec.factoryRunId", "current-run"])
+    test_file = repo / "tests" / "test_feature.py"
+    test_file.parent.mkdir()
+    _ = test_file.write_text("def test_feature() -> None:\n    assert True\n", encoding="utf-8")
+    _git(repo=repo, argv=["add", "tests/test_feature.py"])
+    _git(
+        repo=repo,
+        argv=["commit", "--quiet", "-m", "feat: red", "-m", "Factory-Run-Id: current-run"],
+    )
+    _ = (repo / "implementation.py").write_text("VALUE = 2\n", encoding="utf-8")
+    _git(
+        repo=repo,
+        argv=[
+            "commit",
+            "--all",
+            "--quiet",
+            "-m",
+            "fabro(other): green",
+            "-m",
+            "Fabro-Run: other",
+        ],
+    )
     before = _git(repo=repo, argv=["rev-parse", "HEAD"])
     handoff = _handoff(repo=repo, text="## green\nImplementation changed.\n")
 
