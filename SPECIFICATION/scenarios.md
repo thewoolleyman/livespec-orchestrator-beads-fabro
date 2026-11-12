@@ -11560,6 +11560,31 @@ Feature: The lifecycle guard's test harness starts its telemetry capture server 
     When the harness's start wait ends
     Then the failure line MUST state that the server was still running at the bound and include its captured standard error
     And the harness MUST stop the capture server process it started
+
+  Scenario: A failed liveness probe on a capture server that is still running is not read as an exit
+    Given the guard harness starts its telemetry capture server
+    And the server process is still running and has not written its port file
+    And the harness's liveness probe of the server process fails although the process has not exited
+    When the harness's start wait continues
+    Then the harness MUST NOT treat the server as exited
+    And the harness MUST NOT wait on the server process without a bound
+    And the start wait MUST end when the port file is written, the process is observed to have exited, or the 30-second bound elapses, whichever comes first
+
+  Scenario: Stopping a capture server that does not exit returns within its bound
+    Given the guard harness has started its telemetry capture server
+    And the server process does not exit when the harness sends it the stop signal
+    When the harness stops the capture server
+    Then the stop MUST end its wait at the harness's stop bound, not at the server process's exit
+    And the harness MUST NOT wait on the server process after that bound
+    And the harness MUST record that the server was still running at the stop bound
+
+  Scenario: A capture server that cannot be stopped is named as a failed case
+    Given the guard harness has started its telemetry capture server
+    And the server process is still running at the end of the harness's stop wait
+    When the harness reports the telemetry case that started the server
+    Then the case MUST be reported as failed
+    And the failure line MUST name the capture server as still running after its stop
+    And the harness run MUST end with a failing verdict rather than waiting for the server
 ```
 
 ## Scenario 270 — A successor retires a dead owner's terminal wait without rewriting it
