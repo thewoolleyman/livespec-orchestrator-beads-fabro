@@ -45,6 +45,19 @@ def _module() -> ModuleType:
     )
 
 
+def _stages_in_dump_order(*, payloads: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    """Build a `/state` projection whose positions match its dump paths."""
+    stages: dict[str, dict[str, str | None]] = {}
+    for relative, payload in sorted(payloads.items()):
+        stage_directory = Path(relative).parts[1]
+        ordinal_text, stage_name = stage_directory.split("-", 1)
+        ordinal = int(ordinal_text)
+        for position in range(len(stages) + 1, ordinal):
+            stages[f"stage-{position:03d}@1"] = {"diff": None}
+        stages[stage_name] = {"diff": payload}
+    return stages
+
+
 @dataclass(kw_only=True)
 class _ExportRunner:
     """Re-exports `payloads` into the requested output dir, then exits `exit_code`."""
@@ -77,13 +90,7 @@ def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
                     succeeded=False,
                 )
             )
-        stages = {
-            Path(relative).parts[1].split("-", 1)[1]: {
-                "first_event_seq": int(Path(relative).parts[1].split("-", 1)[0]),
-                "diff": payload,
-            }
-            for relative, payload in runner.payloads.items()
-        }
+        stages = _stages_in_dump_order(payloads=runner.payloads)
         return _StateApi(
             result=FabroHttpResult(
                 status=200,
@@ -95,6 +102,56 @@ def run_state_replaces_dump_transport(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(FabroPort, "server_api", _state_api)
+
+
+@pytest.mark.parametrize("blob_result", ["success", "body", "missing", "corrupt"])
+def test_a_blob_backed_pointer_verifies_the_addressed_bytes(
+    *, blob_result: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    payload = _DIFF.encode()
+    digest = hashlib.sha256(payload).hexdigest()
+
+    class _BlobApi:
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={
+                    "stages": {
+                        "prepare@1": {"diff": None},
+                        "implement@1": {
+                            "diff": f"blob://sha256/{digest}",
+                        },
+                    }
+                },
+                succeeded=True,
+            )
+
+        def run_blob(
+            self, *, run_id: str, blob_sha256: str, timeout_seconds: float
+        ) -> FabroHttpResult:
+            _ = (run_id, blob_sha256, timeout_seconds)
+            if blob_result == "missing":
+                return FabroHttpResult(
+                    status=404, body="gone", error=None, payload=None, succeeded=False
+                )
+            returned = payload if blob_result in {"success", "body"} else b"wrong bytes"
+            return FabroHttpResult(
+                status=200,
+                body=returned.decode(),
+                error=None,
+                payload=None,
+                succeeded=True,
+                raw_body=returned if blob_result != "body" else None,
+            )
+
+    monkeypatch.setattr(FabroPort, "server_api", lambda _port: _BlobApi())
+    check = _check(body=_digested_body(tmp_path), runner=_ExportRunner(), repo=tmp_path)
+
+    expected = "intact" if blob_result in {"success", "body"} else "dangling"
+    assert check.state == expected
 
 
 def _digested_body(tmp_path: Path) -> str:

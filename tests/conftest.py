@@ -129,10 +129,10 @@ def _integration_dump_doubles_serve_run_state(
                 error=None,
                 payload={
                     "stages": {
+                        "prepare@1": {"diff": None},
                         "implement@1": {
-                            "first_event_seq": 2,
                             "diff": "diff --git a/app.py b/app.py\n+print('kept')\n",
-                        }
+                        },
                     }
                 },
                 succeeded=True,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -85,10 +86,7 @@ def run_state_replaces_the_legacy_dump_transport(monkeypatch: pytest.MonkeyPatch
                 )
         else:
             stage_diffs = {"002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n"}
-        stages = {
-            stage[4:]: {"first_event_seq": int(stage[:3]), "diff": diff}
-            for stage, diff in stage_diffs.items()
-        }
+        stages = _stages_in_dump_order(stage_diffs=stage_diffs)
         return _StateApi(
             result=FabroHttpResult(
                 status=200,
@@ -118,6 +116,76 @@ def test_preserve_pointer_reads_stage_diffs_without_running_fabro_dump(*, tmp_pa
     assert runner.calls == []
 
 
+@pytest.mark.parametrize("blob_result", ["success", "missing", "corrupt"])
+def test_preserve_pointer_reads_and_validates_each_referenced_blob(
+    *,
+    blob_result: str,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = b"diff --git a/app.py b/app.py\n+binary \xff\n"
+    digest = hashlib.sha256(payload).hexdigest()
+
+    class _BlobApi:
+        def run_state(self, *, run_id: str, timeout_seconds: float) -> FabroHttpResult:
+            _ = (run_id, timeout_seconds)
+            return FabroHttpResult(
+                status=200,
+                body="",
+                error=None,
+                payload={
+                    "stages": {
+                        **{f"stage-{ordinal:03d}@1": {"diff": None} for ordinal in range(1, 55)},
+                        "implement@1": {
+                            "diff": f"blob://sha256/{digest}",
+                        },
+                    }
+                },
+                succeeded=True,
+            )
+
+        def run_blob(
+            self, *, run_id: str, blob_sha256: str, timeout_seconds: float
+        ) -> FabroHttpResult:
+            _ = (run_id, blob_sha256, timeout_seconds)
+            if blob_result == "missing":
+                return FabroHttpResult(
+                    status=404, body="gone", error=None, payload=None, succeeded=False
+                )
+            returned = payload if blob_result == "success" else b"wrong bytes"
+            return FabroHttpResult(
+                status=200,
+                body=returned.decode("utf-8", errors="replace"),
+                error=None,
+                payload=None,
+                succeeded=True,
+                raw_body=returned,
+            )
+
+    monkeypatch.setattr(FabroPort, "server_api", lambda _port: _BlobApi())
+    append_work_item(path=_config(), item=_item())
+    journal = _RecordingJournal()
+    _module().preserve_checkpointed_work_reference(
+        args=_args(),
+        repo=_repo(tmp_path),
+        item=_item(),
+        outcome=_outcome(status="failed"),
+        journal=journal,
+        runner=_DumpRunner(export_diff=False),
+    )
+
+    if blob_result == "success":
+        comments = make_beads_client(config=_config()).list_comments(issue_id="bd-ib-preserve")
+        body = str(comments[-1]["text"])
+        assert "stages/055-implement@1/diff.patch" in body
+        assert f"sha256: {digest}" in body
+    else:
+        assert journal.records[-1]["stage"] == "preserve-by-reference-error"
+        body = str(journal.records[-1]["pointer_body"])
+        assert "sha256: (not recorded;" in body
+        assert "sha256 unavailable because:" in body
+
+
 def _module() -> ModuleType:
     module_path = (
         Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
@@ -127,6 +195,17 @@ def _module() -> ModuleType:
     return importlib.import_module(
         "livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference"
     )
+
+
+def _stages_in_dump_order(*, stage_diffs: dict[str, str]) -> dict[str, dict[str, str | None]]:
+    """Build a `/state` projection whose positions match its dump paths."""
+    stages: dict[str, dict[str, str | None]] = {}
+    for dump_stage, diff in sorted(stage_diffs.items()):
+        ordinal = int(dump_stage[:3])
+        for position in range(len(stages) + 1, ordinal):
+            stages[f"stage-{position:03d}@1"] = {"diff": None}
+        stages[dump_stage[4:]] = {"diff": diff}
+    return stages
 
 
 def _config() -> StoreConfig:

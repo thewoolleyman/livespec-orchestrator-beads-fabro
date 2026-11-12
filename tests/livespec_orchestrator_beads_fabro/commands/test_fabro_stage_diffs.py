@@ -29,8 +29,8 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
 
     expected = {
+        "stages/001-fix@1/diff.patch": repair.encode(),
         "stages/002-implement@1/diff.patch": implement.encode(),
-        "stages/006-fix@1/diff.patch": repair.encode(),
     }
     actual = {
         artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
@@ -39,6 +39,28 @@ def test_projection_diffs_have_the_same_paths_bytes_sizes_and_digests_as_a_dump(
     assert [(len(payload), hashlib.sha256(payload).hexdigest()) for payload in actual.values()] == [
         (len(payload), hashlib.sha256(payload).hexdigest()) for payload in expected.values()
     ]
+
+
+def test_projection_uses_position_including_diff_less_stages(tmp_path: Path) -> None:
+    """Dump ordinals include stages without diffs and need no event metadata."""
+    dump_patch = b"diff --git a/app.py b/app.py\n+print('implemented')\n"
+    stage_diffs = stage_diffs_from_run_state(
+        run_state={
+            "stages": {
+                "prepare@1": {"diff": None},
+                "implement@1": {
+                    "diff": dump_patch.decode(),
+                },
+            }
+        }
+    )
+
+    artifacts = write_stage_diffs(stage_diffs=stage_diffs, output_dir=tmp_path)
+
+    actual = {
+        artifact.relative_to(tmp_path).as_posix(): artifact.read_bytes() for artifact in artifacts
+    }
+    assert actual == {"stages/002-implement@1/diff.patch": dump_patch}
 
 
 def test_unreadable_or_diff_less_projection_yields_no_artifacts(tmp_path: Path) -> None:

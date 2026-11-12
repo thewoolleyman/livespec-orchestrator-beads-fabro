@@ -43,6 +43,7 @@ class _FakeLedger:
 @dataclass(kw_only=True)
 class _DumpRunner:
     exit_code: int = 0
+    stage_diffs: dict[str, object] | None = None
     calls: list[list[str]] = field(default_factory=list)
 
 
@@ -66,6 +67,29 @@ def test_a_pointer_is_written_then_read_back_through_the_text_key(tmp_path: Path
         "list_comments:bd-ib-orphan",
     ]
     assert ledger.comments[0]["text"].startswith(PRESERVE_POINTER_MARKER)
+
+
+def test_a_projection_ignores_malformed_stage_diffs_without_losing_valid_artifacts(
+    tmp_path: Path,
+) -> None:
+    ledger = _FakeLedger()
+
+    outcome = export.export_orphan_reference(
+        orphan=_orphan(work_item_status="closed"),
+        repo=tmp_path,
+        fabro_bin="fabro",
+        runner=_DumpRunner(
+            stage_diffs={
+                "002-implement@1": "diff --git a/app.py b/app.py\n+print('kept')\n",
+                "003-review@1": None,
+            }
+        ),
+        ledger=ledger,
+    )
+
+    assert outcome.exported is True
+    assert "stages/002-implement@1/diff.patch" in ledger.comments[0]["text"]
+    assert "003-review@1" not in ledger.comments[0]["text"]
 
 
 def test_an_existing_pointer_for_the_same_run_is_located_not_rewritten(tmp_path: Path) -> None:
