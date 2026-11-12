@@ -853,6 +853,11 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         + "[environments.livespec-ci.env]\n"
         + 'CLAUDE_CODE_OAUTH_TOKEN = "test-oauth-token"\n'
         + 'GITHUB_TOKEN = "test-github-token"\n'
+        # The process-level github.com helper, rendered from its owning module:
+        # its value is bound by `test_dispatcher_git_credential_env`, and this
+        # test owns only its position, right behind the token it answers from
+        # (bd-ib-awv2iu).
+        + _dispatcher_git_credential_helper.git_credential_helper_env_lines()
         + _dispatcher_tmux_socket_root.tmux_tmpdir_env_lines()
         # Rendered from the policy module's own helper rather than restated, for
         # the same reason the prepare-step block above is: this test asserts the
