@@ -35,8 +35,10 @@ Fleet scope: every committed `fleet-launch/` launcher, impl and resume. livespec
 
 **1. The unreadable-status, non-ready and TERM rules (`contracts.md` §"Provisional fleet launch scripts").** After the bullet beginning "**Ready item never silently dropped.**", add:
 
-> - **Status read on a non-run exit.** The "Ready item never silently dropped" bullet decides on the work item's ledger status. When a launcher's read of that status fails on a non-run exit, it MUST read the status once more before deciding. When both reads fail, it MUST NOT append the dropped-ticket comment, and MUST write one line to its sequence log saying the dropped-ticket comment was skipped because the item's status could not be read, naming the work item and its ticket number. That line follows the terminal line of the "Terminal line" bullet and does not replace it. A launcher whose read returns any status other than `ready` MUST NOT append the dropped-ticket comment; it writes its terminal line only, so the item's ledger comment count is unchanged by that exit.
+> - **Status read on a non-run exit.** Whether a launcher owes the one ledger comment that "Ready item never silently dropped" prescribes is decided on the work item's ledger status. When a launcher's read of that status fails on a non-run exit, it MUST read the status once more before deciding. When both reads fail, it MUST NOT append the dropped-ticket comment, and MUST write one line to its sequence log saying the dropped-ticket comment was skipped because the item's status could not be read, naming the work item and its ticket number. That line follows the terminal line of the "Terminal line" bullet and does not replace it. When a read returns any status other than `ready`, the dropped-ticket rule adds no comment. A comment another bullet of this section requires on that exit, such as the move-valve comment of a stopped-after-admission exit, is unaffected.
 > - **TERM during the poll sleep.** A TERM or INT signal that reaches a launcher while it sleeps between polls MUST end the sleep. The launcher then makes its signal exit, terminal line first, within a bound well under its poll interval, rather than after the sleep would have ended.
+
+> The `check-fleet-launch` harness cases MUST also cover these two bullets, beside the existing launch-error and exactly-one-terminal-line cases of the non-run exit rules: a status read that fails once and then reads `ready`, which appends one dropped-ticket comment; two failed reads, which append none and write the skip line; a non-`ready` status, which adds no dropped-ticket comment; and a TERM during the poll sleep, which exits well within the poll interval.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below. Its number is the next free one at revise time; 350 to 363 are claimed by pending proposals and peer drafts.
 
@@ -56,16 +58,23 @@ Feature: a launcher's non-run exit is accounted for even when the ledger misread
     And one further line saying the dropped-ticket comment was skipped because the item's status could not be read
     And the item gains no ledger comment
 
-  Scenario: a non-ready item gets no comment
+  Scenario: a non-ready item gets no dropped-ticket comment
     Given a launcher making a non-run exit while its item reads a status other than ready
     When the launcher exits
     Then its sequence log holds its terminal line
-    And the item's ledger comment count after the exit equals the count before it
+    And the item gains no dropped-ticket comment
+
+  Scenario: a failed first read followed by a non-ready read adds no dropped-ticket comment
+    Given a launcher making a non-run exit whose first read of its item's status fails
+    When the second read returns a status other than ready
+    Then the item gains no dropped-ticket comment
 
   Scenario: TERM during the poll sleep ends the launcher promptly
-    Given a launcher sleeping between polls
+    Given a launcher with FLEET_LAUNCH_POLL_S set to 60, sleeping between polls, whose item reads ready
     When a TERM signal reaches it
-    Then it writes its terminal line and exits within a bound well under its poll interval
+    Then it exits within 5 seconds of the signal
+    And its terminal line names the signal
+    And the item gains one dropped-ticket comment naming the signal
 ```
 
 **3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-7itf42"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. If the revise renumbers Scenario 364, the row and entry MUST carry the renumbered heading text.
