@@ -15,7 +15,7 @@ created_at: 2026-11-12T18:35:24Z
 
 While its own Dispatcher reports the master-CI preflight's bounded wait, a fleet-launch launcher marks its fleet in-flight marker as waiting. The shared fleet count skips a waiting marker, so a slow or red default branch no longer strands fleet slots. When the wait passes, the launcher re-binds under the factory mutex. Resume launchers get the same rule. The Dispatcher's per-poll wait line becomes a MUST and gains a pass line, and `drive` and `resume --item` pass both lines through unchanged. The launcher therefore keys only on the Dispatcher's own output and never reads default-branch CI itself.
 
-**Scope.** The rule covers both `fleet-launch/` launcher scripts, the impl launcher and the resume launcher. It applies to every tenant whose dispatch runs the master-CI preflight. A tenant that waives the step through a `master-ci` entry under `dispatcher.step_waivers` emits no wait line, so its launches never release a slot under this rule.
+**Scope.** The rule covers both `fleet-launch/` launcher scripts, `dispatch-dual.sh` (impl) and `resume-capped.sh` (resume). It applies to every tenant whose dispatch runs the master-CI preflight. A tenant that waives the step through a `master-ci` entry under `dispatcher.step_waivers` emits no wait line, so its launches never release a slot under this rule.
 
 ### Motivation
 
@@ -40,12 +40,12 @@ The launcher change is ordered after bd-ib-ho6u2n. Change 2 also covers a Dispat
 
 > - **Impl launcher marker lifetime.** Before it releases the factory mutex to start `drive --action impl:<item>`, an impl launcher MUST write a fleet in-flight marker that every launcher's fleet count includes. It MUST keep that marker until the launched run lists on its factory board or the drive exits, and it MUST then remove it. "Marker marked waiting during the master-CI wait" below is the one change to what that marker counts toward while it exists.
 > - **Marker marked waiting during the master-CI wait.** While a launcher waits for its launched run to list, it MUST read its drive's standard error at least once a second. That read is separate from the poll, every 15 seconds or as configured, in which it reads its factory board for the listing.
->   - **Waiting.** At the first master-CI wait progress line that drive emits, the launcher MUST append one line `master-ci-wait=1` to its fleet in-flight marker, and MUST NOT delete the marker. Every launcher's shared fleet count MUST skip a marker that carries that line. The in-flight addition of the target repository MUST still count it, because the launch is still past the FIFO and not yet `active`.
+>   - **Waiting.** At the first master-CI wait progress line that drive emits, the launcher MUST append one line `master-ci-wait=1` to its fleet in-flight marker, and MUST NOT delete the marker. Every launcher's shared fleet count MUST skip a marker that carries that line. The in-flight addition of the target repository MUST still count it, because the launch is still past the FIFO and not yet `active`. While `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` or more markers carry `master-ci-wait=1`, the shared fleet count MUST include every further waiting marker. `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` is a host value in `fleet-launch/config.sh` whose default equals the shared fleet cap. This bound applies to impl and resume markers alike, because the per-repository WIP gate bounds only impl launches, and nothing else bounds resume waiters.
 >   - **Pass.** At a `passed after waiting` line read while the work item still reads `ready`, the launcher MUST take the factory mutex, remove the `master-ci-wait=1` line from its marker under that mutex, re-count the shared fleet count with its marker included, and release the mutex. The marker then counts as before the wait, until the run lists or the drive exits.
->   - **Over the cap.** If that re-count is over the shared fleet cap, the launcher MUST still let the drive proceed, and MUST log one line naming the work item, its ticket number, the count, the cap and the cause `fleet-cap-exceeded-after-master-ci-wait`. It MUST NOT answer an over-cap re-bind by sending the drive TERM. The overshoot is bounded by the number of launches whose markers carry `master-ci-wait=1` at that moment.
->   - **Admitted first.** If the work item reads `active`, or the launched run lists, before a pass line is read, the launcher MUST remove the `master-ci-wait=1` line under the factory mutex without a cap verdict. Where the run has listed, it then removes the marker itself, because the board counts the run. When a pass line and an `active` reading arrive in the same poll, the `active` reading wins: the launcher follows this bullet, not the over-cap re-count.
->   - **Drive exit.** If the drive exits while the marker carries `master-ci-wait=1`, the launcher removes its marker, and the drive-exit rules of this section govern what follows.
->   - **Older Dispatcher build.** A launcher MUST apply this rule only to a drive whose Dispatcher build emits the pass line, which is the build that carries bd-ib-ho6u2n's change or a later one. It determines that from the installed build's version, against a host value in `fleet-launch/config.sh` naming the first such version. For an older build, which never emits the pass line, the launcher MUST keep its marker counted for the whole wait, exactly as before this rule.
+>   - **Over the cap.** If that re-count is over the shared fleet cap, the launcher MUST still let the drive proceed, and MUST log one line naming the work item, its ticket number, the count, the cap and the cause `fleet-cap-exceeded-after-master-ci-wait`. It MUST NOT answer an over-cap re-bind by sending the drive TERM. The overshoot is bounded by `FLEET_LAUNCH_MASTER_CI_WAIT_MAX`, because the fleet count skips at most that many waiting markers.
+>   - **Admitted first.** If the work item reads `active`, or the launched run lists, before a pass line is read, the launcher MUST remove the `master-ci-wait=1` line under the factory mutex without a cap verdict. Where the run has listed, it then removes the marker itself, because the board counts the run. At a pass line, the launcher MUST re-read the work item's status once before it takes the mutex. If it reads `active`, this bullet applies, not "Over the cap".
+>   - **Drive exit.** If the drive exits while the marker carries `master-ci-wait=1`, the launcher MUST remove its marker, and the drive-exit rules of this section govern what follows.
+>   - **Older Dispatcher build.** A launcher MUST apply this rule only to a drive whose Dispatcher build emits the pass line, which is the build that carries bd-ib-ho6u2n's change or a later one. It determines that from the installed build's version, against a host value in `fleet-launch/config.sh` naming the first such version. For an older build, which never emits the pass line, the launcher MUST keep its marker counted for the whole wait, exactly as before this rule. A build version that cannot be read MUST be treated as an older build.
 >
 >   The launcher reads only its own drive's output for this rule. It MUST NOT read the default branch's CI run itself, as §"A caller does not gate a dispatch on the default branch's CI" forbids. Marking the marker waiting changes only the launcher's own fleet count. It is not a hold, deferral or skip of the dispatch, and the Dispatcher's master-CI preflight remains the sole authority on whether the dispatch proceeds. A launch into a tenant whose `dispatcher.step_waivers` waives `master-ci` emits no wait line, so its marker is never marked waiting.
 
@@ -59,7 +59,8 @@ The launcher change is ordered after bd-ib-ho6u2n. Change 2 also covers a Dispat
 > - a stub drive that prints wait lines and then exits 3: no launcher's fleet count includes the launch during the wait, the in-flight addition still counts it, and the launcher holds no marker while it waits to re-take its ticket;
 > - a stub drive that prints wait lines and then the `passed after waiting` line with the fleet count under the cap: the `master-ci-wait=1` line is removed under the mutex and the run proceeds;
 > - the same lines with the fleet count at the cap: the drive is not stopped, the run proceeds, and the launcher logs `fleet-cap-exceeded-after-master-ci-wait`;
-> - the active-first race, a stub whose item reads `active` in the same poll that its pass line arrives: the `master-ci-wait=1` line is removed with no cap verdict and no `fleet-cap-exceeded-after-master-ci-wait` line;
+> - the active-first race, a stub whose item reads `active` at the one status re-read the launcher makes at its pass line: the `master-ci-wait=1` line is removed with no cap verdict and no `fleet-cap-exceeded-after-master-ci-wait` line;
+> - the waiting-marker ceiling: with `FLEET_LAUNCH_MASTER_CI_WAIT_MAX` set to 1, a first stub drive's waiting marker is skipped by the fleet count, and a second stub drive's waiting marker is included in it;
 > - a resume launcher whose stub resume prints wait lines and then the pass line with the fleet count at the cap: no fleet count includes it during the wait, and it re-binds at the pass line without stopping the resume or re-taking a ticket;
 > - the Dispatcher pass line: a stub drive standing in for a build that emits the pass line, whose line reaches the launcher's read of the drive's standard error byte-for-byte, and a stub drive standing in for an older build, under which the marker stays counted for the whole wait.
 
@@ -103,12 +104,19 @@ Feature: A fleet-launch launcher marks its in-flight marker waiting for the mast
     And it logs the cause fleet-cap-exceeded-after-master-ci-wait
     And the run proceeds and lists
 
-  Scenario: An admission in the same poll as the pass line wins
-    Given an impl launcher whose stub drive prints wait lines
-    And the work item reads active in the same poll that the pass line arrives
-    When the launcher handles that poll
+  Scenario: An admission read at the pass line wins over the cap re-count
+    Given an impl launcher whose stub drive prints wait lines and then the pass line
+    And the work item reads active at the one status re-read the launcher makes at that pass line
+    When the launcher handles the pass line
     Then it removes the master-ci-wait=1 line with no cap verdict
     And it logs no fleet-cap-exceeded-after-master-ci-wait line
+
+  Scenario: Waiting markers past the ceiling are counted
+    Given FLEET_LAUNCH_MASTER_CI_WAIT_MAX is 1
+    And two impl launchers whose stub drives each print master-CI wait lines
+    When another launcher reads the shared fleet count during both waits
+    Then the count excludes the first waiting launch
+    And the count includes the second waiting launch
 
   Scenario: A resume launcher releases for the same wait and re-binds at the pass line
     Given a resume launcher whose stub resume prints master-CI wait lines and then the pass line
