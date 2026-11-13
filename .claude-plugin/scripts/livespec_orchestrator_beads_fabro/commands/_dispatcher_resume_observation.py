@@ -64,7 +64,6 @@ same reason before its own per-assertion search.
 from __future__ import annotations
 
 import argparse
-import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -74,9 +73,6 @@ from livespec_orchestrator_beads_fabro._store_merge_hold import merge_hold_from_
 from livespec_orchestrator_beads_fabro._store_rework_mutations import LABEL_REWORK_PENDING
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import (
     live_dispatch_lock,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria import (
-    effective_criteria,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads import (
@@ -89,16 +85,17 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     publish_branch_for,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import ProofRecord
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
-    FACTORY_RECORD_VERDICTS,
     ResumeAnchor,
-    published_head,
+    merged_proof_anchor,
     resume_anchor,
     resume_anchor_from_cancel,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_assertions import (
+    unproved_assertions,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
     CancelAnchor,
@@ -114,6 +111,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_forge import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resumes_anchored_on,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only import (
+    proof_only_resume,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only_observation import (
+    proof_only_admission,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_publications import (
+    publications_of,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
     ResumeObservation,
 )
@@ -128,6 +134,7 @@ __all__: list[str] = [
     "ResumeGather",
     "earlier_workflow_name",
     "gather_resume",
+    "proof_only_resume",
     "unproved_assertions",
 ]
 
@@ -135,10 +142,6 @@ _DISPATCH_ID_STAGE = "dispatch-id"
 _ACTIVE_STATUS = "active"
 _LABELS_UNREADABLE = "labels-unreadable"
 _MERGE_HOLD = "merge-hold"
-_WHITESPACE = re.compile(r"\s+")
-_ASSERTION_HEADING = re.compile(
-    r"^## Assertion \d+ — (?P<assertion>[^\n]+(?:\n(?![ \t]*$)[^\n]+)*)$", re.MULTILINE
-)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -159,16 +162,6 @@ class ResumeGather:
     publications: tuple[tuple[str, str], ...] = ()
 
 
-def _publications_of(*, records: tuple[ProofRecord, ...]) -> tuple[tuple[str, str], ...]:
-    """Each head a factory record declares, paired with the run that published it."""
-    return tuple(
-        (head, one.run_id)
-        for one in records
-        if one.verdict in FACTORY_RECORD_VERDICTS
-        and (head := published_head(body=one.body)) is not None
-    )
-
-
 def gather_resume(
     *,
     args: argparse.Namespace,
@@ -181,6 +174,12 @@ def gather_resume(
     branch = publish_branch_for(work_item_id=item.id)
     forge = branch_pull_request(repo=repo, branch=branch, runner=runner)
     pull_request = forge.pull_request
+    pull_request_state = None if pull_request is None else pull_request.state
+    proof_only = proof_only_admission(
+        repo=repo,
+        item=item,
+        pull_request_state=pull_request_state,
+    )
     records = (
         read_pull_request_records(repo=repo, pr_number=pull_request.number, runner=runner)
         if pull_request is not None
@@ -206,10 +205,15 @@ def gather_resume(
         earlier_run_id=_earlier_run_id(cancel=cancel, provisional=provisional),
         runner=runner,
     )
-    anchor = (
+    ordinary_anchor = (
         resume_anchor(records=records or (), executing_node=factory.executing_node)
         if cancel is None
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
+    )
+    anchor = (
+        merged_proof_anchor(head=None if pull_request is None else pull_request.head)
+        if proof_only
+        else ordinary_anchor
     )
     return ResumeGather(
         observation=ResumeObservation(
@@ -245,39 +249,13 @@ def gather_resume(
                 work_item_id=item.id,
                 merged_at=None if pull_request is None else pull_request.merged_at,
             ),
+            proof_only_resume=proof_only,
         ),
         anchor=anchor,
         branch=branch,
         earlier_run_ids=_earlier_run_ids(records=journaled, item=item, anchor=anchor, repo=repo),
         workflow_name=earlier_workflow_name(records=journaled, work_item_id=item.id),
-        publications=_publications_of(records=tuple(records or ())),
-    )
-
-
-def unproved_assertions(*, item: WorkItem, record: ProofRecord) -> tuple[str, ...]:
-    """Every named assertion that establishes the item and anchoring record differ.
-
-    Current-only assertions arrived after the earlier run and keep the
-    established refusal wording; they come first.  A record-only assertion was
-    removed while the item rested, which is the other direction of the
-    exact-match precondition, and follows them, so an addition never hides a
-    removal.  Either makes a plain dispatch the safe route.
-    """
-    assertions = effective_criteria(item=item).assertions
-    body = _normalized(text=record.body)
-    current = frozenset(_normalized(text=one) for one in assertions)
-    missing = tuple(one for one in assertions if _normalized(text=one) not in body)
-    removed = tuple(
-        one for one in _recorded_assertions(record=record) if _normalized(text=one) not in current
-    )
-    return missing + removed
-
-
-def _recorded_assertions(*, record: ProofRecord) -> tuple[str, ...]:
-    """The assertion text the standard headings carry, including a wrapped tail."""
-    return tuple(
-        " ".join(match.group("assertion").split())
-        for match in _ASSERTION_HEADING.finditer(record.body)
+        publications=publications_of(records=tuple(records or ())),
     )
 
 
@@ -349,7 +327,7 @@ def _earlier_run_ids(
     can attribute", and a record published by a different stage of the same run may
     carry the dispatch id instead.
     """
-    named = [] if anchor is None else [anchor.run_id]
+    named = [] if anchor is None or anchor.run_id is None else [anchor.run_id]
     named.extend(journaled_run_ids(records=records, work_item_id=item.id))
     run_id_named = bool(named)
     named.extend(dispatch_ids_for(records=records, work_item_id=item.id))
@@ -391,8 +369,3 @@ def _lock_age_seconds(*, repo: Path, work_item_id: str) -> float | None:
     if lock is None:
         return None
     return max(0.0, time.time() - lock.started_at_epoch)
-
-
-def _normalized(*, text: str) -> str:
-    """One string with its whitespace collapsed and its case folded."""
-    return _WHITESPACE.sub(" ", text).strip().casefold()
