@@ -478,6 +478,22 @@ check:
         check-materialized-workflow-toml-size
     )
     LIVESPEC_AGGREGATE_TARGETS
+    # `check-targets.txt` is this aggregate's incident gate inventory: the same
+    # members, in the same order, each with the `incident-timing` class that
+    # livespec-dev-tooling's expedited incident hooks read. The shared checks
+    # (`check-aggregate-completeness` among them) read that file in place of
+    # the array above whenever it exists, so the two MUST NOT drift: refuse to
+    # run when they differ, as livespec-dev-tooling's own aggregate does.
+    if ! aggregate_members="$(bash dev-tooling/aggregate-targets.sh)"; then
+        echo "ERROR: cannot read this aggregate's targets" >&2
+        exit 1
+    fi
+    inventory_members="$(sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt | grep -v '^$')"
+    if [[ "$inventory_members" != "$aggregate_members" ]]; then
+        echo "ERROR: check-targets.txt does not list exactly this aggregate's targets, in order" >&2
+        diff <(printf '%s\n' "$aggregate_members") <(printf '%s\n' "$inventory_members") >&2
+        exit 1
+    fi
     # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
     # `check` recipe reads too. The delegated gate client exports the members
     # that read authority held outside the tree into it, so the gate Job leaves
