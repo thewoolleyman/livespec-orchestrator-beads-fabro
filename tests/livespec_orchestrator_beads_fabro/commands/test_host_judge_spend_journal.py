@@ -8,6 +8,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands import _host_judge_spend_journal
 from livespec_orchestrator_beads_fabro.commands._host_judge_spend_journal import (
     append_assistant_event,
+    append_stream_event,
+    is_claude_agent,
+    spend_journal_name,
     start_spend_journal,
 )
 
@@ -75,3 +78,20 @@ def test_journal_ends_with_the_result_usage_and_its_assistant_message_ids(
     assert result["message_ids"] == ["msg_first", "msg_last"]
     assert result["ts"].endswith("Z")
     assert "started_at" not in result
+
+
+def test_journal_ignores_unspendable_stream_records_and_names_its_non_claude_arms(
+    tmp_path: Path,
+) -> None:
+    journal = start_spend_journal(
+        home=tmp_path, name="purpose:x@repo", cwd=tmp_path, first_prompt="x"
+    )
+    append_stream_event(journal=journal, line="not json")
+    append_stream_event(journal=journal, line="[]")
+    append_stream_event(journal=journal, line='{"type":"assistant","message":{}}')
+    append_stream_event(journal=journal, line="[]")
+    append_stream_event(journal=journal, line='{"type":"result","usage":false}')
+
+    assert len(_records(path=journal.path)) == 1
+    assert is_claude_agent(agent_id="codex-acp") is False
+    assert spend_journal_name(caller=None, cwd=tmp_path / "repo") == "purpose:host_judgement@repo"
