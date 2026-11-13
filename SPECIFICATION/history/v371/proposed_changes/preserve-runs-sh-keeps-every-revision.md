@@ -12,7 +12,7 @@ Ratified under delegated decision. legacy-coordinator-agent graded it PASS and g
 
 ## Modifications
 
-The scenario number is assigned: "## Scenario:" becomes "## Scenario 370 —", and the paragraph's closing sentence names Scenario 370. 370 is the next free number: master's highest is 369, and no pending proposal or open spec pull request claims 370 or above (checked 2026-11-13 about 17:06Z over 20 open branches). The heading's first word is capitalized to "An", following the convention of every numbered scenario heading. The tests/heading-coverage.json row carries the numbered heading, and tests/heading-coverage-debt.json is regenerated with `uv run python -m livespec_dev_tooling.heading_coverage_debt` in the same commit. The text is otherwise as graded.
+The scenario number is assigned: "## Scenario:" becomes "## Scenario 370 —", and the paragraph's closing sentence names Scenario 370. That sentence changes from "The scenario that the revise of this paragraph numbers, in `scenarios.md`, exercises this paragraph." to "Scenario 370 in `scenarios.md` exercises this paragraph.", so the two commas that set off "in `scenarios.md`" are dropped along with the clause they enclosed; the meaning is unchanged. 370 is the next free number: master's highest is 369, and no pending proposal or open spec pull request claims 370 or above (checked 2026-11-13 about 17:06Z over 20 open branches). The heading's first word is capitalized to "An", following the convention of every numbered scenario heading. The tests/heading-coverage.json row carries the numbered heading, and tests/heading-coverage-debt.json is regenerated with `uv run python -m livespec_dev_tooling.heading_coverage_debt` in the same commit. The text is otherwise as graded.
 
 ## Resulting Changes
 
