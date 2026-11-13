@@ -43,9 +43,9 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario242|scenario297|scenario312|scenario316|scenario330|launcher-reexec) ;;
+    all|scenario242|scenario297|scenario307|scenario312|scenario316|scenario330|launcher-reexec) ;;
     *)
-        echo "usage: run-tests.sh [scenario242|scenario297|scenario312|scenario316|scenario330|launcher-reexec]" >&2
+        echo "usage: run-tests.sh [scenario242|scenario297|scenario307|scenario312|scenario316|scenario330|launcher-reexec]" >&2
         exit 2
         ;;
 esac
@@ -68,6 +68,7 @@ fail() { FAIL=$((FAIL + 1)); printf '  FAIL: %s\n' "$1" >&2; }
 # them to `fabro ps -a --server`, so the stub discriminates boards on them.
 GMK_URL="https://stub-gmktec.invalid:32276"
 HL_URL="https://stub-mi-homelab.invalid:32277"
+CANDIDATE_URL="https://stub-candidate.invalid:32278"
 
 # --- the stubs ---------------------------------------------------------------
 STUB="$WORK/stub"
@@ -92,6 +93,7 @@ done
 case $server in
     "$STUB_SERVER_GMK") board=$STUB_BOARD_GMK ;;
     "$STUB_SERVER_HL") board=$STUB_BOARD_HL ;;
+    "$STUB_SERVER_CANDIDATE") board=$STUB_BOARD_CANDIDATE ;;
     *) echo "stub fabro: no board fixture for server '$server'" >&2; exit 1 ;;
 esac
 # Every listing request is recorded, one server per line, so a case can count what the
@@ -174,12 +176,21 @@ for argument in "$@"; do
                     exit 3
                 fi
             fi
+            if [ "${!#}" = capacity ]; then
+                # The capacity projection read: a counted-claims count and a wip_cap, both from files
+                # a case rewrites while a launcher runs, or an unreadable answer.
+                [ ! -e "${STUB_WIP_UNREADABLE_FILE:-/nonexistent}" ] || exit 1
+                printf '{"counted_claims": %s, "wip_cap": %s}\n' \
+                    "$(cat "$STUB_WIP_COUNT_FILE")" "$(cat "$STUB_WIP_CAP_FILE")"
+                exit 0
+            fi
             printf 'READY-CHECK stub: in the ready set\n'
             exit "${STUB_READY_EXIT:-0}"
             ;;
         dod-preflight.sh)
             item=${!#}
             printf '%s %s\n' "$(date +%s%N)" "$item" >> "$STUB_PREFLIGHT_LOG"
+            [ -z "${STUB_PREFLIGHT_HEAD_LOG:-}" ] || git rev-parse HEAD >> "$STUB_PREFLIGHT_HEAD_LOG"
             if [ "$item" = "${STUB_PREFLIGHT_SLOW_ITEM:-}" ]; then
                 # HELD until the harness creates the release file (bounded by
                 # STUB_PREFLIGHT_SLOW_S), not slept for a fixed time.  The older
@@ -264,10 +275,17 @@ for argument in "$@"; do
             case ${LIVESPEC_FABRO_FACTORY:-} in
                 petri) server=$STUB_SERVER_GMK ;;
                 mi-homelab) server=$STUB_SERVER_HL ;;
+                candidate) server=$STUB_SERVER_CANDIDATE ;;
                 *) server="" ;;
             esac
             printf '%s\n' "${LIVESPEC_FACTORY_READ_WRAPPER:-missing}" >> "$STUB_FACTORY_READ_WRAPPER_LOG"
             printf '%s\n' "$item" >> "$STUB_DRIVE_LOG"
+            if [ -n "${STUB_DRIVE_FAIL_TIMES:-}" ] \
+                && [ "$(grep -cxF -- "$item" "$STUB_DRIVE_LOG")" -le "$STUB_DRIVE_FAIL_TIMES" ]; then
+                # A drive that exits before its run lists, optionally printing a scripted JSON answer.
+                [ -z "${STUB_DRIVE_FAIL_STDOUT:-}" ] || printf '%s\n' "$STUB_DRIVE_FAIL_STDOUT"
+                exit "${STUB_DRIVE_FAIL_RC:-1}"
+            fi
             if [ -d "$STUB_LOCK_DIR" ]; then
                 # A preceding launcher releases the mutex before it begins its
                 # drive, so a following launcher may legitimately acquire it
@@ -412,6 +430,22 @@ git -C "$WORK/seed" "${GIT_IDENTITY[@]}" add README
 git -C "$WORK/seed" "${GIT_IDENTITY[@]}" commit --quiet --no-verify -m "seed"
 git -C "$WORK/seed" "${GIT_IDENTITY[@]}" push --quiet "$ORIGIN" master
 git "${GIT_IDENTITY[@]}" clone --quiet "$ORIGIN" "$TENANT"
+# Three more tenants for the origin-tip cases. TENANT_MAIN's remote names `main` as its default
+# branch, which a launcher that assumes `master` cannot fast-forward. TENANT_BROKEN and
+# TENANT_DIVERGED are damaged by the case that uses them, so they are never shared with another case.
+ORIGIN_MAIN="$WORK/origin-main.git"
+TENANT_MAIN="$WORK/tenant-main"
+TENANT_BROKEN="$WORK/tenant-broken"
+TENANT_DIVERGED="$WORK/tenant-diverged"
+git init --quiet --bare --initial-branch=main "$ORIGIN_MAIN"
+git "${GIT_IDENTITY[@]}" init --quiet --initial-branch=main "$WORK/seed-main"
+: > "$WORK/seed-main/README"
+git -C "$WORK/seed-main" "${GIT_IDENTITY[@]}" add README
+git -C "$WORK/seed-main" "${GIT_IDENTITY[@]}" commit --quiet --no-verify -m "seed"
+git -C "$WORK/seed-main" "${GIT_IDENTITY[@]}" push --quiet "$ORIGIN_MAIN" main
+git "${GIT_IDENTITY[@]}" clone --quiet "$ORIGIN_MAIN" "$TENANT_MAIN"
+git "${GIT_IDENTITY[@]}" clone --quiet "$ORIGIN" "$TENANT_BROKEN"
+git "${GIT_IDENTITY[@]}" clone --quiet "$ORIGIN" "$TENANT_DIVERGED"
 
 # --- the stub plugin install -------------------------------------------------
 # `installed_build` reads the plugin registry to resolve the build this tenant
@@ -424,7 +458,11 @@ mkdir -p "$PLUGIN_CACHE/$PLUGIN_BUILD/scripts/bin"
 printf '{"version": "0.0.0-stub"}\n' > "$PLUGIN_CACHE/$PLUGIN_BUILD/plugin.json"
 REGISTRY="$WORK/plugins/installed_plugins.json"
 cat > "$REGISTRY" <<REGISTRY_FIXTURE
-{"plugins": {"$PLUGIN_KEY": [{"version": "$PLUGIN_BUILD", "projectPath": "$TENANT"}]}}
+{"plugins": {"$PLUGIN_KEY": [
+  {"version": "$PLUGIN_BUILD", "projectPath": "$TENANT"},
+  {"version": "$PLUGIN_BUILD", "projectPath": "$TENANT_MAIN"},
+  {"version": "$PLUGIN_BUILD", "projectPath": "$TENANT_BROKEN"},
+  {"version": "$PLUGIN_BUILD", "projectPath": "$TENANT_DIVERGED"}]}}
 REGISTRY_FIXTURE
 
 # --- per-case state ----------------------------------------------------------
@@ -461,6 +499,7 @@ PS_LOG=""
 SNAPSHOT_DIR=""
 BOARD_GMK=""
 BOARD_HL=""
+BOARD_CANDIDATE=""
 CAP_FILE=""
 HOLD_FILE=""
 
@@ -491,14 +530,24 @@ new_case() {
     SNAPSHOT_DIR="$CASE_DIR/board-snapshot"
     BOARD_GMK="$CASE_DIR/boards/gmktec"
     BOARD_HL="$CASE_DIR/boards/mi-homelab"
+    BOARD_CANDIDATE="$CASE_DIR/boards/candidate"
     CAP_FILE="$CASE_DIR/state/fleet-cap"
     HOLD_FILE="$CASE_DIR/state/hold-gmktec"
 
     export PATH="$STUB/bin:$PATH"
     export STUB_SERVER_GMK="$GMK_URL"
     export STUB_SERVER_HL="$HL_URL"
+    export STUB_SERVER_CANDIDATE="$CANDIDATE_URL"
     export STUB_BOARD_GMK="$BOARD_GMK"
     export STUB_BOARD_HL="$BOARD_HL"
+    export STUB_BOARD_CANDIDATE="$BOARD_CANDIDATE"
+    # The repository WIP gate reads its counted claims and wip_cap through the stub capacity projection.
+    export STUB_WIP_COUNT_FILE="$CASE_DIR/wip-count"
+    export STUB_WIP_CAP_FILE="$CASE_DIR/wip-cap"
+    printf '0\n' > "$STUB_WIP_COUNT_FILE"
+    printf '5\n' > "$STUB_WIP_CAP_FILE"
+    export STUB_WIP_UNREADABLE_FILE="$CASE_DIR/wip-unreadable"
+    unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
@@ -516,7 +565,7 @@ new_case() {
     export STUB_READY_OBSERVATIONS="$CASE_DIR/ready-observations"
     : > "$STUB_READY_OBSERVATIONS"
     export STUB_PREFLIGHT_EXIT=0
-    unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM
+    unset STUB_PREFLIGHT_SLOW_ITEM STUB_PREFLIGHT_SLOW_S STUB_PREFLIGHT_FAIL_ITEM STUB_PREFLIGHT_HEAD_LOG
     export STUB_PREFLIGHT_RELEASE="$CASE_DIR/release-held-preflight"
     export STUB_SSH_IDLE=95.00
     export STUB_ITEM_STATUS_FILE="$CASE_DIR/item-status"
@@ -547,6 +596,14 @@ new_case() {
     export FLEET_LAUNCH_REPO_HOLD_DIR="$CASE_DIR/state"
     export FLEET_LAUNCH_GMK_SERVER="$GMK_URL"
     export FLEET_LAUNCH_HL_SERVER="$HL_URL"
+    export FLEET_LAUNCH_GMK_CANDIDATE_SERVER="$CANDIDATE_URL"
+    export FLEET_LAUNCH_GMK_TARGET_FILE="$CASE_DIR/state/gmk-target"
+    export FLEET_LAUNCH_GMK_CANDIDATE_CAP=2
+    export FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE="$CASE_DIR/breakage-exception"
+    export FLEET_LAUNCH_RETICKET_STATE_DIR="$CASE_DIR/state/reticket-state"
+    export FLEET_LAUNCH_RETICKET_DELAY_1_S=0
+    export FLEET_LAUNCH_RETICKET_DELAY_2_S=0.01
+    export FLEET_LAUNCH_RETICKET_DELAY_3_S=0.02
     export FLEET_LAUNCH_GMK_SSH="stub-factory-host"
     export FLEET_LAUNCH_GMK_SERVER_ENV="$CASE_DIR/state/server.env"
     export FLEET_LAUNCH_GMK_CAP=8
@@ -2624,6 +2681,377 @@ fi
 stop_launcher "$stale_pid" "$fresh_pid"
 wait "$stale_pid" 2>/dev/null
 wait "$fresh_pid" 2>/dev/null
+fi
+
+# --- Scenario 307: the committed launchers enforce the interim launcher's gates ------------------
+# Each case below carries its own positive control: the same inputs with the one gate opened, which
+# MUST launch.  A refusal that is never contrasted with a launch is satisfied by a launcher that
+# refuses everything.
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario307 ]; then
+
+# wait_gone <pid> <seconds>: succeeds when the process has exited within the bound.
+wait_gone() {
+    local pid="$1" limit="$2" deadline
+    deadline=$(( $(date +%s) + limit ))
+    while kill -0 "$pid" 2>/dev/null; do
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+    return 0
+}
+# ticket_held_lines <ticket-file>: how many lines beginning held= the ticket carries.
+ticket_held_lines() { grep -c '^held=' "$1" 2>/dev/null || true; }
+# open_boards: both factory boards idle and a shared fleet cap with room.
+open_boards() {
+    : > "$BOARD_GMK"
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+}
+
+echo "--- 23. a repository at its wip_cap yields the FIFO head without a preflight"
+new_case wip-at-cap
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+printf '5\n' > "$STUB_WIP_COUNT_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-wip-held > "$CASE_LOG" 2>&1 &
+wip_pid=$!
+if wait_for_line "$CASE_LOG" "repository WIP at cap: counted=5 cap=5" 5 \
+    && kill -0 "$wip_pid" 2>/dev/null \
+    && [ "$(ticket_held_lines "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat")" = 1 ] \
+    && [ ! -s "$PREFLIGHT_LOG" ] && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a launcher at the cap keeps its ticket, marks it held= once and runs no preflight"
+else
+    fail "a launcher at the cap did not yield without a preflight (preflights: $(wc -l < "$PREFLIGHT_LOG"), dispatches: $(drive_log_items))"
+    tail -5 "$CASE_LOG" >&2
+fi
+printf '4\n' > "$STUB_WIP_COUNT_FILE"
+if wait_gone "$wip_pid" 15 && wait "$wip_pid" \
+    && [ "$(drive_log_items)" = bd-ib-wip-held ] && [ "$(preflight_count bd-ib-wip-held)" -ge 1 ]; then
+    pass "control: once the count drops below the cap the launcher takes its place back, preflights and launches"
+else
+    fail "control: the launcher did not launch after the count dropped below the cap"
+    tail -8 "$CASE_LOG" >&2
+    stop_launcher "$wip_pid"
+    wait "$wip_pid" 2>/dev/null
+fi
+
+echo "--- 24. only a breakage-exception item passes the WIP gate one above the cap"
+new_case wip-breakage-exception
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+printf '5\n' > "$STUB_WIP_COUNT_FILE"
+printf 'bd-ib-listed\n' > "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-unlisted > "$CASE_DIR/unlisted.log" 2>&1 &
+unlisted_pid=$!
+run_launcher bd-ib-listed "$CASE_DIR/listed.log"
+listed_rc=$RC
+if [ "$listed_rc" = 0 ] && [ "$(drive_log_items)" = bd-ib-listed ] \
+    && wait_for_line "$CASE_DIR/unlisted.log" "repository WIP at cap: counted=5 cap=5 effective=5" 5 \
+    && kill -0 "$unlisted_pid" 2>/dev/null; then
+    pass "at counted == wip_cap the listed item launches and the unlisted item is held"
+else
+    fail "the breakage exception did not separate the listed item from the unlisted one (listed rc=$listed_rc, dispatches: $(drive_log_items))"
+    tail -4 "$CASE_DIR/listed.log" "$CASE_DIR/unlisted.log" >&2
+fi
+stop_launcher "$unlisted_pid"
+wait "$unlisted_pid" 2>/dev/null
+printf '6\n' > "$STUB_WIP_COUNT_FILE"
+: > "$DRIVE_LOG"
+ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-listed > "$CASE_DIR/listed-above.log" 2>&1 &
+above_pid=$!
+if wait_for_line "$CASE_DIR/listed-above.log" "repository WIP at cap: counted=6 cap=5 effective=6" 5 \
+    && kill -0 "$above_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ]; then
+    pass "the exception is one above the cap and no more: a listed item is held at wip_cap + 1"
+else
+    fail "a listed item was not held at wip_cap + 1"
+    tail -4 "$CASE_DIR/listed-above.log" >&2
+fi
+stop_launcher "$above_pid"
+wait "$above_pid" 2>/dev/null
+
+echo "--- 25. an unreadable counted-claims count does not hold the launch"
+new_case wip-unreadable
+open_boards
+printf '9\n' > "$STUB_WIP_COUNT_FILE"
+: > "$STUB_WIP_UNREADABLE_FILE"
+run_launcher bd-ib-wip-unreadable
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-wip-unreadable ] \
+    && log_has "$CASE_LOG" "repository WIP count unreadable"; then
+    pass "a count that cannot be read is not held on; the Dispatcher's own cap still applies"
+else
+    fail "an unreadable WIP count held the launch (rc=$RC, dispatches: $(drive_log_items))"
+    tail -5 "$CASE_LOG" >&2
+fi
+
+echo "--- 26. a drive that exits before its run lists re-takes a ticket for the same item"
+new_case reticket
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=2
+export STUB_DRIVE_FAIL_RC=1
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-reticket > "$CASE_LOG" 2>&1
+reticket_rc=$?
+if [ "$reticket_rc" = 0 ] \
+    && [ "$(drive_log_items)" = "bd-ib-reticket bd-ib-reticket bd-ib-reticket" ] \
+    && [ "$(grep -cF 'gmktec FIFO ticket taken at start: 100-harness-seat' "$CASE_LOG")" = 3 ] \
+    && [ "$(grep -cF 'terminal: item=bd-ib-reticket ticket=100 cause=drive-exit-early' "$CASE_LOG")" = 2 ] \
+    && [ ! -e "$FLEET_LAUNCH_RETICKET_STATE_DIR/bd-ib-reticket.early-exits" ]; then
+    pass "two early drive exits each re-take ticket 100 for the same item; a listed run resets the count"
+else
+    fail "an early drive exit did not re-take the ticket (rc=$reticket_rc, dispatches: $(drive_log_items))"
+    tail -12 "$CASE_LOG" >&2
+fi
+new_case reticket-persisted
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=1
+mkdir -p "$FLEET_LAUNCH_RETICKET_STATE_DIR"
+printf '2\n' > "$FLEET_LAUNCH_RETICKET_STATE_DIR/bd-ib-persisted.early-exits"
+run_launcher bd-ib-persisted
+if [ "$RC" = 0 ] && grep -qF 'consecutive early exits 3): re-ticket item=bd-ib-persisted' "$CASE_LOG" \
+    && grep -qF 're-ticket-after=0.02s' "$CASE_LOG"; then
+    pass "the early-exit count survives a launcher restart and picks the third configured delay"
+else
+    fail "the persisted early-exit count was not honoured (rc=$RC)"
+    tail -6 "$CASE_LOG" >&2
+fi
+
+echo "--- 27. a failed goal template preflight is never re-ticketed"
+new_case reticket-goal-template
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=5
+export STUB_DRIVE_FAIL_RC=1
+export STUB_DRIVE_FAIL_STDOUT='{"dispatcher": {"exit_code": 1, "stdout_json": [{"stage": "goal-minijinja-preflight", "status": "failed", "detail": "field description offset 12"}]}}'
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-template > "$CASE_LOG" 2>&1
+template_rc=$?
+if [ "$template_rc" = 1 ] && [ "$(drive_log_items)" = bd-ib-template ] \
+    && grep -qF 'terminal: item=bd-ib-template ticket=100 cause=goal-minijinja-preflight' "$CASE_LOG" \
+    && [ "$(grep -c . "$STUB_LEDGER_COMMENTS")" = 1 ] \
+    && grep -qF 'goal-minijinja-preflight' "$STUB_LEDGER_COMMENTS" \
+    && ! grep -qE '\{\{|\{%|\{#' "$CASE_LOG" "$STUB_LEDGER_COMMENTS"; then
+    pass "a goal-minijinja-preflight failure stops after one drive with a terminal line and one comment free of template openers"
+else
+    fail "a goal template failure was re-ticketed or left no record (rc=$template_rc, dispatches: $(drive_log_items))"
+    tail -6 "$CASE_LOG" >&2
+fi
+new_case reticket-refused
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=5
+export STUB_DRIVE_FAIL_RC=5
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-refused > "$CASE_LOG" 2>&1
+refused_rc=$?
+if [ "$refused_rc" = 5 ] && [ "$(drive_log_items)" = bd-ib-refused ] \
+    && grep -qF 'cause=refused' "$CASE_LOG" && [ "$(grep -c . "$STUB_LEDGER_COMMENTS")" = 1 ]; then
+    pass "a drive that exits 5 is a permanent refusal: no ticket is re-taken"
+else
+    fail "a drive exiting 5 was re-ticketed (rc=$refused_rc, dispatches: $(drive_log_items))"
+    tail -6 "$CASE_LOG" >&2
+fi
+
+echo "--- 28. the gmktec hold path is assigned in each launcher and checked at the launch point"
+for launcher_file in "$LAUNCHER" "$RESUME_LAUNCHER"; do
+    if grep -qE '^GMK_HOLD_FILE=\$FLEET_LAUNCH_HOLD_FILE$' "$launcher_file" \
+        && grep -qF '[ -e "$GMK_HOLD_FILE" ]' "$launcher_file"; then
+        pass "$(basename "$launcher_file") assigns the gmktec hold path itself and tests it"
+    else
+        fail "$(basename "$launcher_file") does not assign and test the gmktec hold path"
+    fi
+done
+new_case gmk-hold-launch-point
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+mkdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+sleep 600 &
+gmk_holder_pid=$!
+printf 'owner=other-seat pid=%s item=bd-ib-holder\n' "$gmk_holder_pid" > "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-gmk-launch-point > "$CASE_LOG" 2>&1 &
+gmk_lp_pid=$!
+wait_for_line "$CASE_LOG" "queue for the gmktec mutex" 5 || fail "the launcher did not wait for the gmktec mutex"
+: > "$HOLD_FILE"
+kill "$gmk_holder_pid" 2>/dev/null
+wait "$gmk_holder_pid" 2>/dev/null
+rm -f "$FLEET_LAUNCH_GMK_LOCK_DIR/holder"
+rmdir "$FLEET_LAUNCH_GMK_LOCK_DIR"
+if wait_for_line "$CASE_LOG" "hold file present" 5 \
+    && kill -0 "$gmk_lp_pid" 2>/dev/null \
+    && [ -e "$FLEET_LAUNCH_GMK_QUEUE_DIR/100-harness-seat" ] && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a gmktec hold created while the launcher waits for the mutex launches nothing and keeps the ticket"
+else
+    fail "a gmktec hold created during the mutex wait did not hold the launch"
+    tail -6 "$CASE_LOG" >&2
+fi
+rm -f "$HOLD_FILE"
+if wait_gone "$gmk_lp_pid" 15 && wait "$gmk_lp_pid" && [ "$(drive_log_items)" = bd-ib-gmk-launch-point ]; then
+    pass "control: removing the gmktec hold file releases the same launcher"
+else
+    fail "control: the launcher did not launch once the gmktec hold was removed"
+    tail -6 "$CASE_LOG" >&2
+    stop_launcher "$gmk_lp_pid"
+    wait "$gmk_lp_pid" 2>/dev/null
+fi
+
+echo "--- 29. the gmktec target setting names the instance a launch goes to"
+new_case gmk-target-candidate
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+write_board "$BOARD_CANDIDATE" 2 cand
+printf 'candidate\n' > "$FLEET_LAUNCH_GMK_TARGET_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-candidate > "$CASE_LOG" 2>&1 &
+cand_pid=$!
+if wait_for_line "$CASE_LOG" "gmktec candidate not green: live=2 cap=2" 5 \
+    && kill -0 "$cand_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a candidate target holds while the candidate's live run count is at its cap, with the default instance idle"
+else
+    fail "the candidate cap did not hold the launch"
+    tail -5 "$CASE_LOG" >&2
+fi
+write_board "$BOARD_CANDIDATE" 1 cand
+if wait_gone "$cand_pid" 15 && wait "$cand_pid" \
+    && [ "$(drive_log_items)" = bd-ib-candidate ] \
+    && [ "$(cut -d' ' -f1 "$STUB_DRIVEN_DIR/bd-ib-candidate")" = "$CANDIDATE_URL" ]; then
+    pass "below the candidate cap the launch goes to the candidate instance, not the default one"
+else
+    fail "the launch did not go to the candidate instance"
+    tail -6 "$CASE_LOG" >&2
+    stop_launcher "$cand_pid"
+    wait "$cand_pid" 2>/dev/null
+fi
+new_case gmk-target-unreadable-candidate
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+printf 'candidate\n' > "$FLEET_LAUNCH_GMK_TARGET_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-candidate-unreadable > "$CASE_LOG" 2>&1 &
+unreadable_pid=$!
+if wait_for_line "$CASE_LOG" "fleet not green" 5 && kill -0 "$unreadable_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ]; then
+    pass "a candidate board that cannot be read holds the launch"
+else
+    fail "an unreadable candidate board did not hold the launch"
+    tail -5 "$CASE_LOG" >&2
+fi
+stop_launcher "$unreadable_pid"
+wait "$unreadable_pid" 2>/dev/null
+for target_word in absent default; do
+    new_case "gmk-target-$target_word"
+    open_boards
+    : > "$BOARD_CANDIDATE"
+    [ "$target_word" = absent ] || printf 'something-else\n' > "$FLEET_LAUNCH_GMK_TARGET_FILE"
+    run_launcher bd-ib-default-instance
+    if [ "$RC" = 0 ] && [ "$(cut -d' ' -f1 "$STUB_DRIVEN_DIR/bd-ib-default-instance")" = "$GMK_URL" ]; then
+        pass "a target setting that is $target_word selects the default instance"
+    else
+        fail "a target setting that is $target_word did not select the default instance (rc=$RC)"
+        tail -5 "$CASE_LOG" >&2
+    fi
+done
+
+echo "--- 30. the checkout is fast-forwarded to origin's default branch before the preflight and the launch"
+git -C "$WORK/seed" "${GIT_IDENTITY[@]}" commit --quiet --allow-empty --no-verify -m "origin advances"
+git -C "$WORK/seed" "${GIT_IDENTITY[@]}" push --quiet "$ORIGIN" master
+master_tip=$(git -C "$WORK/seed" rev-parse HEAD)
+new_case origin-tip
+export FLEET_LAUNCH_MAX_WAIT_S=120
+open_boards
+export STUB_PREFLIGHT_HEAD_LOG="$CASE_DIR/preflight-heads"
+behind_head=$(git -C "$TENANT" rev-parse HEAD)
+run_launcher bd-ib-origin-tip
+if [ "$RC" = 0 ] && [ "$behind_head" != "$master_tip" ] \
+    && [ "$(git -C "$TENANT" rev-parse HEAD)" = "$master_tip" ] \
+    && [ "$(cat "$STUB_PREFLIGHT_HEAD_LOG")" = "$master_tip" ] \
+    && [ "$(drive_log_items)" = bd-ib-origin-tip ]; then
+    pass "a checkout behind origin is fast-forwarded before the preflight reads it, then launches"
+else
+    fail "the checkout was not at the origin tip when the preflight read it (rc=$RC)"
+    tail -5 "$CASE_LOG" >&2
+fi
+git -C "$WORK/seed-main" "${GIT_IDENTITY[@]}" commit --quiet --allow-empty --no-verify -m "origin main advances"
+git -C "$WORK/seed-main" "${GIT_IDENTITY[@]}" push --quiet "$ORIGIN_MAIN" main
+main_tip=$(git -C "$WORK/seed-main" rev-parse HEAD)
+new_case origin-tip-main
+open_boards
+export REPO_OVERRIDE="$TENANT_MAIN"
+export STUB_PREFLIGHT_HEAD_LOG="$CASE_DIR/preflight-heads"
+run_launcher bd-ib-origin-main
+if [ "$RC" = 0 ] && [ "$(git -C "$TENANT_MAIN" rev-parse HEAD)" = "$main_tip" ] \
+    && [ "$(cat "$STUB_PREFLIGHT_HEAD_LOG")" = "$main_tip" ]; then
+    pass "a repository whose default branch is main is fast-forwarded to main, never assumed to be master"
+else
+    fail "a main-default checkout was not fast-forwarded (rc=$RC)"
+    tail -5 "$CASE_LOG" >&2
+fi
+git -C "$TENANT_BROKEN" remote set-url origin "$WORK/no-such-origin.git"
+new_case origin-tip-broken
+open_boards
+export REPO_OVERRIDE="$TENANT_BROKEN"
+run_launcher bd-ib-origin-broken
+if [ "$RC" != 0 ] && [ ! -s "$DRIVE_LOG" ] && [ ! -s "$PREFLIGHT_LOG" ] \
+    && grep -qF 'terminal: item=bd-ib-origin-broken ticket=none cause=checkout-not-at-origin-tip step=default-branch' "$CASE_LOG" \
+    && [ -z "$(find "$FLEET_LAUNCH_INFLIGHT_DIR" -type f -print -quit)" ] \
+    && [ ! -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] && [ -z "$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)" ]; then
+    pass "a remote that cannot be read launches nothing, runs no preflight and takes no factory slot"
+else
+    fail "a failed origin read did not stop the launcher cleanly (rc=$RC)"
+    tail -5 "$CASE_LOG" >&2
+fi
+git -C "$TENANT_DIVERGED" "${GIT_IDENTITY[@]}" commit --quiet --allow-empty --no-verify -m "local only"
+new_case origin-tip-diverged
+open_boards
+export REPO_OVERRIDE="$TENANT_DIVERGED"
+git -C "$WORK/seed" "${GIT_IDENTITY[@]}" commit --quiet --allow-empty --no-verify -m "origin advances again"
+git -C "$WORK/seed" "${GIT_IDENTITY[@]}" push --quiet "$ORIGIN" master
+run_launcher bd-ib-origin-diverged
+if [ "$RC" != 0 ] && [ ! -s "$DRIVE_LOG" ] && [ ! -s "$PREFLIGHT_LOG" ] \
+    && grep -qF 'cause=checkout-not-at-origin-tip step=fast-forward' "$CASE_LOG"; then
+    pass "a diverged checkout launches nothing and names the fast-forward step"
+else
+    fail "a diverged checkout was not refused at the fast-forward (rc=$RC)"
+    tail -5 "$CASE_LOG" >&2
+fi
+
+echo "--- 31. a ready-set refusal lists as open blockers only dependencies that are neither closed nor done"
+STUB_PLUGIN="$WORK/ready-check-plugin"
+mkdir -p "$STUB_PLUGIN/scripts/bin" "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/commands"
+cat > "$STUB_PLUGIN/scripts/bin/_bootstrap.py" <<'BOOTSTRAP_STUB'
+import sys
+from pathlib import Path
+
+
+def bootstrap():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+BOOTSTRAP_STUB
+: > "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/__init__.py"
+: > "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/commands/__init__.py"
+cat > "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/commands/_config.py" <<'CONFIG_STUB'
+def resolve_store_config(*, cwd, work_items_arg):
+    return None
+CONFIG_STUB
+cat > "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_loop_selection.py" <<'SELECTION_STUB'
+def ready_items(*, items, repo):
+    return []
+SELECTION_STUB
+cat > "$STUB_PLUGIN/scripts/livespec_orchestrator_beads_fabro/store.py" <<'STORE_STUB'
+from types import SimpleNamespace
+
+
+def read_work_items(*, path):
+    deps = [{"work_item_id": name} for name in ("bd-dep-done", "bd-dep-closed", "bd-dep-open")]
+    return [
+        SimpleNamespace(id="bd-me", status="ready", assignee=None, depends_on=deps),
+        SimpleNamespace(id="bd-dep-done", status="done", assignee=None, depends_on=()),
+        SimpleNamespace(id="bd-dep-closed", status="closed", assignee=None, depends_on=()),
+        SimpleNamespace(id="bd-dep-open", status="ready", assignee=None, depends_on=()),
+    ]
+STORE_STUB
+blocker_line=$(python3 "$LAUNCH_DIR/ready-set-check.py" "$STUB_PLUGIN" "$WORK" bd-me 2>&1)
+blocker_rc=$?
+if [ "$blocker_rc" = 3 ] && grep -qF 'bd-dep-open=ready' <<<"$blocker_line" \
+    && ! grep -qE 'bd-dep-(done|closed)' <<<"$blocker_line"; then
+    pass "a done dependency is not listed as an open blocker, a closed one is not, and an open one is; the refusal stands"
+else
+    fail "the refusal line mislists blockers (rc=$blocker_rc): $blocker_line"
+fi
+
 fi
 
 echo
