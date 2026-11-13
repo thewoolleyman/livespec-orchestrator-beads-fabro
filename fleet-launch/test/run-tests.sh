@@ -2152,7 +2152,11 @@ TERM_SED
         # launcher gets its own process group so the signal reaches its waiting
         # child as a terminal's INT or HUP would; bash defers a signal until a
         # foreground child that the signal did not touch has exited.
-        PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=7 FLEET_LAUNCH_MAX_WAIT_S=5 python3 -c 'import os, signal, sys
+        # This probe always ends by delivering $sig after wait_for_line's
+        # five-second observation bound.  Give it a test-only one-day budget,
+        # rather than guessing at a sufficiently long start-up window, so the
+        # no-slot give-up cannot beat the signal to the repository-hold wait.
+        PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS=7 FLEET_LAUNCH_MAX_WAIT_S=86400 python3 -c 'import os, signal, sys
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 os.setsid()
 os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
