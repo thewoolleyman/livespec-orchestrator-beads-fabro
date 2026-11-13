@@ -2134,9 +2134,10 @@ else
         set_hold "$TENANT_HOLD" "reason: signal-$sig"
         # A background job of a non-interactive shell starts with INT ignored,
         # and a script cannot take that back; restore the default first.  The
-        # launcher gets its own process group so the signal reaches its waiting
-        # child as a terminal's INT or HUP would; bash defers a signal until a
-        # foreground child that the signal did not touch has exited.
+        # Give the launcher its own process group, but signal its shell
+        # directly below. Under CPU saturation, a process-group INT or HUP can
+        # be consumed by its short-lived sleep before Bash runs its attribution
+        # trap. The shell owns the trap and reaps that child as it exits.
         # This probe always ends by delivering $sig after wait_for_line's
         # five-second observation bound.  Give it a test-only one-day budget,
         # rather than guessing at a sufficiently long start-up window, so the
@@ -2152,7 +2153,7 @@ os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LO
             wait "$sig_pid" 2>/dev/null
             return 0
         fi
-        kill -"$sig" -- "-$sig_pid" 2>/dev/null
+        kill -"$sig" "$sig_pid" 2>/dev/null
         wait "$sig_pid"
         sig_rc=$?
         if [ "$sig_rc" = "$want_rc" ] \
