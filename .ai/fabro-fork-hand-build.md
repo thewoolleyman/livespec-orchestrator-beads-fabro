@@ -128,7 +128,13 @@ separate bug. Consequences for a gate:
   it once as a root-fix item, or add the instance to the existing item, and
   move on. Retries, skips, `#[ignore]` and longer deadlines are not fixes.
 - Never clear a failure by rerunning it solo or at lower load; a rerun pass
-  is not evidence. Never spend runs comparing a flaky test across commits:
+  is not evidence. A bounded flake retry under the same conditions IS
+  allowed (maintainer ruling 2026-11-13, "FLAKES MAY NOW BE RETRIED", scope
+  event on livespec-dev-tooling epic `livespec-dev-tooling-6tgd2z`): back
+  off, at most 3 per failure, each recorded on the root-fix item, never
+  with hooks disabled, and a local gate relaunched only after the previous
+  run ended. Its pass still closes nothing on the root-fix item. Never
+  spend runs comparing a flaky test across commits:
   on 2026-11-03 that cost about two hours on the blob test and decided
   nothing the root-fix item did not already say.
 - A failing test that the change's own diff cannot reach does not block the
