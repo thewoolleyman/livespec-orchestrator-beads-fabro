@@ -670,6 +670,13 @@ destructive_cli_allowlist = [
 #   and a doubled process table cannot tell a stopped hook from one never
 #   started. It scrubs the child env exactly as an allowlisted spawn must,
 #   dropping every GIT_ and COV_CORE_ variable and COVERAGE_PROCESS_START.
+# - test_routing_schema_nodes_emit_a_directive.py runs every committed
+#   `output_schema="routing"` node script under `sh` in a real git repository
+#   and, for `fix_commit_settle`, first drives the MATERIALIZED sandbox commit
+#   runner through a passed commit run, because what it pins is the stdout the
+#   Fabro engine reads from that shell process on the settle's success exit. It
+#   scrubs the child env exactly as an allowlisted spawn must, dropping every
+#   GIT_, COV_CORE_ and COVERAGE variable.
 #
 # This key MUST stay above the `[[...mirror_pairings]]` array-of-tables
 # below (same TOML attachment reason as `destructive_cli_allowlist`).
@@ -709,6 +716,7 @@ subprocess_spawn_allowlist = [
     "tests/integration/test_commit_runner_refuses_subjectless_commit_7cixf3.py",
     "tests/integration/test_publish_draft_refuses_subjectless_commit_7cixf3.py",
     "tests/integration/test_commit_runner_folds_checkpoints_above_open_red_gisyvv.py",
+    "tests/integration/test_routing_schema_nodes_emit_a_directive.py",
 ]
 
 [[tool.livespec_dev_tooling.mirror_pairings]]
