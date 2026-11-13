@@ -105,6 +105,8 @@ __all__: list[str] = [
     "PROOF_CAPTURE_HOOKS_PATH",
     "PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR",
     "PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH",
+    "REVIEW_BIN_PATH",
+    "REVIEW_READ_ONLY_ENV_VAR",
     "credential_use_deadline_epoch_capped",
     "guard_script_text",
     "guarded_acp_command",
@@ -164,6 +166,12 @@ PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH = "/workspace"
 # that do not carry this plugin's own `.claude-plugin` directory.
 PROOF_CAPTURE_GIT_BIN_PATH = "/workspace/.livespec/proof-capture-bin"
 PROOF_CAPTURE_HOOKS_PATH = "/workspace/.livespec/proof-capture-hooks"
+
+# Review is also read-only, but its boundary covers the commands that turn a
+# grading pass into implementation or a janitor pass.  The credential-use guard
+# starts every ACP adapter, including Codex, so this marker is adapter-neutral.
+REVIEW_READ_ONLY_ENV_VAR = "LIVESPEC_REVIEW_READ_ONLY"
+REVIEW_BIN_PATH = "/workspace/.livespec/review-bin"
 
 # Where the prepare step writes the guard inside the sandbox.
 GUARD_SCRIPT_PATH = "/workspace/.livespec/credential-use-guard.sh"
@@ -305,6 +313,7 @@ set -u
 deadline="${{{CREDENTIAL_USE_DEADLINE_ENV_VAR}:-}}"
 unprotected="${{{CREDENTIAL_USE_UNPROTECTED_ENV_VAR}:-}}"
 proof_capture_git_read_only="${{{PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR}:-}}"
+review_read_only="${{{REVIEW_READ_ONLY_ENV_VAR}:-}}"
 
 mode="run"
 if [ "${{1:-}}" = "--check-start" ]; then
@@ -341,6 +350,39 @@ if [ -n "$proof_capture_git_read_only" ]; then
             exit {GUARD_REFUSAL_EXIT_CODE}
         fi
         PATH="$proof_capture_git_bin:$PATH"
+        export PATH
+    fi
+fi
+
+# Review is a grading stage regardless of which ACP adapter runs it.  Claude's
+# PreToolUse hook is useful defence in depth, but Codex has no Claude hook
+# surface.  Put the command launchers on PATH before the adapter starts so both
+# harnesses receive the same immediate refusal.
+if [ -n "$review_read_only" ]; then
+    if [ "$review_read_only" != "1" ]; then
+        echo "LIVESPEC_REVIEW_GUARD_REFUSED: {REVIEW_READ_ONLY_ENV_VAR} is" \\
+             "'$review_read_only', not the one read-only marker this launcher" \\
+             " accepts." >&2
+        exit {GUARD_REFUSAL_EXIT_CODE}
+    fi
+    if [ "$mode" != "check" ]; then
+        review_bin="{REVIEW_BIN_PATH}"
+        if [ ! -x "$review_bin/git" ] || [ ! -x "$review_bin/just" ] || \\
+           [ ! -x "$review_bin/livespec-implement-check-suite" ]; then
+            echo "LIVESPEC_REVIEW_GUARD_REFUSED: review is read-only, but its" \\
+                 " stage-scoped command launchers are not executable at" \\
+                 " $review_bin." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        review_real_just="$(command -v just || true)"
+        if [ ! -x "$review_real_just" ]; then
+            echo "LIVESPEC_REVIEW_GUARD_REFUSED: review cannot locate the real" \\
+                 " just executable before installing its command launchers." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        LIVESPEC_REVIEW_REAL_JUST="$review_real_just"
+        export LIVESPEC_REVIEW_REAL_JUST
+        PATH="$review_bin:$PATH"
         export PATH
     fi
 fi

@@ -346,6 +346,7 @@ def test_the_credential_use_projection_is_its_own_cohesive_module() -> None:
         "credential_use_guard_prepare_steps_block",
         "credential_use_projection_for",
         "proof_capture_asset_sources",
+        "review_asset_sources",
     }
 
 

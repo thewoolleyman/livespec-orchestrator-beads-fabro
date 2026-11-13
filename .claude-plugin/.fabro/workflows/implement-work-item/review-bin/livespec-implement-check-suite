@@ -1,0 +1,4 @@
+#!/bin/sh
+# The review check-suite boundary. A reviewer may run named tests, never this runner.
+echo "LIVESPEC_REVIEW_GUARD_REFUSED: stage=review refused a whole-suite check. Run named test ids only, then emit your verdict label." >&2
+exit 1
