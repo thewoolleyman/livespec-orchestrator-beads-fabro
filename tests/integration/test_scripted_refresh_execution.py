@@ -1834,7 +1834,7 @@ def _generic_terminal_reason() -> str:
     graph = parse_dot_graph(text=_IMPLEMENT_GRAPH.read_text(encoding="utf-8"))
     assert not isinstance(graph, str), graph
     terminal = graph.nodes["needs_human"]["script"]
-    match = re.search(r"reason='([^']+)'", terminal)
+    match = re.search(r"else reason='([^']+)'", terminal)
     assert match is not None, terminal
     return match.group(1)
 

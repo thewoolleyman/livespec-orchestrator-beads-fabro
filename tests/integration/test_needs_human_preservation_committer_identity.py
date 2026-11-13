@@ -64,6 +64,7 @@ _OPERATOR = GitAuthor(name="Dana O'Brien", email="dana@example.invalid")
 _DEFAULT_BRANCH = "trunk"
 _DISPATCH_ID = "5f1b3c7a94d1402fa4e6c0b8d2713e55"
 _REF = f"refs/heads/needs-human/{_DISPATCH_ID}"
+_RUN_BRANCH = "fabro/run/01M7ACAZFQJ8AQ2M5K98D0AYB4"
 _WIP = "in-progress.txt"
 _WIP_BODY = "the unfinished work the preservation node exists to save\n"
 _PRESERVED = "LIVESPEC_NEEDS_HUMAN_PRESERVED"
@@ -175,6 +176,28 @@ def _provision(*, tmp_path: Path, render_identity: bool) -> _Sandbox:
         env=env,
     )
     _run(argv=["git", "config", "--local", FACTORY_RUN_ID_MARKER, _DISPATCH_ID], cwd=clone, env=env)
+    # The node preserves the engine-named run branch's tip, so the clone sits on a
+    # run branch carrying settled work ahead of the default branch.
+    _run(argv=["git", "switch", "--quiet", "-c", _RUN_BRANCH], cwd=clone, env=env)
+    _ = (clone / "run-work.txt").write_text("the run's settled work\n", encoding="utf-8")
+    _run(argv=["git", "add", "run-work.txt"], cwd=clone, env=env)
+    _run(
+        argv=[
+            "git",
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "-m",
+            "settled run work",
+        ],
+        cwd=clone,
+        env=env,
+    )
     _ = (clone / _WIP).write_text(_WIP_BODY, encoding="utf-8")
 
     if render_identity:
