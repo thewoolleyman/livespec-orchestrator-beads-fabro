@@ -35,6 +35,8 @@ _LINE = (
     f"LIVESPEC_ALREADY_SATISFIED: base={_BASE} red declared the work already satisfied "
     "on the unchanged dispatch base"
 )
+_LONG_BASE_LINE = f"LIVESPEC_ALREADY_SATISFIED: base={'d' * 41} red declared the work\n"
+_NON_HEX_BASE_LINE = f"LIVESPEC_ALREADY_SATISFIED: base={'g' * 40} red declared the work\n"
 _TENANT_CONFIG = """{
   "livespec-orchestrator-beads-fabro": {
     "connection": {
@@ -123,6 +125,30 @@ def test_a_failed_folded_run_whose_final_step_is_a_proved_already_satisfied_is_t
     assert outcome.pr_number is None
 
 
+def test_a_later_non_ending_event_naming_another_node_does_not_move_the_final_step(
+    tmp_path: Path,
+) -> None:
+    """Only a step-ENDING record can be the final step: a later `step.started` (or any other
+    event) naming another node leaves the proved `already_satisfied` ending in place."""
+    later_start: dict[str, object] = {
+        "run_id": "01RUN",
+        "kind": "petri",
+        "item": {
+            "subject": {"node": {"name": "needs_human", "kind": "attractor/command"}},
+            "record": {"body": {"event": "step.started"}},
+        },
+    }
+    events = [
+        _step_finished(node="already_satisfied", status="success", stdout=_LINE + "\n"),
+        later_start,
+    ]
+
+    outcome = _read(repo=tmp_path, events=events)
+
+    assert outcome is not None
+    assert outcome.already_satisfied_base == _BASE
+
+
 def test_a_failed_folded_run_whose_final_step_is_another_node_stays_a_failure_however_it_quotes(
     tmp_path: Path,
 ) -> None:
@@ -160,6 +186,8 @@ def test_a_final_already_satisfied_step_that_did_not_succeed_stays_a_failure(
         [{"item": {"record": {"body": {"event": "step.started"}}}}],
         [{"item": {"subject": {"node": {}}, "record": {"body": {"event": "step.finished"}}}}],
         [_step_finished(node="already_satisfied", status="success", stdout="")],
+        [_step_finished(node="already_satisfied", status="success", stdout=_LONG_BASE_LINE)],
+        [_step_finished(node="already_satisfied", status="success", stdout=_NON_HEX_BASE_LINE)],
         [
             {
                 "item": {
