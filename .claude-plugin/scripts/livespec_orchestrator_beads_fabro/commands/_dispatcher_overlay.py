@@ -21,6 +21,10 @@ inputs needs — when the factory-environment env-table keying below needed room
 under this file's LLOC ceiling (bd-ib-kyeor4), and it deliberately left NO
 re-export shim behind, exactly as `escape_minijinja_literal` did: a shim would
 have bought none of the room the split was for.
+
+`codex_prepare_steps_block` owns the release-verified
+`codex_driver_hooks_prepare_steps_block` projection with the other Codex-only
+prepare steps.
 """
 
 from __future__ import annotations
@@ -29,14 +33,6 @@ import json
 from collections.abc import Callable, Mapping
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_auth_projection import (
-    codex_auth_env_lines,
-    codex_auth_prepare_steps_block,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_otel_config import (
-    codex_otel_env_lines,
-    codex_otel_prepare_steps_block,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     CredentialUseDeclaration,
     CredentialUseProjection,
@@ -48,6 +44,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_default_branch_fetch
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_subject import (
     dod_gate_subject_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_driver_hooks import (
+    claude_driver_hooks_prepare_steps_block,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_provenance import (
     factory_run_id_prepare_steps_block,
@@ -76,6 +75,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_fetch import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_hook_limit_program import (
     hook_limit_graph_prepare_steps_block,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_codex import (
+    codex_fragments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_overlay_graph import (
     absolute_graph_path,
@@ -122,6 +124,9 @@ from livespec_orchestrator_beads_fabro.commands._factory_github_app import (
     FactoryGithubApp,
     github_app_table,
 )
+
+# `codex_fragments` includes `codex_driver_hooks_prepare_steps_block` after
+# Codex auth and telemetry configuration have materialized CODEX_HOME.
 
 __all__: list[str] = [
     "CURRENCY_GATE_ENV_VALUE",
@@ -336,10 +341,10 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
     # the Petri-era runner performs no Git operations of its own, so without this
     # every in-sandbox push reaches origin with no credential (bd-ib-52zt3o).
     git_credential_helper_steps = git_credential_helper_prepare_steps_block()
-    codex_steps = codex_auth_prepare_steps_block(codex_auth_snapshot=codex_auth_snapshot)
-    codex_env_lines = codex_auth_env_lines(codex_auth_snapshot=codex_auth_snapshot)
-    codex_otel_steps = codex_otel_prepare_steps_block(codex_otel_config=codex_otel_config)
-    codex_otel_env = codex_otel_env_lines(codex_otel_config=codex_otel_config)
+    codex_steps, codex_environment = codex_fragments(
+        codex_auth_snapshot=codex_auth_snapshot,
+        codex_otel_config=codex_otel_config,
+    )
     # The hook-limit observer rides the SAME root as the plugin-cache gate's
     # publication helpers, and its limit is read back off the very file this run
     # will execute, whose `publish_draft` attribute carries the literal duration
@@ -412,7 +417,7 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
         + gh_refresh_steps
         + git_credential_helper_steps
         + codex_steps
-        + codex_otel_steps
+        + claude_driver_hooks_prepare_steps_block()
         + plugin_cache_steps
         + resume_checkout_steps
         + credential_use_steps
@@ -439,8 +444,7 @@ def render_run_config_overlay(  # noqa: PLR0911, PLR0913, PLR0915 — kw-only pu
         + clones.env_lines
         + currency_gate_env_line
         + otel_env_lines
-        + codex_env_lines
-        + codex_otel_env
+        + codex_environment
         + credential_use_env
         + proof_store_env
         + proof_grade_env
