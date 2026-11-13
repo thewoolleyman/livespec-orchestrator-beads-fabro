@@ -48,7 +48,7 @@ valve's duty is the narrower one implemented here.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from livespec_orchestrator_beads_fabro._store_description import update_work_item_description
@@ -74,11 +74,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_pointer import
     pointer_in,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
-    PROOF_RECORD_TITLE,
     VERDICT_HOST_VERIFIED,
     VERDICT_HUMAN_ATTESTED,
     ProofRecord,
     latest_proof_record,
+)
+from livespec_orchestrator_beads_fabro.commands._drive_accept_valve_leg import (
+    OutstandingLeg,
+    host_leg,
+    human_leg,
 )
 from livespec_orchestrator_beads_fabro.commands._drive_valve_result import (
     invalid_source_state,
@@ -107,12 +111,6 @@ __all__: list[str] = [
 HOST_REPLAY_PENDING_ERR = "host-replay-pending"
 HUMAN_ATTESTATION_PENDING_ERR = "human-attestation-pending"
 _ACCEPTANCE_STATUS = "acceptance"
-_HOST_RECORD_FORMAT = (
-    f"{PROOF_RECORD_TITLE} — {VERDICT_HOST_VERIFIED} — <session identity> — <UTC timestamp>"
-)
-_HUMAN_RECORD_FORMAT = (
-    f"{PROOF_RECORD_TITLE} — {VERDICT_HUMAN_ATTESTED} — <human identity> — <UTC timestamp>"
-)
 # What an accept that carried the human-attested link has done by the time its
 # close is refused. The pointer is rewritten first, and a refused close does
 # not restore it; the rewrite is idempotent, so a second press is safe.
@@ -124,16 +122,6 @@ _NO_POINTER_DETAIL = (
     "the description carries no Proof of Done pointer, so the pull request"
     " holding the record cannot be identified"
 )
-
-
-@dataclass(frozen=True, kw_only=True)
-class _OutstandingLeg:
-    """One leg still owed, the assertions it covers, and the record that clears it."""
-
-    err: str
-    assertions: tuple[str, ...]
-    record_format: str
-    awaited: str
 
 
 def accept_item(
@@ -268,7 +256,7 @@ def _host_assertion_reproduced(*, records: tuple[ProofRecord, ...], assertion: s
     return False
 
 
-def _leading_leg(*, criteria: EffectiveCriteria) -> _OutstandingLeg:
+def _leading_leg(*, criteria: EffectiveCriteria) -> OutstandingLeg:
     """The leg a no-pointer refusal reports, host first for the usual reason.
 
     A no-pointer item owes every leg it declares, and the refusal can name one; the
@@ -280,22 +268,12 @@ def _leading_leg(*, criteria: EffectiveCriteria) -> _OutstandingLeg:
     return _human_leg(assertions=criteria.human_attested_assertions)
 
 
-def _host_leg(*, assertions: tuple[str, ...]) -> _OutstandingLeg:
-    return _OutstandingLeg(
-        err=HOST_REPLAY_PENDING_ERR,
-        assertions=assertions,
-        record_format=_HOST_RECORD_FORMAT,
-        awaited="an independent host replay of",
-    )
+def _host_leg(*, assertions: tuple[str, ...]) -> OutstandingLeg:
+    return host_leg(assertions=assertions, err=HOST_REPLAY_PENDING_ERR)
 
 
-def _human_leg(*, assertions: tuple[str, ...]) -> _OutstandingLeg:
-    return _OutstandingLeg(
-        err=HUMAN_ATTESTATION_PENDING_ERR,
-        assertions=assertions,
-        record_format=_HUMAN_RECORD_FORMAT,
-        awaited="human attestation of",
-    )
+def _human_leg(*, assertions: tuple[str, ...]) -> OutstandingLeg:
+    return human_leg(assertions=assertions, err=HUMAN_ATTESTATION_PENDING_ERR)
 
 
 def _carry_both_links(
@@ -355,9 +333,7 @@ def _close(
     )
 
 
-def _refusal(
-    *, item: WorkItem, action_id: str, leg: _OutstandingLeg, detail: str
-) -> dict[str, Any]:
+def _refusal(*, item: WorkItem, action_id: str, leg: OutstandingLeg, detail: str) -> dict[str, Any]:
     """The refusal, naming every assertion the leg covers AND the record format.
 
     Both halves are required by the clause and neither substitutes for the other:

@@ -311,6 +311,9 @@ def test_each_reason_the_host_leg_is_unobserved_refuses_in_its_own_words(
 
     The THIRD is the unreadable read, and it refuses rather than accepting: a failed
     read is evidence of nothing, and the valve disposes only on observed evidence.
+
+    The format assertion is deliberately retained here as the valve-level contract;
+    the leg module's unit tests cover the small renderer that supplies it.
     """
     runner = _Runner(result=CommandResult(exit_code=0, stdout=comments, stderr=""))
     item = _item(description=description)
