@@ -694,6 +694,23 @@ wait_for_line() {
     done
 }
 
+# wait_for_queue_ticket: returns a ticket only after the queue itself proves it
+# exists.  A cap log is not a file-system synchronization point for a launcher
+# that can re-exec while preserving its ticket.
+wait_for_queue_ticket() {
+    local queue="$1" limit="$2" deadline ticket
+    deadline=$(( $(date +%s) + limit ))
+    while :; do
+        ticket=$(find "$queue" -type f -print -quit)
+        if [ -n "$ticket" ]; then
+            printf '%s\n' "$ticket"
+            return 0
+        fi
+        [ "$(date +%s)" -lt "$deadline" ] || return 1
+        sleep "$HARNESS_POLL_S"
+    done
+}
+
 # line_has_all <log> <needle>...: some single line of the log holds every needle.
 line_has_all() {
     local log="$1" line needle all
@@ -2512,8 +2529,13 @@ printf '0\n' > "$CAP_FILE"
 "$launchers/resume-capped.sh" bd-ib-reexec-resume > "$CASE_DIR/resume.log" 2>&1 &
 reexec_pid=$!
 wait_for_line "$CASE_DIR/resume.log" "fleet at cap under mutex" 10 || fail "the resume launcher never reached its waiting loop"
-ticket_path=$(find "$FLEET_LAUNCH_GMK_QUEUE_DIR" -type f -print -quit)
-ticket_before=$(ticket_pid "$ticket_path")
+# The cap log does not prove the queue entry has reached the filesystem.  Wait
+# for the ticket itself before reading its pid so a post-cap scheduling race
+# cannot turn a correctly held launcher into a false launch-through verdict.
+ticket_path=$(wait_for_queue_ticket "$FLEET_LAUNCH_GMK_QUEUE_DIR" 10) \
+    || fail "the resume launcher never wrote its queue ticket"
+ticket_before=""
+[ -n "$ticket_path" ] && ticket_before=$(ticket_pid "$ticket_path")
 printf 'reason: canary gate\n' > "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
 replace_script "$launchers/resume-capped.sh" "$CASE_DIR/committed-resume-capped.sh"
 wait_for_line "$CASE_DIR/resume.log" "launcher script changed on disk" 10 \
@@ -2522,11 +2544,30 @@ printf '8\n' > "$CAP_FILE"
 wait_for_line "$CASE_DIR/resume.log" "repository hold present" 10 \
     || fail "the waiting resume launcher never read the repository hold"
 sleep 0.3
-if kill -0 "$reexec_pid" 2>/dev/null && [ ! -s "$RESUME_LOG" ] \
-    && [ -n "$ticket_before" ] && [ -e "$ticket_path" ] && [ "$(ticket_pid "$ticket_path")" = "$ticket_before" ]; then
+case_21b_failed=0
+if ! kill -0 "$reexec_pid" 2>/dev/null; then
+    fail "case 21b: the resume launcher died while the repository hold was present"
+    case_21b_failed=1
+fi
+if [ -s "$RESUME_LOG" ]; then
+    fail "case 21b: the resume log is non-empty while the repository hold was present"
+    case_21b_failed=1
+fi
+if [ -z "$ticket_before" ]; then
+    fail "case 21b: no ticket was read before the repository hold"
+    case_21b_failed=1
+fi
+ticket_after=""
+if [ -n "$ticket_path" ] && [ -e "$ticket_path" ]; then
+    ticket_after=$(ticket_pid "$ticket_path")
+fi
+if [ -n "$ticket_before" ] && [ "$ticket_after" != "$ticket_before" ]; then
+    fail "case 21b: the ticket's pid changed while the repository hold was present (before=${ticket_before:-none} after=${ticket_after:-none})"
+    case_21b_failed=1
+fi
+if [ "$case_21b_failed" = 0 ]; then
     pass "a hold file created while the resume launcher waits stops it, keeping its original queue ticket"
 else
-    fail "the resume launcher started before the hold check launched through the hold"
     tail -6 "$CASE_DIR/resume.log" >&2
 fi
 rm -f "$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$(basename "$TENANT")"
