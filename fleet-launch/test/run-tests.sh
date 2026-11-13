@@ -2086,14 +2086,27 @@ for after_stop in admitted unreadable; do
         fi
         set_hold "$HOLD_FILE" 'engine restart'
         if [ "$after_stop" = admitted ] \
-            && { ! wait_for_drive_gone 10 || ! wait_for_file "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" 10; }; then
-            fail "the stopped drive did not exit, or its TERM watcher never ran, before case 20e released its admission rendezvous"
+            && ! wait_for_file "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+            fail "the stopped drive's TERM watcher never ran before case 20e released its admission rendezvous"
             report_case_20e_admission_order
             stop_launcher "$stop_pid"
             wait "$stop_pid" 2>/dev/null
             continue
         fi
-        if [ "$after_stop" = admitted ]; then : > "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE"; fi
+        if [ "$after_stop" = admitted ]; then
+            # The watcher was triggered by stop_drive's TERM.  Release its writer
+            # immediately and prove its admission landed before the launcher can
+            # perform its post-stop status read; waiting for the stopped primary
+            # first is a load-sensitive ordering assumption.
+            : > "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE"
+            if ! wait_for_file "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+                fail "the stopped drive's TERM watcher did not write its delayed admission"
+                report_case_20e_admission_order
+                stop_launcher "$stop_pid"
+                wait "$stop_pid" 2>/dev/null
+                continue
+            fi
+        fi
         wait "$stop_pid"
         stop_rc=$?
         if [ "$stop_rc" != 0 ] \
