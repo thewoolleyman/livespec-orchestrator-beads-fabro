@@ -101,8 +101,9 @@ def test_the_preservation_ref_carries_no_placeholder_default() -> None:
     """No placeholder fallback, on the stdin source the engine supplies."""
     script = _preservation_script()
 
-    assert "read -r run_id" in script
-    assert f'ref="{_REF_PREFIX}$run_id"' in script
+    assert "read -r engine_run_id" in script
+    assert f'ref="{_REF_PREFIX}$preservation_id"' in script
+    assert "refs/heads/fabro/run/$engine_run_id" in script
     assert "unknown-run" not in script
     # NO `:-` default survives anywhere: every one would be a placeholder every
     # run would share. The two `:?` forms are required-variable assertions, which
