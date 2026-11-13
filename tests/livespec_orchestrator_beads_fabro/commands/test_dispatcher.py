@@ -4559,6 +4559,12 @@ def test_dispatch_green_closes_item_and_journals(
         "ledger-accept",
         "auto-disposition",
         "outcome",
+        # The TERMINAL runtime-convergence reading (S6 / bd-ib-z2y4ca), taken
+        # between the terminal outcome and the calibration telemetry: it is the
+        # record the calibration projection reads back, so it has to be on the
+        # timeline first. This fixture has no forge, so the series it records is
+        # the UNREADABLE one, which is the point of that arm existing.
+        "runtime-convergence",
         "calibration",
         "review-gate-telemetry-skipped",
         "self-update-skipped",
@@ -4573,6 +4579,7 @@ def test_dispatch_green_closes_item_and_journals(
         "factory-size-check",
         "ledger-check",
         "target-selection",
+        "runtime-ceiling-policy",
         "factory-safety-screen",
         "implementation-pr-override",
         "acp-node-override",

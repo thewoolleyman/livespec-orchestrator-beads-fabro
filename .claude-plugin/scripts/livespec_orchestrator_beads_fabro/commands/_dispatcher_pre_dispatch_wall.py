@@ -37,6 +37,9 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._config_cycle_ceilings import (
+    runtime_ceiling_policy_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
@@ -250,6 +253,11 @@ def pre_dispatch_wall_exit(
     proof-credential declaration it is a HOST-level fact, so one refusal covers
     the whole selection rather than reading as one fault per item.
 
+    The RUNTIME-CEILING policy refusal opens the wall (S6 / bd-ib-z2y4ca), ahead
+    of the criteria wall, so invalid committed policy refuses before claim or
+    lifecycle mutation. It is a pure local configuration read; no later gate
+    can make an invalid runtime policy safe to use.
+
     AND THAT IS THE WHOLE WALL: every row above is a refusal, and none of them
     mutates anything. The publish-branch reclaim used to close this sequence and
     now sits past admission, in `post_admission_publish_branch_reclaim` below.
@@ -372,6 +380,12 @@ def _refusing_sequence(
     would change the bytes an operator reads from one group or the other.
     """
     return (
+        (
+            lambda: runtime_ceiling_policy_refusal(repo=repo),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "runtime-ceiling-policy",
+        ),
         (
             lambda: out_of_enum_factory_safety_refusal(items=items),
             EXIT_PRECONDITION_ERROR,

@@ -32,6 +32,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_completion import (
     complete_and_accept,
     escalate_needs_human_block,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_gate import (
+    record_dispatch_runtime_convergence,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dead_implementer import (
     record_dead_implementer_truncation_if_observed,
 )
@@ -323,6 +326,12 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
         # needs-human ending, and for the groom-cut path above, whose own
         # comment is that run's terminal record.
         record_needs_human_cause(repo=repo, item=item, outcome=outcome, journal=journal)
+    # Record the terminal reading before its shared non-convergence disposition;
+    # that keeps the measurement present whether the subsequent ledger write
+    # succeeds or fails.
+    _ = record_dispatch_runtime_convergence(
+        args=args, repo=repo, item=item, outcome=outcome, journal=journal
+    )
     # Every non-green terminal route, as one group: the non-convergence bounce,
     # the stall-watchdog cancellation, and the provider-limit release. They are
     # mutually exclusive by predicate, so the order among them cannot change

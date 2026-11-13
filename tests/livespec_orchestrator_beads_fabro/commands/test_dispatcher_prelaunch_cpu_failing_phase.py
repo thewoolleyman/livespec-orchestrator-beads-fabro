@@ -121,6 +121,7 @@ def test_a_failing_dispatch_span_still_journals_its_row(
                 token_supplier=lambda: "token",
                 dispatch_id="dispatch-7",
                 prelaunch_checkpoint=checkpoint,
+                item=SimpleNamespace(id="bd-ib-5d5aue"),
             ),
             run_dispatch_func=anything,
             fabro_launcher_type=anything,

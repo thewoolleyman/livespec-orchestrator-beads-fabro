@@ -192,6 +192,15 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "pr_open_diff_size",
         "bounce_cap",
         "bounce_cap_observed",
+        # Per-cycle runtime convergence projections. The observations are a
+        # bounded JSON series; the remaining fields are bounded counts/enums.
+        "cycle_observations",
+        "completed_cycle_count",
+        "effective_assertion_count",
+        "bounce_contributors",
+        "cycle_series_unobserved_reason",
+        "cycle_progress_unobserved_reason",
+        "cycle_measurement_method",
         "dependency_fan_out",
         "spec_surface_touched",
         "dispatch_context_size",
