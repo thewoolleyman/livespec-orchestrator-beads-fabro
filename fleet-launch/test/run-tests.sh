@@ -2050,59 +2050,45 @@ check_term_exit() {
     fi
 }
 
-# bash 5.2 can fail while parsing a TERM trap action when TERM arrives while a
-# command substitution is active.  The launchers must therefore rely on
-# bash's default TERM exit and let their EXIT cleanup describe it; INT and HUP keep their traps.
-# Keep this assertion separate from the exercise below: it makes the former
-# design fail deterministically, while the exercise proves the replacement.
+# Bash 5.2 can fail while parsing a TERM trap action when TERM arrives while a
+# command substitution is active.  The launchers therefore use Bash's default
+# TERM exit. INT and HUP retain their attribution traps, so the hold poll must
+# also stay free of command substitutions once it has exposed the hold line.
+# Keep the static guard separate from the exercise below: it makes a parser
+# hazard fail deterministically, while the exercise proves TERM cleanup.
 if grep -Eq '^[[:space:]]*trap .+ TERM$' "$LAUNCHER" "$RESUME_LAUNCHER"; then
     fail "the launchers install a TERM trap whose action bash must parse during command substitution"
 else
     pass "the launchers use the default TERM exit rather than a parseable TERM trap action"
 
-    # This PATH-local sed pauses inside repository_hold_applies' $(sed ...) read.
-    # The parent waits for its gate before delivering TERM, and adds a small
-    # random jitter across 200 deliveries so the proof covers distinct parser
-    # instants rather than a single lucky timing.
-    mkdir -p "$STUB/term-sed"
-    STUB_REAL_SED=$(command -v sed)
-    export STUB_REAL_SED
-    cat > "$STUB/term-sed/sed" <<'TERM_SED'
-#!/usr/bin/env bash
-printf '%s\n' "$$" >> "$STUB_TERM_SUBSTITUTION_GATE"
-sleep "$STUB_TERM_SUBSTITUTION_SED_DELAY_S"
-exec "$STUB_REAL_SED" "$@"
-TERM_SED
-    chmod +x "$STUB/term-sed/sed"
+    hold_parser_uses_substitution() {
+        awk '
+            /^repository_hold_applies\(\)/ { in_function = 1; next }
+            in_function && /^}/ { exit found ? 0 : 1 }
+            in_function && /\$\(/ { found = 1 }
+            END { exit found ? 0 : 1 }
+        ' "$1"
+    }
+    if hold_parser_uses_substitution "$LAUNCHER" || hold_parser_uses_substitution "$RESUME_LAUNCHER"; then
+        fail "the repository-hold poll uses a command substitution after exposing its signal synchronization line"
+    else
+        pass "the repository-hold poll is command-substitution-free after exposing its signal synchronization line"
+    fi
 
-    # term_during_hold_substitution <launcher> <label>: each iteration waits
-    # until the launcher has a FIFO ticket, then sends TERM while its next hold
-    # read is evaluating $(sed ...).  A default TERM exit must run EXIT cleanup.
-    term_during_hold_substitution() {
-        local launcher="$1" label="$2" attempt term_pid term_rc gate gate_deadline failures=0 term_cause term_parse_error
+    # term_during_hold_poll <launcher> <label>: each iteration waits until the
+    # launcher has a FIFO ticket and has logged the repository hold, then sends
+    # TERM with jitter while it remains in the substitution-free hold poll.
+    # A default TERM exit must run EXIT cleanup.
+    term_during_hold_poll() {
+        local launcher="$1" label="$2" attempt term_pid term_rc failures=0 term_cause term_parse_error
         for attempt in $(seq 1 100); do
-            prepare_312_case "term-substitution-$label-$attempt"
+            prepare_312_case "term-hold-poll-$label-$attempt"
             export FLEET_LAUNCH_POLL_S=0.01
-            set_hold "$TENANT_HOLD" 'reason: substitution-term'
-            gate="$CASE_DIR/substitution-gate"
-            export STUB_TERM_SUBSTITUTION_GATE="$gate"
-            export STUB_TERM_SUBSTITUTION_SED_DELAY_S=0.01
-            PATH="$STUB/term-sed:$PATH" ONLY_GMK=1 TICKET_NS="$attempt" "$launcher" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
+            set_hold "$TENANT_HOLD" 'reason: hold-poll-term'
+            PATH="$STUB/rm-probe:$PATH" ONLY_GMK=1 TICKET_NS="$attempt" "$launcher" bd-ib-term > "$STUB_RM_PROBE_LOG_SOURCE" 2>&1 &
             term_pid=$!
             if ! wait_for_line "$STUB_RM_PROBE_LOG_SOURCE" 'repository hold present' 5; then
                 fail "$label iteration $attempt never yielded on the repository hold"
-                stop_launcher "$term_pid"
-                wait "$term_pid" 2>/dev/null
-                failures=$((failures + 1))
-                continue
-            fi
-            : > "$gate"
-            gate_deadline=$(( $(date +%s) + 5 ))
-            while [ ! -s "$gate" ] && [ "$(date +%s)" -lt "$gate_deadline" ]; do
-                sleep "$HARNESS_POLL_S"
-            done
-            if [ ! -s "$gate" ]; then
-                fail "$label iteration $attempt never entered the gated command substitution"
                 stop_launcher "$term_pid"
                 wait "$term_pid" 2>/dev/null
                 failures=$((failures + 1))
@@ -2125,19 +2111,18 @@ TERM_SED
                 || [ -d "$FLEET_LAUNCH_GMK_LOCK_DIR" ] \
                 || [ "$term_cause" != yes ] \
                 || [ "$term_parse_error" = yes ]; then
-                fail "$label iteration $attempt did not exit cleanly from TERM in a command substitution (rc=$term_rc)"
+                fail "$label iteration $attempt did not exit cleanly from TERM during the repository-hold poll (rc=$term_rc)"
                 tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
                 failures=$((failures + 1))
             fi
         done
         if [ "$failures" = 0 ]; then
-            pass "$label exits within the stop bound for 100 jittered TERMs during repository-hold command substitutions, dropping its FIFO ticket"
+            pass "$label exits within the stop bound for 100 jittered TERMs during repository-hold polling, dropping its FIFO ticket"
         fi
     }
 
-    term_during_hold_substitution "$LAUNCHER" impl
-    term_during_hold_substitution "$RESUME_LAUNCHER" resume
-    unset STUB_TERM_SUBSTITUTION_GATE STUB_TERM_SUBSTITUTION_SED_DELAY_S
+    term_during_hold_poll "$LAUNCHER" impl
+    term_during_hold_poll "$RESUME_LAUNCHER" resume
 
     # signal_during_hold <launcher> <label> <signal> <rc> <expected cause>:
     # an INT or HUP that lands in the repository-hold wait must be recorded as
