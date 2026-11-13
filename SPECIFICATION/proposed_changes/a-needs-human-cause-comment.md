@@ -65,3 +65,46 @@ Feature: A needs-human cause comment shows which stage ended the run
 ```
 
 No existing H2 heading is renamed or removed. The revise that accepts this proposal MUST add, in the same change, one `tests/heading-coverage.json` row for the new scenario heading with `"test": "TODO"`, `"work_item": "bd-ib-kdwv2b"` and a `reason` that names the owed test's tier as "integration tier or above". It MUST then REGENERATE the debt register with `uv run python -m livespec_dev_tooling.heading_coverage_debt`, and never author its entry by hand.
+
+## Proposal: Repeated visits of one node are read by visit, not by node, wherever a run's ending is judged
+
+### Target specification files
+
+- SPECIFICATION/contracts.md
+- SPECIFICATION/scenarios.md
+
+### Summary
+
+The successful-terminal evidence and the needs-human cause both read a node's outcome from the run's record, but the ratified text never says which visit decides when one node ran more than once. The readers today key on the node, so an earlier failed visit can stand in for a later successful one, or for the visit that actually reached the terminal, depending only on the order the record lists them. This proposal adds one paragraph to "## Dispatcher successful terminal evidence". A node's outcome is that of its latest visit, the stage a run reached a terminal from is the visit that executed immediately before the terminal, and an earlier failed visit of a node whose latest visit succeeded is history. One scenario exercises it.
+
+### Motivation
+
+Found while grading bd-ib-qcshv6 (legacy-coordinator-agent, 2026-11-13). Filed as bd-ib-xkvdzp under plan publish-draft-green-work-loss (epic bd-ib-acrr56), whose tier judgement (spec v364) reads partial against "## Dispatcher successful terminal evidence": "The requirement that repeated visits of one node are ordered by visit, not by node or by outcome-map order, is not stated in any visible text". Measured on master, three readers key on the node: `_ordered_failures` and `_successful_terminal_predecessor` in `_fabro_terminal_evidence`, and the node-keyed outcome dictionary in `_dispatcher_successful_terminal`. The first proposal of this file states the cause comment's ordering; this one states the successful-terminal half, so ratifying the topic releases both bd-ib-kdwv2b and bd-ib-xkvdzp. Co-edit owed at revise: one tests/heading-coverage.json TODO row for the new scenario heading (work_item bd-ib-xkvdzp, reason naming the integration tier or above), and the debt register regenerated, never authored.
+
+### Proposed Changes
+
+1. contracts.md, "## Dispatcher successful terminal evidence": insert this paragraph IMMEDIATELY BEFORE the paragraph that begins "The dispatch journal MUST identify the run, the structured completion":
+
+**Repeated visits of one node are read by visit.** When a run's record carries more than one visit of a node, every reading of that node's outcome that this section or the needs-human cause comment makes MUST distinguish the node's visits. A stage's outcome is the outcome of its latest visit, whatever order the record or the engine's outcome map lists the visits in. The stage from which a run reached a terminal is the visit that executed immediately before that terminal, never the first-listed visit of the same node. An earlier failed visit of a node whose latest visit succeeded is history: it MUST NOT by itself disqualify the checkpoint, and MUST NOT be read as the route by which the run reached its terminal. Scenario <number assigned at revise> in `scenarios.md` exercises this paragraph.
+
+2. scenarios.md: append this new H2 section after the last ratified scenario (after the scenario the first proposal of this file adds). The revise assigns its number and writes it into the paragraph above:
+
+## Scenario <number assigned at revise> — A node visited more than once is judged by its latest visit and by the visit that reached the terminal
+
+```gherkin
+Feature: A run's ending is judged by visit, not by node
+  Scenario: A node whose latest visit succeeded counts as succeeded whatever order its visits are listed in
+    Given a run whose record carries visits janitor@1, which failed, and janitor@2, which succeeded
+    And the engine's outcome map lists janitor@2 before janitor@1
+    When the Dispatcher reads the run's successful-terminal evidence
+    Then janitor counts as a succeeded required stage
+
+  Scenario: The visit immediately before the terminal is the route the run reached it by
+    Given a run whose record carries pr_refresh_head@1, which failed, and pr_refresh_head@2, which succeeded
+    And pr_refresh_head@2 executed immediately before the needs_human terminal
+    And the engine's outcome map lists pr_refresh_head@1 first
+    When the Dispatcher judges the route by which the run reached needs_human
+    Then it judges it from pr_refresh_head@2, a successful stage
+```
+
+No existing H2 heading is renamed or removed.
