@@ -182,6 +182,7 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     interrupted: InterruptedAttempt | None = None,
     repayment: str = "",
     claim_at: str | None = None,
+    include_riders: bool = True,
 ) -> str:
     """Render the per-item brief delivered to the phase graph.
 
@@ -279,6 +280,8 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     # would tell the node riders exist.
     bounded = bound_riders(comments=comments, claim_at=claim_at)
     riders = bounded.carried
+    if not include_riders:
+        riders = ()
     # The governing-heading verdict rides AFTER the riders for the same reason
     # the recovery placement rides before them: a rider is part of the brief the
     # verdict was taken about, so a block standing ahead of them would describe
@@ -313,7 +316,7 @@ def render_goal(  # noqa: PLR0913 — kw-only brief inputs; `interrupted` and `r
     # appending it made each request of each node carry the item's referenced
     # spec sections (bd-ib-qshcwc: 24,910 to 136,040 characters). The node reads
     # the same subject from the file `_dispatcher_dod_gate_subject` materializes.
-    if not riders and bounded.left_out == 0:
+    if not riders and (bounded.left_out == 0 or not include_riders):
         return escape_minijinja_literal(text=body + verdict_block)
     lines = [
         "",
