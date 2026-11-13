@@ -142,15 +142,18 @@ def test_workflow_change_selects_graph_reading_tests(*, tmp_path: Path) -> None:
             "if [[ \"$*\" == *'diff --name-only'* ]]; then printf '%s\\n' '" + _WORKFLOW + "'; fi\n"
         ),
     )
+    _write_tool(
+        directory=tools,
+        name="rg",
+        body="#!/usr/bin/env bash\nprintf '%s\\n' tests/test_graph_reader.py\n",
+    )
+
     result = _run(
         argv=["bash", str(_CHECK_CHANGED)],
         cwd=tmp_path,
         env={
             **os.environ,
-            # `rg` is not a declared toolchain dependency. Keep it off PATH so
-            # this exercises the portable graph-reader selector used in a
-            # factory sandbox.
-            "PATH": f"{tools}{os.pathsep}/usr/bin:/bin",
+            "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}",
             "FAKE_LOG": str(log),
         },
     )
