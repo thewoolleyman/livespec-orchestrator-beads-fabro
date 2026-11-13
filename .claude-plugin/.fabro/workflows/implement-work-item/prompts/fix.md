@@ -102,6 +102,48 @@ been captured on. A run may take at most two
 refresh-repair rounds in total, so a turn that leaves the conflict unresolved
 spends a budget nothing replaces.
 
+## When the refresh-repair brief names `stage: publish_draft` with a refused head
+
+`publish_draft` pushed this run's publish branch and origin or the repository's
+pre-push hook REFUSED the push, so it recorded a repair brief and routed here
+rather than ending the run. This is a publish-repair round. It is counted in the
+same two-round refresh-repair budget as a refresh repair, and the brief is read
+the same way (the preamble opens `LIVESPEC_REFRESH_REPAIR`; the file
+`livespec-refresh-repair-brief` in the publication state directory is the durable
+route). Its `refused-head:` line names the head whose push was refused, and the
+cause is one of two shapes:
+
+- `oversize-paths:` names each path GitHub refused with its GH001 large-file
+  error, together with the size it reported, for example
+  `.pnpm-store/v10/files/ab/cdef (119.00 MB)`. Remove each named path from EVERY
+  commit of this run that origin does not already hold, so no commit the next
+  push would send carries it. Find those commits with `git fetch origin`, then
+  `git rev-list origin/$LIVESPEC_PUBLISH_BRANCH..HEAD` when that branch exists on
+  origin and `git rev-list origin/{{ inputs.default_branch }}..HEAD` when it does
+  not. Rewrite only those commits (a rebase of that range that drops the path
+  from each commit that added it, or an equivalent), and make every commit
+  through the sandbox commit runner like any other. A commit origin already holds
+  MUST NOT be rewritten: if a named path sits in one, that is a finding to report
+  through the needs-human ending, not something to rewrite around. Do not re-add
+  the path in any later commit.
+- `failed-gate-targets:` names each target the pre-push hook reported as failed,
+  and `hook-output-tail` carries the last 80 lines of the hook's own output.
+  Repair each named target on this run's tree, reading the tail for the
+  failure's own lines.
+
+A rewritten commit that carries `TDD-Red-*` or `TDD-Green-*` trailers no longer
+matches the checksums those trailers recorded. NEVER hand-edit or forge a
+trailer. Redo Red-Green for that commit: restage its test file alone as a fresh
+Red commit through the commit runner, then Green-amend the implementation, so the
+hook records trailers for the tree the commit now carries.
+
+Hooks run normally in this turn. Never pass `--no-verify`, never use bare force,
+and rewrite no ref on origin. The graph then re-enters `janitor`, then
+`publish_draft`, then `proof_capture`, so publication is re-earned on the
+repaired head. A run may take at most two refresh-repair rounds in total, so a
+turn that leaves the named path or target unrepaired spends a round nothing
+replaces.
+
 This node uses `summary:high` fidelity so the preamble includes prior
 agents' source-labelled responses, not just their status and changed files.
 Read the most recent incoming stage and its full response (or open the

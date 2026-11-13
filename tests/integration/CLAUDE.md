@@ -1922,3 +1922,17 @@ or write a live tenant DB.
   real clone; the budget-remaining case is the control that a round with budget
   left still writes a brief and routes to `refresh_repair`. The live-run
   assertion (the run ends at `needs_human`, not `workflow_error`) is host-captured.
+
+- `test_workflow_publish_repair_scenario329.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 329 and the GH001 case of Scenario 224
+  (work-item `bd-ib-7owmkq`). The shipped `publish_draft` and `refresh_repair`
+  script bytes are taken through `parse_dot_graph` and run by `bash` against a
+  real bare origin whose `pre-receive` hook plays GitHub's file-size and
+  branch-protection refusals. A GH001 rejection and a pre-push hook refusal each
+  leave a brief naming the refused head and the oversize paths or failed targets
+  with the last 80 lines of hook output, and the classifier reads it onward to
+  `fix`; a repaired head then publishes; a third round fails closed as
+  `refresh-repair-exhausted` at the refused head. The protected-branch,
+  non-fast-forward, unreachable-origin and authentication refusals are the
+  controls: each leaves no brief and a needs-human reason naming its own cause,
+  because a stage that repaired every refusal would pass the first cases alone.
