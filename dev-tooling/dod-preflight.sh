@@ -78,7 +78,10 @@ from pathlib import Path
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 
-from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro._store_comments import (
+    append_work_item_comment,
+    read_work_item_comments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
     definition_of_done,
 )
@@ -86,6 +89,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_f
     definition_of_done_findings,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    JUDGEMENT_HELD,
+    DodJudgement,
     judgement_subject,
     judgement_subject_digest,
     rubric_digest,
@@ -94,7 +99,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_marker
     is_receipt_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    GoverningHeadingReceipt,
     reusable_verdict,
+    verdict_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
+    governing_heading_subject_digest,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
     spec_identity_for_governing,
@@ -226,6 +236,28 @@ if reused is not None:
     print(f"REUSED {reused.outcome}")
     raise SystemExit(0)
 Path(f"{side}.reused").write_text("", encoding="utf-8")
+if reading.holds:
+    append_work_item_comment(
+        path=config,
+        work_item_id=item.id,
+        body=verdict_comment(
+            item_id=item.id,
+            stage="repository-preflight",
+            digest=judgement_subject_digest(
+                item=item, cwd=repo, comments=comments, spec_identity=identity.value
+            ),
+            rubric_digest=rubric_digest(rubric=rubric),
+            judgement=DodJudgement(
+                outcome=JUDGEMENT_HELD,
+                findings=reading.findings,
+            ),
+            spec_identity=identity,
+            governing=GoverningHeadingReceipt(
+                verdict=governing,
+                subject_digest=governing_heading_subject_digest(item=item, comments=comments),
+            ),
+        ),
+    )
 sys.stdout.write(judgement_prompt(gate_prompt=rubric, subject=subject))
 PROMPT_PY
 if [ -s "$judgement_input.section_findings" ]; then

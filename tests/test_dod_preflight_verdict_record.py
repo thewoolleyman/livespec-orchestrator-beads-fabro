@@ -22,3 +22,12 @@ def test_an_identical_preflight_reuses_the_record_without_a_candidate() -> None:
 
     assert "reusable_verdict" in text
     assert 'print(f"REUSED {reused.outcome}")' in text
+
+
+def test_a_fresh_governing_verdict_is_recorded_before_an_early_refusal() -> None:
+    """A governing-heading refusal can be reused by the next preflight."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "GoverningHeadingReceipt(" in text
+    assert "governing_heading_subject_digest(" in text
+    assert "if reading.holds:" in text
