@@ -14639,3 +14639,40 @@ Feature: The judgement sees the clause that states the behaviour
     When the selection is taken twice
     Then both takings place the same clauses before the model in full
 ```
+
+## Scenario 363 — A launcher removes its payload holder on exit or signal, spares a named one, and the next launcher reclaims a dead creator's
+
+```gherkin
+Feature: Launcher payload holders do not accumulate under the system temp directory
+  Scenario: A launcher ended by a signal removes its holder and exits non-zero
+    Given a launcher that has copied the payload into a private holder directory under the system temp directory
+    And no other running process names that holder in LIVESPEC_RETAINED_PAYLOAD_ROOT
+    When the launcher receives SIGTERM, SIGHUP or SIGINT
+    Then the holder no longer exists
+    And the launcher exits with a non-zero status
+  Scenario: A holder another running process names is spared
+    Given a launcher whose holder a running child process names in LIVESPEC_RETAINED_PAYLOAD_ROOT
+    When the launcher exits, normally or on a signal
+    Then the holder still exists
+    And a later launcher's sweep removes it once no running process names it
+  Scenario: A dead creator's holder is swept, including when its pid was reused
+    Given a payload-holder directory whose recorded creator process has exited
+    And the recorded pid is now held by a different process with a different start time
+    And no running process names the holder in LIVESPEC_RETAINED_PAYLOAD_ROOT
+    When a new launcher prepares to create its holder
+    Then that directory no longer exists
+  Scenario: A running creator's holder and a fresh unrecorded holder are left
+    Given a payload-holder directory whose recorded creator is still running
+    And a payload-holder directory that carries no creator record and was last modified within the last 24 hours
+    When a new launcher prepares to create its holder
+    Then both directories still exist
+  Scenario: An unrecorded holder older than 24 hours is reclaimed
+    Given a payload-holder directory that carries no creator record, that no running process names, and that was last modified more than 24 hours earlier
+    When a new launcher prepares to create its holder
+    Then that directory no longer exists
+  Scenario: An unremovable holder is logged and does not fail the dispatch
+    Given a payload-holder directory the sweep must remove but cannot
+    When a new launcher prepares to create its holder and dispatches
+    Then the failed removal is logged
+    And the dispatch is neither refused nor failed on that account
+```

@@ -1290,6 +1290,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 363 — A launcher removes its payload holder on exit or signal, spares a named one, and the next launcher reclaims a dead creator's",
+    "work_item": "bd-ib-immkx7",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"

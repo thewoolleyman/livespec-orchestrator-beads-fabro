@@ -3181,5 +3181,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-lrjdlo adds cases in which the spec-stated judgement, over a specification larger than its prompt character ceiling, places in full a stating paragraph that sits under a heading the item does not name; reads an inherited specification file declared by either of the two closed constraints forms and resolved under the sibling-clones directory; omits and names in the clause provenance a declared inherited file that is absent, completing with a verdict; adds nothing for any other mention of a sibling specification file; and places the same clauses in full on two takings of an unchanged subject and specification text. bd-ib-lrjdlo owns it.",
     "work_item": "bd-ib-lrjdlo"
+  },
+  {
+    "heading": "## Scenario 363 \u2014 A launcher removes its payload holder on exit or signal, spares a named one, and the next launcher reclaims a dead creator's",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-immkx7 adds cases in which a launcher ended by SIGTERM, SIGHUP or SIGINT removes its private payload holder and exits non-zero; a holder a running child names in LIVESPEC_RETAINED_PAYLOAD_ROOT survives the launcher's exit and is reclaimed by a later launcher's sweep once no running process names it; a holder whose recorded creator has exited is swept, including when its pid now belongs to a process with a different start time; a holder whose recorded creator is running and an unrecorded holder modified within the last 24 hours are left; an unrecorded, unnamed holder older than 24 hours is reclaimed; and a holder the sweep cannot remove is logged without refusing or failing the dispatch. bd-ib-immkx7 owns it.",
+    "work_item": "bd-ib-immkx7"
   }
 ]
