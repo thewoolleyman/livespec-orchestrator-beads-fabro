@@ -61,6 +61,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import Dispatch
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
     LedgerComments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rm_pacing import DeletionPacer
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_hold import (
     RunWallHoldState,
     hold_run,
@@ -252,7 +253,21 @@ def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, t
     is: `rm -f` is what makes the record unavailable, and a reading taken
     afterwards succeeds while describing nothing.
     """
-    rm = port.rm(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS)
+    permitted = DeletionPacer(repo=plan.repo).permit(
+        factory=plan.fabro_factory_name,
+        run_id=run_id,
+        caller="wall-budget-cancel",
+        has_running_run=True,
+        collection=False,
+        journal=journal,
+    )
+    if not permitted:
+        _ = port.server_api().cancel(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS)
+    rm_exit_code = (
+        port.rm(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS).command.exit_code
+        if permitted
+        else None
+    )
     journal.append(
         record={
             **run_wall_budget_exceeded_record(
@@ -273,7 +288,7 @@ def _cancel(  # noqa: PLR0913 — kw-only cancel; the dispatch, the two seams, t
                 preserved_ref_commit=None if verified_ref is None else verified_ref.commit,
                 export_failed_measurement=export_failure,
             ),
-            "rm_exit_code": rm.command.exit_code,
+            "rm_exit_code": rm_exit_code,
         }
     )
 

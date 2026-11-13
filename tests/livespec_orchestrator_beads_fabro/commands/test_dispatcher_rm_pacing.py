@@ -41,3 +41,22 @@ def test_an_active_factory_defers_ended_collection_by_default(tmp_path: Path) ->
             "next_deletion_may_start_at": 12.0,
         }
     ]
+
+
+def test_pacing_exports_the_committed_safe_defaults() -> None:
+    """Absent factory settings still make the mitigation discoverable to callers."""
+    module_path = (
+        Path(__file__).parents[3]
+        / ".claude-plugin"
+        / "scripts"
+        / "livespec_orchestrator_beads_fabro"
+        / "commands"
+        / "_dispatcher_rm_pacing.py"
+    )
+    assert module_path.is_file()
+    pacing = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_rm_pacing"
+    )
+
+    assert pacing.DEFAULT_DEFER_COLLECTION_WHILE_ACTIVE is True
+    assert pacing.DEFAULT_RM_MIN_INTERVAL_SECONDS == 60
