@@ -176,9 +176,30 @@ if rubric is None:
 # exactly as it does at the gate: no finding is raised on an outage no edit could
 # clear. The reading sees the candidate edit above, so a changed governing-heading
 # subject finds no record and is taken afresh.
-reading = preflight_governing_heading_reading(
-    item=item, repo=repo, comments=comments, runner=ShellCommandRunner()
-)
+# A fresh verdict is recorded on the item, so the rubric judgement that follows, and
+# the next launch, reuse it rather than re-taking it. A build predating that seam
+# keeps the unrecorded reading.
+try:
+    from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+    from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
+        repository_preflight_governing_reading,
+    )
+except ImportError:
+    reading = preflight_governing_heading_reading(
+        item=item, repo=repo, comments=comments, runner=ShellCommandRunner()
+    )
+else:
+
+    class CommentStore:
+        def comments(self):
+            return comments
+
+        def append(self, *, body):
+            append_work_item_comment(path=config, work_item_id=item_id, body=body)
+
+    reading = repository_preflight_governing_reading(
+        item=item, repo=repo, store=CommentStore(), runner=ShellCommandRunner()
+    )
 governing = reading.verdict
 Path(f"{side}.governing").write_text("\n".join(reading.report) + "\n", encoding="utf-8")
 # The omission HOLDS only when the reference line names none of the headings the
