@@ -380,7 +380,9 @@ def test_a_later_sibling_host_record_does_not_hide_this_items_verified_assertion
 def test_host_assertion_reproduction_selector_is_keyword_only() -> None:
     """The selector's two inputs cannot be accidentally swapped at a call site."""
     with pytest.raises(TypeError):
-        accept_valve._host_assertion_reproduced((), _HOST_ASSERTION)
+        accept_valve._host_assertion_reproduced(  # noqa: SLF001
+            (), _HOST_ASSERTION
+        )
 
 
 def test_a_host_leg_outranks_a_human_leg_on_the_same_item(tmp_path: Path) -> None:
