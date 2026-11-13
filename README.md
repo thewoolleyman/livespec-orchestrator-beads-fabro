@@ -224,3 +224,5 @@ The livespec family dogfoods its own telemetry. CI runs, Red→Green commit-gate
   flag, and the App `workflows` grant withheld by design.
 </content>
 </invoke>
+
+<!-- k5nzpk plan-read probe (livespec-dev-tooling-k5nzpk): this PR is closed unmerged after its incident-ci plan is read. -->
