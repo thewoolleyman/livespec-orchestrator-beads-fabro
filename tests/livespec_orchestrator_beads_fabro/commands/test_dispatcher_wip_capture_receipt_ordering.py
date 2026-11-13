@@ -79,7 +79,7 @@ def test_loop_selection_records_receipt_after_every_state_change(
 
 @pytest.mark.parametrize(
     ("bounces", "detail", "expected_detail"),
-    (
+    [
         (
             True,
             "ordinary failed terminal",
@@ -98,12 +98,12 @@ def test_loop_selection_records_receipt_after_every_state_change(
             "LIVESPEC_RECAPTURE_EXHAUSTED: proof record",
             "LIVESPEC_RECAPTURE_EXHAUSTED: proof record",
         ),
-    ),
+    ],
 )
 def test_terminal_runtime_verdict_routes_only_an_unowned_failed_outcome(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    bounces: bool,
+    bounces,
     detail: str,
     expected_detail: str,
 ) -> None:

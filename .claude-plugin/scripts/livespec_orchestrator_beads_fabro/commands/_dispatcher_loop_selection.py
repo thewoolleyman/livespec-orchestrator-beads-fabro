@@ -77,6 +77,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_preservatio
 from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_routing import (
     dispose_terminal_routing,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_runtime_bounce import (
+    apply_terminal_runtime_bounce,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture_receipt import (
     record_wip_capture_receipt,
 )
@@ -329,9 +332,10 @@ def post_run_dispositions(  # noqa: PLR0913 — kw-only post-run stage; each fie
     # Record the terminal reading before its shared non-convergence disposition;
     # that keeps the measurement present whether the subsequent ledger write
     # succeeds or fails.
-    _ = record_dispatch_runtime_convergence(
+    runtime_verdict = record_dispatch_runtime_convergence(
         args=args, repo=repo, item=item, outcome=outcome, journal=journal
     )
+    outcome = apply_terminal_runtime_bounce(outcome=outcome, verdict=runtime_verdict)
     # Every non-green terminal route, as one group: the non-convergence bounce,
     # the stall-watchdog cancellation, and the provider-limit release. They are
     # mutually exclusive by predicate, so the order among them cannot change
