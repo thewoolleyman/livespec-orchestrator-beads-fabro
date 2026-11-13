@@ -31,6 +31,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dod_preflight_governing_reading import (
     preflight_governing_heading_reading,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
+    repository_preflight_governing_reading,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tier_attestation import attestation_comment
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import clauses_named
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -227,3 +230,49 @@ def test_a_taking_that_yields_no_verdict_is_reported_unobserved_with_no_finding(
     assert reading.report == ("governing-heading-kind: unobserved",)
     assert reading.findings == ()
     assert reading.holds is False
+
+
+@dataclass
+class _Store:
+    bodies: list[str] = field(default_factory=list)
+
+    def comments(self) -> tuple[str, ...]:
+        return tuple(self.bodies)
+
+    def append(self, *, body: str) -> None:
+        self.bodies.append(body)
+
+
+def test_a_fresh_governing_taking_is_recorded_so_the_next_reading_starts_no_judge_candidate(
+    tmp_path: Path,
+) -> None:
+    repo = _repo(tmp_path=tmp_path)
+    store = _Store()
+    runner = _Runner()
+
+    fresh = repository_preflight_governing_reading(
+        item=_item(), repo=repo, store=store, runner=runner
+    )
+    again = repository_preflight_governing_reading(
+        item=_item(), repo=repo, store=store, runner=runner
+    )
+
+    assert runner.calls == 1
+    assert len(store.bodies) == 1
+    assert "governing-heading-kind: stated" in store.bodies[0]
+    assert again.report == fresh.report
+    assert (
+        reusable_governing_heading_verdict(item=_item(), repo=repo, comments=store.comments())
+        == again.verdict
+    )
+
+
+def test_a_taking_that_yields_no_verdict_records_nothing(tmp_path: Path) -> None:
+    store = _Store()
+
+    reading = repository_preflight_governing_reading(
+        item=_item(), repo=tmp_path / "no-such-repository", store=store, runner=_Runner()
+    )
+
+    assert reading.verdict is None
+    assert store.bodies == []
