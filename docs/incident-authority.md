@@ -347,6 +347,7 @@ usage error (exit 2).
 | `correct-attempt` | `--correction-json <correction> --target-ref <ref>` | `enter_corrected_attempt` |
 | `correct-unmerged-attempt` | `--failed-run <run-id> --correction-json <correction> --target-ref <ref>` | `enter_unmerged_correction` |
 | `complete-incident` | `--master-run <run-id> --completion-json <attestation>` | `complete_incident` |
+| `drill-close` | none | `close_drill` |
 
 `enter-repayment` does not take the master result from its caller. It reads
 the named run with `gh run view <run-id> --repo <repository> --json
@@ -420,6 +421,15 @@ binds the merge commit alone. History that cannot be read is
 the PR head and a `pr-bound` carrier whose remote head is that head. It is
 committed through the canonical transition writer, and nothing is written on
 any refusal.
+
+`drill-close` is the sole writer of terminal `drill-closed`. It accepts no
+caller evidence: it re-reads every retained carrier pull request from the forge,
+requires an `incident-scratch/**` base and proves that neither retained landed
+nor revert commits are reachable from master. A failed or incomplete read is
+`incident-drill-evidence-unavailable`; any unproven carrier or landed commit is
+`incident-not-a-recorded-drill`. Both leave the item unchanged. A successful
+write uses the normal generation fence and fixed operation identity, publishes
+`done`, clears the incident claim, and leaves no repayment outstanding.
 
 `complete-incident` is the operator entrance that records `closed` (bd-ib-pqz3nw).
 Name the current `repayment-acceptance` attempt. The action gathers what

@@ -59,6 +59,7 @@ from livespec_orchestrator_beads_fabro.incident_authority import (
     read_incident_authority,
 )
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
+from livespec_orchestrator_beads_fabro.incident_drill_close import DrillClose
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import RepaymentEntry
 from livespec_orchestrator_beads_fabro.incident_regression_recovery import RecoveryEntry
 from livespec_orchestrator_beads_fabro.io import write_stdout
@@ -76,6 +77,7 @@ _Reply = (
     | RepaymentEntry
     | RecoveryEntry
     | IncidentCompletion
+    | DrillClose
 )
 
 # Each writing action and the payload arguments it alone requires.
