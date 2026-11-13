@@ -5092,6 +5092,22 @@ Feature: A published run is finished, not rebuilt
     And fresh capture, review and replay run for the new head before pr
     And the three-refresh count starts at zero for this run
     And the existing two-resume host bound remains in force
+
+  Scenario: A resume after a proof_verify that ended on a credential fault re-enters at proof_verify
+    Given a run whose proof_capture visit published a captured record naming head H on the item's open pull request
+    And a later review visit of that run selected approve
+    And the following proof_verify visit failed on "Authentication required" with no turn taken and published no proof record
+    And the run then ended at needs_human, the pull request's head is still H, and the factory still holds the run
+    When the Dispatcher resumes the item
+    Then the resumed run enters at proof_verify on H and replays the capture the record carries
+    And review, review_fix, the commit settles and proof_capture do not run again
+    And the resume record names proof_verify as the resumed-at stage and the factory record as its source
+
+  Scenario: A resume after an ended proof_verify keeps the verdict fallback when the factory has lost the run
+    Given the same ending, but the factory answers that it no longer holds the earlier run
+    When the Dispatcher resumes the item
+    Then the resumed run enters at review, as the captured record's verdict decides
+    And the resume record names the pull request's latest record as the source that decided the stage
 ```
 
 ## Scenario 143 — A resume refuses, naming the mismatch, when the head moved, the earlier run is live, or the pull request is closed or merged
@@ -7462,6 +7478,32 @@ Feature: Recovery routing for an automatically released item
     Then the item stays ready and is not admitted in that pass
     And the journal carries a recovery-held record naming the measurement
     And no publish-branch reclaim runs for it
+
+  Scenario: A recovery route's factory liveness read is journaled with its factory, credential source and verdict
+    Given a ready released item whose journal names an earlier run R on a declared factory F
+    And the Dispatcher runs inside a sealed tenant wrapper's child and takes F's reads under the default family wrapper
+    And F lists R as running
+    When the Dispatcher routes the item
+    Then the journal carries one factory-liveness-read record for the item naming F, F's resolved server address, R, the verdict live, the listed status running, and the credential source family-wrapper with the wrapper's pathname and FABRO_DEV_TOKEN__F
+    And that record precedes the item's recovery-route or recovery-held record in the journal
+    And no record carries the dev token's value
+
+  Scenario: A liveness read taken from the Dispatcher's own environment that finds no run is journaled as absent
+    Given a ready released item whose journal names an earlier run R on a declared factory F
+    And the Dispatcher was not started inside a tenant wrapper's child and its own environment carries the default family wrapper's factory variables
+    And F answers with a listing that does not carry R and carries no non-terminal run attributed to the item
+    When the Dispatcher routes the item
+    Then the journal carries one factory-liveness-read record naming F, F's resolved server address, R, the verdict absent, the listed status not-listed, and the credential source process-environment with FABRO_DEV_TOKEN__F
+    And that record precedes the item's recovery-route record in the journal
+
+  Scenario: A failed factory liveness read is journaled with its failure, and the item is held as unobservable
+    Given a ready released item whose journal names an earlier run R on a declared factory F
+    And F's run listing exits non-zero under the Dispatcher's own credential
+    When the Dispatcher routes the item
+    Then the journal carries one factory-liveness-read record naming F, R, the verdict unreadable, the failure listing-exit-nonzero and the listing's exit code
+    And that record precedes the recovery-held record
+    And the item stays ready and is not admitted in that pass
+    And the journal carries a recovery-held record naming the measurement
 
   Scenario: A live ownership lock holds a released item that has preserved work
     Given a ready released item whose resume is inapplicable and whose failed run has a verified preserved commit
@@ -13526,6 +13568,72 @@ Feature: Run-age-bounded recovery preference
     And a needs-human ref N of run R whose tip does not descend from H
     When recovery routing grades the item
     Then the route is resume onto H
+
+  Scenario: a resumed run's own published head is attributed by its publication record
+    Given run R's publish_draft pushed head H to the item's open pull request and posted a publication record naming R and H
+    And no proof record on the pull request declares H and no dispatch-journal record names H
+    And the item's only preserved ref is run R's latest preserved capture
+    When the Dispatcher resumes the item
+    Then H is attributed to run R
+    And the resume does not refuse with publishing-run-unobservable
+
+  Scenario: the attribution does not depend on the resuming host's journal
+    Given the same pull request and publication record
+    And the Dispatcher resuming the item runs on a host whose dispatch journal holds no record of run R
+    When the Dispatcher resumes the item
+    Then H is attributed to run R exactly as on the host that dispatched R
+    And the resume does not refuse with publishing-run-unobservable
+
+  Scenario: the publication record names the commit the push actually sent
+    Given run R's janitor passed head J
+    And publish_draft pushed a commit F that it created in place of J, with J's tree
+    When publish_draft posts the run's publication record
+    Then the record names F as the pushed commit
+    And no publication record names J
+
+  Scenario: recovery routing ranks a head bound by a publication record as it ranks one named by a proof record
+    Given an item released for recovery whose pull request's current head H is named only by run R's publication record
+    When recovery routing grades the item
+    Then H is ranked as run R's published head, exactly as when a proof record of run R declares H
+
+  Scenario: a head that nothing attributes still refuses the resume
+    Given run R's latest preserved capture on the item and an open pull request whose current head H no publication record, proof record or dispatch-journal record names
+    When the Dispatcher resumes the item
+    Then the resume refuses with publishing-run-unobservable, naming that measurement
+
+  Scenario: a marker comment from another identity is not a publication record
+    Given the committed dispatcher.publication_identity names the factory's publication login
+    And a pull request comment that opens with livespec-publication-record and names run R and head H
+    And the forge reports its author as a login other than the publication identity, such as the maintainer's own login
+    When the Dispatcher attributes H
+    Then that comment is ignored
+    And H is attributed only by the other records that name it
+
+  Scenario: with no configured publication identity no comment is a publication record
+    Given the consumer project commits no dispatcher.publication_identity
+    And a pull request comment from the factory's login opens with livespec-publication-record and names run R and head H
+    When the Dispatcher attributes H
+    Then that comment is ignored
+    And H is attributed only by the proof and journal records that name it
+
+  Scenario: a refresh push is bound to its run
+    Given run R's pr_refresh pushed refreshed head H2 to the item's open pull request
+    When pr_refresh finishes its push
+    Then a publication record authored by the publication identity names run R, H2, the pull request, pr_refresh and the push time
+    And a later resume of the item attributes H2 to run R
+
+  Scenario: the most recently posted publication record of a head decides its run
+    Given two publication records by the publication identity name head H, the earlier naming run R1 and the later naming run R2
+    When the Dispatcher attributes H
+    Then H is attributed to run R2
+
+  Scenario: a failed post does not change the publishing stage's outcome
+    Given run R's publish_draft pushed head H and the pull request exists
+    And posting the publication record fails
+    When publish_draft finishes
+    Then its outcome, its exit code and the head it pushed are the same as if the post had succeeded
+    And its recorded output names run R, H and the failed post
+    And H is attributed only by the proof and journal records that name it
 ```
 
 ## Scenario 324 — A hold recorded only in the dispatch journal reaches needs-attention
@@ -14946,4 +15054,52 @@ Feature: publish_draft does not lose a publication the forge made behind a faile
     Given a pull-request creation command that exits zero while its output contains the text 502
     When publish_draft handles the creation
     Then publish_draft treats the creation as successful and makes no re-read
+```
+
+## Scenario 370 — An operator preserve tool removes a run's local copy only once origin holds the commit it pushed
+
+```gherkin
+Feature: Operator preserve copies do not accumulate, and the only copy of a run's work is never lost
+  As the operator of the control node that preserves factory runs
+  I want each run's local preserve copy removed once origin verifiably holds it, and kept, retried and reported otherwise
+  So that the work directory stops growing without bound while no unpushed work is deleted
+
+  Scenario: A verified push removes the local copy
+    Given the operator preserve tool holds a copy of run R whose first candidate carrying work is commit P
+    When the tool pushes P to refs/heads/preserve/run-R on R's repository
+    And git ls-remote reads that ref at exactly P
+    Then the tool removes R's local copy and every file beside it from the work directory
+
+  Scenario: A failed push keeps the copy and records what it tried to push
+    Given the operator preserve tool holds a copy of run R whose first candidate carrying work is commit P
+    When the tool's push of P to R's repository fails
+    Then the tool keeps R's local copy
+    And it records beside the copy R's repository, the ref and commit P
+    And its standard-output summary names the kept copy with its run id, its bytes and the reason push failed
+
+  Scenario: A ref that reads another commit or is absent keeps the copy
+    Given the operator preserve tool pushed commit P of run R to a ref on R's repository
+    When git ls-remote reads that ref at a commit other than P, or does not list the ref
+    Then the tool keeps R's local copy
+    And its standard-output summary names the kept copy with the reason ref reads another commit, or ref absent
+
+  Scenario: A kept copy is retried on the next start and removed once origin holds it
+    Given a copy of run R kept because its push failed, recording repository U, ref F and commit P
+    When the operator preserve tool starts
+    Then before it reads any sandbox it pushes P to U again
+    And when F holds a commit that is not an ancestor of P, it pushes to the sibling ref named for P and leaves F unchanged
+    And it removes the copy only once git ls-remote reads the ref it pushed at P
+
+  Scenario: A copy from before the rule is judged by re-running candidate selection
+    Given a copy of run R that records no repository, ref or commit
+    And re-running the candidate selection on it, against its stored refs/remotes/origin/master, selects commit C
+    When the operator preserve tool starts
+    Then it removes the copy only once git ls-remote reads refs/heads/preserve/run-R, or the sibling ref named for C, at exactly C on the origin of one of the repositories it preserves runs for
+    And when no such origin carries such a ref, it keeps the copy and its standard-output summary names the repository as unknown
+
+  Scenario: A work-free or damaged copy is kept and reported
+    Given a copy of run R none of whose candidates carries work, or whose objects git fsck reports missing
+    When the operator preserve tool runs
+    Then it pushes no commit for that copy, on this run or any later start, and keeps it
+    And its standard-output summary states the count and total bytes of kept copies, and names this copy with its run id, its bytes and the reason no candidate carries work, or objects missing
 ```

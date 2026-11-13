@@ -14,6 +14,9 @@ here, beside the constants they read.
 
 from __future__ import annotations
 
+from livespec_orchestrator_beads_fabro.commands._drive_close_duplicate_valve import (
+    CLOSE_DUPLICATE_ACTION,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_factory_safety_valve import (
     CLEAR_FACTORY_SAFETY_ACTION,
     FACTORY_SAFETY_ACTION,
@@ -59,6 +62,7 @@ VALUE_ALLOWLISTS = {
 # "Unsupported human valve action id." — the one message that cannot tell a
 # typo'd reason from a typo'd verb.
 _UNGRADED_VALUE_ACTIONS: frozenset[str] = CAP_ACTION_VERBS | {
+    CLOSE_DUPLICATE_ACTION,
     "move",
     FACTORY_SAFETY_ACTION,
     RELINK_SPEC_TIER_ACTION,
@@ -82,6 +86,7 @@ def is_human_valve_action(*, action_id: str) -> bool:
             "set-review-fix-cap:",
             "set-acceptance-rework-cap:",
             "set-merge-hold:",
+            f"{CLOSE_DUPLICATE_ACTION}:",
             "move:",
             f"{RELEASE_SPEC_TIER_ACTION}:",
             f"{RELINK_SPEC_TIER_ACTION}:",
