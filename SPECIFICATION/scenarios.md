@@ -5280,6 +5280,19 @@ Feature: one authoritative result reader for deadline and relay callers
     And a stale local branch file cannot satisfy the remote blob result
     And a comment saying verified cannot satisfy a typed verified proof
     And a query to the wrong repository cannot discharge the requested target
+
+  Scenario: a verified plan record that a later capture or carrier-map event displaced does not satisfy a verified_proof wait
+    Given a plan epic whose next_action awaits a verified_proof result for its plan assertions at a named build
+    And a verified plan Proof of Done record covering those assertions at that build
+    When a captured plan record is posted after that verified record
+    Then the shared reader reports the verified_proof result unsatisfied
+    And the observation's detail names the later captured record
+    When instead a carrier-map scope event is recorded after that verified record
+    Then the shared reader reports the verified_proof result unsatisfied
+    And the observation's detail names that carrier-map event
+    When instead only a ruling that is not a carrier-map event follows the verified record
+    Then the shared reader reports the verified_proof result satisfied
+    And resume_directive on an epic whose only verified record is displaced keeps the proof pointer and persists no derived review or archive pointer
 ```
 
 ## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery
