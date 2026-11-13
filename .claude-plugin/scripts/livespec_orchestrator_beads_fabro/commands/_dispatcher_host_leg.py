@@ -73,6 +73,7 @@ __all__: list[str] = [
     "HostAssertionGrade",
     "HostLeg",
     "HostReplay",
+    "decisive_reproduction",
     "host_leg",
 ]
 
@@ -109,6 +110,15 @@ _DECISIVE: dict[tuple[str, bool | None], tuple[bool, str]] = {
     (VERDICT_HOST_VERIFIED, True): (True, "reproduced"),
     (VERDICT_HOST_NOT_REPRODUCED, False): (False, "not reproduced"),
 }
+
+
+def decisive_reproduction(*, record: ProofRecord, assertion: str) -> tuple[bool, str] | None:
+    """What one record decides about one assertion, or `None` when it decides nothing.
+
+    The single place the decision table is read, so the post-merge acceptance pass
+    and the `accept:<id>` valve grade an assertion by the same rule.
+    """
+    return _DECISIVE.get((record.verdict, record.reproduced(assertion=assertion)))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -253,7 +263,7 @@ def _grade(
 ) -> HostAssertionGrade:
     """This assertion's disposition from the newest evidence replay that decides it."""
     for replay in reversed(evidence):
-        decision = _DECISIVE.get((replay.record.verdict, replay.record.reproduced(assertion=text)))
+        decision = decisive_reproduction(record=replay.record, assertion=text)
         if decision is None:
             continue
         passed, listing = decision
