@@ -74,6 +74,7 @@ from livespec_orchestrator_beads_fabro.commands._incident_rollback_conflict impo
     resolve_rollback_conflict,
 )
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
+from livespec_orchestrator_beads_fabro.incident_drill_close import DrillClose, close_drill
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
     RepaymentEntry,
     advance_repayment,
@@ -117,10 +118,11 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "correct-attempt": ("correction_json", "target_ref"),
     "correct-unmerged-attempt": ("correction_json", "target_ref", "failed_run"),
     "complete-incident": ("master_run", "completion_json"),
+    "drill-close": (),
 }
 _PR_NUMBER = re.compile(r"[1-9][0-9]*")
 
-LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
+LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | DrillClose | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
 
 
@@ -282,6 +284,22 @@ def _complete(
     )
 
 
+def _drill_close(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> LifecycleReply:
+    return close_drill(
+        client=client,
+        reading=reading,
+        runner=runner,
+        repo=args.repo,
+        repository=args.repository,
+    )
+
+
 _HANDLERS: dict[str, _Handler] = {
     "record-merge": _record_merge,
     "enter-repayment": _enter,
@@ -295,6 +313,7 @@ _HANDLERS: dict[str, _Handler] = {
     "correct-attempt": _correct,
     "correct-unmerged-attempt": correct_unmerged_action,
     "complete-incident": _complete,
+    "drill-close": _drill_close,
 }
 
 
@@ -311,7 +330,9 @@ def run_lifecycle_action(
 
 
 def lifecycle_body(
-    *, result: RepaymentEntry | RecoveryEntry | IncidentCompletion, body: dict[str, Any]
+    *,
+    result: RepaymentEntry | RecoveryEntry | IncidentCompletion | DrillClose,
+    body: dict[str, Any],
 ) -> None:
     """Serialize the recorded attempt with its carrier exactly as the chain retains it.
 
