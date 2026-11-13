@@ -29,6 +29,7 @@ already took, not from a probe of our own that could disagree with it.
 
 from __future__ import annotations
 
+import hashlib
 import importlib
 import json
 import os
@@ -503,6 +504,12 @@ def test_the_claude_host_judgement_journals_each_assistant_response_for_spend(
     records = [json.loads(line) for line in journals[0].read_text(encoding="utf-8").splitlines()]
     assert records[0]["name"] == "purpose:dod_judgement_pre_admission@bd-ib-7f66ar"
     assert records[0]["cwd"] == str(tmp_path / "repo")
+    assert records[0]["work_item_id"] == "bd-ib-7f66ar"
+    assert runner.stdin_text
+    assert (
+        records[0]["first_prompt_sha256"]
+        == hashlib.sha256(runner.stdin_text[0].encode()).hexdigest()
+    )
     assert records[1] == {
         "type": "assistant",
         "message": {

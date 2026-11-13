@@ -75,7 +75,8 @@ def filing_governing_heading_reading(*, item: WorkItem, repo: Path) -> FilingGov
     taking: GoverningHeadingTaking = host_governing_heading_taking_reader(
         runner=ShellCommandRunner()
     )(item=item, repo=repo)
-    if taking.verdict is None:
+    verdict = taking.verdict
+    if verdict is None:
         return FilingGoverningReading(verdict=None, not_taken_reason=taking.not_taken_reason)
     if path is not None and comments is not None:
         _ = attempt(
@@ -85,9 +86,9 @@ def filing_governing_heading_reading(*, item: WorkItem, repo: Path) -> FilingGov
                 body=filing_governing_receipt(
                     item_id=item.id,
                     subject_digest=governing_heading_subject_digest(item=item, comments=comments),
-                    verdict=taking.verdict,
+                    verdict=verdict,
                 ),
             ),
             exceptions=_LEDGER_ERRORS,
         )
-    return FilingGoverningReading(verdict=taking.verdict)
+    return FilingGoverningReading(verdict=verdict)
