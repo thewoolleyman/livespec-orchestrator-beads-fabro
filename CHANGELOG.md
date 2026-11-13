@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.326.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.326.0...v0.326.1) (2026-11-13)
+
+
+### Bug Fixes
+
+* **fleet-launch:** make resume hold test deterministic ([b36f5a4](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b36f5a4d7f4c8e0b3580e96f8258bc2ff4918eea))
+* grade the accept valve per assertion through the host-leg decision table ([df27658](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/df27658706d59e01c31a2f48ba5cdd82f3c41565))
+* re-land fix_commit_settle's exhausted cutoff with a routing directive on every exit 0 ([8eaf554](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8eaf554140b88eda763fad07e6eecd2d0bf42274))
+* retain host verification per assertion ([6bd4555](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6bd455515a070f3fbf42b3a6c8e506893024df2a))
+
 ## [0.326.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.325.0...v0.326.0) (2026-11-13)
 
 
