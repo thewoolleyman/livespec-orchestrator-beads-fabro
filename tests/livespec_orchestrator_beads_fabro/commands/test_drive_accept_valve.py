@@ -380,6 +380,53 @@ def test_a_later_sibling_host_record_does_not_hide_this_items_verified_assertion
     assert _stored(item_id=item.id).status == "done"
 
 
+def _replay_body(*, verdict: str, reproduced: str) -> str:
+    return (
+        f"Proof of Done — {verdict} — session later-session — 2026-10-01T12:00:00Z\n"
+        "\n"
+        f"## Assertion 1 — {_HOST_ASSERTION}\n"
+        "\n"
+        f"Reproduced: {reproduced}.\n"
+    )
+
+
+def test_a_later_host_not_reproduced_record_outranks_an_earlier_reproduction(
+    tmp_path: Path,
+) -> None:
+    """The newest record that DECIDES the assertion wins, as in the post-merge pass."""
+    later = _replay_body(verdict="host_not_reproduced", reproduced="no")
+    runner = _Runner(
+        result=CommandResult(
+            exit_code=0, stdout=_comments(bodies=[_HOST_VERIFIED_BODY, later]), stderr=""
+        )
+    )
+    item = _item(description=_host_description())
+
+    result = _accept(item=item, runner=runner, tmp_path=tmp_path)
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == HOST_REPLAY_PENDING_ERR
+    assert _stored(item_id=item.id).status == "acceptance"
+
+
+def test_a_later_host_verified_record_listing_no_reproduction_decides_nothing(
+    tmp_path: Path,
+) -> None:
+    """A `host_verified` record with `Reproduced: no` is skipped, not decisive."""
+    later = _replay_body(verdict="host_verified", reproduced="no")
+    runner = _Runner(
+        result=CommandResult(
+            exit_code=0, stdout=_comments(bodies=[_HOST_VERIFIED_BODY, later]), stderr=""
+        )
+    )
+    item = _item(description=_host_description())
+
+    result = _accept(item=item, runner=runner, tmp_path=tmp_path)
+
+    assert result["status"] == "green"
+    assert _stored(item_id=item.id).status == "done"
+
+
 def test_host_assertion_reproduction_selector_is_keyword_only() -> None:
     """The selector's two inputs cannot be accidentally swapped at a call site."""
     with pytest.raises(TypeError):

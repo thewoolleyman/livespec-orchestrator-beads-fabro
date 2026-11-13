@@ -56,6 +56,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_host_leg import decisive_reproduction
 from livespec_orchestrator_beads_fabro.commands._dispatcher_incident_closure import (
     INCIDENT_OBLIGATION_ERR,
     closure_obligations_for,
@@ -246,13 +247,16 @@ def _unreproduced_host_assertions(
 
 
 def _host_assertion_reproduced(*, records: tuple[ProofRecord, ...], assertion: str) -> bool:
-    """Whether the newest `host_verified` record naming one assertion reproduces it."""
+    """Whether the newest record that decides one assertion lists it as reproduced.
+
+    Decided by the same table the post-merge pass reads, so a `host_not_reproduced`
+    record outranks an earlier reproduction and a `host_verified` record listing the
+    assertion as not reproduced decides nothing.
+    """
     for record in reversed(records):
-        if record.verdict != VERDICT_HOST_VERIFIED:
-            continue
-        reproduced = record.reproduced(assertion=assertion)
-        if reproduced is not None:
-            return reproduced
+        decision = decisive_reproduction(record=record, assertion=assertion)
+        if decision is not None:
+            return decision[0]
     return False
 
 
