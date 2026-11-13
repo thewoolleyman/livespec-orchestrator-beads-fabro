@@ -12,8 +12,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_progra
     commit_runner_program_source,
 )
 
-from tests.integration.fixture_check_env import fixture_check_environment
-
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PRE_COMMIT = _REPO_ROOT / "dev-tooling" / "just-check-pre-commit.sh"
 _CHECK_CHANGED = _REPO_ROOT / "dev-tooling" / "just-check-changed.sh"
@@ -73,13 +71,9 @@ def _repository(*, tmp_path: Path) -> tuple[Path, dict[str, str], Path]:
             'if [[ "$*" == check-changed && "${FAKE_CHANGED_UNSCOPABLE:-}" == true ]]; then exit 75; fi\n'
         ),
     )
-    # The delegated gate Job exports SKIP_TARGETS to the suite it runs; the
-    # fixture pre-commit run must not inherit it (the bd-ib-hcsagh class).
     return (
         repo,
-        fixture_check_environment(
-            overrides={"PATH": f"{tools}{os.pathsep}{os.environ['PATH']}", "FAKE_LOG": str(log)}
-        ),
+        {**os.environ, "PATH": f"{tools}{os.pathsep}{os.environ['PATH']}", "FAKE_LOG": str(log)},
         log,
     )
 
@@ -94,14 +88,9 @@ def _stage(*, repo: Path, path: str, text: str) -> None:
 
 @pytest.mark.parametrize("stage", ["implement", "fix", "review_fix"])
 def test_authoring_stage_scopes_then_falls_back_to_the_aggregate(
-    *, tmp_path: Path, stage: str, monkeypatch: pytest.MonkeyPatch
+    *, tmp_path: Path, stage: str
 ) -> None:
-    """Each authoring stage scopes a known change before using the aggregate.
-
-    The delegated gate Job runs this suite with its authority-reading members in
-    ``SKIP_TARGETS``; the fixture pre-commit runs must not inherit them.
-    """
-    monkeypatch.setenv("SKIP_TARGETS", "check-branch-protection-alignment check-no-workflow-edits")
+    """Each authoring stage scopes a known change before using the aggregate."""
     scoped_repo, scoped_env, scoped_log = _repository(tmp_path=tmp_path / "scoped")
     _stage(
         repo=scoped_repo,
