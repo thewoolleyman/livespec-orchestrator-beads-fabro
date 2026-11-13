@@ -14871,3 +14871,79 @@ Feature: A lost factory sandbox is a host error the factory recovers from
     When its checkpoint commit fails for a reason other than a not-found sandbox
     Then the run ends as a workflow error
 ```
+
+## Scenario 368 — publish_draft publishes a run's work under its authored commit, never under engine checkpoint or merge commits
+
+```gherkin
+Feature: A run's engine checkpoint and merge commits never reach the default branch through publish_draft
+  Scenario: Checkpoint and merge commits are folded into one authored commit
+    Given a janitor-passed run head whose commits beyond the default branch include engine checkpoint commits with `fabro(<run>): <stage>` subjects, a merge commit of the default branch and an authored commit
+    And origin holds no tip for the run's publish branch
+    When publish_draft publishes the run
+    Then no commit between the default branch and the pushed head has a subject beginning `fabro(` or more than one parent
+    And the pushed head's tree equals the janitor-passed head's tree
+    And the pushed commit carries the full message of the run's one authored commit
+    And the run's working branch is set to the pushed commit
+    And the full check aggregate is not run a second time for that tree
+
+  Scenario: A run whose commits are all authored is pushed unchanged
+    Given a janitor-passed run head whose commits beyond the default branch are all authored single-parent commits
+    And origin holds no tip for the run's publish branch
+    When publish_draft publishes the run
+    Then publish_draft pushes the janitor-passed head unchanged
+
+  Scenario: A run with more than one authored commit fails closed rather than folding
+    Given a janitor-passed run head whose commits beyond the default branch include two authored commits and an engine checkpoint commit
+    And origin holds no tip for the run's publish branch
+    When publish_draft publishes the run
+    Then publish_draft pushes nothing
+    And it fails closed with LIVESPEC_PUBLISH_DRAFT_HISTORY_SANITIZE_FAILED naming each authored commit and stating that it found more than one
+
+  Scenario: A run with no authored commit fails closed
+    Given a janitor-passed run head whose commits beyond the default branch are all engine checkpoint commits or merge commits
+    And origin holds no tip for the run's publish branch
+    When publish_draft publishes the run
+    Then publish_draft pushes nothing
+    And it fails closed with LIVESPEC_PUBLISH_DRAFT_HISTORY_SANITIZE_FAILED naming the run and the range
+
+  Scenario: A default-branch advance after the janitor's refresh is neither folded in nor reverted
+    Given a janitor-passed run head refreshed onto default-branch commit B that carries engine checkpoint commits
+    And the default branch on origin has since advanced beyond B
+    When publish_draft folds the run's commits
+    Then the folded commit's only parent is B
+    And its tree equals the janitor-passed head's tree
+```
+
+## Scenario 369 — publish_draft adopts a pull request the forge created behind a failed create call, and only at the pushed head
+
+```gherkin
+Feature: publish_draft does not lose a publication the forge made behind a failed create call
+  Scenario: A pull request created behind a server error is adopted
+    Given a publish_draft that pushed head H to the run's publish branch
+    And the pull-request creation command exits non-zero reporting an HTTP 5xx
+    And the forge holds an open pull request P on the publish branch at head H
+    When publish_draft handles the failed creation
+    Then publish_draft adopts P as the run's publication and records its number
+    And the run ends publish_draft exactly as a successful creation ends it
+
+  Scenario: No pull request at the pushed head fails closed after the bounded re-reads
+    Given a publish_draft that pushed head H to the run's publish branch
+    And the pull-request creation command exits non-zero reporting an HTTP 5xx
+    And no re-read finds an open pull request on the publish branch at head H
+    When publish_draft handles the failed creation
+    Then publish_draft re-reads the forge three times, waiting 1, 2 and 4 seconds before them
+    And it fails closed with LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED stating that it made three re-reads
+
+  Scenario: A pull request at another head is never adopted
+    Given a publish_draft that pushed head H to the run's publish branch
+    And the pull-request creation command exits non-zero
+    And the forge holds an open pull request on the publish branch at a head other than H
+    When publish_draft handles the failed creation
+    Then publish_draft does not adopt that pull request
+    And it fails closed with LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED naming that pull request and its head
+
+  Scenario: The decision ignores status digits in the command's output
+    Given a pull-request creation command that exits zero while its output contains the text 502
+    When publish_draft handles the creation
+    Then publish_draft treats the creation as successful and makes no re-read
+```
