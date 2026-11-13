@@ -554,14 +554,14 @@ check-types:
 check-static:
     bash dev-tooling/just-check-static.sh
 
-# `changed-files` — print the changed product `.py` set this branch touches,
+# `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
 # (work-item livespec-dev-tooling-7us.9). The set is the UNION of two
 # git views, so an agent gets the live working set whether or not it has
 # committed yet:
-#   - `git diff --name-only origin/master...HEAD` — every product `.py` this
+#   - `git diff --name-only origin/master...HEAD` — every `.py` this
 #     branch's commits changed vs the merge-base with origin/master;
-#   - `git diff --cached --name-only --diff-filter=AM` — added/modified product
+#   - `git diff --cached --name-only --diff-filter=AM` — added/modified
 #     `.py` currently staged but not yet committed.
 # This is the exact set `check-changed` consumes for its scoped gate.
 # Helper recipe (like `check-static`): NOT a member of the `check:`

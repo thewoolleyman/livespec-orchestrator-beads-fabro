@@ -642,10 +642,10 @@ def test_the_worker_carries_the_starting_head_and_operation_into_the_verdict(
     assert verdict["operation"] == "merge"
 
 
-def test_the_worker_keeps_the_agent_stage_variable_for_the_commit_hook(
+def test_the_worker_keeps_the_agent_stage_variable_out_of_the_commit_hook_s_processes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The hook receives its owning stage so it can choose the fix-turn gate."""
+    """Scenario 326: the hook's test suite never inherits the guard's activation."""
     monkeypatch.setenv("LIVESPEC_AGENT_STAGE", "review_fix")
     monkeypatch.setenv("LIVESPEC_TEST_SENTINEL", "kept")
     fake = _FakeSubprocess(returncode=0)
@@ -656,7 +656,7 @@ def test_the_worker_keeps_the_agent_stage_variable_for_the_commit_hook(
 
     [environment] = fake.environments
     assert environment is not None
-    assert environment["LIVESPEC_AGENT_STAGE"] == "review_fix"
+    assert "LIVESPEC_AGENT_STAGE" not in environment
     assert environment["LIVESPEC_TEST_SENTINEL"] == "kept"
     assert fake.runs == [["git", "commit"]]
 
