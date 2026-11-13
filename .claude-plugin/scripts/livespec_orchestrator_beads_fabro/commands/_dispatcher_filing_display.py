@@ -15,8 +15,13 @@ next author happened to open, and the three that missed it would still read as
 complete. A filer who sees a different display at capture than at groom cannot
 tell which surface is behind.
 
-WHY IT RETURNS TEXT AND NEVER WRITES OR REFUSES. "Filing stays consent-gated and
-a front-end MUST NOT refuse on a finding." So every arm here renders a LINE,
+WHY IT RETURNS TEXT AND NEVER REFUSES, AND WHAT IT NOW APPENDS. It still never
+refuses; its one write is a governing-heading receipt appended to the filed item
+when a default display takes a verdict, so a repeat display of an unchanged item
+reads that record instead of paying for a second judgement. A display that cannot
+read the comments or append the receipt still renders every line. "Filing stays
+consent-gated and a front-end MUST NOT refuse on a finding." So every arm here
+renders a LINE,
 including the two that are configuration faults rather than item faults: a
 malformed `dispatcher.sandbox_capabilities` mirror and an unreadable
 `.livespec.jsonc` both produce a capability line saying so. Raising there would
