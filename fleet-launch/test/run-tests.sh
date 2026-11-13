@@ -99,6 +99,19 @@ esac
 # Every listing request is recorded, one server per line, so a case can count what the
 # factory would have been asked; STUB_PS_DELAY_S makes a listing slow, as the petri server's is.
 if [ -n "${STUB_PS_LOG:-}" ]; then printf '%s\n' "$server" >> "$STUB_PS_LOG"; fi
+# Case 20c can hold the first board poll it observes after the item becomes
+# active. The harness releases the stub drive only once this rendezvous exists,
+# then releases the board read after the driven marker is present. Thus the
+# listing's ordering is observed rather than inferred from a sleep.
+if [ -n "${STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE:-}" ] \
+    && [ "$(cat "$STUB_ITEM_STATUS_FILE" 2>/dev/null)" = active ] \
+    && [ ! -e "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" ]; then
+    : > "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE"
+    deadline=$(( $(date +%s) + 10 ))
+    while [ ! -e "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep "$HARNESS_POLL_S"
+    done
+fi
 if [ -n "${STUB_PS_DELAY_S:-}" ]; then sleep "$STUB_PS_DELAY_S"; fi
 # A TERM test holds the direct board read that follows take_mutex, when the
 # launcher has written its holder file but has not yet released the mutex.
@@ -250,7 +263,11 @@ for argument in "$@"; do
                             fi
                         fi
                     fi
-                    printf 'LEDGER-STATUS %s\n' "$(cat "$STUB_ITEM_STATUS_FILE")"
+                    item_status=$(cat "$STUB_ITEM_STATUS_FILE")
+                    if [ "$item_status" = active ] && [ -n "${STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE:-}" ]; then
+                        : > "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE"
+                    fi
+                    printf 'LEDGER-STATUS %s\n' "$item_status"
                     ;;
                 comment) printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS" ;;
             esac
@@ -584,12 +601,14 @@ new_case() {
     export STUB_DRIVE_ADMIT_GATE_FILE="$CASE_DIR/admit-gate"
     export STUB_DRIVE_SUBMIT_GATE_FILE="$CASE_DIR/submit-gate"
     export STUB_ITEM_STATUS_UNREADABLE_FILE="$CASE_DIR/item-status-unreadable"
+    export STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE="$CASE_DIR/active-status-read"
     export STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE="$CASE_DIR/item-status-re-read-observation"
     export STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE="$CASE_DIR/post-stop-status-rendezvous"
     export STUB_DRIVE_WATCHER_ARMED_FILE="$CASE_DIR/watcher-armed"
     export STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE="$CASE_DIR/admission-written"
     export STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE="$CASE_DIR/admit-after-stop-gate"
     unset STUB_DRIVE_ADMIT_GATE STUB_DRIVE_SUBMIT_GATE STUB_DRIVE_ADMIT_ON_TERM STUB_ITEM_STATUS_AWAIT_POST_STOP
+    unset STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE STUB_PS_ACTIVE_LISTING_RELEASE_FILE
 
     export REPO_OVERRIDE="$TENANT"
     export WRAPPER="$STUB/wrapper"
@@ -1902,22 +1921,76 @@ STOP_LOG="$CASE_DIR/launcher.log"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after > "$STOP_LOG" 2>&1 &
 stop_pid=$!
 if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
+    rm -f "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE"
     set_hold "$HOLD_FILE" 'engine restart'
-    sleep 0.3
-    held_alive=0
-    if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
-    : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
-    wait "$stop_pid"
-    stop_rc=$?
-    if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
-        && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after ]; then
-        pass "a hold set after the item reads active leaves the drive alone and the run lists"
+    if wait_for_file "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE" 10; then
+        held_alive=0
+        if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
+        : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+        wait "$stop_pid"
+        stop_rc=$?
+        if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
+            && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after ]; then
+            pass "a hold set after the item reads active leaves the drive alone and the run lists"
+        else
+            fail "a hold set after admission disturbed the drive (rc=$stop_rc alive=$held_alive)"
+            tail -n 8 "$STOP_LOG" >&2
+        fi
     else
-        fail "a hold set after admission disturbed the drive (rc=$stop_rc alive=$held_alive)"
-        tail -n 8 "$STOP_LOG" >&2
+        fail "the launcher did not re-read active after the hold in the hold-after-admission case"
+        stop_launcher "$stop_pid"
+        wait "$stop_pid" 2>/dev/null
     fi
 else
     fail "the stub item never read active in the hold-after-admission case ($WAIT_FAILURE_DETAIL)"
+    stop_launcher "$stop_pid"
+    wait "$stop_pid" 2>/dev/null
+fi
+
+# 20c delayed-listing control. The launcher's board read is held after it has
+# re-read the active item. Only then may the stub submit its run; the read is
+# released after the driven marker exists. This makes the former poll-versus-
+# exit race deterministic without a wall-clock allowance.
+prepare_330_case hold-after-admission-delayed-listing
+STOP_LOG="$CASE_DIR/launcher.log"
+export STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE="$CASE_DIR/active-listing-read"
+export STUB_PS_ACTIVE_LISTING_RELEASE_FILE="$CASE_DIR/release-active-listing-read"
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after-delayed > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
+    rm -f "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE"
+    set_hold "$HOLD_FILE" 'engine restart'
+    # The launcher lists before its next hold re-read. The normal case above
+    # proves that re-read; this control waits for the earlier board-poll state.
+    if wait_for_file "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" 10; then
+        held_alive=0
+        if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
+        : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+        if wait_for_file "$STUB_DRIVEN_DIR/bd-ib-hold-after-delayed" 10; then
+            : > "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE"
+            wait "$stop_pid"
+            stop_rc=$?
+            if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
+                && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after-delayed ]; then
+                pass "a hold set after the item reads active survives a delayed run-listing poll"
+            else
+                fail "a delayed listing poll disturbed the post-admission drive (rc=$stop_rc alive=$held_alive)"
+                tail -n 8 "$STOP_LOG" >&2
+            fi
+        else
+            fail "the delayed-listing stub never submitted its run after the observed poll"
+            : > "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE"
+            stop_launcher "$stop_pid"
+            wait "$stop_pid" 2>/dev/null
+        fi
+    else
+        fail "the launcher did not enter the delayed listing poll after item admission"
+        stop_launcher "$stop_pid"
+        wait "$stop_pid" 2>/dev/null
+    fi
+else
+    fail "the stub item never read active in the delayed hold-after-admission case ($WAIT_FAILURE_DETAIL)"
     stop_launcher "$stop_pid"
     wait "$stop_pid" 2>/dev/null
 fi
