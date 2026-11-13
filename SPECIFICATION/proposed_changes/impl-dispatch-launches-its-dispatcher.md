@@ -23,7 +23,7 @@ On 2026-11-13 the dev VPS (94 GiB RAM, no swap) ran out of memory and was reboot
 
 In `contracts.md` §"Dispatcher loop invocation surface", append this bullet:
 
-- **Host dispatch memory slice.** When `drive` launches the Dispatcher `loop` for an `impl:<work-item-id>` action, it MUST run that loop, together with every process the launch starts, inside a transient service-manager scope placed in the slice `factory-dispatch.slice`, provided ALL of the following hold for the launching user on the host: the user's service manager loads that slice; the manager delegates the memory controller; a scope launcher (`systemd-run`) is present; and the file `/etc/livespec/factory-dispatch-loop-memory-max` exists and holds a memory size. The scope's memory maximum MUST equal that file's value, and the scope's out-of-memory policy MUST be `continue`, so that the kernel killing one child does not stop the loop. When any of those conditions does not hold, the launch MUST proceed with the same argv and environment it uses without this clause, and MUST NOT fail because the slice is absent. Every `impl:` launch MUST record on its drive record which of the two launches it used and, for the scoped launch, the scope unit's name. The slice and the published bound are host provisioning that this repository does not install; this clause governs only how the launch uses them.
+- **Host dispatch memory slice.** When `drive` launches the Dispatcher `loop` for an `impl:<work-item-id>` action, it MUST run that loop, together with every process the launch starts, inside a transient service-manager scope placed in the slice `factory-dispatch.slice`, provided ALL of the following hold for the launching user on the host: the user's service manager loads that slice; the manager delegates the memory controller; a scope launcher (`systemd-run`) is present; and the file `/etc/livespec/factory-dispatch-loop-memory-max` exists and holds a memory size. The scope's memory maximum MUST equal that file's value, and the scope's out-of-memory policy MUST be `continue`, so that the kernel killing one child does not stop the loop. When any of those conditions does not hold, the launch MUST proceed with the same argv and environment it uses without this clause, and MUST NOT fail because the slice is absent. When all four conditions hold but the scoped launch itself fails (the scope launcher exits non-zero, or no scope is created), the launch MUST fall back to the unscoped launch, and MUST record on the drive record both the scoped launch's failure and the fallback. Every `impl:` launch MUST record on its drive record which of the two launches it used and, for the scoped launch, the scope unit's name. The slice and the published bound are host provisioning that this repository does not install; this clause governs only how the launch uses them.
 
 In `scenarios.md`, add:
 
@@ -50,3 +50,17 @@ When `drive` executes `impl:<work-item-id>` and launches the Dispatcher `loop`
 Then the loop starts with the same argv and environment as a launch made without the host-memory-slice clause
 
 And the drive record names the unscoped launch.
+
+## Scenario 373 — An impl dispatch whose scoped launch fails falls back to the unscoped launch
+
+Given the launching user's service manager loads `factory-dispatch.slice` and delegates the memory controller
+
+And `/etc/livespec/factory-dispatch-loop-memory-max` holds `3500M`
+
+And the scope launcher exits non-zero without creating a scope
+
+When `drive` executes `impl:<work-item-id>` and launches the Dispatcher `loop`
+
+Then the loop starts with the same argv and environment as a launch made without the host-memory-slice clause
+
+And the drive record names the scoped launch's failure and the fallback to the unscoped launch.
