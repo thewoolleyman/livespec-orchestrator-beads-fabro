@@ -1,4 +1,4 @@
-"""The host-wide Codex marketplace registrations keep their clone payload sparse."""
+"""The host-wide Codex marketplace registrations use one source definition."""
 
 from __future__ import annotations
 
@@ -9,18 +9,17 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _REPO_ROOT / "dev-tooling" / "just-ensure-codex-plugins.sh"
-_SPARSE_SUFFIX = " --sparse .agents/plugins --sparse .claude-plugin"
 _REGISTRATIONS = (
     "thewoolleyman/livespec --ref release",
     "thewoolleyman/livespec-driver-codex --ref release",
-    f"thewoolleyman/livespec-orchestrator-beads-fabro --ref release{_SPARSE_SUFFIX}",
+    "thewoolleyman/livespec-orchestrator-beads-fabro --ref release",
 )
 
 
-def test_only_the_orchestrator_registration_is_sparse_to_its_catalog_and_plugin_payload(
+def test_orchestrator_registration_matches_the_fleet_full_marketplace_source(
     tmp_path: Path,
 ) -> None:
-    """The orchestrator's sparse clone keeps Codex's refresh below its 30-second limit."""
+    """A full host registration can be refreshed without a source mismatch."""
     invocation_log = tmp_path / "codex-invocations"
     fake_codex = tmp_path / "bin" / "codex"
     fake_codex.parent.mkdir()
