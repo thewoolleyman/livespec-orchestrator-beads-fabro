@@ -358,7 +358,9 @@ jobs:
   # coverage (ci-root-uid.yml) is unchanged and still runs the whole suite.
   check-per-file-coverage-shard:
     name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    # bd-ib-mexkuo: a master push reads CI_RUNNER_LABELS_MASTER first (the dedicated
+    # livespec-orchestrator-master-k3s lane); unset, or on a pull request, routing is unchanged.
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.207.0
     env:
@@ -467,7 +469,9 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    # bd-ib-mexkuo: a master push reads CI_RUNNER_LABELS_MASTER first (the dedicated
+    # livespec-orchestrator-master-k3s lane); unset, or on a pull request, routing is unchanged.
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.207.0
     env:
@@ -622,7 +626,9 @@ jobs:
     # stay on k3s while CI_RUNNER_LABELS sends every other job to hosted runners
     # (a hosted runner ran this suite at 55+ min against a 17.5 min k3s median).
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
-    runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
+    # bd-ib-mexkuo: a master push reads CI_RUNNER_LABELS_MASTER first (the dedicated
+    # livespec-orchestrator-master-k3s lane); unset, or on a pull request, routing is unchanged.
+    runs-on: ${{ fromJSON(github.event_name == 'push' && vars.CI_RUNNER_LABELS_MASTER || vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
       image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.207.0
     env:
