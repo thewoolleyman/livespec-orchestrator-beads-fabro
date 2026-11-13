@@ -94,6 +94,12 @@ _NO_RUN_ID_SENTINEL = f"{NEEDS_HUMAN_MARKER}_NO_RUN_ID"
 # and that ref is what gets reported rather than one derived from the run id.
 _PRESERVED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_PRESERVED: "
 
+# The write-side tree guard deliberately leaves no ref when the settled run
+# branch contains no work beyond its base or the default branch.  Its fields
+# are evidence, rather than a free-form explanation, so the detail reader can
+# report the exact ref it declined to create and the compared tip.
+_NOT_PRESERVED_SENTINEL = f"{NEEDS_HUMAN_MARKER}_NOT_PRESERVED: "
+
 # The terminal's own reason line, and the routing suffix it always carries.
 # The reason is the ONLY account of why the loop gave up that a node whose
 # failure the engine never classified can leave, so it is rendered for every
@@ -287,6 +293,13 @@ def needs_human_terminal_preservation(*, text: str) -> str:
     preserved_ref = _after(text=text, sentinel=_PRESERVED_SENTINEL)
     if preserved_ref is not None:
         return f"the tree was preserved on {preserved_ref} ({_PRESERVED_POINTER})"
+    tree_guard_refusal = _tree_guard_refusal(text=text)
+    if tree_guard_refusal is not None:
+        ref, tip, reason = tree_guard_refusal
+        return (
+            f"the tree was not pushed to {ref}: the terminal's tree guard declined "
+            f"tip {tip} with reason={reason}; {_FALL_BACK_TO_POINTER}"
+        )
     if _NO_RUN_ID_SENTINEL in text:
         return _not_pushed(because="the terminal reported that no run id reached it")
     if _PUSH_FAILED_SENTINEL in text:
@@ -313,6 +326,20 @@ def _after(*, text: str, sentinel: str) -> str | None:
             if trailing != "":
                 return trailing
     return None
+
+
+def _tree_guard_refusal(*, text: str) -> tuple[str, str, str] | None:
+    """Read the complete structured record from the no-work preservation guard."""
+    line = _after(text=text, sentinel=_NOT_PRESERVED_SENTINEL)
+    if line is None:
+        return None
+    fields = dict(field.split("=", maxsplit=1) for field in line.split() if "=" in field)
+    ref = fields.get("ref")
+    tip = fields.get("tip")
+    reason = fields.get("reason")
+    if ref is None or tip is None or reason is None:
+        return None
+    return ref, tip, reason
 
 
 def _not_pushed(*, because: str) -> str:
