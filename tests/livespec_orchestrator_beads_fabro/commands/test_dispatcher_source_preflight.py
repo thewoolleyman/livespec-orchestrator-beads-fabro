@@ -384,11 +384,12 @@ _CONTAINS_ABC123 = (
 
 
 def test_source_preflight_fails_closed_when_the_containment_query_fails(tmp_path: Path) -> None:
-    """A failed `for-each-ref --contains` yields no witness, so the source is not origin-reachable."""
+    """A failed fallback scan yields no witness after the default-ref check misses."""
     results = _base_results() | {
         ("for-each-ref", "--format=%(refname:short)", "refs/remotes/origin"): _result(
             stdout="origin/master\n"
         ),
+        ("merge-base", "--is-ancestor", "abc123", "origin/master"): _result(exit_code=1),
         _CONTAINS_ABC123: _result(exit_code=129, stderr="error: malformed object name\n"),
         (
             "log",
@@ -405,8 +406,8 @@ def test_source_preflight_fails_closed_when_the_containment_query_fails(tmp_path
     outcome = source_checkout_preflight(repo=tmp_path, runner=runner)
 
     assert outcome.refusal is not None
+    assert ("merge-base", "--is-ancestor", "abc123", "origin/master") in runner.calls
     assert runner.calls.count(_CONTAINS_ABC123) == 1
-    assert not any(call[0] == "merge-base" for call in runner.calls)
 
 
 def test_source_preflight_never_names_origin_head_as_the_containing_ref(tmp_path: Path) -> None:
