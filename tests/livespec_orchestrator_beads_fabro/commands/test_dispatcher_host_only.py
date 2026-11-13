@@ -25,6 +25,7 @@ launch), and the ordinary-item case asserts it WAS called (an ordinary
 item still dispatches) — so the stand-in's body is genuinely exercised.
 """
 
+import importlib
 import json
 import stat
 import tempfile
@@ -489,6 +490,43 @@ def test_dispatch_journals_host_only_refusal(
         if json.loads(line)["stage"] == "outcome"
     )
     assert outcome_record["outcome"]["stage"] == "host-only-refused"
+
+
+@pytest.mark.parametrize(
+    "label",
+    ["approval:workflow-edit", "approval:workflow-edit-additive"],
+)
+def test_dispatch_refuses_workflow_edit_approval_label_before_launch(
+    label: str,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Workflow-edit approvals are host-routed even when text names no path."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item(title="Add a lint step")
+    append_work_item(path=_config(), item=item)
+    recording = _RecordingRunDispatch()
+    admission = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_admission_eligibility"
+    )
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", recording)
+    monkeypatch.setattr(
+        admission,
+        "read_dispatch_labels",
+        lambda **_kwargs: (label,),
+    )
+
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+
+    assert exit_code == 1
+    assert recording.calls == []
+    payload = capsys.readouterr().out
+    assert item.id in payload
+    assert label in payload
+    assert "host-route" in payload
 
 
 def test_dispatch_does_not_refuse_ordinary_item(
