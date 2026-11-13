@@ -113,11 +113,7 @@ Add one entry to `tests/heading-coverage.json`, using the heading as numbered at
 {"heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A real test at the integration tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.", "work_item": "bd-ib-3lxeqf"}
 ```
 
-Add the matching row to `tests/heading-coverage-debt.json`. The register has no generator: the row is authored, and `check-heading-coverage-debt-register` admits it under its v067 spec-first admission, because this same change introduces the heading:
-
-```json
-{"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: the factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph", "work_item": "bd-ib-3lxeqf", "first_seen": "<revise date>"}
-```
+The matching `tests/heading-coverage-debt.json` row is never authored by hand: the revise MUST regenerate it with `uv run python -m livespec_dev_tooling.heading_coverage_debt` and stage the result. The generator ships in livespec_dev_tooling/heading_coverage_debt.py of the pinned livespec-dev-tooling v1.201.0.
 
 The revise that ratifies this MUST co-edit both files, per AGENTS.md §"Revise co-edit discipline". No existing heading changes.
 
