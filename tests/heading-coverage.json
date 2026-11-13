@@ -3016,8 +3016,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-sghxlk dispatches fast-forward-release-branch.yml against this repository's real release branch and shows that a published release leaves release unmoved with the job skipped, that a named-build adopt moves one canary clone to a release tag while release and every other clone keep their commit, that the roll-step dispatch of a descendant tag whose canary passed fast-forwards release, that a failed canary leaves release on the last rolled build, and that a non-descendant or missing tag fails the run and leaves release unchanged. bd-ib-sghxlk owns it.",
-    "work_item": "bd-ib-sghxlk"
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-5psq3e dispatches fast-forward-release-branch.yml against this repository's real release branch and shows, for the release channel, that a published release leaves release unmoved with the job skipped, that a named-build adopt moves one canary clone to a release tag while release and every other clone keep their commit, that the roll-step dispatch of a descendant tag whose canary passed and whose canary-coverage.json covers every changed workflow path fast-forwards release, that a failed canary leaves release on the last rolled build, and that a non-descendant or missing tag fails the run and leaves release unchanged; and, for canary coverage, that a record leaving a changed workflow path uncovered, a record citing a changed node only through a failure-edge traversal, an absent record, and a corrective roll-forward carrying no record each fail the run naming the tag and the uncovered path or missing asset and leave release unchanged. bd-ib-5psq3e owns it.",
+    "work_item": "bd-ib-5psq3e"
   },
   {
     "heading": "## Scenario 332 \u2014 A host Claude judgement's spend journal ends with the closing result event's final usage",

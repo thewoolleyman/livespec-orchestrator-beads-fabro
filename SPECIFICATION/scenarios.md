@@ -13986,6 +13986,7 @@ Feature: The release branch advances only at the roll step, after its canary pas
     Given the `release` branch names the commit of release tag v1.0.0
     And release v1.1.0's commit descends from v1.0.0's commit
     And release v1.1.0's canary samples were judged to pass
+    And release v1.1.0's `canary-coverage.json` asset covers every changed workflow path between v1.0.0's commit and v1.1.0's commit
     When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
     Then the `release` branch names the commit of v1.1.0 when the run ends
 
@@ -14007,6 +14008,50 @@ Feature: The release branch advances only at the roll step, after its canary pas
     When an operator dispatches the workflow with a tag this repository does not carry
     Then the run fails naming the tag
     And the `release` branch still names the commit of v1.1.0
+
+  Scenario: the roll step refuses a tag whose canary coverage record leaves a changed workflow path uncovered
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0 changes the script of workflow node `fix_commit_settle` and removes the edge `fix_commit_settle -> needs_human`
+    And release v1.1.0's `canary-coverage.json` asset embeds a journal row of a v1.1.0 sample completing node `fix_commit_settle` with a successful outcome through its success edge, and gives the removed edge neither a citation nor a routing test
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the run fails naming v1.1.0 and the edge `fix_commit_settle -> needs_human`
+    And the `release` branch still names the commit of v1.0.0
+
+  Scenario: the roll step refuses a changed node whose only citation is a failure-edge traversal
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0 changes the script of workflow node `fix_commit_settle`, whose failure edge leads to `fix` and whose success edge leads to `fix_open_red_route`
+    And release v1.1.0's `canary-coverage.json` asset cites for `fix_commit_settle` only a journal row of a v1.1.0 sample that took the edge `fix_commit_settle -> fix` with a failed outcome
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the run fails naming v1.1.0 and the node `fix_commit_settle` with its success edge `fix_commit_settle -> fix_open_red_route`
+    And the `release` branch still names the commit of v1.0.0
+
+  Scenario: the roll step refuses a tag whose release carries no canary coverage record
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0 carries no `canary-coverage.json` asset
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the run fails naming v1.1.0 and the missing `canary-coverage.json` asset
+    And the `release` branch still names the commit of v1.0.0
+
+  Scenario: the roll step advances when every changed workflow path is covered
+    Given the `release` branch names the commit of release tag v1.0.0
+    And release v1.1.0's commit descends from v1.0.0's commit
+    And release v1.1.0 changes the script of workflow node `fix_commit_settle` and removes the edge `fix_commit_settle -> needs_human`
+    And release v1.1.0's `canary-coverage.json` asset embeds a journal row of a v1.1.0 sample completing node `fix_commit_settle` with a successful outcome through its success edge
+    And it names, for the removed edge, a routing test present in v1.1.0's tree that passed in a recorded `factory_captured` proof on v1.1.0's commit
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.1.0`
+    Then the `release` branch names the commit of v1.1.0 when the run ends
+
+  Scenario: a corrective roll-forward is held to the canary coverage record
+    Given the `release` branch names the commit of release tag v1.0.0, a rolled build that has failed
+    And release v1.0.1's commit descends from v1.0.0's commit
+    And release v1.0.1 is a corrective roll-forward that changes workflow node `fix_commit_settle`
+    And release v1.0.1 carries no `canary-coverage.json` asset
+    When an operator runs `gh workflow run fast-forward-release-branch.yml -f tag=v1.0.1`
+    Then the run fails naming v1.0.1 and the missing `canary-coverage.json` asset
+    And the `release` branch still names the commit of v1.0.0
 ```
 
 ## Scenario 332 — A host Claude judgement's spend journal ends with the closing result event's final usage

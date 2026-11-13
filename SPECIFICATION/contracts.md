@@ -3082,7 +3082,8 @@ registration names `ref: release`, and a session-start plugin refresh
 installs whatever commit `release` names. So the commit `release` names
 IS the build every fleet clone adopts by default, and it MUST be a build
 whose canary has passed, or a corrective roll-forward under the
-exception below. A *corrective roll-forward* is a release whose only
+exception below, and, either way, whose canary coverage record satisfies
+**Canary coverage.** A *corrective roll-forward* is a release whose only
 purpose is to replace a rolled build that has failed; it MUST advance
 `release` through the same fast-forward-only workflow as a roll, and
 the operator MUST record it on the roll's tracking work item, naming
@@ -3127,7 +3128,67 @@ fast-forward-only: when the named tag's commit does not descend from the
 commit `release` names, the run MUST fail, and `release` MUST keep its
 commit. The dispatch command is
 `gh workflow run fast-forward-release-branch.yml -f tag=vX.Y.Z`.
-Scenario 331 in `scenarios.md` exercises this paragraph.
+
+**Canary coverage.** A canary attests only the workflow paths its
+samples completed. The *workflow scope* is, for each workflow directory
+under `.claude-plugin/.fabro/workflows/`, the graph `workflow.fabro`,
+its run configuration `workflow.toml`, and every file in that directory
+a node loads, such as a prompt under `prompts/` or a file under
+`proof-capture-bin/` or `proof-capture-hooks/`.
+`workflow.pre-petri.fabro` is a rollback graph that no factory run
+executes, so it is outside the scope; restoring it as `workflow.fabro`
+changes `workflow.fabro`. The *base* is the last rolled build: the
+commit `release` names when the run starts, which is the live launch
+build of every fleet clone. Before the workflow moves `release`, at the
+roll step or in a corrective roll-forward, it MUST compute the *changed
+workflow paths* between the base and the named tag's commit within the
+workflow scope:
+
+- every node that was added, was removed, or has a changed attribute or
+  script;
+- every node that interpolates a `workflow.toml` input whose value
+  changed, or loads a workflow-directory file whose content changed;
+- every edge that was added, was removed, or has a changed attribute,
+  such as its condition or label;
+- for every changed node that remains, its *success edge*: the edge it
+  takes on a successful outcome or, when it has none, its unconditional
+  edge.
+
+The release that the tag names MUST carry a *canary coverage record*, a
+release asset named `canary-coverage.json`, that lists every changed
+workflow path and covers each one by a journal citation or a routing
+test.
+
+- A *journal citation* embeds one row of the *run journal*, the event
+  stream of the Fabro run a canary sample executed, naming the node or
+  edge, the build commit the run launched on, the run id, and the
+  event's sequence number in that stream. The build commit MUST be the
+  tag's commit. A citation for a changed node MUST show the sample
+  completing that node with a successful outcome and taking its success
+  edge; a row showing only a failure edge does not cover the node. A
+  changed node with no outgoing edge is covered by a citation showing
+  its successful completion.
+- A *routing test* is a test of exactly that node and edge, named by its
+  path and test id, present in the tag's tree and passing in a recorded
+  `factory_captured` proof on the tag's commit.
+
+A removed node and a removed edge cannot be traversed, so each MUST be
+covered by a routing test. The run MUST fail, naming the tag and each
+uncovered changed path, and `release` MUST keep its commit, in any of
+these cases: the record is absent; it omits a changed path; it gives a
+changed path neither a citation nor a routing test; a citation names a
+build commit other than the tag's commit; a citation for a changed node
+shows no successful completion through its success edge; a cited routing
+test is absent from the tag's tree; or a cited routing test has no
+passing recorded `factory_captured` proof on the tag's commit. When no
+path in the workflow scope changed, the record MUST still exist and MUST
+list no paths. A corrective roll-forward is excepted from the canary's
+pass judgement, not from this record: each path it changes is covered by
+a journal citation from a canary sample on its build or by a routing
+test.
+
+Scenario 331 in `scenarios.md` exercises **The release channel.** and
+**Canary coverage.**
 
 The host-side Dispatcher MUST run on the packaged payload alone — the
 Python standard library plus the vendored runtime under
