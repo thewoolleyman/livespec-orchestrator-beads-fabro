@@ -21,6 +21,8 @@ absence in the module.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -29,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import Comman
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     governing_heading_verdict,
     host_governing_heading_reader,
+    host_governing_heading_taking_reader,
     unjudged_governing_heading,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
@@ -329,3 +332,51 @@ def test_a_partial_host_verdict_stops_at_the_primary_candidate(tmp_path: Path) -
     assert runner.calls == 1
     assert verdict is not None
     assert verdict.kind == "partial"
+
+
+def test_the_claude_governing_heading_taking_names_its_item_and_prompt_in_the_spend_journal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real host launch, not the journal primitive, carries the item id and digest."""
+    home = tmp_path / "operator-home"
+    monkeypatch.setenv("HOME", str(home))
+    repo = _repo(tmp_path=tmp_path)
+    _ = (repo / ".livespec.jsonc").write_text(
+        """{
+  "livespec-orchestrator-beads-fabro": {
+    "dispatcher": {
+      "acp_nodes": {
+        "dod_gate": {"agent": "claude-acp", "model": "claude-opus-5", "effort": "high"}
+      }
+    }
+  }
+}
+""",
+        encoding="utf-8",
+    )
+    stream = "\n".join(
+        (
+            json.dumps(
+                {
+                    "type": "assistant",
+                    "message": {
+                        "id": "governing-spend-1",
+                        "model": "claude-opus-5",
+                        "usage": {"input_tokens": 40, "output_tokens": 20},
+                    },
+                }
+            ),
+            json.dumps({"type": "result", "result": _VERDICT_REPLY}),
+        )
+    )
+    runner = _Runner(stdout=stream)
+
+    taking = host_governing_heading_taking_reader(runner=runner)(item=_item(), repo=repo)
+
+    assert taking.verdict is not None
+    journals = list((home / ".claude" / "spend-journal").glob("*.jsonl"))
+    assert len(journals) == 1
+    header = json.loads(journals[0].read_text(encoding="utf-8").splitlines()[0])
+    assert header["name"] == "purpose:dod_governing_heading@bd-ib-m76p2n"
+    assert header["work_item_id"] == "bd-ib-m76p2n"
+    assert len(header["first_prompt_sha256"]) == len(hashlib.sha256(b"").hexdigest())
