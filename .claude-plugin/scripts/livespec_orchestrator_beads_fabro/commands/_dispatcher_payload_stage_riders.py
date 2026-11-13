@@ -16,17 +16,21 @@ def prefix_stage_riders(
 
     A workflow variant need not offer every agent stage. There is no brief for a
     missing node, so its targeted rider has nowhere to travel and is harmless.
-    A declared node whose copied prompt is absent is instead a materialization
-    failure because the graph would ask Fabro to read a missing file.
+    A declared node whose copied prompt is absent, or that names no prompt at all,
+    is instead a materialization failure: the graph would ask Fabro to read a
+    missing file, or the stage's targeted rider would be silently dropped.
     """
     try:
         graph_text = graph.read_text(encoding="utf-8")
         for stage, section in stage_riders.items():
             if section == "":
                 continue
-            prompt = _stage_prompt_path(graph_text=graph_text, stage=stage)
-            if prompt is None:
+            body = _stage_node_body(graph_text=graph_text, stage=stage)
+            if body is None:
                 continue
+            prompt = _prompt_path(body=body)
+            if prompt is None:
+                return f'workflow stage {stage} declares no prompt="@..." attribute for its rider'
             destination = payload_dir / prompt
             if not destination.is_file():
                 return f"workflow prompt {prompt} for stage {stage} is missing"
@@ -38,11 +42,14 @@ def prefix_stage_riders(
     return None
 
 
-def _stage_prompt_path(*, graph_text: str, stage: str) -> Path | None:
-    """Read one stage's relative prompt path from a copied workflow graph."""
+def _stage_node_body(*, graph_text: str, stage: str) -> str | None:
+    """Read one stage's attribute body from a copied workflow graph, if declared."""
     pattern = rf"(?ms)^\s*{re.escape(stage)}\s*\[(?P<body>[^\]]*)\]"
     match = re.search(pattern, graph_text)
-    if match is None:
-        return None
-    prompt = re.search(r'prompt\s*=\s*"@(?P<path>[^"]+)"', match.group("body"))
+    return None if match is None else match.group("body")
+
+
+def _prompt_path(*, body: str) -> Path | None:
+    """Read the relative prompt path from one node's attribute body."""
+    prompt = re.search(r'prompt\s*=\s*"@(?P<path>[^"]+)"', body)
     return None if prompt is None else Path(prompt.group("path"))
