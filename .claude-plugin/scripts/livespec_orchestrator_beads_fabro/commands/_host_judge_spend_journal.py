@@ -57,7 +57,9 @@ def start_spend_journal(
         "final_usage_line": True,
     }
     resolved_work_item_id = work_item_id
-    if resolved_work_item_id is None and name.startswith("purpose:dod_judgement_"):
+    if resolved_work_item_id is None and name.startswith(
+        ("purpose:dod_judgement_", "purpose:dod_governing_heading@")
+    ):
         resolved_work_item_id = name.rpartition("@")[2]
     if resolved_work_item_id is not None:
         header["work_item_id"] = resolved_work_item_id
