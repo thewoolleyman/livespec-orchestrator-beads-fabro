@@ -227,4 +227,7 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
     fi
   else v="FAILED(push sha=$sha $(tail -1 "$D.push.err" 2>/dev/null))"; fi
   printf "$out\t%s\t%s\t%s\t%s\t%s\t%s\n" "$repo" "$sha" "$ref" "$v" $(( $(date +%s)-t0 )) "$src"
+  # A local bare copy is only disposable after origin has read back the exact sha.
+  # `.push.err` is deliberately not a failure marker: git writes its successful banner there too.
+  case "$v" in VERIFIED*) rm -rf "$D"; rm -f "$D".* ;; esac
 done <<< "$pods"
