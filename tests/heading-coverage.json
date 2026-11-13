@@ -3189,5 +3189,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-immkx7 adds cases in which a launcher ended by SIGTERM, SIGHUP or SIGINT removes its private payload holder and exits non-zero; a holder a running child names in LIVESPEC_RETAINED_PAYLOAD_ROOT survives the launcher's exit and is reclaimed by a later launcher's sweep once no running process names it; a holder whose recorded creator has exited is swept, including when its pid now belongs to a process with a different start time; a holder whose recorded creator is running and an unrecorded holder modified within the last 24 hours are left; an unrecorded, unnamed holder older than 24 hours is reclaimed; and a holder the sweep cannot remove is logged without refusing or failing the dispatch. bd-ib-immkx7 owns it.",
     "work_item": "bd-ib-immkx7"
+  },
+  {
+    "heading": "## Scenario 364 \u2014 An item-only head read reports an incident item's current phase and generation and authorizes nothing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-txbv7i adds cases in which the incident authority CLI action read-head, given only a repository and an item id, reports the head's incident phase and generation as read_incident_head selects them, drill-closed included, and authorizes no side effect; reports an item with no incident authority genesis as absent rather than refused; returns the canonical reader's named refusal, never absence and never a phase, for an ambiguous chain, an invalid genesis, a cycle, an identity mismatch or an item mismatch; and refuses incident-authority-unavailable with no phase when the authority store cannot be read. bd-ib-txbv7i owns it.",
+    "work_item": "bd-ib-txbv7i"
   }
 ]
