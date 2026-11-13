@@ -54,6 +54,7 @@ _GIT_INVOCATION = re.compile(r"\bgit (?P<options>(?:-c \S+ )*)(?P<verb>[a-z][a-z
 _HOOKLESS_OPTION = "-c core.hooksPath=/dev/null"
 _RUN_ID = "01M4HOOKLESSPRESERVE"
 _REF = f"refs/heads/needs-human/{_RUN_ID}"
+_DISPATCH_ID = "2a4bce867bd643d1aa92d2c1f40f3e45"
 _PRESERVED = "LIVESPEC_NEEDS_HUMAN_PRESERVED"
 _SENTINEL = "LIVESPEC_NEEDS_HUMAN"
 _WIP = "in-progress.txt"
@@ -101,7 +102,13 @@ def test_a_tree_that_fails_the_check_suite_still_reaches_the_needs_human_ref(
 def test_needs_human_preserves_the_run_branch_when_head_is_detached_on_master(
     tmp_path: Path,
 ) -> None:
-    """A default-branch checkout cannot replace the run's settled work at the terminal."""
+    """The dispatch ref preserves work from the engine-named run branch.
+
+    A real Dispatcher configures its UUID-like dispatch correlation id locally,
+    while Fabro names the run branch with its separate engine run id.  A
+    detached default-branch workspace must therefore not become the source of
+    the preservation commit.
+    """
     work, origin, _marker = _sandbox(tmp_path=tmp_path)
     run_branch = f"fabro/run/{_RUN_ID}"
     run_work = "settled-run-work.txt"
@@ -119,11 +126,19 @@ def test_needs_human_preserves_the_run_branch_when_head_is_detached_on_master(
         "settled run work",
     )
     _git(work, "checkout", "--quiet", "--detach", "master")
+    _git(work, "config", "livespec.factoryRunId", _DISPATCH_ID)
 
     completed = _run_needs_human(work=work, run_id=_RUN_ID)
 
     assert completed.returncode == 1
-    assert _preserved_blob(origin=origin, ref=_REF, path=run_work) == run_body
+    assert (
+        _maybe_preserved_blob(
+            origin=origin,
+            ref=f"refs/heads/needs-human/{_DISPATCH_ID}",
+            path=run_work,
+        )
+        == run_body
+    ), completed.stderr
 
 
 def test_the_publish_draft_push_still_runs_the_repository_pre_push_check_suite(
@@ -383,6 +398,18 @@ def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
         capture_output=True,
     )
     return completed.stdout
+
+
+def _maybe_preserved_blob(*, origin: Path, ref: str, path: str) -> str | None:
+    """Read a path when the preservation ref actually carries it."""
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=str(origin),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout if completed.returncode == 0 else None
 
 
 def _hooks_that_ran(*, marker: Path) -> str:
