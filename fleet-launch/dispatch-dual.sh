@@ -107,16 +107,43 @@ yield_ticket() {
   [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
 }
 restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
+trim_hold_value() {
+  HOLD_VALUE=$1
+  while :; do
+    case "$HOLD_VALUE" in
+      ' '*) HOLD_VALUE=${HOLD_VALUE#' '} ;;
+      $'\t'*) HOLD_VALUE=${HOLD_VALUE#$'\t'} ;;
+      *) return ;;
+    esac
+  done
+}
 repository_hold_applies() {
-  local raw compact content
+  # This is also the signal-during-hold path.  Keep its read and parsing in
+  # bash builtins: an INT or HUP may arrive immediately after the previous
+  # hold line, before this next poll has begun.
+  local line raw="" compact="" character index
   HOLD_KINDS=all
-  # Read the file once, so reason, until and kinds all come from one version of it.
-  content=$(cat "$REPO_HOLD_FILE" 2>/dev/null)
-  HOLD_REASON=$(printf '%s\n' "$content" | sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }')
-  HOLD_UNTIL=$(printf '%s\n' "$content" | sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }')
+  HOLD_REASON=""
+  HOLD_UNTIL=""
   [ -e "$REPO_HOLD_FILE" ] || return 1
-  raw=$(printf '%s\n' "$content" | sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }')
-  compact=$(printf '%s' "$raw" | tr -d '[:space:]')
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      reason:*)
+        [ -n "$HOLD_REASON" ] || { trim_hold_value "${line#reason:}"; HOLD_REASON=$HOLD_VALUE; }
+        ;;
+      until:*)
+        [ -n "$HOLD_UNTIL" ] || { trim_hold_value "${line#until:}"; HOLD_UNTIL=$HOLD_VALUE; }
+        ;;
+      kinds:*)
+        [ -n "$raw" ] || { trim_hold_value "${line#kinds:}"; raw=$HOLD_VALUE; }
+        ;;
+    esac
+  done < "$REPO_HOLD_FILE"
+  [ -e "$REPO_HOLD_FILE" ] || return 1
+  for ((index = 0; index < ${#raw}; index++)); do
+    character=${raw:index:1}
+    case "$character" in ' '|$'\t'|$'\r'|$'\n') ;; *) compact+=$character ;; esac
+  done
   case "$compact" in
     dispatch|resume|dispatch,resume|resume,dispatch) HOLD_KINDS=$compact ;;
   esac
@@ -131,7 +158,15 @@ repository_hold_details() {
   printf '%s' "$details"
 }
 log_repository_hold() {
-  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $(repository_hold_details): yield FIFO head"
+  # This message is the synchronization point for the signal-during-hold
+  # harness.  Keep it free of command substitutions: an INT or HUP delivered
+  # as the line becomes visible must run its trap between shell commands, not
+  # while bash is parsing a substituted command.
+  local timestamp details="kinds=$HOLD_KINDS"
+  [ -n "$HOLD_REASON" ] && details="$details reason=$HOLD_REASON"
+  [ -n "$HOLD_UNTIL" ] && details="$details until=$HOLD_UNTIL"
+  printf -v timestamp '%(%FT%TZ)T' -1
+  printf '%s repository hold present (%s): %s: yield FIFO head\n' "$timestamp" "$REPO_HOLD_FILE" "$details"
 }
 # launch_hold_applies: succeeds when a hold applying to an impl launch exists, setting HOLD_SOURCE
 # (repository or gmktec) and HOLD_DESC, the text of the hold it read.
@@ -474,7 +509,6 @@ stopped_after_admission() {
 while :; do
   target=""; drive_stopped=0; drive_admitted=0
   while [ -z "$target" ]; do
-    reexec_on_script_change
     # TERM uses bash's default action because bash 5.2 can fail to parse a
     # TERM trap while a command substitution is active.  Arm the non-run exit
     # description before the hold read so EXIT cleanup still records TERM when
@@ -489,6 +523,10 @@ while :; do
       sleep "$FLEET_LAUNCH_POLL_S"
       continue
     fi
+    # A hold line is the signal harness's synchronization point.  Defer the
+    # command-substitution-based script-version probe until the hold is gone,
+    # so the following hold polls contain only signal-safe builtins and sleep.
+    reexec_on_script_change
     restore_ticket
     if [ -n "$ticket" ] && [ "${ticket%/*}" = "$GMK_Q" ]; then
       ahead=$(oldest_live_ticket "$GMK_Q")
