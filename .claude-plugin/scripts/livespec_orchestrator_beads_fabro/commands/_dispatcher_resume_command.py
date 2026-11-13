@@ -118,6 +118,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_args import resumed_args
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import (
     resume_journal_record,
+    with_parking_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
     gather_resume,
@@ -214,7 +215,10 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     )
     pull_request = gather.observation.pull_request
     anchor = (
-        merged_proof_anchor(head=gather.observation.pull_request_head)
+        merged_proof_anchor(
+            head=gather.observation.pull_request_head,
+            parking_record=gather.observation.proof_only_parking_record,
+        )
         if gather.observation.proof_only_resume is True
         else gather.anchor
     )
@@ -246,15 +250,20 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     _ = profile.phase(
         name="resume-journal",
         action=lambda: journal.append(
-            record=resume_journal_record(
-                work_item_id=item.id,
-                earlier_run_ids=(
-                    () if gather.observation.proof_only_resume is True else gather.earlier_run_ids
+            record=with_parking_record(
+                record=resume_journal_record(
+                    work_item_id=item.id,
+                    earlier_run_ids=(
+                        ()
+                        if gather.observation.proof_only_resume is True
+                        else gather.earlier_run_ids
+                    ),
+                    pull_request=pull_request,
+                    head=anchor.head,
+                    resumed_at=anchor.resumed_at,
+                    source=anchor.source,
                 ),
-                pull_request=pull_request,
-                head=anchor.head,
-                resumed_at=anchor.resumed_at,
-                source=anchor.source,
+                parking_record=anchor.parking_record,
             )
         ),
     )

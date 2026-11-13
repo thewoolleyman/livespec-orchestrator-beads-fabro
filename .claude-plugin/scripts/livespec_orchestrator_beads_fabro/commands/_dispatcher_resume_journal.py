@@ -94,6 +94,7 @@ __all__: list[str] = [
     "resume_linked_run_ids",
     "resumes_anchored_on",
     "was_resumed",
+    "with_parking_record",
 ]
 
 RESUME_STAGE = "resume"
@@ -131,6 +132,18 @@ def resume_journal_record(
         "resumed_at": resumed_at,
         "resumed_at_source": source,
     }
+
+
+def with_parking_record(
+    *, record: dict[str, object], parking_record: str | None
+) -> dict[str, object]:
+    """One `resume` record, plus the acceptance park that authorized a proof-only arm.
+
+    The parking record is the third part of a merged proof-only resume's
+    provenance beside the pull request and its head. It is present only on that
+    arm, so an ordinary resume's record keeps its shape.
+    """
+    return record if parking_record is None else {**record, "parking_record": parking_record}
 
 
 def resume_linked_run_ids(

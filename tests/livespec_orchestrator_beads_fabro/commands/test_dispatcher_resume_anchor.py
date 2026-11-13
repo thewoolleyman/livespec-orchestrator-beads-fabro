@@ -149,15 +149,16 @@ def test_a_merged_proof_park_anchors_only_a_present_merged_head() -> None:
     """The proof-only arm has no inherited record or run to attribute."""
     module = _anchor_module()
 
-    assert module.merged_proof_anchor(head=None) is None
-    assert module.merged_proof_anchor(head="") is None
-    anchor = module.merged_proof_anchor(head=_HEAD)
+    assert module.merged_proof_anchor(head=None, parking_record="park-1") is None
+    assert module.merged_proof_anchor(head="", parking_record="park-1") is None
+    anchor = module.merged_proof_anchor(head=_HEAD, parking_record="park-1")
 
     assert anchor is not None
     assert anchor.record is None
     assert anchor.run_id is None
     assert anchor.head == _HEAD
     assert anchor.resumed_at == module.RESUMED_AT_PROOF_CAPTURE
+    assert anchor.parking_record == "park-1"
 
 
 def test_the_factory_record_decides_the_stage_when_the_factory_lost_the_run() -> None:

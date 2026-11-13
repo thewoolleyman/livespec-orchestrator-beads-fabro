@@ -215,10 +215,11 @@ class ResumeAnchor:
     head: str
     resumed_at: str
     source: str
+    parking_record: str | None = None
 
 
-def merged_proof_anchor(*, head: str | None) -> ResumeAnchor | None:
-    """Anchor proof-only recovery on the merged pull request's head."""
+def merged_proof_anchor(*, head: str | None, parking_record: str | None) -> ResumeAnchor | None:
+    """Anchor proof-only recovery on the merged pull request's head and its parking record."""
     if not isinstance(head, str) or not head:
         return None
     return ResumeAnchor(
@@ -227,6 +228,7 @@ def merged_proof_anchor(*, head: str | None) -> ResumeAnchor | None:
         head=head,
         resumed_at=RESUMED_AT_PROOF_CAPTURE,
         source=_MERGED_PARKING_SOURCE,
+        parking_record=parking_record,
     )
 
 

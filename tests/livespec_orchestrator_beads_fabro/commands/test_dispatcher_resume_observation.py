@@ -436,6 +436,34 @@ def test_an_acceptance_park_on_the_proof_evidence_leg_marks_a_merged_resume_proo
     assert gather.anchor.source == "merged-pull-request-parking-record"
 
 
+def test_a_merged_proof_only_resume_carries_the_parking_record_that_authorized_it(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 257's provenance names the parking record, not only that one exists."""
+    assert _GATHER_PATH.is_file()
+    proof_only_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only_observation"
+    )
+    parked = dataclasses.replace(
+        _parking_comment(pending=f"proof of done record for {_ASSERTION!r}"),
+        comment_id="comment-park-9",
+    )
+    monkeypatch.setattr(proof_only_module, "read_dispatch_comments", lambda **_kwargs: (parked,))
+
+    gather = _gather(
+        repo=repo,
+        item=_item(status="acceptance"),
+        runner=_runner(
+            listing=_ok(stdout=_pr_listing(state="MERGED")),
+            view=_ok(stdout=_comments(body="")),
+        ),
+    )
+
+    assert gather.observation.proof_only_parking_record == "comment-park-9"
+    assert gather.anchor is not None
+    assert gather.anchor.parking_record == "comment-park-9"
+
+
 def test_the_items_own_status_and_blocked_reason_are_carried(repo: Path) -> None:
     """The first refusal names the status and picks its remedy from it."""
     assert _GATHER_PATH.is_file()

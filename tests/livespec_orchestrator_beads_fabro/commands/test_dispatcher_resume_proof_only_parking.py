@@ -89,3 +89,33 @@ def test_only_the_latest_merged_proof_evidence_park_authorizes_the_arm(
     module = _module()
 
     assert module.proof_only_resume(item=item, pull_request_state=state, comments=comments) is False
+
+
+def test_the_authorizing_park_is_named_by_its_ledger_id_or_else_its_text() -> None:
+    """The journal's provenance needs WHICH park authorized the arm."""
+    module = _module()
+    pending = "proof of done record for 'the assertion'"
+    numbered = WorkItemComment(
+        text=_comment(pending=pending).text, author=None, created_at=None, comment_id="park-4"
+    )
+
+    assert (
+        module.proof_only_parking_record(
+            item=_item(),
+            pull_request_state="MERGED",
+            comments=(_comment(pending="merged diff"), numbered),
+        )
+        == "park-4"
+    )
+    assert (
+        module.proof_only_parking_record(
+            item=_item(), pull_request_state="MERGED", comments=(_comment(pending=pending),)
+        )
+        == _comment(pending=pending).text
+    )
+    assert (
+        module.proof_only_parking_record(
+            item=_item(), pull_request_state="OPEN", comments=(numbered,)
+        )
+        is None
+    )

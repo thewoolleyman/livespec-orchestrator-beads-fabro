@@ -181,6 +181,7 @@ class ResumeObservation:
     own_route: str | None = None
     rework_after_merge: bool = False
     proof_only_resume: bool | None = None
+    proof_only_parking_record: str | None = None
 
 
 def resume_refusals(*, observation: ResumeObservation) -> tuple[str, ...]:

@@ -175,11 +175,12 @@ def gather_resume(
     forge = branch_pull_request(repo=repo, branch=branch, runner=runner)
     pull_request = forge.pull_request
     pull_request_state = None if pull_request is None else pull_request.state
-    proof_only = proof_only_admission(
+    parking_record = proof_only_admission(
         repo=repo,
         item=item,
         pull_request_state=pull_request_state,
     )
+    proof_only = parking_record is not None
     records = (
         read_pull_request_records(repo=repo, pr_number=pull_request.number, runner=runner)
         if pull_request is not None
@@ -211,7 +212,10 @@ def gather_resume(
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
     )
     anchor = (
-        merged_proof_anchor(head=None if pull_request is None else pull_request.head)
+        merged_proof_anchor(
+            head=None if pull_request is None else pull_request.head,
+            parking_record=parking_record,
+        )
         if proof_only
         else ordinary_anchor
     )
@@ -250,6 +254,7 @@ def gather_resume(
                 merged_at=None if pull_request is None else pull_request.merged_at,
             ),
             proof_only_resume=proof_only,
+            proof_only_parking_record=parking_record,
         ),
         anchor=anchor,
         branch=branch,
