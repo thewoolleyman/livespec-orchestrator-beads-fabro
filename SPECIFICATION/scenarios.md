@@ -14766,7 +14766,7 @@ Feature: The fenced current-head read authorizes exactly the attempt it names
     When a caller runs read-current with the repository, the item id, A, P, G, O and W
     Then the reply's status is verified and the process exits 0
     And authorizes_current_effects is true
-  Scenario: A stale or partial fence is refused and authorizes nothing
+  Scenario: A stale or mismatched fence is refused and authorizes nothing
     Given the same item
     When a caller runs read-current naming generation G after a later generation has superseded it, or naming a different owner or operation
     Then the reply refuses with the named reason incident-authority-identity-mismatch
@@ -14776,7 +14776,13 @@ Feature: The fenced current-head read authorizes exactly the attempt it names
     Given read-current has selected the current head of an item
     When that head's standing token is closed by a successor before the reply is returned
     Then the reply refuses with the named reason incident-authority-changed
+    And the reply's status is refused and the process exits 78
     And authorizes_current_effects is false
+  Scenario: A read-current invocation that omits part of the fenced identity is a usage error, not an action
+    Given an incident item with a current head
+    When a caller runs read-current with the repository, the item id, the attempt id, the incident phase, the generation and the operation id but no owner
+    Then the process exits 2 and prints a usage error on stderr
+    And it writes no reply object to stdout, so nothing is authorized
   Scenario: No other action authorizes a side effect
     Given an incident item with a current head
     When a caller runs read-head or read-history for it
