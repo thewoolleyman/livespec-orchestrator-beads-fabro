@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.327.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.326.1...v0.327.0) (2026-11-13)
+
+
+### Features
+
+* materialize factory Driver hooks ([6e912d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6e912d6cc4b6a28d8831e69bbe95f1e380dd6e96))
+
+
+### Bug Fixes
+
+* bypass all-ref source scan for default branch ([1795989](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/179598978bb066eaaff4df5a699448dc1d826ab4))
+* bypass all-ref source scan for default branch ([fe1fc07](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fe1fc0750ca80d758ed22b1332f430d4dcace356))
+* needs_human fails closed when the engine run branch is not selected ([72ca46f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/72ca46f9ec3a7e78000770b40883026829d5092f))
+* select the baked codex-acp adapter in the Codex Driver prepare step ([e42a5bc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e42a5bc412a5fa7b6a2ce6350571d7551fe033c9))
+
 ## [0.326.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.326.0...v0.326.1) (2026-11-13)
 
 
