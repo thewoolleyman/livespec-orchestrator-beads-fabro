@@ -266,6 +266,9 @@ Factory, Fabro and dispatch:
   `.ai/factory-dispatch-preflight-and-triage.md`.
 - The host PATH `fabro` fails to read a factory run →
   `.ai/fabro-dispatch-diagnosis.md`.
+- You are about to kill or restart a dispatch launcher, or a head ticket sits
+  "queued for the gmktec mutex" on a green fleet →
+  `.ai/launcher-kills-and-the-gmktec-mutex.md`.
 - An item's change lands in the Fabro fork → `.ai/fabro-fork-hand-build.md`.
 - You are starting a canary, test campaign, local build or measurement,
   proposing an upstream Fabro change, or retracting a claim →
