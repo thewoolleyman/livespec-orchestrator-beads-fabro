@@ -236,6 +236,32 @@ def test_the_calibration_journal_and_span_agree_on_an_observed_cycle_series(
     )
 
 
+def test_the_span_preserves_three_cycle_observations_with_real_pair_identities(
+    tmp_path: Path,
+) -> None:
+    """The OTLP projection remains parseable and identical to the journal.
+
+    A three-cycle series is intentionally longer than the generic scalar cap.
+    Its `sha256:<digest>@timestamp` identities are provenance, not credential
+    URLs, so neither the credential scrubber nor scalar truncation may corrupt
+    the one JSON value that carries the series on the span.
+    """
+    cycles = [_cycle(ordinal=index, lloc=index * 10, seconds=index * 7) for index in range(1, 4)]
+    calibration, attributes = _emit(
+        tmp_path=tmp_path,
+        seed=_terminal_reading_record(
+            cycles=cycles,
+            completed=3,
+            assertions=3,
+            contributors=[],
+        ),
+    )
+
+    projection = _value(attributes=attributes, key="cycle_observations")
+    assert isinstance(projection, str)
+    assert json.loads(projection) == calibration["cycle_observations"]
+
+
 def test_an_absent_numeric_observation_is_null_on_the_journal_and_absent_on_the_span(
     tmp_path: Path,
 ) -> None:

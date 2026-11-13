@@ -81,7 +81,7 @@ __all__: list[str] = [
 # Copied from `_otel_scrub`; the paired test asserts the equality.
 ATTR_MAX_LEN = 300
 REDACTION_MARKER = "[redacted-credential-shaped-value]"
-CREDENTIAL_URL_RE = re.compile(r"[a-zA-Z0-9_-]+:[^@\s/]+@")
+CREDENTIAL_URL_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^@\s/]+@")
 
 SERVICE_NAME = "livespec-tdd-order-guard"
 SERVICE_NAMESPACE = "livespec-family"
