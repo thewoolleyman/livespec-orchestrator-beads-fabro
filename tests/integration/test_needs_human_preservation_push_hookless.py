@@ -54,6 +54,7 @@ _GIT_INVOCATION = re.compile(r"\bgit (?P<options>(?:-c \S+ )*)(?P<verb>[a-z][a-z
 _HOOKLESS_OPTION = "-c core.hooksPath=/dev/null"
 _RUN_ID = "01M4HOOKLESSPRESERVE"
 _REF = f"refs/heads/needs-human/{_RUN_ID}"
+_DISPATCH_ID = "2a4bce867bd643d1aa92d2c1f40f3e45"
 _PRESERVED = "LIVESPEC_NEEDS_HUMAN_PRESERVED"
 _SENTINEL = "LIVESPEC_NEEDS_HUMAN"
 _WIP = "in-progress.txt"
@@ -101,12 +102,16 @@ def test_a_tree_that_fails_the_check_suite_still_reaches_the_needs_human_ref(
 def test_needs_human_preserves_the_run_branch_when_head_is_detached_on_master(
     tmp_path: Path,
 ) -> None:
-    """A default-branch checkout cannot replace the run's settled work at the terminal."""
+    """The dispatch ref preserves work from the engine-named run branch.
+
+    A real Dispatcher configures its UUID-like dispatch correlation id locally,
+    while Fabro names the run branch with its separate engine run id.  A
+    detached default-branch workspace must therefore not become the source of
+    the preservation commit.
+    """
     work, origin, _marker = _sandbox(tmp_path=tmp_path)
-    run_branch = f"fabro/run/{_RUN_ID}"
     run_work = "settled-run-work.txt"
     run_body = "the committed work already held by the run branch\n"
-    _git(work, "switch", "--quiet", "-c", run_branch)
     _ = (work / run_work).write_text(run_body, encoding="utf-8")
     _git(work, "add", run_work)
     _git(
@@ -119,11 +124,68 @@ def test_needs_human_preserves_the_run_branch_when_head_is_detached_on_master(
         "settled run work",
     )
     _git(work, "checkout", "--quiet", "--detach", "master")
+    _git(work, "config", "livespec.factoryRunId", _DISPATCH_ID)
 
     completed = _run_needs_human(work=work, run_id=_RUN_ID)
 
     assert completed.returncode == 1
-    assert _preserved_blob(origin=origin, ref=_REF, path=run_work) == run_body
+    assert (
+        _maybe_preserved_blob(
+            origin=origin,
+            ref=f"refs/heads/needs-human/{_DISPATCH_ID}",
+            path=run_work,
+        )
+        == run_body
+    ), completed.stderr
+
+
+def test_needs_human_pushes_nothing_when_no_run_branch_can_be_selected(
+    tmp_path: Path,
+) -> None:
+    """A missing or ambiguous run branch never falls back to preserving the workspace HEAD."""
+    work, origin, _marker = _sandbox(tmp_path=tmp_path)
+    _git(work, "config", "livespec.factoryRunId", _DISPATCH_ID)
+    _git(work, "checkout", "--quiet", "--detach", "master")
+    _git(work, "branch", "--quiet", "-D", f"fabro/run/{_RUN_ID}")
+    _git(work, "branch", "--quiet", "fabro/run/01M4OTHERENGINERUN1", "master")
+    _git(work, "branch", "--quiet", "fabro/run/01M4OTHERENGINERUN2", "master")
+    ref = f"refs/heads/needs-human/{_DISPATCH_ID}"
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    assert completed.returncode == 1
+    assert _pushed_refs(origin=origin) == [], completed.stderr
+    assert f"{_SENTINEL}_NOT_PRESERVED: ref={ref} tip=unresolved" in completed.stderr
+    assert "reason=run-branch-unresolved" in completed.stderr
+    assert _PRESERVED not in completed.stderr
+
+
+def test_needs_human_pushes_nothing_when_the_run_branch_cannot_be_checked_out(
+    tmp_path: Path,
+) -> None:
+    """A refused run-branch checkout leaves the HEAD it could not replace unpreserved."""
+    work, origin, _marker = _sandbox(tmp_path=tmp_path)
+    run_branch = f"fabro/run/{_RUN_ID}"
+    run_tip = subprocess.run(
+        ["git", "rev-parse", run_branch],
+        cwd=str(work),
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    _git(work, "checkout", "--quiet", "--detach", "master")
+    # The untracked file the run branch also tracks makes the checkout refuse.
+    _ = (work / "run-work.txt").write_text("a different local body\n", encoding="utf-8")
+    ref = f"refs/heads/needs-human/{_RUN_ID}"
+
+    completed = _run_needs_human(work=work, run_id=_RUN_ID)
+
+    assert completed.returncode == 1
+    assert _pushed_refs(origin=origin) == [], completed.stderr
+    assert f"{_SENTINEL}_RUN_BRANCH_CHECKOUT_FAILED" in completed.stderr
+    assert f"{_SENTINEL}_NOT_PRESERVED: ref={ref} tip={run_tip}" in completed.stderr
+    assert "reason=run-branch-checkout-failed" in completed.stderr
+    assert _PRESERVED not in completed.stderr
 
 
 def test_the_publish_draft_push_still_runs_the_repository_pre_push_check_suite(
@@ -235,6 +297,12 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path, Path]:
     _git(work, "add", "seed.txt")
     _git(work, "commit", "--quiet", "-m", "seed")
     _git(work, "remote", "add", "origin", str(origin))
+    # The node preserves the engine-named run branch's tip, so the fixture sits on
+    # one carrying settled work ahead of the default branch.
+    _git(work, "switch", "--quiet", "-c", f"fabro/run/{_RUN_ID}")
+    (work / "run-work.txt").write_text("the run's settled work\n", encoding="utf-8")
+    _git(work, "add", "run-work.txt")
+    _git(work, "commit", "--quiet", "-m", "settled run work")
     (work / _WIP).write_text(_WIP_BODY, encoding="utf-8")
     marker = tmp_path / "hooks-that-ran.txt"
     _install_refusing_hook(repo=work, hook="pre-commit", marker=marker)
@@ -383,6 +451,18 @@ def _preserved_blob(*, origin: Path, ref: str, path: str) -> str:
         capture_output=True,
     )
     return completed.stdout
+
+
+def _maybe_preserved_blob(*, origin: Path, ref: str, path: str) -> str | None:
+    """Read a path when the preservation ref actually carries it."""
+    completed = subprocess.run(
+        ["git", "show", f"{ref}:{path}"],
+        cwd=str(origin),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    return completed.stdout if completed.returncode == 0 else None
 
 
 def _hooks_that_ran(*, marker: Path) -> str:

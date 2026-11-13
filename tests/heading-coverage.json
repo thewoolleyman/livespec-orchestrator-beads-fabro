@@ -3205,5 +3205,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.",
     "work_item": "bd-ib-3lxeqf"
+  },
+  {
+    "heading": "## Scenario 367 \u2014 A run whose sandbox is lost mid-stage is resumed onto a re-acquired sandbox, and a run that still ends on a lost sandbox is released rather than classified deterministic",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the Dispatcher-side cases (a run ending on a not-found sandbox with an unobservable termination is recorded with a lost-sandbox cause, is not classified deterministic and is released to ready; a second consecutive loss keeps the existing route naming both runs; the termination read uses the instance's own cluster credentials) are owned by bd-ib-xqgeav in this repository, beside tests/integration/test_sandbox_oom_classification_scenario335.py. The engine-side cases (interrupt and resume onto a re-acquired sandbox, the three-resume bound, the control) are owned by bd-ib-gngz5d in the Fabro fork and are proved host-captured.",
+    "work_item": "bd-ib-xqgeav"
   }
 ]

@@ -261,6 +261,31 @@ def test_a_preservation_sentinel_naming_no_ref_reads_as_unknown() -> None:
     assert f"the tree was preserved on {_REF}" in named
 
 
+def test_a_tree_guard_refusal_names_the_ref_tip_and_reason() -> None:
+    """A write-side refusal is not an unknown preservation result.
+
+    The terminal's tree guard intentionally publishes no ref when the settled
+    run tip carries no work.  The detail must preserve its exact evidence so an
+    operator does not mistake that intentional refusal for an interrupted push.
+    """
+    tip = "a" * 40
+    detail = needs_human_terminal_detail(
+        work_item_id=_ITEM,
+        run_id=_RUN,
+        text=(
+            "LIVESPEC_NEEDS_HUMAN_NOT_PRESERVED: "
+            f"ref={_REF} tip={tip} reason=tree-matches-run-base\n"
+        ),
+        causal=_unestablished(),
+        failure=None,
+    )
+
+    assert f"the tree was not pushed to {_REF}" in detail
+    assert f"tip {tip}" in detail
+    assert "reason=tree-matches-run-base" in detail
+    assert "whether the tree reached a run-scoped ref is UNKNOWN" not in detail
+
+
 def test_an_unparsed_run_id_renders_the_unknown_run_label_and_offers_no_ref() -> None:
     """A run-scoped ref cannot be named without one, so none is claimed.
 

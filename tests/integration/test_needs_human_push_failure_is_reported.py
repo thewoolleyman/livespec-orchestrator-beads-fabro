@@ -304,6 +304,12 @@ def _sandbox(*, tmp_path: Path, origin_url: str) -> Path:
     _git(work, "add", "seed.txt")
     _git(work, "commit", "--quiet", "-m", "seed")
     _git(work, "remote", "add", "origin", origin_url)
+    # The node preserves the engine-named run branch's tip, so the fixture sits on
+    # one carrying settled work ahead of the default branch.
+    _git(work, "switch", "--quiet", "-c", f"fabro/run/{_RUN_ID}")
+    (work / "run-work.txt").write_text("the run's settled work\n", encoding="utf-8")
+    _git(work, "add", "run-work.txt")
+    _git(work, "commit", "--quiet", "-m", "settled run work")
     (work / _WIP).write_text(_WIP_BODY, encoding="utf-8")
     return work
 
