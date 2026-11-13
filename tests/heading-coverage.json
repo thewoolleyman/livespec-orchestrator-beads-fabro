@@ -3195,7 +3195,15 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-txbv7i adds cases in which the incident authority CLI action read-head, given only a repository and an item id, reports the head's incident phase and generation as read_incident_head selects them, drill-closed included, and authorizes no side effect; reports an item with no incident authority genesis as absent rather than refused; returns the canonical reader's named refusal, never absence and never a phase, for an ambiguous chain, an invalid genesis, a cycle, an identity mismatch or an item mismatch; and refuses incident-authority-unavailable with no phase when the authority store cannot be read. bd-ib-txbv7i owns it.",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-txbv7i adds cases in which the incident authority CLI action read-head, given only a repository and an item id, reports the head's incident phase and generation as read_incident_head selects them in a status verified reply that exits 0, drill-closed included, and authorizes no side effect; reports an item with no incident authority genesis by a status absent reply that exits 0, carries the repository and item id and no phase or generation, and authorizes nothing, rather than refusing; returns the canonical reader's named refusal, never absence and never a phase, for an ambiguous chain, an invalid genesis, a cycle, an identity mismatch or an item mismatch; and refuses incident-authority-unavailable with no phase when the authority store cannot be read, each refusal a status refused reply that exits 78. bd-ib-txbv7i owns it.",
+    "work_item": "bd-ib-txbv7i"
+  },
+  {
+    "heading": "## Scenario 365 \u2014 read-current verifies only the current head's full fenced identity and is the only action that authorizes a side effect",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-txbv7i adds cases in which read-current, given the current head's full fenced identity (repository, item id, attempt id, phase, generation, operation id, owner), replies status verified, exits 0 and sets authorizes_current_effects true; naming a superseded generation or a different owner or operation refuses incident-authority-identity-mismatch with status refused, exit 78 and authorizes_current_effects false; a head that moves after selection refuses incident-authority-changed and authorizes nothing; and read-head and read-history never set authorizes_current_effects true. bd-ib-txbv7i owns it.",
     "work_item": "bd-ib-txbv7i"
   }
 ]

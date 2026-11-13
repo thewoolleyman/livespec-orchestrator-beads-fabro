@@ -478,6 +478,22 @@ check:
         check-materialized-workflow-toml-size
     )
     LIVESPEC_AGGREGATE_TARGETS
+    # `check-targets.txt` is this aggregate's incident gate inventory: the same
+    # members, in the same order, each with the `incident-timing` class that
+    # livespec-dev-tooling's expedited incident hooks read. The shared checks
+    # (`check-aggregate-completeness` among them) read that file in place of
+    # the array above whenever it exists, so the two MUST NOT drift: refuse to
+    # run when they differ, as livespec-dev-tooling's own aggregate does.
+    if ! aggregate_members="$(bash dev-tooling/aggregate-targets.sh)"; then
+        echo "ERROR: cannot read this aggregate's targets" >&2
+        exit 1
+    fi
+    inventory_members="$(sed -E 's/[[:space:]]*#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//' check-targets.txt | grep -v '^$')"
+    if [[ "$inventory_members" != "$aggregate_members" ]]; then
+        echo "ERROR: check-targets.txt does not list exactly this aggregate's targets, in order" >&2
+        diff <(printf '%s\n' "$aggregate_members") <(printf '%s\n' "$inventory_members") >&2
+        exit 1
+    fi
     # `SKIP_TARGETS` is the fleet's recognised skip contract, the one livespec's
     # `check` recipe reads too. The delegated gate client exports the members
     # that read authority held outside the tree into it, so the gate Job leaves
@@ -538,14 +554,14 @@ check-types:
 check-static:
     bash dev-tooling/just-check-static.sh
 
-# `changed-files` — print the changed product `.py` set this branch touches,
+# `changed-files` — print the changed `.py` set this branch touches,
 # repo-root-relative, one path per line, sorted + de-duplicated
 # (work-item livespec-dev-tooling-7us.9). The set is the UNION of two
 # git views, so an agent gets the live working set whether or not it has
 # committed yet:
-#   - `git diff --name-only origin/master...HEAD` — every product `.py` this
+#   - `git diff --name-only origin/master...HEAD` — every `.py` this
 #     branch's commits changed vs the merge-base with origin/master;
-#   - `git diff --cached --name-only --diff-filter=AM` — added/modified product
+#   - `git diff --cached --name-only --diff-filter=AM` — added/modified
 #     `.py` currently staged but not yet committed.
 # This is the exact set `check-changed` consumes for its scoped gate.
 # Helper recipe (like `check-static`): NOT a member of the `check:`
@@ -560,10 +576,8 @@ changed-files:
 # <set>`, which already (a) resolves each changed impl `.py` to its
 # mirror-paired test and runs that pytest SUBSET, and (b) applies the
 # path-scoped per-file coverage gate — i.e. it composes the existing
-# scoping plumbing rather than re-deriving it. A change to the implement-work-item
-# `workflow.fabro` additionally selects every test that reads that graph. When
-# neither source nor graph selection applies, the recipe exits 75 so the
-# pre-commit hook conservatively runs the full aggregate.
+# scoping plumbing rather than re-deriving it. An empty changed set is a
+# no-op (exit 0): nothing changed, nothing to gate.
 #
 # SCOPE — INNER-LOOP SPEEDUP ONLY, NOT a replacement for the final gate.
 # It runs only the test subset + path-scopable checks for the files this

@@ -28,6 +28,9 @@ _PRE_PUSH = Path("dev-tooling") / "just-check-pre-push.sh"
 _JANITOR = Path("dev-tooling") / "just-check.sh"
 _AGGREGATE_TARGETS = Path("dev-tooling") / "aggregate-targets.sh"
 _JUSTFILE = Path("justfile")
+# The `check:` recipe refuses to run unless the inventory lists exactly its
+# targets, so the fixture carries the real inventory beside the real justfile.
+_INVENTORY = Path("check-targets.txt")
 _MASTER_CI_TARGET = "check-master-ci-green"
 _CODEX_PICKER_TARGET = "check-codex-skill-picker"
 _LIVE_OID = "b3d4f1a90c7e25486fd1c0b8a7e6554321098765"
@@ -54,7 +57,7 @@ def _fixture_repo(*, tmp_path: Path) -> Path:
     """Create a clean Git repository containing the shipped token and hook code."""
     repo = tmp_path / "repo"
     (repo / "dev-tooling").mkdir(parents=True)
-    for relative in (_SCOPE_TOKEN, _PRE_PUSH, _JANITOR, _AGGREGATE_TARGETS, _JUSTFILE):
+    for relative in (_SCOPE_TOKEN, _PRE_PUSH, _JANITOR, _AGGREGATE_TARGETS, _JUSTFILE, _INVENTORY):
         source = _REPO_ROOT / relative
         assert source.is_file(), f"scoped token adapter is not implemented at {source}"
         _ = shutil.copyfile(source, repo / relative)
