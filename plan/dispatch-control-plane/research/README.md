@@ -12,8 +12,8 @@ The bounded appendix preserves responsibility and evidence detail separately.
 
 | Document | Purpose |
 | --- | --- |
-| [013 — Portable coordination proposal](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/013-portable-coordination-proposal.md) | Goals, architecture, operating rules, delivery/proof and the single remaining-decision register. |
-| [014 — Responsibility and evidence appendix](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/014-responsibility-and-evidence-appendix.md) | The 58 original activities, eight spec duties, 15 historical delivery obligations and reconciled evidence. |
+| [013 — Portable coordination proposal](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/013-portable-coordination-proposal.md) | Goals, architecture, concrete phase-two design for review, delivery/proof and the single remaining-decision register. |
+| [014 — Responsibility and evidence appendix](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/014-responsibility-and-evidence-appendix.md) | The 58 original activities, eight spec duties, 15 historical delivery obligations, proposed additional assertions/implementation cut and reconciled evidence. |
 
 ## Retired and historical research
 

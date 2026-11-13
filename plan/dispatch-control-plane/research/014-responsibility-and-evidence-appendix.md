@@ -2,7 +2,8 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
-Supporting detail for proposal 013 · reconciled 2 November 2026.
+Supporting detail for proposal 013 · ownership/evidence reconciled 2 November;
+phase-two design and additional source review added 13 November 2026.
 
 ## How to read the inventory
 
@@ -16,8 +17,8 @@ incident examples and dated source keys remain in the retired reports.
 “Progress”, “coordination”, “incident” and “attention” name the four judgment roles.
 “Services” means deterministic collection, scheduling, supervision or reconciliation.
 An owner named here is a proposed responsibility allocation, not a claim that its
-service exists. Engineering choices are centralized in proposal 013's **Decisions
-remaining** section. Per-item delivery and proof remain with owning plans.
+service exists. The concrete design is in proposal 013; its **Decisions remaining** section
+remains the single register of unresolved choices. Per-item delivery and proof remain with owning plans.
 
 ### A — Goals, priorities and ownership
 
@@ -270,3 +271,126 @@ Jobs/CronJobs and leader election, Compose, transactional outbox guidance,
 Fabro interviews, agent input protocols and durable-workflow alternatives. They
 informed design tradeoffs, not a deployed-version concurrency guarantee. No
 commercial product benchmark or broker selection is inferred from them.
+
+## Proposed phase-two completion assertions
+
+These are **session-derived additions for confirmation**, not an amendment to the
+epic. Keep the original six assertions verbatim. The numbers below would follow
+them if confirmed. Each row is one observable outcome; the plan proof mode is
+`host_captured`. An independent session must replay captured released-build steps.
+The adapter/deployment matrix and fault cases qualify the relevant outcomes;
+a native-input probe alone cannot discharge any portable coordination assertion.
+
+| Proposed ordinal | Observable outcome |
+| --- | --- |
+| 7 | One fleet attention view exposes every pending coordination obligation with its source, required result, evidence age and current accountable owner. |
+| 8 | An unreadable authoritative source appears as unavailable with its last observation time instead of a successful empty-work observation. |
+| 9 | A question submitted through Claude, Codex or pi remains discoverable by its durable occurrence after its originating worker and host are lost. |
+| 10 | An accepted answer records the authenticated actual actor and the versioned grant exercised for that question occurrence. |
+| 11 | Answer acceptance refuses a cleared, superseded or evidence-changed question occurrence with the conflicting revision identified. |
+| 12 | A supported target refuses application under an obsolete grant, occurrence or ownership generation before that answer can influence a future assignment. |
+| 13 | Repeating the same supported target operation after a lost acknowledgement returns its original accepted result without a second answer or status effect. |
+| 14 | A replacement worker reconciles an uncertain target effect before deciding whether to retry it. |
+| 15 | Deterministic supervision exposes a still-unfulfilled required result at its due time even when its assigned process is alive. |
+| 16 | Restoring coordination state preserves accepted decisions and unresolved effect identities so replacement workers can reconcile them. |
+| 17 | A deterministic tick with unchanged relevant facts invokes no model. |
+| 18 | An eligible isolated spec obligation progresses from discovery through the existing governed workflow to observed disposition and fresh linked-work eligibility evaluation. |
+| 19 | The spec-work path preserves core manual/floor/refusal outcomes when a fixture is ineligible for delegated ratification. |
+| 20 | Fleet supply derives placement budgets from one authoritative fleet concurrency policy revision while Dispatcher tenant WIP and Fabro execution limits retain their specified owners. |
+| 21 | A fixed bounded preparation window continues preflighting queued eligible items while execution capacity is full. |
+| 22 | A launch decision revalidates the prepared item's current admission and hold evidence immediately before invoking its public execution operation. |
+| 23 | Placement feasibility accounts for co-resident gate admission/pending demand and per-node memory requests against allocatable memory with the explicit gate reserve. |
+| 24 | Supply decisions retain distinct provider, local-model, factory-slot and acceptance-capacity constraints with the binding reason attributed to its policy owner. |
+| 25 | Each transferred legacy duty has an accountable replacement and one active execution owner throughout handover and rollback. |
+| 26 | Replacement coordination owners perform the retained A–G/S duties and retire the legacy coordinator with no duty unowned. |
+| 27 | The replacement scheduler admits gmktec factory work through the public admission path. |
+| 28 | The legacy dispatcher and obsolete `fleet-launch/` and temporary launch controls are retired, with no running process reading their former queue or cap files. |
+| 29 | Per-dispatch and per-node selection/fallback evidence remains queryable by work item and dispatch identity after journal authority is removed. |
+| 30 | Core component and family dependency diagrams describe the delivered roles, APIs, stores and actuators with code references that resolve. |
+| 31 | While a human-only question remains pending, another independently assigned role completes its authorized required result without waiting for that question. |
+
+Run the durable question/disposition/continuation case through all six client and
+deployment combinations: Claude, Codex and pi, each on Compose and Kubernetes.
+In each deployment, move from one client to a different client after losing the
+worker, then use the remaining client for reconstruction. Include same-operation
+retries, competing answers, a cleared-and-recurred question, evidence/grant
+changes, an old worker writing after replacement, database restore and an
+unavailable owning source. Start with the backlog disposition; the ready-path
+fixture and later spec workflow prove continuation without production queues.
+Record target effects separately from accepted answers and transport receipts.
+For replacement coordination, exercise every retained A–G/S duty against its
+assigned owner; a partial pilot is not retirement evidence. The independent-work
+case leaves the human-only question pending throughout the other role's completion.
+
+The six existing assertions still cover journal genesis, factory entry paths,
+the chosen owner, the exhaustive authority specification, fresh-host equivalence
+and operator UX. The additional assertions do not weaken them. In particular,
+local multi-checkout journal lookup and faster reads cannot discharge original
+assertion 5. No fixed shadow duration or broad benchmark campaign is introduced.
+
+## Proposed implementation cut and carrier-map preparation
+
+Package names below describe proposed work, **not filed children or a second
+queue**. File only after the relevant contracts and completion amendment are
+confirmed. Reuse overlapping owned work before creating an item. Each eventual
+implementation child needs a Definition of Done traced to the ratified governing
+headings, its own permitted proof surface and the public filing display.
+
+| Proposed package | Delivered behavior and prerequisite |
+| --- | --- |
+| Contracts and ownership | Specify fleet operations, question/answer identity, target receipts, state homes, authority boundaries and deployment-neutral recovery; reconcile host-concurrency, Process boundaries and current per-tenant supply contracts first. Update core diagrams when their corresponding contracts change. |
+| Coordination state and service | Provide scoped network access, versioned operations, conditional writes, conflict/uncertain-commit recovery and restore on dedicated non-Beads Dolt; prove the deployed database assumptions before allowing mutations. |
+| Answer target and assignment readers | Extend the existing public answer valve and all consumers so accepted answers are tied to current occurrences and target-side replay identity; demonstrate the isolated backlog disposition before the ready continuation. |
+| Common clients and attention | Integrate Claude, Codex and pi with one durable decision API and one attention view; preserve unavailable observations and current actor/grant attribution through worker replacement. |
+| Reconciliation and role activation | Recover requests against target receipts, wake bounded focused judgment only on relevant changes, and detect unfulfilled results independently of process liveness. Transfer one named question class only after target and deployment proof. |
+| Fleet supply integration | Consume the separately published radar/admission contract; prepare work independently of free slots, reserve/reconcile shared resources and derived placement, and revalidate final admission. Do not duplicate the radar engine or Kubernetes placement implementation. |
+| Spec-work integration | Reuse named workflow variants for one isolated discovery-to-disposition flow, exact-byte review, conflicting-publication recovery and linked-hold re-evaluation. Retain existing core authority. |
+| Journal-authority migration | Move each decision reader to its owning shared source, preserving selection/audit evidence and proving identical decisions without a local journal from another host. |
+| Staged handover and retirement | Prove the remaining duty inventory through explicit transfers, retain untransferred owners, and retire obsolete launch controls only after the replacement works. Capture/replay the released plan outcome separately from child closure. |
+
+The authoritative carrier relation belongs only in the epic's `carriers:` scope
+block. A complete map cannot honestly name unfiled child IDs or use `plan-level
+proof` as a placeholder for work not yet routed. After confirmation, file the
+contract/spec work and ready implementation slices, assign each approved
+assertion to actual named carriers or a genuine plan-level proof, then write and
+read back the complete map before any implementation admission. Until then the
+map is a named remaining prerequisite, not claimed complete by this document.
+
+## November 13 source reconciliation
+
+The parent ledger received two additional design inputs after consolidation.
+The November 11 launcher report requests preflight ahead at full capacity and
+explicit gate/memory headroom. The November 12 relay cites the maintainer's
+November 4 one-queue/one-number ruling and requests one fleet concurrency source
+with derived placement. These are design inputs; this plan absorbs no current
+operations and the dated launcher counts are not permanent settings.
+
+The prior-art survey read all **2,429 orchestrator records across all statuses**
+on November 13. The table records observed ownership/scope, not completion claims
+inferred from titles. A source reviewer independently inspected the implementation;
+that review is design evidence, not plan completeness review or Proof of Done.
+
+| Source or existing work | Consequence for this design |
+| --- | --- |
+| `_drive_policy_valves.py`, `_drive_answer.py`, `_intake_valve_claim_writes.py`, `_drive_valve_delegation.py` and `_drive_cli.py` | Existing grant verification and optional guarded state writes are reusable. Answer append precedes the claim; the current CLI has no operation/occurrence/evidence-precondition arguments. Caller attribution is not authenticated network identity. Target support is a prerequisite, not delivered protection. |
+| `contracts.md`, **Host concurrency belongs to the Fabro scheduler**, **Orchestrator-owned attention facts**, **Clock-fired work supply**, plus `constraints.md` **Process boundaries** | Current tenant-capacity projection, Fabro host ceiling and per-tenant timer contracts remain binding until revised. A fleet policy needs an explicit ownership amendment, not a new Dispatcher host gauge. |
+| **Radar and deterministic admission** (`livespec-dev-tooling-w7ley3`), description and all scope events read directly from its tenant | Its assertion 23 explicitly requires a versioned input contract and this epic's adoption. The latest November 9 notes keep that track parked; this plan neither lifts its hold nor launches its children. Wait for the published contract and reconcile its fallback/placement semantics at the consumer seam. |
+| **FIFO-head preflight during capacity wait** (`bd-ib-keuuwi`) | Preserve this existing launch-script work and owner; the new scheduler must retain its overlap rather than file a duplicate legacy repair. |
+| **Launcher WIP single authority** (`bd-ib-5k2yq2`) | Existing work owns counted-claim parity and capacity-deferred handling. Distinguish that tenant limit from fleet policy and physical placement. |
+| **Capacity-weighted sandbox placement** (`bd-ib-v5uti2`) | Kubernetes-sandbox-backend owns placement/provisioning; consume its allocatable/request observations instead of taking over its change. |
+| **Journal-held attention facts** (`bd-ib-5xogp4`) | The item's scope is this repository's journal and explicitly excludes other hosts. Useful attention visibility is not replacement shared decision authority. |
+| **Cross-checkout publish-branch lookup** (`bd-ib-ewdqub`) | Its described scope is local checkout journals; it does not establish original assertion 5's cross-host equivalence. |
+| **Named workflow variants** (`bd-ib-yqpdrt`) and `_workflow_variants.py` | Reuse graph resolution and execution selection; separately prove automatic initiation and interrupted-publication recovery. |
+
+Only the two current reports and index change in this documentation slice. The
+Mermaid blocks and their original rendering receipts remain byte-identical;
+no new diagram rendering or runtime proof is asserted here. Original assertions,
+carrier authority, running services and legacy operating permissions are unchanged.
+
+The separate design reviewer (`phase_two_draft_review`) found and corrected two
+completion gaps: conditional transfer/cutover assertions could pass before the
+legacy roles were actually replaced, and no assertion exercised independent role
+progress while a human-only question waited. The revised proposed outcomes now
+require observed replacement/retirement and that pending-question case. The review
+also added definitive no-run reservation release and the Process boundaries
+amendment prerequisite. These are design corrections, not executed proof cases.
