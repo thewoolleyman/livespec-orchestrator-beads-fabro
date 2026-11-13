@@ -264,3 +264,26 @@ def test_drill_evidence_module_retains_revert_receipt_commits() -> None:
     assert evidence.recorded_commits(client=client, item_id=ITEM, history=(reading.attempt,)) == (
         ("revert", "e" * 40),
     )
+
+
+def test_drill_evidence_module_retains_landed_and_revert_commits() -> None:
+    """The extraction keeps every master-reachability candidate."""
+    evidence = importlib.import_module("livespec_orchestrator_beads_fabro._incident_drill_evidence")
+    client, reading = _seed(snapshot=_attempt(landed_commits=["d" * 40], landed_trees=["f" * 40]))
+    client.add_comment(
+        issue_id=ITEM,
+        body=recovery_comment(
+            record={
+                "schema": 1,
+                "kind": "revert-receipt",
+                "repository": REPOSITORY,
+                "item_id": ITEM,
+                "receipt": {"revert_commit": "e" * 40},
+            }
+        ),
+    )
+
+    assert evidence.recorded_commits(client=client, item_id=ITEM, history=(reading.attempt,)) == (
+        ("landed", "d" * 40),
+        ("revert", "e" * 40),
+    )
