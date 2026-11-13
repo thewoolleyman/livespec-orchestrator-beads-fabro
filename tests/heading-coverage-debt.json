@@ -1262,6 +1262,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 367 — A run whose sandbox is lost mid-stage is resumed onto a re-acquired sandbox, and a run that still ends on a lost sandbox is released rather than classified deterministic",
+    "work_item": "bd-ib-xqgeav",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 37 — Safe defaults hold when nothing is configured",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-13"
