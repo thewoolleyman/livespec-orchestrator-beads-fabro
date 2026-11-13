@@ -54,6 +54,7 @@ def _carriers(
 def _carrier_evidence(
     *, carriers: tuple[IncidentAttempt, ...], runner: CommandRunner, repo: Path, repository: str
 ) -> AuthorityRefusal | None:
+    """Read each distinct recorded carrier pull request from the forge."""
     for attempt in carriers:
         result = runner.run(
             argv=[
@@ -91,6 +92,7 @@ def _carrier_evidence(
 
 
 def _revert_commits(*, client: BeadsClient, item_id: str) -> tuple[str, ...]:
+    """Every revert commit a retained revert receipt or rollback release recorded."""
     commits: dict[str, None] = {}
     for row in client.list_comments(issue_id=item_id):
         text = row.get("text")
@@ -114,6 +116,7 @@ def _revert_commits(*, client: BeadsClient, item_id: str) -> tuple[str, ...]:
 def _recorded_commits(
     *, client: BeadsClient, item_id: str, history: tuple[IncidentAttempt, ...]
 ) -> tuple[tuple[str, str], ...]:
+    """Each retained commit the chain could have put on master, labelled by kind."""
     landed = (("landed", commit) for attempt in history for commit in attempt.landed_commits)
     reverts = (("revert", commit) for commit in _revert_commits(client=client, item_id=item_id))
     return (*landed, *reverts)
@@ -122,6 +125,7 @@ def _recorded_commits(
 def _landed_evidence(
     *, commits: tuple[tuple[str, str], ...], runner: CommandRunner, repo: Path, repository: str
 ) -> AuthorityRefusal | None:
+    """Refuse a drill if any retained landed or revert commit is already reachable from master."""
     for kind, commit in commits:
         result = runner.run(
             argv=["gh", "api", f"repos/{repository}/compare/{commit}...master", "--method", "GET"],
@@ -135,6 +139,9 @@ def _landed_evidence(
         behind = comparison.get("behind_by")
         if not isinstance(behind, int) or behind < 0:
             return _refusal(code=_UNAVAILABLE, detail=f"commit {commit}: incomplete")
+        # In `commit...master`, no commits behind means master already contains
+        # the recorded commit (or is that exact commit).  A divergent master is
+        # allowed only when it still lacks at least this recorded commit.
         if behind == 0:
             return _refusal(code=_NOT_A_DRILL, detail=f"{kind} commit {commit}")
     return None
