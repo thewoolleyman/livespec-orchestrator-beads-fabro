@@ -38,7 +38,7 @@ def _result(*, exit_code: int = 0, stdout: str = "", stderr: str = "") -> Comman
 def test_source_preflight_batches_containment_and_prefers_the_default_ref(
     tmp_path: Path,
 ) -> None:
-    """One containing-ref query chooses origin's default branch over another witness."""
+    """A default-branch witness avoids an all-origin-ref containment scan."""
     runner = _Runner(
         results={
             ("rev-parse", "--is-inside-work-tree"): _result(stdout="true\n"),
@@ -67,16 +67,5 @@ def test_source_preflight_batches_containment_and_prefers_the_default_ref(
 
     assert outcome.refusal is None
     assert outcome.record["origin_ref"] == "origin/trunk"
-    assert not any(call[0] == "merge-base" for call in runner.calls)
-    assert (
-        runner.calls.count(
-            (
-                "for-each-ref",
-                "--contains",
-                "abc123",
-                "--format=%(refname:short)",
-                "refs/remotes/origin",
-            )
-        )
-        == 1
-    )
+    assert ("merge-base", "--is-ancestor", "abc123", "origin/trunk") in runner.calls
+    assert not any(call[:2] == ("for-each-ref", "--contains") for call in runner.calls)
