@@ -16,8 +16,8 @@ created_at: 2026-11-13T05:08:21Z
 §"Provisional fleet launch scripts" requires exactly one terminal line when a launched drive or resume exits before its run lists on its factory board. It never says how a launcher decides that a run did not list. The committed impl launcher `fleet-launch/dispatch-dual.sh` reads the board first and checks whether the drive is alive second. A drive that submits its run and exits between those two reads is therefore misreported: the launcher sees no row and a dead drive, then writes a terminal line with the cause "drive exited before its run listed", although the run is on the board. This proposal makes three changes:
 
 - **Listing decided after the drive exits.** A launcher MUST NOT decide that a run never listed from a board read taken before it observed the launched process exit. When it finds that process exited with no listing seen, it MUST take one further board read, the *final listing read*. That read's listing must be produced after the exit was observed: either a direct factory read, or a shared snapshot whose refresh started after the observation. If the final listing read lists the run, the launcher records the run as listed. It prints its `LISTED` line and makes no non-run exit: no terminal line, no "drive exited before its run listed" cause, no dropped-ticket comment and no early-exit re-ticket. Only a final listing read that lists no run produces that cause, with exactly one terminal line. A final listing read that cannot be taken is never read as an empty board. The launcher retries it on each listing poll for up to `FLEET_LAUNCH_LISTING_WAIT_S` seconds, and only then makes the same non-run exit, with a terminal line stating that the read could not be taken. Every other rule of the section that turns on whether a run listed before its drive exited is decided by this bullet.
-- **Harness coverage.** The `check-fleet-launch` non-run-exit harness paragraph gains four cases. (1) A stub drive submits and exits at once while every stub board read is slowed past that exit, and the launcher records the run as listed. (2) A stub drive exits without submitting, and the launcher writes exactly one terminal line with that cause. (3) A final listing read cannot be taken, and the launcher writes one terminal line stating so. (4) The case-312 ready-set refusal that clears within the retry bound still launches and lists, with no terminal line, however long each board read takes.
-- **Scenario 312.** Four new Gherkin scenarios are added to the existing Scenario 312 block in `scenarios.md`. No H2 heading is added, renamed or removed, so `tests/heading-coverage.json` is unchanged.
+- **Harness coverage.** The `check-fleet-launch` non-run-exit harness paragraph gains five cases. (1) A stub drive submits and exits at once while every stub board read is slowed past that exit, and the launcher records the run as listed and resets the item's consecutive early-exit count. (2) A pre-exit snapshot still inside a non-zero `FLEET_LAUNCH_BOARD_TTL_S` lists no run, and the launcher takes a fresh final listing read instead of deciding from it. (3) A stub drive exits without submitting, and the launcher writes exactly one terminal line with that cause and the drive's exit code. (4) A final listing read cannot be taken, and the launcher writes one terminal line stating so, with the exit code. (5) The case-312 ready-set refusal that clears within the retry bound still launches and lists, with no terminal line, however long each board read takes.
+- **Scenario 312.** Five new Gherkin scenarios are added to the existing Scenario 312 block in `scenarios.md`. No H2 heading is added, renamed or removed, so `tests/heading-coverage.json` is unchanged.
 
 ### Motivation
 
@@ -67,9 +67,10 @@ All edits are in `contracts.md` §"Provisional fleet launch scripts" and in the 
 **2. Harness coverage (`contracts.md`).** In the paragraph that begins "The `check-fleet-launch` harness cases MUST also cover non-run exits.", replace its final sentence "Scenario 312 in `scenarios.md` exercises these cases." with:
 
 > The harness cases MUST also cover the listing decision after a drive exits:
-> - A stub drive submits its run and exits at once while every stub board read is slowed past that exit. The launcher records the run as listed with its listing line, and writes no terminal line and no "drive exited before its run listed" cause.
-> - A stub drive exits without submitting a run. The launcher writes exactly one terminal line naming that cause.
-> - A stub board cannot be read after the drive exits. The launcher retries the final listing read until `FLEET_LAUNCH_LISTING_WAIT_S` and then writes exactly one terminal line stating that the final listing read could not be taken.
+> - A stub drive submits its run and exits at once while every stub board read is slowed past that exit, for a work item whose consecutive early-exit count is above zero. The launcher records the run as listed with its listing line, writes no terminal line and no "drive exited before its run listed" cause, and resets that count to zero.
+> - With `FLEET_LAUNCH_BOARD_TTL_S` above zero, a shared board snapshot taken before the stub drive submits its run lists no run for the work item, and is still inside its time-to-live when the launcher observes the drive exit. The launcher takes a final listing read whose listing the stub factory produced after that observation. It records the run as listed and does not decide from the earlier snapshot that the run never listed.
+> - A stub drive exits without submitting a run. The launcher writes exactly one terminal line naming that cause and the drive's exit code.
+> - A stub board cannot be read after the drive exits. The launcher retries the final listing read until `FLEET_LAUNCH_LISTING_WAIT_S`. It then writes exactly one terminal line naming that cause and the drive's exit code, and stating that the final listing read could not be taken.
 > - In the ready-set refusal case that clears within `FLEET_LAUNCH_READY_RETRY_POLLS` polls, the launcher launches, records its run as listed and writes no terminal line, whatever each stub board read's duration, including when every stub board read is slowed past the stub drive's own exit.
 >
 > Those cases MUST NOT rely on the stub drive outliving a board read to pass. Scenario 312 in `scenarios.md` exercises these cases.
@@ -78,20 +79,32 @@ All edits are in `contracts.md` §"Provisional fleet launch scripts" and in the 
 
 ```gherkin
   Scenario: A drive that lists its run and exits before the launcher's next board read is recorded as listed
-    Given a stub drive for bd-x that submits a run the stub factory board lists as non-terminal, then exits at once with code 0
+    Given bd-x's consecutive early-exit count in its per-item state file stands at 2
+    And a stub drive for bd-x that submits a run the stub factory board lists as non-terminal, then exits at once with code 0
     And a stub factory board whose every read reports the board as it stood when the read began, and returns only after the stub drive has exited
     When the impl launcher for bd-x launches it
     Then after it observes the stub drive exited, it takes a final listing read whose listing began after that observation
     And its sequence log carries one LISTED line naming bd-x's run
     And its sequence log carries no terminal line and does not name the cause "drive exited before its run listed"
     And it does not re-take its FIFO ticket
+    And bd-x's consecutive early-exit count in its per-item state file reads 0
     And the stub ledger records no dropped-ticket comment on bd-x
+
+  Scenario: A pre-exit board snapshot still inside its time-to-live is not the final listing read
+    Given FLEET_LAUNCH_BOARD_TTL_S set above zero
+    And a shared board snapshot of the stub factory, taken before the stub drive for bd-x submits its run, that lists no run for bd-x
+    And a stub drive for bd-x that submits a run the stub factory board lists as non-terminal, then exits at once with code 0
+    When the impl launcher for bd-x observes the stub drive exited while that snapshot is still inside its time-to-live
+    Then it takes a final listing read whose listing the stub factory produced after that observation
+    And it does not decide from the earlier snapshot that bd-x's run never listed
+    And its sequence log carries one LISTED line naming bd-x's run
+    And its sequence log carries no terminal line and does not name the cause "drive exited before its run listed"
 
   Scenario: A drive that exits without its run ever listing leaves exactly one terminal line
     Given a stub drive for bd-x that exits with code 0 without submitting a run
     When the impl launcher for bd-x launches it
     Then after it observes the stub drive exited, it takes a final listing read that lists no run for bd-x
-    And its sequence log carries exactly one terminal line naming bd-x, its ticket number and the cause "drive exited before its run listed"
+    And its sequence log carries exactly one terminal line naming bd-x, its ticket number, the cause "drive exited before its run listed" and the drive's exit code 0
 
   Scenario: A final listing read that cannot be taken is not read as an empty board
     Given a stub drive for bd-x that exits with code 0 without submitting a run
@@ -99,7 +112,7 @@ All edits are in `contracts.md` §"Provisional fleet launch scripts" and in the 
     And FLEET_LAUNCH_LISTING_WAIT_S set to a short bound
     When the impl launcher for bd-x observes the stub drive exited
     Then it retries the final listing read on each listing poll until that bound
-    And its sequence log then carries exactly one terminal line naming bd-x, its ticket number, the cause "drive exited before its run listed" and that the final listing read could not be taken
+    And its sequence log then carries exactly one terminal line naming bd-x, its ticket number, the cause "drive exited before its run listed", the drive's exit code 0 and that the final listing read could not be taken
 
   Scenario: A ready-set refusal that clears launches and lists however slowly the board is read
     Given FLEET_LAUNCH_READY_RETRY_POLLS set to 3
