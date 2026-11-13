@@ -100,11 +100,16 @@ _COMMITTED_RUN_CONFIG = (
     'id = "livespec-ci"\n'
 )
 # The forge the stage asks whether a pull request is already open for the publish
-# branch. Answering with a number ends the stage at `LIVESPEC_PUBLISH_DRAFT_EXISTS`
-# -- the arm that opens nothing -- which keeps these cases about the refresh.
+# branch. The published head must accompany the number: `publish_draft` adopts
+# an existing request only when that head is the exact head it just pushed.
+# This keeps these cases about the refresh rather than a stale publication.
 _GH_STUB = """#!/bin/sh
 printf '%s\\n' "$*" >> "$LIVESPEC_FAKE_FORGE_CALLS"
-if test "$1 $2" = "pr list"; then echo 4242; exit 0; fi
+if test "$1 $2" = "pr list"; then
+  head="$(git ls-remote origin "refs/heads/$LIVESPEC_PUBLISH_BRANCH" | cut -f1)"
+  printf '4242\\t%s\\n' "$head"
+  exit 0
+fi
 echo "unstubbed gh invocation: $*" >&2
 exit 2
 """
