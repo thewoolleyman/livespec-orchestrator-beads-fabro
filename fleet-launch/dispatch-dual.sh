@@ -766,7 +766,9 @@ early_exit_state="$FLEET_LAUNCH_RETICKET_STATE_DIR/$ITEM.early-exits"
 if [ -n "$run_row" ]; then
   # A launched run listed: the consecutive early-exit count for this item starts over.
   rm -f "$early_exit_state"
-elif [ "$rc" -ne 0 ]; then
+else
+  # The drive ended without its run listing, whatever its exit status: a drive that exits 0 first is an
+  # early exit too, so the item is never dropped from the queue.
   # drive_goal_template_refused: the drive reported the goal template preflight stage failed. That stage
   # fails the same way on every retry until the item's record is repaired, so it is never re-ticketed.
   if drive_goal_template_refused "$OUT/$ITEM-r267.json"; then
@@ -780,7 +782,7 @@ elif [ "$rc" -ne 0 ]; then
     report_dropped_ticket refused
     exit "$rc"
   fi
-  # Any other non-zero exit before the run lists re-takes a ticket at the same ticket number, after a
+  # Any other exit before the run lists re-takes a ticket at the same ticket number, after a
   # delay set by how many consecutive early exits this item has had. The mutex and the in-flight marker
   # are already released, and no ticket is held while the launcher waits.
   mkdir -p "$FLEET_LAUNCH_RETICKET_STATE_DIR"
