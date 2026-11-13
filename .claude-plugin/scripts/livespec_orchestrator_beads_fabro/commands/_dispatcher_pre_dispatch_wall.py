@@ -262,6 +262,8 @@ def pre_dispatch_wall_exit(
         with prelaunch_phase(checkpoint=prelaunch_checkpoint, name=phase):
             refusal = ask()
         if refusal is not None:
+            if phase == "dod-judgement" and getattr(args, "items", None) is not None:
+                refusal = f"{refusal.splitlines()[0]}\n"
             _ = write_stderr(text=f"{refusal}\n" if newline else refusal)
             return exit_code
     with prelaunch_phase(checkpoint=prelaunch_checkpoint, name="credential-requirement"):
