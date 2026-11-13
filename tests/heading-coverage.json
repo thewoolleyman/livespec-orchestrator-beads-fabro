@@ -3229,5 +3229,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading. publish_draft is run in a local git fixture with a stubbed gh: a creation that exits non-zero while the stubbed forge holds an open pull request at the pushed head is adopted and ends as a successful creation; no pull request at the pushed head after three re-reads at 1, 2 and 4 s fails closed with LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED naming the re-read count; a pull request at another head is never adopted; a zero exit whose output contains 502 makes no re-read. bd-ib-hzul2n owns it.",
     "work_item": "bd-ib-hzul2n"
+  },
+  {
+    "heading": "## Scenario 370 \u2014 An operator preserve tool removes a run's local copy only once origin holds the commit it pushed",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-yw7yot",
+    "reason": "A test at the integration tier or above is owed: the operator preserve tool's own suite, delivered by bd-ib-yw7yot, driving preserve_runs.sh against a local bare origin."
   }
 ]

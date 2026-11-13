@@ -38,6 +38,7 @@ PHASE_LIFECYCLE_STATES: dict[str, str] = {
     "repayment-active": "active",
     "repayment-acceptance": "acceptance",
     "closed": "done",
+    "drill-closed": "done",
 }
 # The normal repayment phases, in the order one same-item operation walks them.
 REPAYMENT_PHASES: tuple[str, ...] = (

@@ -57,7 +57,18 @@ esac
 export HARNESS_POLL_S=0.01
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+LOAD_PIDS=""
+stop_load() {
+    local load_pid
+    for load_pid in $LOAD_PIDS; do kill "$load_pid" 2>/dev/null || true; done
+    for load_pid in $LOAD_PIDS; do wait "$load_pid" 2>/dev/null || true; done
+    LOAD_PIDS=""
+}
+cleanup() {
+    stop_load
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 PASS=0
 FAIL=0
@@ -1214,45 +1225,70 @@ fi
 # free on the board, the held release fills it, so the second launcher sees the
 # fleet at the cap and starts no drive of its own.
 echo "--- 10b. a queued launcher counts a held direct release as in flight"
-new_case direct-release-inflight-counted
-export FLEET_LAUNCH_MAX_WAIT_S=120
-export STUB_READY_BLOCKED_UNTIL_RELEASE=1
-export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
-write_board "$BOARD_GMK" 7 gmk
-: > "$BOARD_HL"
-printf '8\n' > "$CAP_FILE"
-DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
-RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
-held_release_pid=$!
-held_deadline=$(( $(date +%s) + 60 ))
-while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
-    sleep "$HARNESS_POLL_S"
+load_workers=$(nproc 2>/dev/null || echo 1)
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+    read -r load_quota load_period < /sys/fs/cgroup/cpu.max
+    case "$load_quota:$load_period" in
+        *[!0-9:]*|:*) ;;
+        *) load_workers=$(( (load_quota + load_period - 1) / load_period )) ;;
+    esac
+fi
+case $load_workers in ''|*[!0-9]*|0) load_workers=1 ;; esac
+load_worker=0
+while [ "$load_worker" -lt "$load_workers" ]; do
+    while :; do :; done &
+    LOAD_PIDS="$LOAD_PIDS $!"
+    load_worker=$((load_worker + 1))
 done
-if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
-    && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
-    && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
-    pass "the direct release holds its in-flight marker while its drive runs and before its run lists"
-else
-    fail "the direct release did not hold a marker during its drive (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
-    tail -8 "$DIRECT_RELEASE_LOG" >&2
-fi
-SECOND_LOG="$CASE_DIR/second-launcher.log"
-FLEET_LAUNCH_MAX_WAIT_S=4 ONLY_GMK=1 "$LAUNCHER" bd-ib-second > "$SECOND_LOG" 2>&1; second_rc=$?
-if [ "$second_rc" = 75 ] && log_has "$SECOND_LOG" "fleet=8 cap=8" \
-    && ! grep -qx 'bd-ib-second' "$DRIVE_LOG"; then
-    pass "a queued launcher counts the held direct release against the cap and starts no drive"
-else
-    fail "a queued launcher did not count the held direct release (rc=$second_rc drives=$(drive_log_items))"
-    tail -6 "$SECOND_LOG" >&2
-fi
-: > "$STUB_DRIVE_ADMIT_GATE_FILE"
-wait "$held_release_pid"; held_release_rc=$?
-if [ "$held_release_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
-    pass "the direct release drops its marker once its run lists"
-else
-    fail "the direct release did not finish cleanly (rc=$held_release_rc)"
-    tail -8 "$DIRECT_RELEASE_LOG" >&2
-fi
+for held_attempt in $(seq 1 "${HARNESS_CASE_10B_ATTEMPTS:-30}"); do
+    new_case "direct-release-inflight-counted-$held_attempt"
+    # Preserve the board reading taken before launch. The drive then submits and
+    # exits while this snapshot remains young, reproducing the loaded-host race.
+    export FLEET_LAUNCH_MAX_WAIT_S=0
+    export FLEET_LAUNCH_BOARD_TTL_S=300
+    export STUB_READY_BLOCKED_UNTIL_RELEASE=1
+    export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
+    write_board "$BOARD_GMK" 7 gmk
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+    mkdir -p "$SNAPSHOT_DIR"
+    . "$LAUNCH_DIR/board-snapshot.sh"
+    "$STUB/fabro" ps -a --server "$GMK_URL" > "$(board_snapshot_file "$GMK_URL")"
+    "$STUB/fabro" ps -a --server "$HL_URL" > "$(board_snapshot_file "$HL_URL")"
+    DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
+    RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
+    held_release_pid=$!
+    held_deadline=$(( $(date +%s) + 60 ))
+    while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
+        sleep "$HARNESS_POLL_S"
+    done
+    if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
+        && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
+        && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+        pass "attempt $held_attempt: the direct release holds its in-flight marker while its drive runs and before its run lists"
+    else
+        fail "attempt $held_attempt: the direct release did not hold a marker during its drive (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
+        tail -8 "$DIRECT_RELEASE_LOG" >&2
+    fi
+    SECOND_LOG="$CASE_DIR/second-launcher.log"
+    FLEET_LAUNCH_MAX_WAIT_S=4 ONLY_GMK=1 "$LAUNCHER" bd-ib-second > "$SECOND_LOG" 2>&1; second_rc=$?
+    if [ "$second_rc" = 75 ] && log_has "$SECOND_LOG" "fleet=8 cap=8" \
+        && ! grep -qx 'bd-ib-second' "$DRIVE_LOG"; then
+        pass "attempt $held_attempt: a queued launcher counts the held direct release against the cap and starts no drive"
+    else
+        fail "attempt $held_attempt: a queued launcher did not count the held direct release (rc=$second_rc drives=$(drive_log_items))"
+        tail -6 "$SECOND_LOG" >&2
+    fi
+    : > "$STUB_DRIVE_ADMIT_GATE_FILE"
+    wait "$held_release_pid"; held_release_rc=$?
+    if [ "$held_release_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+        pass "attempt $held_attempt: the direct release drops its marker once its run lists"
+    else
+        fail "attempt $held_attempt: the direct release did not finish cleanly (rc=$held_release_rc)"
+        tail -8 "$DIRECT_RELEASE_LOG" >&2
+    fi
+done
+stop_load
 
 # --- 11. a resume marker stays counted until the board lists the run --------
 # The resume client returns at once, before the run lists on the board.  The
@@ -2856,6 +2892,21 @@ if [ "$zero_rc" = 0 ] && [ "$(drive_log_items)" = "bd-ib-zero bd-ib-zero" ] \
     pass "a drive that exits 0 before its run lists re-takes ticket 100 rather than dropping the item"
 else
     fail "a zero-status early drive exit dropped the item (rc=$zero_rc, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
+fi
+new_case reticket-zero-exit-not-ready
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=1
+export STUB_DRIVE_FAIL_RC=0
+printf 'active\n' > "$STUB_ITEM_STATUS_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-zero-not-ready > "$CASE_LOG" 2>&1
+zero_not_ready_rc=$?
+if [ "$zero_not_ready_rc" = 0 ] && [ "$(drive_log_items)" = bd-ib-zero-not-ready ] \
+    && grep -qF 'terminal: item=bd-ib-zero-not-ready ticket=100 cause=drive-exit-early drive-exit=0' "$CASE_LOG"; then
+    pass "a zero-status drive with no final listing does not re-take a ticket when its item is not ready"
+else
+    fail "a zero-status drive re-took a ticket despite its item not reading ready (rc=$zero_not_ready_rc, dispatches: $(drive_log_items))"
     tail -8 "$CASE_LOG" >&2
 fi
 new_case reticket-refused
