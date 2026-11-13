@@ -26,6 +26,7 @@ _RUN = "01ORDERRUN"
 class _Outcome:
     status: str = "blocked"
     stage: str = "fabro-run"
+    detail: str = "ordinary terminal"
     merge_sha: str | None = None
     fabro_run_id: str | None = _RUN
     merge_wait_handed_off: bool = False
@@ -74,6 +75,79 @@ def test_loop_selection_records_receipt_after_every_state_change(
 
     assert calls[-1] == "record_wip_capture_receipt"
     assert calls.index("record_wip_capture_receipt") > calls.index("escalate_needs_human_block")
+
+
+@pytest.mark.parametrize(
+    ("bounces", "detail", "expected_detail"),
+    (
+        (
+            True,
+            "ordinary failed terminal",
+            "LIVESPEC_NON_CONVERGED: an adopted cycle ceiling was exceeded",
+        ),
+        # Equality produces no contributor, so a healthy terminal remains owned
+        # by its ordinary routing instead of manufacturing a bounce.
+        (False, "ordinary failed terminal", "ordinary failed terminal"),
+        (
+            True,
+            "LIVESPEC_NEEDS_HUMAN: operator decision",
+            "LIVESPEC_NEEDS_HUMAN: operator decision",
+        ),
+        (
+            True,
+            "LIVESPEC_RECAPTURE_EXHAUSTED: proof record",
+            "LIVESPEC_RECAPTURE_EXHAUSTED: proof record",
+        ),
+    ),
+)
+def test_terminal_runtime_verdict_routes_only_an_unowned_failed_outcome(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    bounces: bool,
+    detail: str,
+    expected_detail: str,
+) -> None:
+    """A terminal ceiling verdict reaches the existing sanctioned bounce."""
+    selection = importlib.import_module(_SELECTION)
+    routed: list[_Outcome] = []
+    for name, result in (
+        ("record_provider_exhaustion_if_observed", None),
+        ("record_dead_implementer_truncation_if_observed", None),
+        ("preserve_terminated_run_work", None),
+        ("record_groom_draft", False),
+        ("record_base_advanced_after_arming", None),
+        ("record_merge_wait_handed_off", None),
+        ("escalate_needs_human_block", None),
+        ("record_needs_human_cause", None),
+        ("emit_calibration", None),
+        ("record_wip_capture_receipt", None),
+    ):
+        monkeypatch.setattr(selection, name, _spy(calls=[], name=name, result=result))
+    monkeypatch.setattr(
+        selection,
+        "record_dispatch_runtime_convergence",
+        lambda **_: SimpleNamespace(
+            bounces=bounces, as_reason=lambda: "an adopted cycle ceiling was exceeded"
+        ),
+    )
+    monkeypatch.setattr(
+        selection,
+        "dispose_terminal_routing",
+        lambda **kwargs: routed.append(kwargs["outcome"]),
+    )
+
+    selection.post_run_dispositions(
+        args=argparse.Namespace(close_on_merge=False, fabro_factory_target=None),
+        repo=tmp_path,
+        item=SimpleNamespace(id="bd-ib-order"),
+        outcome=_Outcome(status="failed", detail=detail),
+        journal=SimpleNamespace(path=tmp_path / "journal", append=lambda **_: None),
+        wall_clock_seconds=0.0,
+        dispatch_context_size=0,
+        token_supplier=lambda: "",
+    )
+
+    assert [outcome.detail for outcome in routed] == [expected_detail]
 
 
 def test_stranded_release_records_receipt_only_after_the_transition(
