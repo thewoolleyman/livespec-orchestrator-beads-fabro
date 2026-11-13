@@ -288,7 +288,7 @@ def test_a_commit_run_still_running_at_the_bound_is_stopped_before_preservation(
     stderr = result.stderr
     assert f"LIVESPEC_NODE_CUT_COMMIT_RUN: run={run_id} state=no-verdict" in stderr
     assert stderr.index("LIVESPEC_NODE_CUT_COMMIT_RUN") < stderr.index("LIVESPEC_NEEDS_HUMAN_")
-    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {_PRESERVED_REF}" in stderr
+    assert f"LIVESPEC_NEEDS_HUMAN_NOT_PRESERVED: ref={_PRESERVED_REF}" in stderr
     assert _processes_named(needle=f"sleep {_duration(119)}".encode()) == []
     cut = node_timeout_cut(
         text=stderr, stage="fix", cause=_TIMED_OUT, timeout_seconds=3600, started_run_ids=(run_id,)
@@ -316,7 +316,7 @@ def test_an_in_turn_commit_whose_hook_is_executing_is_named_and_ended(tmp_path: 
 
     _ = commit.wait(timeout=60)
     assert _processes_named(needle=f"sleep {_duration(118)}".encode()) == []
-    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {_PRESERVED_REF}" in result.stderr
+    assert f"LIVESPEC_NEEDS_HUMAN_NOT_PRESERVED: ref={_PRESERVED_REF}" in result.stderr
     cut = node_timeout_cut(
         text=result.stderr,
         stage="fix",
@@ -339,7 +339,7 @@ def test_a_run_with_nothing_left_running_names_nothing(tmp_path: Path) -> None:
     result = _node(run=run, root=root)
 
     assert "LIVESPEC_NODE_CUT_" not in result.stderr
-    assert f"LIVESPEC_NEEDS_HUMAN_PRESERVED: {_PRESERVED_REF}" in result.stderr
+    assert f"LIVESPEC_NEEDS_HUMAN_NOT_PRESERVED: ref={_PRESERVED_REF}" in result.stderr
 
 
 def test_the_process_scan_skips_what_it_cannot_read_and_names_what_matches(

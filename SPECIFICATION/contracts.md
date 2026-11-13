@@ -10493,14 +10493,43 @@ the same route.
 
 **A sandbox killed for memory is named.** When the Dispatcher derives a failed
 run's outcome, it MUST read the run's sandbox container termination from the
-sandbox provider before that sandbox is collected. When the provider reports an
-out-of-memory kill, the Dispatcher MUST carry the condition as typed
-resource-exhaustion state on the failure detail, naming the OOM kill, the run id
-and the container's memory limit, and the dispatch outcome and its journal record
-MUST name the same three. When the provider's report cannot be read on that pass,
-the outcome MUST say that the sandbox's termination was unobservable, and the
-failure MUST keep the category and signature it arrived with. Scenario 335 in
-`scenarios.md` exercises this paragraph.
+sandbox provider before that sandbox is collected. It MUST take that reading
+from the cluster of the factory instance that ran the run, with credentials
+resolved for that instance, never from whatever cluster the dispatching host's
+ambient configuration names. When the provider reports an out-of-memory kill,
+the Dispatcher MUST carry the condition as typed resource-exhaustion state on
+the failure detail, naming the OOM kill, the run id and the container's memory
+limit, and the dispatch outcome and its journal record MUST name the same three.
+When the provider's report cannot be read on that pass, the outcome MUST say
+that the sandbox's termination was unobservable, and the failure MUST keep the
+category and signature it arrived with. Scenario 335 in `scenarios.md` exercises
+this paragraph.
+
+**A lost sandbox is a host error, never a permanent cause.** A run's sandbox
+is *lost* when a sandbox operation of the unfinished run is refused because
+the sandbox provider reports that sandbox as not found. On the Kubernetes
+provider, that happens when the run's pod was deleted or evicted, or was lost
+with its node. The factory engine on every factory server MUST end the
+execution that met the loss as a host error that leaves the run unfinished,
+as it does for a failed run-store append, so that the factory server resumes
+the run onto a re-acquired sandbox. The resumed run MUST re-run its setup
+steps (§"Self-contained plugin dispatch"), MUST continue from the stage the
+loss interrupted, and MUST NOT run again a node it completed before the loss.
+The factory server MUST resume one run after a lost sandbox at most three
+times, counting those resumes separately from any it makes after a failed
+run-store append; a fourth loss of that run's sandbox ends the run. When a run ends
+failed on a lost sandbox anyway (on an engine without this behaviour, or at
+that bound), the Dispatcher MUST record the failure with a lost-sandbox cause
+naming the run id and the sandbox. It MUST NOT classify that failure as
+`deterministic` or permanent, whether or not the sandbox's termination is
+observable. It MUST release the item's dispatch claim to `ready` without a
+human, leaving the recovery route to recovery routing at the item's next
+dispatch, and MUST NOT rest the item at `blocked / needs-human`. That release
+MUST NOT consume any budget of §"The three rework caps". When the item's
+preceding dispatch also ended on a lost sandbox, the current failure keeps its
+existing route, and its needs-human cause record MUST name both runs. A
+sandbox operation that fails for any other reason while the sandbox is present
+keeps the classification it has today.
 
 **CONTROL — an ordinary failure keeps its classification.** A failure whose cause
 chain carries NO permanent cause of any class above MUST retain the category
