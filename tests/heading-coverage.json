@@ -1763,8 +1763,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "PARTIALLY BOUND, and an integration-tier test is still owed for the two implement-node sub-scenarios ('An over-limit commit hook is reaped before the next commit' and 'A recovered hook-over-limit event is not the cause of a later stop'); bd-ib-6p7kkd implements them and owns that binding, gated on bd-ib-svw54x. The publish_draft sub-scenarios are exercised by tests.integration.test_repository_publication_timeouts, tests.integration.test_workflow_publish_draft_hook_limit and tests.integration.test_needs_human_hook_over_limit_cause, landed by the closed bd-ib-xi63mq. The row stays TODO per the maintainer's 2026-10-14 groom ruling that split the heading.",
-    "work_item": "bd-ib-6p7kkd"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-6p7kkd, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 179 \u2014 A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict",
@@ -2110,8 +2110,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading's GH001 and unreachable-origin sub-scenarios: bd-ib-7owmkq implements the GH001 failure output that revision v323 added to this scenario, and owns the binding. tests.integration.test_workflow_publish_draft_refresh, landed by the closed bd-ib-35kfra, already exercises the pre-push hook and non-fast-forward sub-scenarios.",
-    "work_item": "bd-ib-7owmkq"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-7owmkq, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 225 \u2014 The publish-branch reclaim finds an earlier dispatch journaled in another worktree",
@@ -2349,8 +2349,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the closed bd-ib-opd3hq was regroomed into slices bd-ib-a7zpxy, bd-ib-3troft, bd-ib-heoxjw and bd-ib-o5kdau; bd-ib-o5kdau, the acceptance re-run that completes the re-proof and lands after bd-ib-a7zpxy, owns the binding.",
-    "work_item": "bd-ib-o5kdau"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-o5kdau, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 258 \u2014 A review or proof_verify turn that succeeds without a verdict label is retried once before it reaches needs_human",
@@ -2500,8 +2500,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the closed bd-ib-2dwxbu was regroomed into bd-ib-lxohlb, which implements this scenario and owns its binding.",
-    "work_item": "bd-ib-lxohlb"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-lxohlb, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 274 \u2014 One query by run id says why each factory step ended",
@@ -2532,8 +2532,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the closed bd-ib-o23n2x was regroomed into bd-ib-yq55nk, bd-ib-el5ubd and bd-ib-swg7jo; bd-ib-yq55nk, which records the measured image and on which the other two depend, owns the binding.",
-    "work_item": "bd-ib-yq55nk"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-yq55nk, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 277 \u2014 A merged pull request with no finished factory run, or whose run died after the merge, is re-proven by the proof-only arm",
@@ -2716,8 +2716,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the closed bd-ib-ke5wkf was regroomed into five slices, and bd-ib-t5yvcj, which adds the just check aggregate's real-sleep and wall-clock refusal, owns the binding.",
-    "work_item": "bd-ib-t5yvcj"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-t5yvcj, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Scenario 305 \u2014 The run refreshes before the janitor, so publish_draft pushes the janitor-passed head without a second aggregate",
@@ -2740,8 +2740,8 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: bd-ib-sif27g (independent pre-launch steps run concurrently) owns the binding, with bd-ib-n4kj4y (every pre-launch step journals a start and an end) as its sibling slice. Repointed from the closed bd-ib-bpkqan.",
-    "work_item": "bd-ib-sif27g"
+    "reason": "A test at the integration tier or above is owed for this heading. bd-ib-ntqv42 owns it; bd-ib-sif27g, the previous owner, is open but its Definition of Done promises no test for this heading.",
+    "work_item": "bd-ib-ntqv42"
   },
   {
     "heading": "## Expedited incident lifecycle",
