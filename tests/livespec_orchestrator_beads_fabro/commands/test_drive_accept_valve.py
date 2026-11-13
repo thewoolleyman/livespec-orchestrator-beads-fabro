@@ -23,6 +23,7 @@ from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _drive_accept_valve as accept_valve
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._drive_accept_valve import (
     HOST_REPLAY_PENDING_ERR,
@@ -38,6 +39,7 @@ from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
 _HUMAN_ASSERTION = "The production console renders the capacity banner."
 _HOST_ASSERTION = "The released build prints its own version on an operator host."
+_SIBLING_HOST_ASSERTION = "The released build serves the sibling endpoint on an operator host."
 _ATTESTED_BODY = "Proof of Done — human_attested — run alice — 2026-10-01T10:00:00Z\n\nDone.\n"
 _HOST_VERIFIED_BODY = (
     "Proof of Done — host_verified — session replaying-session — 2026-10-01T11:00:00Z\n"
@@ -202,6 +204,38 @@ def test_an_item_outside_acceptance_is_refused_on_its_source_state(tmp_path: Pat
     assert _stored(item_id=item.id).status == "active"
 
 
+def test_an_incident_with_outstanding_normal_proof_is_not_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An incident's expedited close does not substitute for its normal proof."""
+    monkeypatch.setattr(
+        accept_valve, "closure_obligations_for", lambda **_: ("normal proof is outstanding",)
+    )
+    item = _item(description="## Definition of Done\n\n- It works.\n\nReferences: ## Something\n")
+
+    result = _accept(item=item, runner=None, tmp_path=tmp_path)
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "incident-obligation-outstanding"
+    assert _stored(item_id=item.id).status == "acceptance"
+
+
+def test_a_contested_close_leaves_the_item_in_acceptance(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The valve reports a lost claim instead of claiming it closed the item."""
+    monkeypatch.setattr(
+        accept_valve.ClaimWrite, "write_status", lambda *_args, **_kwargs: "claim-changed"
+    )
+    item = _item(description="## Definition of Done\n\n- It works.\n\nReferences: ## Something\n")
+
+    result = _accept(item=item, runner=None, tmp_path=tmp_path)
+
+    assert result["status"] == "failed"
+    assert result["domain_error"] == "claim-changed"
+    assert _stored(item_id=item.id).status == "acceptance"
+
+
 @pytest.mark.parametrize(
     ("description", "comments", "detail"),
     [
@@ -315,6 +349,32 @@ def test_a_host_verified_record_lets_the_host_only_item_close_with_no_pointer_re
     assert runner.argvs == [["gh", "pr", "view", "11", "--json", "comments"]]
     assert _stored(item_id=item.id).status == "done"
     assert _stored(item_id=item.id).description == item.description
+
+
+def test_a_later_sibling_host_record_does_not_hide_this_items_verified_assertion(
+    tmp_path: Path,
+) -> None:
+    """A record decides only the host assertion it names on their shared pull request."""
+    sibling_record = (
+        "Proof of Done — host_verified — session sibling-session — 2026-10-01T12:00:00Z\n"
+        "\n"
+        f"## Assertion 1 — {_SIBLING_HOST_ASSERTION}\n"
+        "\n"
+        "Reproduced: yes.\n"
+    )
+    runner = _Runner(
+        result=CommandResult(
+            exit_code=0,
+            stdout=_comments(bodies=[_HOST_VERIFIED_BODY, sibling_record]),
+            stderr="",
+        )
+    )
+    item = _item(description=_host_description())
+
+    result = _accept(item=item, runner=runner, tmp_path=tmp_path)
+
+    assert result["status"] == "green"
+    assert _stored(item_id=item.id).status == "done"
 
 
 def test_a_host_leg_outranks_a_human_leg_on_the_same_item(tmp_path: Path) -> None:

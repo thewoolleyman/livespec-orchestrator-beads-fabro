@@ -236,24 +236,36 @@ def _records(
 def _unreproduced_host_assertions(
     *, criteria: EffectiveCriteria, records: tuple[ProofRecord, ...] | None
 ) -> tuple[str, ...]:
-    """The host-captured assertions no `host_verified` record lists as reproduced.
+    """The host-captured assertions no decisive `host_verified` record reproduces.
 
     An UNREADABLE pull request (`records is None`) leaves every host assertion
     outstanding, which is the same answer an empty pull request gives and is the
     right one for both: the valve disposes on observed evidence, and a failed read
     is evidence of nothing.
+
+    Records are shared by every item whose run used the pull request, so the newest
+    record can name a sibling item's assertions. Each assertion therefore finds its
+    own newest record that names it; a record that omits it decides nothing.
     """
     host = criteria.host_captured_assertions
     if not host:
         return ()
-    verified = (
-        None
-        if records is None
-        else latest_proof_record(records=records, verdict=VERDICT_HOST_VERIFIED)
-    )
-    if verified is None:
+    if records is None:
         return host
-    return tuple(one for one in host if verified.reproduced(assertion=one) is not True)
+    return tuple(
+        one for one in host if not _host_assertion_reproduced(records=records, assertion=one)
+    )
+
+
+def _host_assertion_reproduced(*, records: tuple[ProofRecord, ...], assertion: str) -> bool:
+    """Whether the newest `host_verified` record naming one assertion reproduces it."""
+    for record in reversed(records):
+        if record.verdict != VERDICT_HOST_VERIFIED:
+            continue
+        reproduced = record.reproduced(assertion=assertion)
+        if reproduced is not None:
+            return reproduced
+    return False
 
 
 def _leading_leg(*, criteria: EffectiveCriteria) -> _OutstandingLeg:
