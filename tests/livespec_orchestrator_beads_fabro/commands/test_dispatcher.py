@@ -6963,9 +6963,7 @@ def test_dispatch_goal_text_carries_ledger_comments(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Finding (c) of bn4: rider instructions added as ledger comments must
-    arrive in the sandbox goal text (the dispatcher previously rendered the
-    description only, so pre-authorizations never reached the agent)."""
+    """The run-wide goal omits riders once the payload owns stage delivery."""
     repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
     item = _item()
     append_work_item(path=_config(), item=item)
@@ -7001,9 +6999,8 @@ def test_dispatch_goal_text_carries_ledger_comments(
     )
     assert exit_code == 0
     goal_text = (tmp_path / f"fabro-goal-{item.id}.md").read_text(encoding="utf-8")
-    assert "Ledger comments" in goal_text
-    assert "pre-authorization: also bump the dev-tooling pin" in goal_text
-    assert "(operator, 2026-06-12T08:00:00Z)" in goal_text
+    assert "Ledger comments" not in goal_text
+    assert "pre-authorization: also bump the dev-tooling pin" not in goal_text
 
 
 def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
@@ -7035,6 +7032,32 @@ def test_dispatch_fails_at_ledger_comments_stage_when_read_raises(
     assert "ledger-comments" in out
     assert "BeadsCommandError" in out
     assert _stored()[item.id].status == "ready"
+
+
+def test_dispatch_fails_when_stage_rider_payload_cannot_be_materialized(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A rider-prefix failure refuses before Fabro receives a partial payload."""
+    repo, workflow = _repo_with_workflow(tmp_path=tmp_path)
+    item = _item()
+    append_work_item(path=_config(), item=item)
+    fake = _FakeRunDispatch(outcomes={})
+    monkeypatch.setattr(_dispatcher_loop, "run_dispatch", fake)
+    monkeypatch.setattr(
+        _dispatcher_loop_record,
+        "prefix_stage_riders",
+        lambda **_: "workflow prompt prompts/implement.md for stage implement is missing",
+    )
+
+    exit_code = main(
+        argv=["dispatch", "--repo", str(repo), "--item", item.id, "--workflow", str(workflow)]
+    )
+
+    assert exit_code == 1
+    assert fake.seen == []
+    assert "stage-rider-payload" in capsys.readouterr().out
 
 
 def test_dispatch_refuses_minijinja_goal_before_fabro_and_releases_claim(
