@@ -23,11 +23,11 @@ Work item bd-ib-b3qjzq ("Every commit-refusal re-entry brief takes its failing t
 
 Two edits. No `## ` heading is added, changed or removed, so `tests/heading-coverage.json` needs no co-edit.
 
-**Edit 1 — `SPECIFICATION/contracts.md`.** Insert this paragraph immediately AFTER the paragraph that begins **A settled failed commit run is recorded with its cause.** and BEFORE the paragraph that begins **A commit run outlives a node-timeout cut.**:
+**Edit 1 — `SPECIFICATION/contracts.md`.** Insert this paragraph directly AFTER the paragraph that begins **A settled failed commit run is recorded with its cause.**. This anchor names only that one paragraph: the pending `a-commit-settle-node-whose` proposal also inserts after it, so the edit applies whichever of the two is revised first.
 
 > **Every commit-refusal re-entry brief names the failing files from the full recorded output.** This paragraph governs every re-entry brief that tells a re-entered ACP turn of the implement-work-item workflow why its commit was refused or failed: the brief `implement_hook_route` writes when it re-enters the implement stage after a refused commit, whether that re-entry is ordinary or mechanical; the brief a re-entered `fix` or `review_fix` turn receives after `fix_commit_settle` or `review_fix_commit_settle` settled a commit run as `failed`; and the open-Red brief of `fix_open_red_route` and `review_fix_open_red_route` after such a settle. Each such brief MUST take its failed target names and hook error lines from the commit run's full recorded output, never only from its final lines, so that output ending in the hook's per-target timing table still yields the files that failed. Each such brief MUST carry a failing-file section that names each failing file the failed targets' recorded output reports, with the uncovered lines or measured size that output gives for it, for at most the first 40 such files in that output's order, and when the output reports more it MUST state how many further files it omitted. Given the same recorded output, every one of those routes MUST produce an identical failed-target and failing-file section, so that a change to how that output is read, or to the 40-file cap, changes every route's brief alike. This paragraph adds content to those briefs only: it changes no route a refusal takes, no re-entry budget, and none of what "A settled failed commit run is recorded with its cause" requires the settle node's own output to state. The failing-file requirement of "A purely mechanical commit refusal has its own re-entry budget" is the mechanical-re-entry case of this paragraph. Scenario 179 in `scenarios.md` exercises this paragraph.
 
-**Edit 2 — `SPECIFICATION/scenarios.md`, §"Scenario 179 — A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict".** Append these scenarios to the end of that scenario's Gherkin block, inside the same fenced block, after the scenario "A re-entered review_fix turn is told why its Green amend failed". The scenario's heading is unchanged.
+**Edit 2 — `SPECIFICATION/scenarios.md`, §"Scenario 179 — A sandbox commit whose hook outlasts one tool call completes with the hook's own verdict".** Append these scenarios to the end of that scenario's Gherkin block, inside the same fenced block, after whichever scenario is last in it when this proposal is revised. The pending `a-commit-settle-node-whose` proposal also appends to this block, so the edit names no particular last scenario and applies in either revise order. The scenario's heading is unchanged.
 
 ```gherkin
   Scenario: A re-entered fix turn's brief names the uncovered files from the full recorded output
@@ -57,4 +57,11 @@ Two edits. No `## ` heading is added, changed or removed, so `tests/heading-cove
     Then each brief names the first 40 of those files in the output's order, each with its uncovered lines
     And each brief states that 15 further files were omitted
     And the three briefs' failed-target and failing-file sections are identical
+
+  Scenario: A re-entered fix turn's brief names an oversized file with its measured size
+    Given a fix_commit_settle node that settled a fix commit run as failed on check-file-lloc
+    And that commit run's recorded output names src/d.py at 263 logical lines against a ceiling of 250 before the per-target timing table that ends the output
+    When the run re-enters fix
+    Then the re-entry brief names the failed target check-file-lloc
+    And it names src/d.py with its measured size of 263 logical lines
 ```
