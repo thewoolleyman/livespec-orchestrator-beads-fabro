@@ -160,62 +160,62 @@
   "cross_repo_targets": {
     "livespec-overseer": {
       "github_url": "https://github.com/thewoolleyman/livespec-overseer",
-      "local_clone": "/data/projects/livespec-overseer",
+      "local_clone": "~/workspace/livespec-overseer",
       "default_branch": "master"
     },
     "livespec-dev-tooling": {
       "github_url": "https://github.com/thewoolleyman/livespec-dev-tooling",
-      "local_clone": "/data/projects/livespec-dev-tooling",
+      "local_clone": "~/workspace/livespec-dev-tooling",
       "default_branch": "master"
     },
     "livespec-driver-codex": {
       "github_url": "https://github.com/thewoolleyman/livespec-driver-codex",
-      "local_clone": "/data/projects/livespec-driver-codex",
+      "local_clone": "~/workspace/livespec-driver-codex",
       "default_branch": "master"
     },
     "livespec-driver-pi": {
       "github_url": "https://github.com/thewoolleyman/livespec-driver-pi",
-      "local_clone": "/data/projects/livespec-driver-pi",
+      "local_clone": "~/workspace/livespec-driver-pi",
       "default_branch": "master"
     },
     "livespec-console-beads-fabro": {
       "github_url": "https://github.com/thewoolleyman/livespec-console-beads-fabro",
-      "local_clone": "/data/projects/livespec-console-beads-fabro",
+      "local_clone": "~/workspace/livespec-console-beads-fabro",
       "default_branch": "master"
     },
     "dolt-server": {
       "github_url": "https://github.com/thewoolleyman/dolt-server",
-      "local_clone": "/data/projects/dolt-server",
+      "local_clone": "~/workspace/dolt-server",
       "default_branch": "master"
     },
     "livespec-tdd-proof": {
       "github_url": "https://github.com/thewoolleyman/livespec-tdd-proof",
-      "local_clone": "/data/projects/livespec-tdd-proof",
+      "local_clone": "~/workspace/livespec-tdd-proof",
       "default_branch": "master"
     },
     "livespec-runtime": {
       "github_url": "https://github.com/thewoolleyman/livespec-runtime",
-      "local_clone": "/data/projects/livespec-runtime",
+      "local_clone": "~/workspace/livespec-runtime",
       "default_branch": "master"
     },
     "livespec-driver-claude": {
       "github_url": "https://github.com/thewoolleyman/livespec-driver-claude",
-      "local_clone": "/data/projects/livespec-driver-claude",
+      "local_clone": "~/workspace/livespec-driver-claude",
       "default_branch": "master"
     },
     "livespec-orchestrator-git-jsonl": {
       "github_url": "https://github.com/thewoolleyman/livespec-orchestrator-git-jsonl",
-      "local_clone": "/data/projects/livespec-orchestrator-git-jsonl",
+      "local_clone": "~/workspace/livespec-orchestrator-git-jsonl",
       "default_branch": "master"
     },
     "resume": {
       "github_url": "https://github.com/thewoolleyman/resume",
-      "local_clone": "/data/projects/resume",
+      "local_clone": "~/workspace/resume",
       "default_branch": "master"
     },
     "openbrain": {
       "github_url": "https://github.com/thewoolleyman/openbrain",
-      "local_clone": "/data/projects/openbrain",
+      "local_clone": "~/workspace/openbrain",
       "default_branch": "main"
     }
   },
