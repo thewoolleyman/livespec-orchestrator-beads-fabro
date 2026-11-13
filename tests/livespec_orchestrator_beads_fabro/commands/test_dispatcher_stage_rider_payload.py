@@ -125,6 +125,23 @@ def test_payload_refuses_a_declared_stage_without_its_prompt(tmp_path: Path) -> 
     )
 
 
+def test_payload_refuses_a_declared_stage_without_a_prompt_attribute(tmp_path: Path) -> None:
+    graph = tmp_path / "workflow.fabro"
+    _ = graph.write_text(
+        'digraph G {\nimplement [timeout="1800s"]\nreview [prompt="@prompts/review.md"]\n}\n',
+        encoding="utf-8",
+    )
+
+    assert (
+        prefix_stage_riders(
+            payload_dir=tmp_path / "payload",
+            graph=graph,
+            stage_riders={"implement": "IMPLEMENT-RIDER\n"},
+        )
+        == 'workflow stage implement declares no prompt="@..." attribute for its rider'
+    )
+
+
 def test_payload_returns_a_graph_read_error(tmp_path: Path) -> None:
     assert (
         prefix_stage_riders(
