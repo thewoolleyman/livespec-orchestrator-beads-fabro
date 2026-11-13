@@ -79,6 +79,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
     from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_candidate_attempt import (
         CandidateAttempt,
     )
@@ -139,6 +140,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     payload_root: Path | None = None,
     governing_heading: GoverningHeadingReader | None = None,
     release_of_held_spec_tier: bool = False,
+    candidate_resolver: Callable[..., tuple[AcpCandidate, ...] | None] | None = None,
 ) -> DodJudgementDecision:
     """Reuse the recorded verdict, else take the judgement and record it.
 
@@ -171,6 +173,10 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
     spec-change-tier item is released: it always keys on the whole-tree identity,
     because that judgement never reuses a verdict taken before the latest
     revision.
+
+    `candidate_resolver` replaces the configured `dod_gate` chain resolution for a
+    taking that must bridge a configuration the gate itself no longer reads; `None`
+    keeps the gate's own resolver.
     """
     rubric = judgement_rubric(payload_root=payload_root)
     rubric_bytes_digest = (
@@ -222,6 +228,7 @@ def judge_definition_of_done(  # noqa: PLR0913 - each argument is an independent
             payload_root=payload_root,
             governing=governing,
             caller=f"dod_judgement_{stage.replace('-', '_')}",
+            candidate_resolver=candidate_resolver,
         ),
         governing=governing,
     )
