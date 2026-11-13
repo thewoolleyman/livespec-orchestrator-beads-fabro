@@ -198,19 +198,40 @@ def test_the_committed_run_config_declares_the_check_suite_input(tmp_path: Path)
 def test_the_dispatched_instruction_binds_the_repository_declared_check_suite(
     tmp_path: Path,
 ) -> None:
-    """Binding the projected inputs puts THIS repository's suite in the instruction."""
+    """Binding the projected inputs puts THIS repository's suite in the instruction.
+
+    Since bd-ib-vy75ws the implement stage's `green` prompt names no check suite:
+    its whole-suite run belongs to the `commit_green` command node, and contracts
+    "An implement turn sees its commit gate's verdict before it ends" has the
+    agent run the gate preview instead (pinned above). The agent instruction that
+    still names the repository's suite is the `fix` stage's grading section, so the
+    binding is proved on THAT dispatched prompt, in both directions.
+    """
     payload = _materialized(payload_dir=tmp_path / "payload")
     resolved = _resolved_contract(repo=tmp_path)
     variables = contract_prompt_variables(resolved=resolved)
-    bound = _dispatched_prompt(payload=payload).read_text(encoding="utf-8")
+    bound = (payload.graph.parent / "prompts" / "fix.md").read_text(encoding="utf-8")
+    assert _CHECK_SUITE_TOKEN in bound, "the dispatched fix prompt names no check-suite input"
     for name, value in variables.items():
         bound = bound.replace(f"{_OPEN} inputs.{name} {_CLOSE}", value)
-    section = _section(text=bound)
+    heading = "## A fix turn grades each tree once, through its commit hook"
+    assert bound.count(heading) == 1
+    start = bound.index(heading)
+    section = bound[start : bound.index("\n## ", start + len(heading))]
 
-    assert "livespec-implement-gate-preview.py" in section
+    assert _DECLARED_SUITE in section
     assert _CHECK_SUITE_TOKEN not in section
     # BOTH directions: a binding that fell back to the fleet convention — or
     # that never happened — reads identically on the assertion above alone.
     assert shlex.join(SANDBOX_CHECK_SUITE_DEFAULT) not in section
-    for phrase in _REQUIRED_PHRASES:
-        assert phrase in section, f"the bound coverage section omits {phrase!r}"
+
+
+def test_the_dispatched_green_prompt_leaves_no_check_suite_token_unbound(
+    tmp_path: Path,
+) -> None:
+    """The green prompt carries no check-suite token a run could render unbound."""
+    payload = _materialized(payload_dir=tmp_path / "payload")
+    green = _dispatched_prompt(payload=payload).read_text(encoding="utf-8")
+
+    assert _CHECK_SUITE_TOKEN not in green
+    assert "livespec-implement-gate-preview.py" in _section(text=green)

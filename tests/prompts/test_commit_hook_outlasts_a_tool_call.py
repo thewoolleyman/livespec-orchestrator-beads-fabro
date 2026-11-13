@@ -197,9 +197,54 @@ def test_the_waiting_direction_holds_for_a_commit_runner_s_bounded_waits(node: s
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-def test_the_only_agent_stage_that_commits_carries_the_waiting_directions() -> None:
-    """The command nodes, not Red or Green, own implement commits."""
-    assert len({_section(node=node) for node in _COMMITTING_STAGE_NODES}) == 1
+_NON_COMMITTING_IMPLEMENT_NODES = ("red", "green")
+_NO_COMMIT_DIRECTION = "Do not make a commit."
+
+
+def _graph_prompts(*, nodes: tuple[str, ...]) -> dict[str, Path]:
+    """The committed graph's prompt file for each named node, derived as above."""
+    found: dict[str, Path] = {}
+    for block in _NODE_BLOCK.finditer(_GRAPH.read_text(encoding="utf-8")):
+        name = block.group("name")
+        if name not in nodes:
+            continue
+        attr = _PROMPT_ATTR.search(block.group("body"))
+        assert attr is not None, f"node {name} declares no prompt"
+        assert name not in found, f"graph declares more than one {name} node prompt"
+        found[name] = _PROMPTS_DIR / attr.group("file")
+    return found
+
+
+def test_red_and_green_carry_one_no_commit_wording_where_implement_carried_the_hook_section() -> (
+    None
+):
+    """One wording across both implement-stage prompts, stated positively.
+
+    The single `implement` prompt carried the commit-hook waiting directions; the
+    red/green split moves every implement commit into `commit_red` and
+    `commit_green` (Scenario 285), so both agent prompts must carry the same
+    "do not commit" direction instead, word for word, in the run step that
+    used to end in a commit.
+    """
+    prompts = _graph_prompts(nodes=_NON_COMMITTING_IMPLEMENT_NODES)
+    assert tuple(sorted(prompts)) == tuple(sorted(_NON_COMMITTING_IMPLEMENT_NODES))
+
+    steps = {}
+    for node, prompt in prompts.items():
+        lines = [
+            line
+            for line in prompt.read_text(encoding="utf-8").splitlines()
+            if _NO_COMMIT_DIRECTION in line
+        ]
+        assert (
+            len(lines) == 1
+        ), f"the {node} prompt states {_NO_COMMIT_DIRECTION!r} on {len(lines)} lines; expected one"
+        steps[node] = lines[0]
+    for node, line in steps.items():
+        assert line.rstrip().endswith(
+            _NO_COMMIT_DIRECTION
+        ), f"the {node} prompt's no-commit direction is not the end of its run step: {line!r}"
+        assert "Run only" in line, f"the {node} prompt's no-commit direction is not in a run step"
 
 
 @pytest.mark.parametrize("node", _COMMITTING_STAGE_NODES)

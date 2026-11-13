@@ -226,3 +226,20 @@ def test_the_completion_gate_sends_complete_to_commit_green_and_incomplete_to_re
     assert (_GATE_NODE, _INCOMPLETE_ROUTE, "preferred_label=incomplete") in edges
     assert (_INCOMPLETE_ROUTE, "green", None) in edges
     assert (_INCOMPLETE_ROUTE, "needs_human", "outcome=failed") in edges
+
+
+def test_an_exhausted_incomplete_route_names_partial_progress_in_its_cause() -> None:
+    """The partial-progress cause, now written by the route rather than the agent.
+
+    The single `implement` prompt told the agent to report
+    LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS itself. In the split graph the clause has
+    the STAGE fail on an exhausted incomplete budget with "the dispatch outcome
+    detail ... naming partial progress", and the command node that decides that
+    exhaustion is `green_incomplete_route`, so the needle is pinned on its script.
+    """
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+
+    script = graph.nodes[_INCOMPLETE_ROUTE]["script"]
+    assert "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS" in script
+    assert "re-entry is spent" in script

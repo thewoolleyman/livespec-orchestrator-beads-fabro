@@ -17,6 +17,11 @@ Never run `git push` and never publish a branch or pull request.
   unrelated files, unrelated docs, or adjacent cleanup that is not necessary
   to satisfy the assignment and its acceptance criteria.
 
+Before every Green commit or Green amend, run every test file the change touches and see each one pass.
+`commit_green` makes that amend after your turn ends, so they must pass in the tree you leave.
+
+A change to a stage prompt file or `_dispatcher_overlay.py` must update the test that pins it in the same commit.
+
 Read the handoff file in full, including the Red section and any declared
 already-satisfied outcome.
 
