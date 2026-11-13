@@ -2127,16 +2127,21 @@ else
     # wait_for_signal_exit <pid> <signal>: a directly delivered INT or HUP is
     # normally handled as soon as the launcher returns from its short hold-poll
     # sleep. Under CPU saturation, however, one delivery can coincide with that
-    # child exiting. Retry the same signal for a bounded interval so the probe
-    # does not hang forever when that narrow delivery race occurs. A launcher
-    # that still does not exit is stopped and reported as a failed assertion,
-    # never mistaken for a successful signal attribution.
+    # child exiting. Retry the same signal at most once a second until cleanup
+    # starts, then leave that cleanup alone: another HUP or INT while its EXIT
+    # trap writes the terminal record can interrupt the record itself. A
+    # launcher that still does not exit is stopped and reported as a failed
+    # assertion, never mistaken for a successful signal attribution.
     SIGNAL_EXIT_GRACE_S=${SIGNAL_EXIT_GRACE_S:-5}
     wait_for_signal_exit() {
-        local pid="$1" sig="$2" deadline
+        local pid="$1" sig="$2" log="$3" deadline retry_due
         deadline=$(( $(date +%s) + SIGNAL_EXIT_GRACE_S ))
+        retry_due=$(date +%s)
         while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
-            kill -"$sig" "$pid" 2>/dev/null || true
+            if ! grep -qF 'terminal:' "$log" && [ "$(date +%s)" -ge "$retry_due" ]; then
+                kill -"$sig" "$pid" 2>/dev/null || true
+                retry_due=$(( $(date +%s) + 1 ))
+            fi
             sleep "$HARNESS_POLL_S"
         done
         if kill -0 "$pid" 2>/dev/null; then
@@ -2175,7 +2180,7 @@ os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LO
             wait "$sig_pid" 2>/dev/null
             return 0
         fi
-        if ! wait_for_signal_exit "$sig_pid" "$sig"; then
+        if ! wait_for_signal_exit "$sig_pid" "$sig" "$STUB_RM_PROBE_LOG_SOURCE"; then
             wait "$sig_pid" 2>/dev/null
             fail "$label did not exit after bounded $sig delivery during the repository-hold wait"
             tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
