@@ -5680,6 +5680,31 @@ Scenario 142 and Scenario 143 in `scenarios.md` exercise this section.
   gate record is still journaled regardless of its value. (This is the same
   always-wired-lever shape §"Closed-item-integrity check" uses for
   `LIVESPEC_CLOSED_ITEM_INTEGRITY`.)
+- **Host dispatch memory slice.** When `drive` launches the Dispatcher
+  `loop` for an `impl:<work-item-id>` action, it MUST run that loop, together
+  with every process the launch starts, inside a transient service-manager
+  scope placed in the slice `factory-dispatch.slice`, provided ALL of the
+  following hold for the launching user on the host: the user's service
+  manager loads that slice; the manager delegates the memory controller; a
+  scope launcher (`systemd-run`) is present; and the file
+  `/etc/livespec/factory-dispatch-loop-memory-max` exists and holds a memory
+  size. The scope's memory maximum MUST equal that file's value, and the
+  scope's out-of-memory policy MUST be `continue`, so that the kernel killing
+  one child does not stop the loop. When any of those conditions does not
+  hold, the launch MUST proceed with the same argv and environment it uses
+  without this clause, and MUST NOT fail because the slice is absent. When all
+  four conditions hold but the scoped launch itself fails (the scope launcher
+  exits non-zero, or no scope is created) before any loop process started,
+  the launch MUST fall back to the unscoped launch; the fallback MUST NOT
+  start a second loop for the dispatch. Every `impl:` launch MUST append one
+  record to this repository's dispatch journal with the top-level `stage`
+  `dispatch-launch-scope`, carrying the dispatch's `work_item_id`, a `launch`
+  of `scoped` or `unscoped`, the scope unit's name as `scope_unit` for a
+  scoped launch, and, for a fallback, the scoped launch's failure as `detail`
+  beside a `launch` of `unscoped`; the `drive` JSON output MUST carry the same
+  `launch` value. The slice and the published bound are host provisioning that
+  this repository does not install; this clause governs only how the launch
+  uses them.
 
 ## Dispatcher admission, WIP cap, and post-merge acceptance
 

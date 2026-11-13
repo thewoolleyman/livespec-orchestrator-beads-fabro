@@ -3237,5 +3237,13 @@
     "test": "TODO",
     "work_item": "bd-ib-yw7yot",
     "reason": "A test at the integration tier or above is owed: the operator preserve tool's own suite, delivered by bd-ib-yw7yot, driving preserve_runs.sh against a local bare origin."
+  },
+  {
+    "heading": "## Scenario 371 \u2014 An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading. The drive impl: launch path is run against doubled systemd-run, slice and bound-file states: a host with the slice and the bound file gets a scoped launch carrying MemoryMax and OOMPolicy=continue; a host missing any condition gets the unchanged argv and environment; a failing scope launcher falls back to exactly one unscoped launch; each case appends a dispatch-launch-scope journal record naming the launch it used. bd-ib-szbxu7 owns it.",
+    "work_item": "bd-ib-szbxu7"
   }
 ]
