@@ -54,6 +54,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro._store_comments import WorkItemComment
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import DispatchLock
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
@@ -158,11 +159,11 @@ def _inspect(*, node: str) -> str:
     )
 
 
-def _item(*, assertion: str = _ASSERTION) -> WorkItem:
+def _item(*, assertion: str = _ASSERTION, status: str = "ready") -> WorkItem:
     return WorkItem(
         id=_ITEM_ID,
         type="task",
-        status="ready",
+        status=status,
         title="A terminated run is resumed from its pull request",
         description=f"## Definition of Done\n\n- {assertion}\n",
         origin="freeform",
@@ -175,6 +176,15 @@ def _item(*, assertion: str = _ASSERTION) -> WorkItem:
         reason=None,
         audit=None,
         superseded_by=None,
+    )
+
+
+def _parking_comment(*, pending: str) -> WorkItemComment:
+    """One acceptance parking record with the named still-pending evidence leg."""
+    return WorkItemComment(
+        text=f"Acceptance parking record — NEEDS_ATTENTION — pending: {pending}",
+        author=None,
+        created_at=None,
     )
 
 
@@ -389,6 +399,69 @@ def test_the_pull_request_number_state_and_head_ride_from_the_forge(repo: Path) 
     assert gather.observation.pull_request_head == _MOVED_HEAD
     assert gather.observation.anchor_head == _HEAD
     assert gather.branch == _BRANCH
+
+
+@pytest.mark.parametrize(
+    "body", ["", _record_body().replace("Proof mode", "No Reproduced lines\n\nProof mode")]
+)
+def test_an_acceptance_park_on_the_proof_evidence_leg_marks_a_merged_resume_proof_only(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, body: str
+) -> None:
+    """Scenario 257 accepts absent and record-wide proof evidence on the merged head."""
+    assert _GATHER_PATH.is_file()
+    proof_only_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only_observation"
+    )
+    monkeypatch.setattr(
+        proof_only_module,
+        "read_dispatch_comments",
+        lambda **_kwargs: (_parking_comment(pending=f"proof of done record for {_ASSERTION!r}"),),
+    )
+
+    gather = _gather(
+        repo=repo,
+        item=_item(status="acceptance"),
+        runner=_runner(
+            listing=_ok(stdout=_pr_listing(state="MERGED")),
+            view=_ok(stdout=_comments(body=body)),
+        ),
+    )
+
+    assert gather.observation.proof_only_resume is True
+    assert gather.anchor is not None
+    assert gather.anchor.record is None
+    assert gather.anchor.run_id is None
+    assert gather.anchor.head == _HEAD
+    assert gather.anchor.resumed_at == "proof_capture"
+    assert gather.anchor.source == "merged-pull-request-parking-record"
+
+
+def test_a_merged_proof_only_resume_carries_the_parking_record_that_authorized_it(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 257's provenance names the parking record, not only that one exists."""
+    assert _GATHER_PATH.is_file()
+    proof_only_module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_resume_proof_only_observation"
+    )
+    parked = dataclasses.replace(
+        _parking_comment(pending=f"proof of done record for {_ASSERTION!r}"),
+        comment_id="comment-park-9",
+    )
+    monkeypatch.setattr(proof_only_module, "read_dispatch_comments", lambda **_kwargs: (parked,))
+
+    gather = _gather(
+        repo=repo,
+        item=_item(status="acceptance"),
+        runner=_runner(
+            listing=_ok(stdout=_pr_listing(state="MERGED")),
+            view=_ok(stdout=_comments(body="")),
+        ),
+    )
+
+    assert gather.observation.proof_only_parking_record == "comment-park-9"
+    assert gather.anchor is not None
+    assert gather.anchor.parking_record == "comment-park-9"
 
 
 def test_the_items_own_status_and_blocked_reason_are_carried(repo: Path) -> None:

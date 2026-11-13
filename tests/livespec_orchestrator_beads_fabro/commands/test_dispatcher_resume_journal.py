@@ -132,6 +132,26 @@ def test_the_record_names_everything_the_clause_requires() -> None:
     assert record["resumed_at_source"] == "pull-request-latest-record"
 
 
+def test_a_proof_only_resume_records_the_parking_record_beside_its_pull_request_and_head() -> None:
+    """Scenario 257's provenance is the merged pull request, its head and the park."""
+    module = _journal_module()
+    record = module.with_parking_record(
+        record=module.resume_journal_record(
+            work_item_id=_ITEM,
+            earlier_run_ids=(),
+            pull_request=2639,
+            head=_HEAD,
+            resumed_at="proof_capture",
+            source="merged-pull-request-parking-record",
+        ),
+        parking_record="comment-park-9",
+    )
+    assert record["pull_request"] == 2639
+    assert record["head"] == _HEAD
+    assert record["parking_record"] == "comment-park-9"
+    assert "parking_record" not in _resume_row()
+
+
 def test_both_of_the_earlier_runs_identifiers_are_recorded() -> None:
     """The clause accepts either identifier, so linking only one links half the pair."""
     module = _journal_module()

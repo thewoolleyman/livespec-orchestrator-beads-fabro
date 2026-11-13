@@ -73,6 +73,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
     SOURCE_CANCEL_RECORD,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
+    proof_only_graph,
+    resume_checkout_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import RESUME_STAGE
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import ResumeGather
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
@@ -297,6 +301,106 @@ def test_a_clean_resume_claims_launches_and_carries_the_entry_node_head_and_cpu_
     assert dispatched.resume_head == _HEAD
     assert dispatched.workflow_name == _WORKFLOW
     assert log.dispatched_launches[0].prelaunch_profile is not None
+
+
+def test_a_proof_only_resume_carries_its_arm_selector_to_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The affirmative admission result must select the proof-only graph downstream."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    observation = _observation()
+    object.__setattr__(observation, "proof_only_resume", True)
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(),
+        log=log,
+        anchor=_anchor(),
+        observation=observation,
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+    assert log.dispatched_args[0].resume_proof_only is True
+
+
+def test_a_parked_merged_proof_resume_launches_without_an_earlier_proof_record_or_claim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 257 keeps the proof-only item in acceptance throughout its launch."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    observation = _observation(status="acceptance")
+    object.__setattr__(observation, "pull_request_state", "MERGED")
+    object.__setattr__(observation, "anchor_head", None)
+    object.__setattr__(observation, "proof_only_resume", True)
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(status="acceptance"),
+        log=log,
+        anchor=None,
+        observation=observation,
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+    assert log.events == ["wall", "launch", "tail"]
+    dispatched = log.dispatched_args[0]
+    assert dispatched.resume_proof_only is True
+    assert dispatched.resume_fetch_ref == f"refs/pull/{_PULL_REQUEST}/head"
+    checkout = resume_checkout_for(args=dispatched, branch=f"feat/{_ITEM_ID}")
+    assert checkout is not None
+    assert checkout.head == _HEAD
+    assert checkout.fetch_ref == f"refs/pull/{_PULL_REQUEST}/head"
+    assert checkout.read_only is True
+    graph = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "workflow.fabro"
+    )
+    assert proof_only_graph(graph_text=graph.read_text(encoding="utf-8")) is not None
+    assert journal.records[0]["earlier_run_ids"] == []
+
+
+def test_a_proof_only_resume_journals_the_parking_record_that_authorized_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 257: the journal names the merged pull request, its head and the park."""
+    assert _module_path().is_file()
+    module = importlib.import_module(_MODULE)
+    journal = _RecordingJournal()
+    log = _Log()
+    observation = _observation(status="acceptance")
+    object.__setattr__(observation, "pull_request_state", "MERGED")
+    object.__setattr__(observation, "proof_only_resume", True)
+    object.__setattr__(observation, "proof_only_parking_record", "comment-park-9")
+    _stub_resume(
+        module=module,
+        monkeypatch=monkeypatch,
+        journal=journal,
+        item=_item(status="acceptance"),
+        log=log,
+        anchor=None,
+        observation=observation,
+        refusals=(),
+    )
+
+    assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
+    recorded = journal.records[0]
+    assert recorded["pull_request"] == _PULL_REQUEST
+    assert recorded["head"] == _HEAD
+    assert recorded["parking_record"] == "comment-park-9"
 
 
 def test_a_clean_resume_journals_its_record_before_the_claim(
