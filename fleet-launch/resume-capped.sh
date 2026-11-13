@@ -371,7 +371,7 @@ while :; do
   release_lock
   resume_started=1
   echo "$(date -u +%FT%TZ) resume marker written and mutex released: item=$ITEM"
-  "$FLEET_LAUNCH_RESUME_WRAPPER" -- "$FLEET_LAUNCH_RESUME_COMMAND" --item "$ITEM" > "$OUT/$ITEM-resume.out" 2> "$OUT/$ITEM-resume.err" &
+  "$FLEET_LAUNCH_RESUME_WRAPPER" -- env LIVESPEC_FACTORY_READ_WRAPPER="$FLEET_LAUNCH_DEFAULT_WRAPPER" "$FLEET_LAUNCH_RESUME_COMMAND" --item "$ITEM" > "$OUT/$ITEM-resume.out" 2> "$OUT/$ITEM-resume.err" &
   resume_pid=$!
   wait_for_listing "$resume_pid"
   wait "$resume_pid"

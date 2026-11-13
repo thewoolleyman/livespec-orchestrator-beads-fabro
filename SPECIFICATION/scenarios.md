@@ -14731,12 +14731,15 @@ Feature: An installed consumer reads an incident item's phase from the item id a
     And a caller that holds only the repository and the item id, with no attempt, phase, generation, operation or owner
     When the caller runs the incident authority CLI action read-head
     Then the reply reports the head's incident phase and generation as read_incident_head selects them
+    And the reply's status is verified and the process exits 0
     And an item whose head is drill-closed is reported at drill-closed
     And the reply authorizes no side effect, so a caller that will act on an attempt still takes read-current with the full fenced identity immediately before acting
   Scenario: An item with no incident authority genesis reads absent, not refused
     Given an item for which no incident authority genesis exists
     When the caller runs read-head for that item
-    Then the reply reports the item as absent
+    Then the reply's status is absent and the process exits 0
+    And the reply carries the repository and item id and no phase or generation
+    And authorizes_current_effects is false
     And the reply is not a refusal
   Scenario: Every other chain fault stays a named refusal and never reads absent
     Given an item whose incident authority chain is ambiguous, has an invalid genesis, contains a cycle, or fails an identity or item match
@@ -14744,10 +14747,38 @@ Feature: An installed consumer reads an incident item's phase from the item id a
     Then the reply is the named refusal the canonical reader returns for that fault
     And the item is not reported as absent
     And no phase is reported
+    And the reply's status is refused and the process exits 78
   Scenario: An unreadable authority store refuses as unavailable with no phase
     Given the incident authority store cannot be read
     When the caller runs read-head for any item
     Then the reply refuses with the named reason incident-authority-unavailable
     And no phase is reported
     And the item is not reported as absent
+    And the reply's status is refused and the process exits 78
+```
+
+## Scenario 365 — read-current verifies only the current head's full fenced identity and is the only action that authorizes a side effect
+
+```gherkin
+Feature: The fenced current-head read authorizes exactly the attempt it names
+  Scenario: The full fenced identity of the current head verifies and authorizes
+    Given an incident item whose current head is attempt A at incident phase P, generation G, operation O and owner W
+    When a caller runs read-current with the repository, the item id, A, P, G, O and W
+    Then the reply's status is verified and the process exits 0
+    And authorizes_current_effects is true
+  Scenario: A stale or partial fence is refused and authorizes nothing
+    Given the same item
+    When a caller runs read-current naming generation G after a later generation has superseded it, or naming a different owner or operation
+    Then the reply refuses with the named reason incident-authority-identity-mismatch
+    And the reply's status is refused and the process exits 78
+    And authorizes_current_effects is false
+  Scenario: A head that moves after selection is refused
+    Given read-current has selected the current head of an item
+    When that head's standing token is closed by a successor before the reply is returned
+    Then the reply refuses with the named reason incident-authority-changed
+    And authorizes_current_effects is false
+  Scenario: No other action authorizes a side effect
+    Given an incident item with a current head
+    When a caller runs read-head or read-history for it
+    Then authorizes_current_effects is false whatever the reply's status
 ```

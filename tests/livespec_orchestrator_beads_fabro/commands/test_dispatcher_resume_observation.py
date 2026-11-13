@@ -90,6 +90,8 @@ _CANCELLED_DISPATCH = "7a636b5e7d60425c942ebdaf10fe7e53"
 _PR = 2639
 _ASSERTION = "The resume enters at the unfinished stage."
 _COMMENT_URL = "https://github.test/c/1"
+_FACTORY_READ_WRAPPER_ENV = "LIVESPEC_FACTORY_READ_WRAPPER"
+_FACTORY_READ_WRAPPER = "/host/default-family-wrapper"
 
 
 @dataclass(kw_only=True)
@@ -115,7 +117,11 @@ class _StubRunner:
     ) -> CommandResult:
         _ = (cwd, timeout_seconds, env, stdin)
         self.argvs.append(argv)
-        key = argv[2] if Path(argv[0]).name == "gh" else argv[1]
+        program = next(
+            (index for index, value in enumerate(argv) if Path(value).name == "fabro"),
+            0,
+        )
+        key = argv[2] if Path(argv[0]).name == "gh" else argv[program + 1]
         return self.answers.get(key, CommandResult(exit_code=1, stdout="", stderr=""))
 
 
@@ -321,6 +327,20 @@ def test_an_unanswerable_factory_is_unobserved_and_not_an_empty_inventory(repo: 
     )
     assert gather.observation.liveness_observed is False
     assert gather.observation.live_runs == ()
+
+
+def test_a_sealed_tenant_reads_ended_run_liveness_through_the_family_wrapper(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Scenario 182: the tenant child does not supply factory credentials."""
+    monkeypatch.setenv(_FACTORY_READ_WRAPPER_ENV, _FACTORY_READ_WRAPPER)
+    runner = _runner(ps=_ok(stdout=json.dumps([])))
+
+    gather = _gather(repo=repo, item=_item(), runner=runner)
+
+    assert gather.observation.liveness_observed is True
+    assert gather.observation.live_runs == ()
+    assert runner.argvs[-1][:3] == [_FACTORY_READ_WRAPPER, "--", "sh"]
 
 
 def test_a_live_earlier_run_is_reported_with_its_status(repo: Path) -> None:
