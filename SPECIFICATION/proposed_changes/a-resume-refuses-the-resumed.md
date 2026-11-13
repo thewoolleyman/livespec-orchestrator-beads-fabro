@@ -13,7 +13,7 @@ created_at: 2026-11-13T13:41:13Z
 
 ### Summary
 
-Add one paragraph to contracts.md §"Self-contained plugin dispatch", directly after "**Scripted publication and proof-head integrity.**". Each push of a run's publish branch by `publish_draft` or `pr_refresh` posts one *publication record* on the item's pull request. The record names the run id, the commit the push ACTUALLY placed at the branch tip (the folded commit when the pending factory-engine-checkpoint-commits-fabro proposal folds), the pull request, the pushing stage and the UTC push time. It lives on the forge, so every host reads the same attribution whatever its own dispatch journal holds. Amend the attribution sentence of §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work" so the publication record attributes a published head first, the existing proof-record and journal readings remain the fallback, and a head attributed to the compared ref's own run needs no journal order. Add six scenarios to Scenario 323; no heading changes. FLEET SCOPE: the shared Dispatcher and the bundled implement-work-item publication stages, so every factory-target repository.
+Add one paragraph to contracts.md §"Self-contained plugin dispatch", directly after "**Scripted publication and proof-head integrity.**". Each push of a run's publish branch by `publish_draft` or `pr_refresh` posts one *publication record* on the item's pull request. The record names the run id, the commit the push ACTUALLY placed at the branch tip (the folded commit when the pending factory-engine-checkpoint-commits-fabro proposal folds), the pull request, the pushing stage and the UTC push time. It lives on the forge, so every host reads the same attribution whatever its own dispatch journal holds. A reader accepts a record only when its forge author is the committed `dispatcher.publication_identity`. Amend the attribution sentence of §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work" so the publication record attributes a published head first, the existing proof-record and journal readings remain the fallback, and a head attributed to the compared ref's own run needs no journal order. Add ten scenarios to Scenario 323; no heading changes. FLEET SCOPE: the shared Dispatcher and the bundled implement-work-item publication stages, so every factory-target repository.
 
 ### Motivation
 
@@ -27,9 +27,9 @@ DESIGN CHOICES, settled here:
 - (a) Forge, not ledger. The record is a pull request comment because the publication stages already hold the forge identity that pushes, and every host that can resume the item already reads that pull request's records. A sandbox stage holds no ledger credential.
 - (b) The pushed commit, read back. The record names what the push placed at the tip, read from the push result or origin, never the janitor-passed head. That covers the folded commit of the pending factory-engine-checkpoint-commits-fabro proposal (PR 5159) and any other commit a stage creates in place of that head.
 - (c) `pr_refresh` too. `pr_refresh` also moves the publish branch's tip, and a resume after a refresh push meets the same gap. The coordinator's order named `publish_draft`; this proposal extends the same record to `pr_refresh` for the same reason, and the grade may strike that half.
-- (d) Identity-checked. Only a record authored by the identity that pushed counts, so a hand-written comment cannot re-attribute a head.
+- (d) Identity-checked against a configured login. A reader sees a comment's author, not who pushed, so it accepts a record only when that author is exactly the committed `dispatcher.publication_identity`, which names the forge login the publication stages push as (for this fleet, the factory GitHub App's bot login `thewoolleyman-factory-bot[bot]`, the author of the factory pull requests #5167 and livespec-dev-tooling#4515). A marker comment from any other author, including the maintainer's own login, is ignored. With the key unset no comment is accepted, so the change fails closed to today's attribution.
 - (e) Best effort. A failed post never changes the stage's outcome; that head then stays unattributed, and the existing `publishing-run-unobservable` refusal still applies to it.
-- (f) Not a proof record. No proof reader, gate or budget reads or counts it.
+- (f) Not a proof record. No proof reader, acceptance pass or proof gate reads or counts it.
 
 RELATIONSHIP TO IN-FLIGHT WORK (survey 2026-11-13 about 13:40Z: all 22 open `spec/` pull requests and every pending proposal on master). Only factory-engine-checkpoint-commits-fabro (PR 5159) touches what `publish_draft` pushes. This proposal aligns with it and inserts at a different anchor, so the two compose in either revise order. publish-draft-fails-closed-when (PR 5160) adds pull-request adoption after a failed create; a pull request adopted that way is one the record is posted on. No pending proposal edits the attribution sentence.
 
@@ -40,7 +40,7 @@ RELATIONSHIP TO IN-FLIGHT WORK (survey 2026-11-13 about 13:40Z: all 22 open `spe
 Insert this paragraph directly AFTER the paragraph that begins "**Scripted publication and proof-head integrity.**" and ends "Scenario 226 in `scenarios.md` exercises this sentence.", and BEFORE the paragraph that begins "**A pull request merged before its refresh.**", separated by one blank line on each side. No existing paragraph changes:
 
 ```markdown
-**A publication is bound to its run on the pull request.** Each time `publish_draft` or `pr_refresh` pushes a run's publish branch and the push moves that branch's tip on origin, the stage MUST, once the push has succeeded and the item's pull request exists (whether the stage created it, adopted it, or found it open), post on that pull request one *publication record*. A publication record is a pull request comment whose first line is the marker `livespec-publication-record` and which names, one per line, the run id, the full id of the commit the push placed at the publish branch's tip, the pull request number, the stage that pushed, and the UTC time of the push. The commit it names MUST be the commit the push actually sent, read back from the push's result or from origin, and never the head the `janitor` passed. So when a stage pushes a commit it created in place of that head, the record names the commit it created. A publication record MUST be posted through the same forge identity that made the push, and every reader MUST ignore a comment carrying the marker whose author is any other identity. Posting it MUST NOT change the stage's outcome, its exit code or the head it pushed. When the post fails, the stage MUST report in its own recorded output the run, the pushed commit and the failed step, and the run continues; the head is then attributed only as an unbound head is, under §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work". A push that leaves the publish branch's tip unchanged posts no record. The publication record is the publication record that paragraph reads to attribute a published head to its run. Because it lives on the forge, every host that can read the pull request reads the same attribution whatever its own dispatch journal holds. It is not a proof record: no reader of proof records, acceptance pass, proof gate or record budget reads or counts it. Scenario 323 in `scenarios.md` exercises this paragraph.
+**A publication is bound to its run on the pull request.** Each time `publish_draft` or `pr_refresh` pushes a run's publish branch and the push moves that branch's tip on origin, the stage MUST, once the push has succeeded and the item's pull request exists (whether the stage created it, adopted it, or found it open), post on that pull request one *publication record*. A publication record is a pull request comment whose first line is the marker `livespec-publication-record` and which names, one per line, the run id, the full id of the commit the push placed at the publish branch's tip, the pull request number, the stage that pushed, and the UTC time of the push. The commit it names MUST be the commit the push actually sent, read back from the push's result or from origin, and never the head the `janitor` passed. So when a stage pushes a commit it created in place of that head, the record names the commit it created. A publication record MUST be posted through the same forge identity that made the push. The *publication identity* is the forge login committed in the consumer project's `.livespec.jsonc` under `dispatcher.publication_identity`, and it MUST be the login the forge reports as the author of a comment that identity posts. For a factory whose run token is minted from a GitHub App, that is the App's bot login, the same identity the publication stages push with. It is a repository-wide setting, and no per-item label overrides it. A reader MUST accept a comment as a publication record only when the forge reports its author as exactly the publication identity. A comment that carries the marker but has any other author, including the maintainer's own login, MUST be ignored and MUST NOT attribute or re-attribute any head. When `dispatcher.publication_identity` is absent or empty, no comment is a publication record, and every head is attributed only by the proof and journal records that paragraph names. Posting it MUST NOT change the stage's outcome, its exit code or the head it pushed. When the post fails, the stage MUST report in its own recorded output the run, the pushed commit and the failed step, and the run continues; the head is then attributed only by the proof and journal records that §"Factory-configurable ACP fallback priority" → "Recovery from the failed run's preserved work" names, or stays unattributed. A push that leaves the publish branch's tip unchanged posts no record. The publication record is the publication record that paragraph reads to attribute a published head to its run. Because it lives on the forge, every host that can read the pull request reads the same attribution whatever its own dispatch journal holds. It is not a proof record: no reader of proof records, acceptance pass or proof gate reads or counts it. Scenario 323 in `scenarios.md` exercises this paragraph.
 ```
 
 ### 2. `SPECIFICATION/contracts.md` §"Factory-configurable ACP fallback priority", section "Recovery from the failed run's preserved work": amend one sentence
@@ -51,7 +51,7 @@ In the paragraph that contains the sentence "The observed published head belongs
 The observed published head belongs to the run whose publication record, as §"Self-contained plugin dispatch" → "A publication is bound to its run on the pull request" defines it, names that head; when more than one publication record names it, the head belongs to the run of the most recently posted one. When no publication record names the head, it belongs to the run whose factory proof record on the pull request declares it or whose journal record names it. A head that this attribution assigns to the same run as the ref it is compared with is that run's own head, and the comparison MUST be taken without a journal order between the two; a dispatch journal that holds no record of that run MUST NOT make the head unattributed. A head that no publication record, proof record or journal record names remains unattributed, and the `publishing-run-unobservable` reading applies to it unchanged.
 ```
 
-### 3. `SPECIFICATION/scenarios.md` §"Scenario 323 — An earlier run's preserved ref never outranks a newer run's published head": add six scenarios
+### 3. `SPECIFICATION/scenarios.md` §"Scenario 323 — An earlier run's preserved ref never outranks a newer run's published head": add ten scenarios
 
 Append these scenarios at the END of that heading's `gherkin` block, after the scenario "a preserve that does not descend from the published head does not refuse the resume" (whose last step is "Then the route is resume onto H"), separated by one blank line. No existing scenario changes:
 
@@ -89,11 +89,38 @@ Append these scenarios at the END of that heading's `gherkin` block, after the s
     Then the resume refuses with publishing-run-unobservable, naming that measurement
 
   Scenario: a marker comment from another identity is not a publication record
-    Given a pull request comment that opens with livespec-publication-record and names run R and head H
-    And its author is not the forge identity that pushed the publish branch
+    Given the committed dispatcher.publication_identity names the factory's publication login
+    And a pull request comment that opens with livespec-publication-record and names run R and head H
+    And the forge reports its author as a login other than the publication identity, such as the maintainer's own login
     When the Dispatcher attributes H
     Then that comment is ignored
     And H is attributed only by the other records that name it
+
+  Scenario: with no configured publication identity no comment is a publication record
+    Given the consumer project commits no dispatcher.publication_identity
+    And a pull request comment from the factory's login opens with livespec-publication-record and names run R and head H
+    When the Dispatcher attributes H
+    Then that comment is ignored
+    And H is attributed only by the proof and journal records that name it
+
+  Scenario: a refresh push is bound to its run
+    Given run R's pr_refresh pushed refreshed head H2 to the item's open pull request
+    When pr_refresh finishes its push
+    Then a publication record authored by the publication identity names run R, H2, the pull request, pr_refresh and the push time
+    And a later resume of the item attributes H2 to run R
+
+  Scenario: the most recently posted publication record of a head decides its run
+    Given two publication records by the publication identity name head H, the earlier naming run R1 and the later naming run R2
+    When the Dispatcher attributes H
+    Then H is attributed to run R2
+
+  Scenario: a failed post does not change the publishing stage's outcome
+    Given run R's publish_draft pushed head H and the pull request exists
+    And posting the publication record fails
+    When publish_draft finishes
+    Then its outcome, its exit code and the head it pushed are the same as if the post had succeeded
+    And its recorded output names run R, H and the failed post
+    And H is attributed only by the proof and journal records that name it
 ```
 
 ### 4. Heading coverage
