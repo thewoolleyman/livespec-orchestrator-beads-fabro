@@ -15,10 +15,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import (
     cost_gate_after_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import DispatchOutcome
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import (
-    emit_outcomes,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_handpicked_refusal import (
+    handpicked_host_only_refusal_exit,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import emit_outcomes
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_candidates import (
     candidates,
 )
@@ -80,6 +81,10 @@ class _LoopStart:
 
 
 def run_loop_command(*, args: argparse.Namespace) -> int:
+    if getattr(args, "items", None) is not None:
+        refusal_exit = handpicked_host_only_refusal_exit(args=args, repo=Path(args.repo))
+        if refusal_exit is not None:
+            return refusal_exit
     with pass_snapshot():
         return _loop_in_pass(args=args)
 
