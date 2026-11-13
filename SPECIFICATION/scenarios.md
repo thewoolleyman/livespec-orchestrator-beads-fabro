@@ -14788,3 +14788,39 @@ Feature: The fenced current-head read authorizes exactly the attempt it names
     When a caller runs read-head or read-history for it
     Then authorizes_current_effects is false whatever the reply's status
 ```
+
+## Scenario 366 — The factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph
+
+```gherkin
+Feature: The factory-graph gate validates with the engine the factory moves onto
+  As a maintainer merging a change to a committed Fabro workflow graph
+  I want the graph gate to judge it with a validator whose release triple is at or after 0.396.0
+  So that a graph the factory's engine rejects cannot merge green
+
+  Scenario: CI's pinned release is at or above the floor
+    Given CI's factory-graph gate installer pins one upstream fabro release
+    When the installer runs on a supported runner
+    Then the installed binary reports a version whose release triple is at or after 0.396.0
+
+  Scenario: A client below the floor fails the gate before any graph is validated
+    Given the factory-graph gate resolves a fabro client that reports version 0.254.0 or 0.393.0-nightly.1
+    When the gate runs in CI or on a developer host
+    Then the gate fails with a control finding naming that version and the 0.396.0 floor
+    And no graph is validated with that client
+
+  Scenario: A client with no parseable version fails the gate
+    Given the factory-graph gate resolves a fabro client whose --version output names no version
+    When the gate runs
+    Then the gate fails with a control finding saying the client reported no parseable version
+    And no graph is validated with that client
+
+  Scenario: Each validated graph is reported with its client version
+    Given the factory-graph gate resolves a fabro client whose release triple is at or after 0.396.0
+    When the gate validates the repository's committed workflow graphs
+    Then it reports each validated graph's location together with that client's version
+
+  Scenario: A graph the engine the factory moves onto rejects fails the gate
+    Given a committed workflow graph whose exit node is unreachable
+    When the factory-graph gate validates it with a fabro client whose release triple is at or after 0.396.0
+    Then the gate fails naming that graph and attractor.exit_unreachable
+```

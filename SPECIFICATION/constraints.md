@@ -251,12 +251,27 @@ allowed to pin.
   committed Fabro workflow graphs during CI. It validates with the pinned
   upstream `fabro-sh/fabro` release, not with the factory's carrier build,
   and that binary is outside "the factory" as this section scopes it. The
-  gate's installer MUST install the pinned release's static Linux asset
-  whose architecture matches the CI runner's own (`x86_64` or `aarch64`).
-  It MUST verify the downloaded asset against the sha256 that release
-  publishes for that asset, pinned beside the version, before installing
-  it. On any other runner architecture it MUST exit non-zero with a message
-  naming that architecture and MUST NOT install a binary.
+  pinned release's release triple MUST be at or after `0.396.0`, the first
+  upstream release that refuses `run.prepare`, so the gate judges graphs by
+  the rules of the engine the factory moves onto. An earlier release,
+  including `v0.254.0` and the factory's own `0.393.0` carrier client, MUST
+  NOT be the gate's client, because its validator accepts graphs that
+  engine rejects. The gate's installer MUST install the pinned release's static
+  Linux asset whose architecture matches the CI runner's own (`x86_64` or
+  `aarch64`). It MUST verify the downloaded asset against the sha256 that
+  release publishes for that asset, pinned beside the version, before
+  installing it. On any other runner architecture it MUST exit non-zero
+  with a message naming that architecture and MUST NOT install a binary.
+  Wherever the gate runs, in CI or on a developer host, it MUST read the
+  version the resolved `fabro` client reports before it validates any
+  graph. When that client reports no parseable version, or a version whose
+  release triple is older than `0.396.0`, the gate MUST fail with a control
+  finding naming the reported version and the `0.396.0` floor, or, when
+  no version is parseable, saying so, and MUST NOT validate any graph with
+  that client. It MUST NOT fall
+  back to another client. For every graph it validates, the gate MUST
+  report the graph's location together with the client version that
+  validated it.
 
 ## Fabro factory host provisioning constraints
 
