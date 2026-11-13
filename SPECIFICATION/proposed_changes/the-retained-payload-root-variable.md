@@ -24,7 +24,7 @@ In `SPECIFICATION/contracts.md` §"Self-contained plugin dispatch", in the parag
 
 1. Directly after the paragraph's first sentence (the one ending "MUST remove that holder before it exits."), insert:
 
-   > `LIVESPEC_RETAINED_PAYLOAD_ROOT` is the environment variable a launcher exports to the processes it starts so that every process of one dispatch reads the same payload holder instead of copying the payload again; a running process *names* a holder when its environment carries `LIVESPEC_RETAINED_PAYLOAD_ROOT` set to that holder's path.
+   > `LIVESPEC_RETAINED_PAYLOAD_ROOT` is the environment variable a launcher exports to the processes it starts so that every process of one dispatch reads the same staged payload instead of copying the payload again; its value is the payload root staged inside the holder (the holder's staged payload directory), not the holder's own path. A running process *names* a holder when its environment carries `LIVESPEC_RETAINED_PAYLOAD_ROOT` set to the payload root staged inside that holder.
 
 2. Replace "This removal is best-effort: a holder that cannot be removed is logged, and it MUST NOT turn a dispatch into a refusal or a failure." with:
 
