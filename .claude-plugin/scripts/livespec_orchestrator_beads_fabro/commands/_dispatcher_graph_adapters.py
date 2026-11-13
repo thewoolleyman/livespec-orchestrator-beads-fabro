@@ -60,6 +60,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     PROOF_CAPTURE_HOOKS_PATH,
     PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR,
     PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH,
+    REVIEW_READ_ONLY_ENV_VAR,
     guarded_adapter_string,
 )
 
@@ -105,6 +106,7 @@ _UNESCAPABLE_RE = re.compile(r"[\r\n]")
 _GRAPH_BLOCK_NAME = "graph"
 _ENV_ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 _PROOF_CAPTURE_ADAPTER_INPUT = "proof_capture_adapter"
+_REVIEW_ADAPTER_INPUT = "review_adapter"
 _PROOF_CAPTURE_GIT_CONFIG = {
     "GIT_CONFIG_COUNT": "1",
     "GIT_CONFIG_KEY_0": "core.hooksPath",
@@ -114,6 +116,7 @@ _PROOF_CAPTURE_GIT_LAUNCHER = {
     PROOF_CAPTURE_GIT_READ_ONLY_ENV_VAR: "1",
     PROOF_CAPTURE_PROTECTED_CHECKOUT_ENV_VAR: PROOF_CAPTURE_PROTECTED_CHECKOUT_PATH,
 }
+_REVIEW_COMMAND_LAUNCHERS = {REVIEW_READ_ONLY_ENV_VAR: "1"}
 
 
 def _dot_escaped(*, value: str) -> str:
@@ -158,13 +161,18 @@ def guarded_adapter_commands(*, run_inputs: Sequence[str]) -> Mapping[str, str]:
     commands: dict[str, str] = {}
     for pair in run_inputs:
         name, _, rendered = pair.partition("=")
-        protected = (
-            _proof_capture_read_only_adapter(rendered=rendered)
-            if name == _PROOF_CAPTURE_ADAPTER_INPUT
-            else rendered
-        )
+        protected = _stage_read_only_adapter(name=name, rendered=rendered)
         commands[name] = guarded_adapter_string(rendered=protected)
     return commands
+
+
+def _stage_read_only_adapter(*, name: str, rendered: str) -> str:
+    """Add the command boundary owned by a read-only agent stage."""
+    if name == _PROOF_CAPTURE_ADAPTER_INPUT:
+        return _proof_capture_read_only_adapter(rendered=rendered)
+    if name == _REVIEW_ADAPTER_INPUT:
+        return _review_read_only_adapter(rendered=rendered)
+    return rendered
 
 
 def _proof_capture_read_only_adapter(*, rendered: str) -> str:
@@ -192,6 +200,23 @@ def _proof_capture_read_only_adapter(*, rendered: str) -> str:
         index += 1
     environment.update(_PROOF_CAPTURE_GIT_CONFIG)
     environment.update(_PROOF_CAPTURE_GIT_LAUNCHER)
+    assignments = [f"{key}={shlex.quote(value)}" for key, value in sorted(environment.items())]
+    command = [shlex.quote(token) for token in tokens[index:]]
+    return " ".join([*assignments, *command])
+
+
+def _review_read_only_adapter(*, rendered: str) -> str:
+    """Mark the review adapter for the guard-owned, adapter-neutral launchers."""
+    tokens = shlex.split(rendered)
+    environment: dict[str, str] = {}
+    index = 0
+    for token in tokens:
+        if _ENV_ASSIGNMENT_RE.match(token) is None:
+            break
+        key, _, value = token.partition("=")
+        environment[key] = value
+        index += 1
+    environment.update(_REVIEW_COMMAND_LAUNCHERS)
     assignments = [f"{key}={shlex.quote(value)}" for key, value in sorted(environment.items())]
     command = [shlex.quote(token) for token in tokens[index:]]
     return " ".join([*assignments, *command])

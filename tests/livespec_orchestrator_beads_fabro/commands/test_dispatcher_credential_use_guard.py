@@ -68,11 +68,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     CREDENTIAL_EXPIRY_ENV_VAR,
     CREDENTIAL_REQUIRED_REMAINING_ENV_VAR,
     CREDENTIAL_USE_DEADLINE_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_ENV_VAR,
+    CREDENTIAL_USE_UNPROTECTED_VALUE,
     GUARD_REFUSAL_EXIT_CODE,
     GUARD_TERM_GRACE_SECONDS,
+    REVIEW_BIN_PATH,
+    REVIEW_READ_ONLY_ENV_VAR,
     credential_use_deadline_epoch_capped,
     guard_script_text,
     guarded_acp_command,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
+    review_asset_sources,
 )
 
 # The guard spends its TERM grace INSIDE the allowance and hard-kills AT the
@@ -148,6 +155,53 @@ def _run(
         env=env,
         check=False,
     )
+
+
+@pytest.mark.parametrize(
+    ("command", "remedy"),
+    [
+        ("git push origin review-head", "git diff, git log and git show"),
+        ("just check", "named test ids only"),
+        ("livespec-implement-check-suite", "named test ids only"),
+    ],
+)
+def test_review_launchers_refuse_branch_writes_and_whole_suite_commands_for_every_adapter(
+    tmp_path: Path, command: str, remedy: str
+) -> None:
+    """The guard installs the same immediate review boundary before a Codex or Claude exec."""
+    review_bin = tmp_path / "review-bin"
+    review_bin.mkdir()
+    for path, source in review_asset_sources():
+        target = review_bin / Path(path).name
+        _ = target.write_text(source, encoding="utf-8")
+        target.chmod(0o755)
+    env = _hermetic_env()
+    env[CREDENTIAL_USE_UNPROTECTED_ENV_VAR] = CREDENTIAL_USE_UNPROTECTED_VALUE
+    env[REVIEW_READ_ONLY_ENV_VAR] = "1"
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            str(
+                _guard(
+                    tmp_path=tmp_path,
+                    script_text=guard_script_text().replace(REVIEW_BIN_PATH, str(review_bin)),
+                )
+            ),
+            "--",
+            "/bin/sh",
+            "-c",
+            command,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=_SETTLE_SECONDS,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "LIVESPEC_REVIEW_GUARD_REFUSED" in result.stderr
+    assert remedy in result.stderr
 
 
 def _date_shim(*, bin_dir: Path, clock: Path) -> None:
