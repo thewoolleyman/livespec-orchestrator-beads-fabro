@@ -138,14 +138,34 @@ def _close(
     return _read(client=client, attempt=successor, historical=False)
 
 
-def _commit(
-    *, client: BeadsClient, observed: IncidentReading, successor: IncidentAttempt
-) -> IncidentReading | AuthorityRefusal:
+def _validated_successor(
+    *, observed: IncidentReading, successor: IncidentAttempt, allow_drill_close: bool
+) -> IncidentAttempt | AuthorityRefusal:
+    """Decode the canonical successor and reserve `drill-closed` for its action."""
     decoded = decode_attempt(value=parse_json(text=json.dumps(attempt_record(attempt=successor))))
     if decoded is None or not _valid_successor(before=observed.attempt, after=decoded):
         return AuthorityRefusal(
             code="incident-transition-invalid-successor", detail=observed.attempt.item_id
         )
+    if decoded.phase == "drill-closed" and not allow_drill_close:
+        return AuthorityRefusal(
+            code="incident-drill-close-requires-action", detail=observed.attempt.item_id
+        )
+    return decoded
+
+
+def _commit(
+    *,
+    client: BeadsClient,
+    observed: IncidentReading,
+    successor: IncidentAttempt,
+    allow_drill_close: bool,
+) -> IncidentReading | AuthorityRefusal:
+    decoded = _validated_successor(
+        observed=observed, successor=successor, allow_drill_close=allow_drill_close
+    )
+    if isinstance(decoded, AuthorityRefusal):
+        return decoded
     recovered = _read(client=client, attempt=decoded, historical=True)
     if isinstance(recovered, IncidentReading):
         return (
@@ -173,11 +193,20 @@ def _commit(
 
 
 def commit_transition(
-    *, client: BeadsClient, observed: IncidentReading, successor: IncidentAttempt
+    *,
+    client: BeadsClient,
+    observed: IncidentReading,
+    successor: IncidentAttempt,
+    allow_drill_close: bool = False,
 ) -> IncidentReading | AuthorityRefusal:
     """Commit one next generation, or recover a retry without another effect."""
     try:
-        return _commit(client=client, observed=observed, successor=successor)
+        return _commit(
+            client=client,
+            observed=observed,
+            successor=successor,
+            allow_drill_close=allow_drill_close,
+        )
     except _LEDGER_ERRORS as exc:
         # Keep an unknown candidate: deleting it could sever our own successful
         # transition after a failed readback. A retry recovers the original.

@@ -19,12 +19,14 @@ The master run is read by `observe_master_run`, the same forge read
 
 from __future__ import annotations
 
+import argparse
 import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro._incident_authority_types import AuthorityRefusal
 from livespec_orchestrator_beads_fabro._incident_repayment_scope import incident_marker
+from livespec_orchestrator_beads_fabro.commands._incident_authority_decode import invalid_payload
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.incident_completion import (
     IncidentCompletion,
@@ -47,6 +49,7 @@ __all__: list[str] = [
     "REPAYMENT_PR_UNOBSERVABLE",
     "CompletionAttestation",
     "CompletionRequest",
+    "complete_action",
     "complete_from_forge",
     "completion_reply",
     "decode_attestation",
@@ -254,3 +257,25 @@ def complete_from_forge(
     )
     completed = complete_incident(client=client, item_id=attempt.item_id, evidence=evidence)
     return completion_reply(completion=completed)
+
+
+def complete_action(
+    *,
+    args: argparse.Namespace,
+    client: BeadsClient,
+    reading: IncidentReading,
+    runner: CommandRunner,
+) -> IncidentCompletion | AuthorityRefusal:
+    """Decode the operator attestation, then complete from fresh forge evidence."""
+    attestation = decode_attestation(text=args.completion_json)
+    if attestation is None:
+        detail = f"needs exactly {list(ATTESTATION_FIELDS)} as one canonical JSON object"
+        return invalid_payload(flag="--completion-json", detail=detail)
+    return complete_from_forge(
+        client=client,
+        reading=reading,
+        runner=runner,
+        repo=args.repo,
+        repository=args.repository,
+        completion=CompletionRequest(run_id=args.master_run, attestation=attestation),
+    )
