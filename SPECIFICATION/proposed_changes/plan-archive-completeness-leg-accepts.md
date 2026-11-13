@@ -34,9 +34,10 @@ The child-set and status-change half of this recency is already implemented (bd-
 
 > **Completeness-review evidence is judged against the plan as it stands at archive.** Every completeness-review evidence record MUST name the child work-item ids its review read. `archive_thread` MUST grade a record STALE, and MUST NOT accept it, when any of the following holds, naming each cause that applies:
 >
-> - its reviewed child set differs from the epic's child set at archive time, naming each child added and each child removed;
-> - it predates the latest status change that any current child reports, naming that child and that instant;
-> - it predates the epic's last carrier-map event (§"Plan Definition of Done and Proof of Done"), naming that event. A scope event that adds, removes or re-words a plan assertion or changes a carrier is a carrier-map event; a ruling or deferral that is not a carrier-map event does not make a record stale.
+> - it names no reviewed child set, naming that cause;
+> - its reviewed child set differs from the epic's child set at archive time, naming each child added and each child removed. The epic's child set is the same set of linked plan members the mechanical leg reads, enumerated once and used for both legs;
+> - its comment's creation time is not strictly later than some current child's latest status instant, naming that child and that instant. A child's latest status instant is the latest of the `created_at`, `closed_at` and `updated_at` its ledger record reports. `updated_at` is included deliberately: a status change other than a close moves only `updated_at`, and the latest of the three over-reports rather than under-reports, which is the direction this gate fails in. A child reporting none of the three places no floor;
+> - its comment's creation time is not strictly later than the epic's last carrier-map event, naming that event. A carrier-map event is a scope event carrying a `carriers:` block, per §"Plan Definition of Done and Proof of Done" → "The carrier map"; a ruling or deferral that is not a carrier-map event does not make a record stale.
 >
 > When the epic's timeline holds a completeness-review evidence record that does not attest complete requirement-carrier coverage, `archive_thread` MUST refuse every evidence record written before it, naming that later record. This applies whether the archive selects evidence from the timeline or is handed a record's comment id explicitly. A stale or refused record is handled exactly as missing evidence: the plan operation commissions a fresh independent completeness reviewer, and the plan remains unarchived until that reviewer records evidence the leg accepts.
 
@@ -47,9 +48,9 @@ The child-set and status-change half of this recency is already implemented (bd-
 Scenario: Evidence written before the last carrier-map event is stale
   Given a mechanically complete plan epic whose completeness-review evidence attests complete coverage over its current child set
   And every child's latest status change predates that evidence
-  And a later scope event re-words one of the epic's plan assertions
+  And a later carrier-map event re-words one of the epic's plan assertions
   When archive_thread is given that evidence's comment id
-  Then the archive refuses the evidence as stale, naming the scope event
+  Then the archive refuses the evidence as stale, naming the carrier-map event
   And the plan directory and the epic are unchanged
 
 Scenario: A later non-attesting review refuses every earlier evidence record
