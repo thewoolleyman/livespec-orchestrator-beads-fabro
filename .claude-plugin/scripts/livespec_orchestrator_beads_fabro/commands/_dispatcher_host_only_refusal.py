@@ -75,7 +75,7 @@ def host_only_refusal(
         stage="host-only-refused",
         pr_number=None,
         merge_sha=None,
-        detail=host_only_refusal_detail(item_id=item.id),
+        detail=host_only_refusal_detail(item_id=item.id, raw_labels=raw_labels),
     )
     journal.append(record={"stage": "outcome", "outcome": asdict(outcome)})
     _ = write_stderr(text=f"SURFACE: {outcome.detail}\n")
