@@ -153,6 +153,7 @@ def post_run_terminal(
         run_id=run_id,
         terminal=terminal,
         text=run_output,
+        events_payload=None if inspect is None else inspect.events_payload,
     )
     if already_satisfied is not None:
         return PostRunTerminal(
