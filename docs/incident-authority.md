@@ -76,6 +76,17 @@ command uses the canonical decoder and server conditional-close writer; it does
 not accept comments or mutable metadata as a substitute. Malformed, duplicate-key
 or noncanonical payloads, wrong prior identities, stale observations and reused
 operations with changed contents return named refusals before a new transition.
+
+`incident_authority.close_drill` is the dedicated drill-close writer. It takes
+the current incident reading, re-reads every recorded carrier pull request from
+the authenticated forge, and records `drill-closed` only for merged carriers
+whose base is `incident-scratch/**` and whose retained landed commits are absent
+from master. A missing carrier or master-based carrier is
+`incident-not-a-recorded-drill`; unreadable or incomplete forge evidence is
+`incident-drill-evidence-unavailable`. Either refusal writes nothing. Success
+sets the canonical lifecycle state to `done`, clears the incident claim, leaves
+no repayment outstanding, and returns a terminal drill closure; the fixed
+generation and operation identity recover a repeated completed invocation.
 An exact retry recovers the original committed receipt without another token.
 
 The writer authenticates the prior identity through retained history so a caller

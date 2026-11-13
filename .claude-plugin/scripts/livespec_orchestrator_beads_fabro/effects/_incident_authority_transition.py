@@ -139,12 +139,25 @@ def _close(
 
 
 def _commit(
-    *, client: BeadsClient, observed: IncidentReading, successor: IncidentAttempt
+    *,
+    client: BeadsClient,
+    observed: IncidentReading,
+    successor: IncidentAttempt,
+    allow_drill_close: bool,
 ) -> IncidentReading | AuthorityRefusal:
     decoded = decode_attempt(value=parse_json(text=json.dumps(attempt_record(attempt=successor))))
-    if decoded is None or not _valid_successor(before=observed.attempt, after=decoded):
+    if (
+        decoded is None
+        or not _valid_successor(before=observed.attempt, after=decoded)
+        or (decoded.phase == "drill-closed" and not allow_drill_close)
+    ):
         return AuthorityRefusal(
-            code="incident-transition-invalid-successor", detail=observed.attempt.item_id
+            code=(
+                "incident-drill-close-requires-action"
+                if decoded is not None and decoded.phase == "drill-closed"
+                else "incident-transition-invalid-successor"
+            ),
+            detail=observed.attempt.item_id,
         )
     recovered = _read(client=client, attempt=decoded, historical=True)
     if isinstance(recovered, IncidentReading):
@@ -173,11 +186,20 @@ def _commit(
 
 
 def commit_transition(
-    *, client: BeadsClient, observed: IncidentReading, successor: IncidentAttempt
+    *,
+    client: BeadsClient,
+    observed: IncidentReading,
+    successor: IncidentAttempt,
+    allow_drill_close: bool = False,
 ) -> IncidentReading | AuthorityRefusal:
     """Commit one next generation, or recover a retry without another effect."""
     try:
-        return _commit(client=client, observed=observed, successor=successor)
+        return _commit(
+            client=client,
+            observed=observed,
+            successor=successor,
+            allow_drill_close=allow_drill_close,
+        )
     except _LEDGER_ERRORS as exc:
         # Keep an unknown candidate: deleting it could sever our own successful
         # transition after a failed readback. A retry recovers the original.
