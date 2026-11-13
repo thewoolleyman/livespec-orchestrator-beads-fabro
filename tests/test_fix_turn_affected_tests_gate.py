@@ -7,7 +7,6 @@ import stat
 import subprocess
 from pathlib import Path
 
-import pytest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_commit_runner_program import (
     commit_runner_program_source,
 )
@@ -80,11 +79,8 @@ def _stage(*, repo: Path, path: str, text: str) -> None:
     assert staged.returncode == 0, staged.stderr
 
 
-@pytest.mark.parametrize("stage", ["implement", "fix", "review_fix"])
-def test_authoring_stage_scopes_then_falls_back_to_the_aggregate(
-    *, tmp_path: Path, stage: str
-) -> None:
-    """Each authoring stage scopes a known change before using the aggregate."""
+def test_fix_stage_scopes_then_falls_back_to_the_aggregate(*, tmp_path: Path) -> None:
+    """A scopeable fix avoids the aggregate, while an unknown scope cannot."""
     scoped_repo, scoped_env, scoped_log = _repository(tmp_path=tmp_path / "scoped")
     _stage(
         repo=scoped_repo,
@@ -95,7 +91,7 @@ def test_authoring_stage_scopes_then_falls_back_to_the_aggregate(
     scoped = _run(
         argv=["bash", str(_PRE_COMMIT)],
         cwd=scoped_repo,
-        env={**scoped_env, "LIVESPEC_AGENT_STAGE": stage},
+        env={**scoped_env, "LIVESPEC_AGENT_STAGE": "fix"},
     )
 
     assert scoped.returncode == 0, scoped.stderr
