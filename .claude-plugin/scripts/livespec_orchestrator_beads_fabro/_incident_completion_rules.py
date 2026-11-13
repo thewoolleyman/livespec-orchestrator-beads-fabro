@@ -31,6 +31,8 @@ from livespec_orchestrator_beads_fabro._incident_repayment_scope import (
 __all__: list[str] = [
     "CLOSED_PHASE",
     "COMPLETION_PHASE",
+    "DRILL_CLOSED_OBLIGATION",
+    "DRILL_CLOSED_PHASE",
     "IncidentAcceptanceScope",
     "IncidentCompletionEvidence",
     "acceptance_scope",
@@ -39,6 +41,11 @@ __all__: list[str] = [
 ]
 
 CLOSED_PHASE = "closed"
+# A recorded scratch-branch drill rests here: terminal, owing no repayment, and never
+# `closed`. No closure route may discharge it, so it reads as one named obligation that
+# is a drill closure rather than any repayment step.
+DRILL_CLOSED_PHASE = "drill-closed"
+DRILL_CLOSED_OBLIGATION = "incident-drill-closed"
 # The one phase from which the incident may record `closed`: the current normal
 # repayment carrier merged and awaits final proof.
 COMPLETION_PHASE = REPAYMENT_PHASES[-1]
@@ -123,6 +130,8 @@ def completion_obligations(
     current = history[-1]
     if current.phase == CLOSED_PHASE:
         return ()
+    if current.phase == DRILL_CLOSED_PHASE:
+        return (DRILL_CLOSED_OBLIGATION,)
     outstanding = _carrier_obligations(current=current, evidence=evidence)
     outstanding += _master_ci_obligations(current=current, run=evidence.master_ci)
     if evidence.marker_paths is None:

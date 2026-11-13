@@ -12,6 +12,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
 )
 from livespec_orchestrator_beads_fabro._incident_carrier import PrBound
 from livespec_orchestrator_beads_fabro._incident_phases import lifecycle_state_for
+from livespec_orchestrator_beads_fabro._incident_recovery_plan import RECOVERY_MARKER
 from livespec_orchestrator_beads_fabro._store_claim_tokens import change_claim
 from livespec_orchestrator_beads_fabro.effects import parse_json
 from livespec_orchestrator_beads_fabro.effects._incident_authority_reader import read_history
@@ -64,7 +65,13 @@ def _carriers(
 
 
 def _evidence(
-    *, history: tuple[IncidentAttempt, ...], runner: CommandRunner, repo: Path, repository: str
+    *,
+    client: BeadsClient,
+    item_id: str,
+    history: tuple[IncidentAttempt, ...],
+    runner: CommandRunner,
+    repo: Path,
+    repository: str,
 ) -> AuthorityRefusal | None:
     carriers = _carriers(history=history)
     if isinstance(carriers, AuthorityRefusal):
@@ -74,7 +81,12 @@ def _evidence(
         runner=runner,
         repo=repo,
         repository=repository,
-    ) or _landed_evidence(history=history, runner=runner, repo=repo, repository=repository)
+    ) or _landed_evidence(
+        commits=_recorded_commits(client=client, item_id=item_id, history=history),
+        runner=runner,
+        repo=repo,
+        repository=repository,
+    )
 
 
 def _carrier_evidence(
@@ -120,35 +132,68 @@ def _carrier_evidence(
     return None
 
 
-def _landed_evidence(
-    *, history: tuple[IncidentAttempt, ...], runner: CommandRunner, repo: Path, repository: str
-) -> AuthorityRefusal | None:
-    """Refuse a drill if any retained landed commit is already reachable from master."""
-    for attempt in history:
-        for commit in attempt.landed_commits:
-            result = runner.run(
-                argv=[
-                    "gh",
-                    "api",
-                    f"repos/{repository}/compare/{commit}...master",
-                    "--method",
-                    "GET",
-                ],
-                cwd=repo,
-                timeout_seconds=60.0,
+def _revert_commits(*, client: BeadsClient, item_id: str) -> tuple[str, ...]:
+    """Every revert commit a retained revert receipt or rollback release recorded."""
+    found: dict[str, None] = {}
+    for row in client.list_comments(issue_id=item_id):
+        text = row.get("text")
+        if not isinstance(text, str) or not text.startswith(RECOVERY_MARKER):
+            continue
+        record = parse_json(text=text[len(RECOVERY_MARKER) :])
+        if not isinstance(record, dict):
+            continue
+        body = cast("dict[str, object]", record)
+        if body.get("kind") != "revert-receipt":
+            continue
+        for key in ("receipt", "resolution"):
+            detail = body.get(key)
+            commit = (
+                cast("dict[str, object]", detail).get("revert_commit")
+                if isinstance(detail, dict)
+                else None
             )
-            value = parse_json(text=result.stdout) if result.exit_code == 0 else None
-            if not isinstance(value, dict):
-                return _refuse(code=EVIDENCE_UNAVAILABLE, detail=f"commit {commit}: unreadable")
-            comparison = cast("dict[str, object]", value)
-            behind = comparison.get("behind_by")
-            if not isinstance(behind, int) or behind < 0:
-                return _refuse(code=EVIDENCE_UNAVAILABLE, detail=f"commit {commit}: incomplete")
-            # In `commit...master`, no commits behind means master already contains
-            # the recorded commit (or is that exact commit).  A divergent master is
-            # allowed only when it still lacks at least this recorded commit.
-            if behind == 0:
-                return _refuse(code=NOT_A_DRILL, detail=f"landed commit {commit}")
+            if isinstance(commit, str) and commit:
+                found.setdefault(commit)
+    return tuple(found)
+
+
+def _recorded_commits(
+    *, client: BeadsClient, item_id: str, history: tuple[IncidentAttempt, ...]
+) -> tuple[tuple[str, str], ...]:
+    """Each retained commit the chain could have put on master, labelled by kind."""
+    landed = (("landed", commit) for attempt in history for commit in attempt.landed_commits)
+    reverts = (("revert", commit) for commit in _revert_commits(client=client, item_id=item_id))
+    return (*landed, *reverts)
+
+
+def _landed_evidence(
+    *, commits: tuple[tuple[str, str], ...], runner: CommandRunner, repo: Path, repository: str
+) -> AuthorityRefusal | None:
+    """Refuse a drill if any retained landed or revert commit is already reachable from master."""
+    for kind, commit in commits:
+        result = runner.run(
+            argv=[
+                "gh",
+                "api",
+                f"repos/{repository}/compare/{commit}...master",
+                "--method",
+                "GET",
+            ],
+            cwd=repo,
+            timeout_seconds=60.0,
+        )
+        value = parse_json(text=result.stdout) if result.exit_code == 0 else None
+        if not isinstance(value, dict):
+            return _refuse(code=EVIDENCE_UNAVAILABLE, detail=f"commit {commit}: unreadable")
+        comparison = cast("dict[str, object]", value)
+        behind = comparison.get("behind_by")
+        if not isinstance(behind, int) or behind < 0:
+            return _refuse(code=EVIDENCE_UNAVAILABLE, detail=f"commit {commit}: incomplete")
+        # In `commit...master`, no commits behind means master already contains
+        # the recorded commit (or is that exact commit).  A divergent master is
+        # allowed only when it still lacks at least this recorded commit.
+        if behind == 0:
+            return _refuse(code=NOT_A_DRILL, detail=f"{kind} commit {commit}")
     return None
 
 
@@ -185,7 +230,14 @@ def _recover_or_commit(
     history = read_history(client=client, repository=repository, item_id=reading.attempt.item_id)
     if isinstance(history, AuthorityRefusal):
         return history
-    refusal = _evidence(history=history, runner=runner, repo=repo, repository=repository)
+    refusal = _evidence(
+        client=client,
+        item_id=reading.attempt.item_id,
+        history=history,
+        runner=runner,
+        repo=repo,
+        repository=repository,
+    )
     if refusal is not None:
         return refusal
     return commit_transition(

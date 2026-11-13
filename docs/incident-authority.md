@@ -80,14 +80,17 @@ operations with changed contents return named refusals before a new transition.
 `incident_authority.close_drill` is the dedicated drill-close writer. It takes
 the current incident reading, re-reads every recorded carrier pull request from
 the authenticated forge, and records `drill-closed` only for merged carriers
-whose base is `incident-scratch/**` and whose retained landed commits are absent
-from master. A missing carrier or master-based carrier is
+whose base is `incident-scratch/**` and whose retained landed commits and retained revert
+commits (from revert receipts and rollback releases) are absent from master. A missing carrier or master-based carrier is
 `incident-not-a-recorded-drill`; unreadable or incomplete forge evidence is
 `incident-drill-evidence-unavailable`. Either refusal writes nothing. Success
 sets the canonical lifecycle state to `done`, clears the incident claim, leaves
 no repayment outstanding, and returns a terminal drill closure; the fixed
 generation and operation identity recover a repeated completed invocation.
 An exact retry recovers the original committed receipt without another token.
+Standing and completion readers report a drill-closed chain as the single named
+obligation `incident-drill-closed`, so no closure route records `closed` over it,
+and provenance receipts of that chain carry `repayment_outstanding: false`.
 
 The writer authenticates the prior identity through retained history so a caller
 can recover a lost reply after its first successful transition. The canonical

@@ -18,6 +18,7 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
     AuthorityRefusal,
     IncidentReading,
 )
+from livespec_orchestrator_beads_fabro._incident_recovery_plan import recovery_comment
 from livespec_orchestrator_beads_fabro._store_claim_tokens import (
     ClaimChangeResult,
     create_claim_token,
@@ -340,3 +341,75 @@ def test_lifecycle_claim_refusal_is_named(monkeypatch: pytest.MonkeyPatch, tmp_p
         "incident-drill-close-lifecycle-refused",
         "claim-changed",
     )
+
+
+class _RevertForge(_Forge):
+    """A forge whose compare read answers per recorded revert commit."""
+
+    def __init__(self, *, behind_by: int) -> None:
+        super().__init__(pr=_merged())
+        self.behind_by = behind_by
+
+    def run(self, *, argv: list[str], **_: object) -> CommandResult:
+        self.calls.append(argv)
+        if argv[:3] == ["gh", "pr", "view"]:
+            return self.pr
+        if argv[:3] == ["gh", "api", f"repos/{_REPOSITORY}/compare/{'f' * 40}...master"]:
+            return CommandResult(
+                exit_code=0, stdout=_json({"behind_by": self.behind_by}), stderr=""
+            )
+        raise AssertionError(argv)  # pragma: no cover - fixture contract guard
+
+
+def _retain_revert_receipt(*, client: FakeBeadsClient, key: str, commit: str) -> None:
+    record = {
+        "schema": 1,
+        "kind": "revert-receipt",
+        "repository": _REPOSITORY,
+        "item_id": _ITEM,
+        "operation_id": "drill-1#collecting-failures",
+        "generation": 2,
+        "repayment_owed": True,
+        key: {"receipt_id": "receipt-1", "revert_commit": commit},
+    }
+    client.add_comment(issue_id=_ITEM, body=recovery_comment(record=record))
+
+
+@pytest.mark.parametrize("key", ["receipt", "resolution"])
+def test_a_retained_revert_commit_reachable_from_master_is_not_a_recorded_drill(
+    key: str, tmp_path: Path
+) -> None:
+    client, reading = _seed(snapshot=_attempt())
+    _retain_revert_receipt(client=client, key=key, commit="f" * 40)
+
+    refused = close_drill(
+        client=client,
+        reading=reading,
+        runner=_RevertForge(behind_by=0),
+        repo=tmp_path,
+        repository=_REPOSITORY,
+    )
+
+    assert isinstance(refused, AuthorityRefusal)
+    assert (refused.code, f"revert commit {'f' * 40}" in refused.detail) == (
+        "incident-not-a-recorded-drill",
+        True,
+    )
+    assert read_incident_standing(client=client, item_id=_ITEM).history[-1].phase == "reverting"
+
+
+def test_a_retained_revert_commit_absent_from_master_still_closes_the_drill(
+    tmp_path: Path,
+) -> None:
+    client, reading = _seed(snapshot=_attempt())
+    _retain_revert_receipt(client=client, key="receipt", commit="f" * 40)
+
+    closed = close_drill(
+        client=client,
+        reading=reading,
+        runner=_RevertForge(behind_by=3),
+        repo=tmp_path,
+        repository=_REPOSITORY,
+    )
+
+    assert isinstance(closed, DrillClose)
