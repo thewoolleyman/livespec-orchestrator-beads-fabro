@@ -156,7 +156,7 @@ def _absent_runner(*, checkout: Path, scratch: Path) -> _Lap:
 
 # The ordinary lap of each routing-schema node and the successor it must select.
 _ORDINARY_LAPS: dict[tuple[str, str], tuple[Callable[..., _Lap], str]] = {
-    (_IMPLEMENT, "implement_completion"): (_complete_turn, "implementation_diff"),
+    (_IMPLEMENT, "implement_completion"): (_complete_turn, "implement_workflow_guard"),
     (_IMPLEMENT, "fix_commit_settle"): (_passed_fix_commit, "fix_open_red_route"),
     (_IMPLEMENT, "fix_open_red_route"): (_no_setup, "janitor_admission"),
     (_IMPLEMENT, "publish_merged_reconcile_route"): (_no_setup, "proof_capture"),

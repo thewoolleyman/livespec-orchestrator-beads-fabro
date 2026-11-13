@@ -55,6 +55,7 @@ _GRAPH = _PAYLOAD / "workflow.fabro"
 _GATE = "implement_completion"
 _IMPLEMENT = "implement"
 _DIFF = "implementation_diff"
+_WORKFLOW_GUARD = "implement_workflow_guard"
 _NEEDS_HUMAN = "needs_human"
 _HOOK_ROUTE = "implement_hook_route"
 _AMENDMENT_ROUTE = "implement_amendment_route"
@@ -186,7 +187,9 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
     assert (_GATE, "") in _targets(source=_SETTLE)
     assert [target for target, _ in onward if target in (_GATE, _DIFF, _JANITOR)] == []
     assert (_HOOK_ROUTE, "preferred_label=incomplete") in gate_onward, gate_onward
-    assert (_DIFF, "preferred_label=complete") in gate_onward, gate_onward
+    assert (_WORKFLOW_GUARD, "preferred_label=complete") in gate_onward, gate_onward
+    assert _DIFF not in [target for target, _ in gate_onward]
+    assert (_DIFF, "") in _targets(source=_WORKFLOW_GUARD)
     assert (_NEEDS_HUMAN, "outcome=failed") in gate_onward, gate_onward
     assert [condition for _, condition in gate_onward if condition == ""] == [""]
 
