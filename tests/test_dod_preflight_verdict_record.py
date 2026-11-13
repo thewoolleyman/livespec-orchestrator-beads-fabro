@@ -31,3 +31,11 @@ def test_a_fresh_governing_verdict_is_recorded_before_an_early_refusal() -> None
     assert "GoverningHeadingReceipt(" in text
     assert "governing_heading_subject_digest(" in text
     assert "if reading.holds:" in text
+
+
+def test_a_completed_preflight_carries_its_governing_receipt_to_the_verdict() -> None:
+    """A passed or refused rubric verdict preserves the component it used."""
+    text = _SCRIPT.read_text(encoding="utf-8")
+
+    assert "governing_receipt" in text
+    assert "governing=governing" in text

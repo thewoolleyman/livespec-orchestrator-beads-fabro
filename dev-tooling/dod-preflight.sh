@@ -68,11 +68,11 @@ PY
 # (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
 # stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings" "$judgement_input.record" "$judgement_input.reused"' EXIT
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings" "$judgement_input.record" "$judgement_input.reused" "$judgement_input.governing_receipt"' EXIT
 python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
 import json
 import sys
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
@@ -224,6 +224,17 @@ Path(f"{side}.record").write_text(
     ),
     encoding="utf-8",
 )
+governing_receipt = (
+    None
+    if governing is None
+    else {
+        "subject_digest": governing_heading_subject_digest(item=item, comments=comments),
+        "verdict": asdict(governing),
+    }
+)
+Path(f"{side}.governing_receipt").write_text(
+    json.dumps(governing_receipt), encoding="utf-8"
+)
 reused = reusable_verdict(
     comments=comments,
     digest=judgement_subject_digest(
@@ -291,13 +302,15 @@ fi
 # recognisable Claude adapter into that resolver until the configuration is
 # migrated.
 set +e
-python3 - "$install_root" "$repo_root" "$judgement_input" "$judgement_input.record" <<'JUDGE_PY'
+python3 - "$install_root" "$repo_root" "$judgement_input" "$judgement_input.record" "$judgement_input.governing_receipt" <<'JUDGE_PY'
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
+
+from livespec_runtime.spec_stated import ClauseEvidence
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
 from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import parse_adapter_string
@@ -312,17 +325,46 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candid
     run_candidate_chain,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    GoverningHeadingReceipt,
     did_not_run_comment,
     verdict_comment,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import SpecIdentity
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
+    GoverningHeadingVerdict,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import CondensedClause
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
 
 repo = Path(sys.argv[2])
 prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
 record = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+governing_payload = json.loads(Path(sys.argv[5]).read_text(encoding="utf-8"))
+
+
+def clause(*, payload: dict[str, str]) -> CondensedClause:
+    return CondensedClause(
+        heading=payload["heading"], body=payload["body"], path=payload.get("path", "")
+    )
+
+
+governing = None
+if governing_payload is not None:
+    verdict_payload = governing_payload["verdict"]
+    verdict = GoverningHeadingVerdict(
+        kind=verdict_payload["kind"],
+        stated_by=tuple(verdict_payload["stated_by"]),
+        generalization_target=verdict_payload["generalization_target"],
+        selected_clauses=tuple(clause(payload=value) for value in verdict_payload["selected_clauses"]),
+        named_clauses=tuple(clause(payload=value) for value in verdict_payload["named_clauses"]),
+        provenance_complete=verdict_payload["provenance_complete"],
+        evidence=tuple(ClauseEvidence(**value) for value in verdict_payload["evidence"]),
+    )
+    governing = GoverningHeadingReceipt(
+        verdict=verdict, subject_digest=governing_payload["subject_digest"]
+    )
 
 
 def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
@@ -384,6 +426,7 @@ append_work_item_comment(
         spec_identity=SpecIdentity(
             form=record["spec_identity_form"], value=record["spec_identity"]
         ),
+        governing=governing,
     ),
 )
 outcome = judgement.outcome
