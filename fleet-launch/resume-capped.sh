@@ -21,6 +21,9 @@ REPO=${REPO_OVERRIDE:-$FLEET_LAUNCH_ORCH_REPO}
 REPO_NAME=$(basename "$REPO")
 REPO_HOLD_FILE="$FLEET_LAUNCH_REPO_HOLD_DIR/hold-repo-$REPO_NAME"
 SEAT=$FLEET_LAUNCH_SEAT
+# The gmktec factory hold file: while it exists no launch goes onto a gmktec factory instance. The path
+# is assigned here, in the launcher, from its host value in config.sh, and checked before every launch.
+GMK_HOLD_FILE=$FLEET_LAUNCH_HOLD_FILE
 OUT=$FLEET_LAUNCH_STATE_DIR
 FABRO=$FLEET_LAUNCH_FABRO
 GMK=$FLEET_LAUNCH_GMK_SERVER
@@ -297,8 +300,8 @@ while :; do
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
-  if [ -e "$FLEET_LAUNCH_HOLD_FILE" ]; then
-    echo "$(date -u +%FT%TZ) hold file present ($FLEET_LAUNCH_HOLD_FILE): wait"
+  if [ -e "$GMK_HOLD_FILE" ]; then
+    echo "$(date -u +%FT%TZ) hold file present ($GMK_HOLD_FILE): wait"
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
@@ -330,6 +333,14 @@ while :; do
     yield_ticket repository-hold
     log_repository_hold
     release_lock
+    sleep "$FLEET_LAUNCH_POLL_S"
+    continue
+  fi
+  if [ -e "$GMK_HOLD_FILE" ]; then
+    rm -f "$marker"
+    marker=""
+    release_lock
+    echo "$(date -u +%FT%TZ) hold file present at the launch point ($GMK_HOLD_FILE): released the mutex and marker, keeping the ticket"
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
