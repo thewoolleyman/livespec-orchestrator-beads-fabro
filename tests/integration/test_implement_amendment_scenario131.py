@@ -87,7 +87,10 @@ from livespec_orchestrator_beads_fabro.store import append_work_item, read_work_
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
-_IMPLEMENT_PROMPT = _BUNDLE / "prompts" / "implement.md"
+# The split graph's two implementing turns. Either can find the Definition of
+# Done wrong, and the clause's ONE rest state holds "whichever stage notices it",
+# so each prompt is held to the same duty.
+_STAGE_PROMPTS = (_BUNDLE / "prompts" / "red.md", _BUNDLE / "prompts" / "green.md")
 _ITEM = "bd-ib-ymy7xq"
 _RUN = "01M4AMENDMENTOFDEFINITIONOFDONE"
 _FACTORY = "hp"
@@ -111,15 +114,15 @@ def _dot() -> str:
     return (_BUNDLE / "workflow.fabro").read_text(encoding="utf-8")
 
 
-def _prompt() -> str:
-    """The implement prompt with every whitespace run collapsed to one space.
+def _prompt(*, path: Path) -> str:
+    """One stage prompt with every whitespace run collapsed to one space.
 
     The prompt is hard-wrapped, so a needle straddling a line break fails while
     the prose says exactly the thing — a probe that can only fail SILENTLY.
     Collapsing first is what makes these assertions able to return the other
     answer.
     """
-    return re.sub(r"\s+", " ", _IMPLEMENT_PROMPT.read_text(encoding="utf-8"))
+    return re.sub(r"\s+", " ", path.read_text(encoding="utf-8"))
 
 
 def _edge_conditions(*, source: str) -> dict[str, str]:
@@ -295,8 +298,8 @@ def tenant(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     reset_fake_singleton()
 
 
-def test_the_implement_prompt_routes_a_wrong_definition_of_done_to_the_amendment() -> None:
-    """The kept-current rule, stated where the implementer reads it.
+def test_the_red_and_green_prompts_route_a_wrong_definition_of_done_to_the_amendment() -> None:
+    """The kept-current rule, stated where each implementing turn reads it.
 
     Each needle is chosen so it CANNOT be present unless the prompt carries
     that duty rather than merely mentioning the vocabulary: the no-divergent
@@ -310,21 +313,36 @@ def test_the_implement_prompt_routes_a_wrong_definition_of_done_to_the_amendment
     already carries that, so it would pass on a prompt that said nothing about
     a Definition of Done at all.
     """
-    prompt = _prompt()
+    for path in _STAGE_PROMPTS:
+        prompt = _prompt(path=path)
 
-    # The rule itself — a run may not deliver what it was not dispatched with.
-    assert "MUST NOT deliver behaviour that differs from the Definition of Done" in prompt
-    # The trigger, and the ending it takes.
-    assert "the section is wrong or incomplete" in prompt
-    assert "the proposed amendment as the failure reason" in prompt
-    assert "Definition of Done amendment for" in prompt
-    # The two things the implementer must NOT do instead.
-    assert "Publish no code that differs from the section" in prompt
-    assert "do NOT edit the section" in prompt
-    assert "MUST NOT change a proof mode" in prompt
-    # Where the decision goes, and that it is the same one the gate takes.
-    assert "resolve-blocked:" in prompt
-    assert "whichever stage notices it" in prompt
+        # The rule itself — a run may not deliver what it was not dispatched with.
+        assert "MUST NOT deliver behaviour that differs from the Definition of Done" in prompt
+        # The trigger, and the ending it takes.
+        assert "the section is wrong or incomplete" in prompt
+        assert "the proposed amendment as the failure reason" in prompt
+        assert "Definition of Done amendment for" in prompt
+        # The two things the implementer must NOT do instead.
+        assert "Publish no code that differs from the section" in prompt
+        assert "do NOT edit the section" in prompt
+        assert "MUST NOT change a proof mode" in prompt
+        # Where the decision goes, and that it is the same one the gate takes.
+        assert "resolve-blocked:" in prompt
+        assert "whichever stage notices it" in prompt
+
+
+def test_a_failed_green_turn_reaches_its_own_amendment_classifier() -> None:
+    """The Green leg of the ONE rest state, "whichever stage notices it".
+
+    A failed Green outcome reaches its own amendment classifier, which rests a
+    recorded amendment at the terminal and passes every other failure to the
+    completion gate, exactly as Red's classifier does for a failed Red outcome.
+    """
+    assert _edge_conditions(source="green")["green_amendment_route"] == "outcome=failed"
+    assert _edge_conditions(source="green_amendment_route") == {
+        "needs_human": "outcome=failed",
+        "implement_completion": "",
+    }
 
 
 def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publishes_nothing(
@@ -341,18 +359,19 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     item = _seed(root=tmp_path)
     graph = parse_workflow_graph(text=_dot())
 
-    # LEG 1 — the committed graph. A failed implement outcome first reaches the
+    # LEG 1 — the committed graph. A failed Red outcome first reaches the
     # amendment classifier. It alone decides whether an amendment rests at the
     # terminal or every other explicit failure proceeds through Scenario 204's
     # completion and hook-refusal route. Both arms are pinned, so a broad failed
     # edge cannot silently reclaim the amendment or bypass the retry path.
-    assert _edge_conditions(source="implement") == {
+    assert _edge_conditions(source="red") == {
         "implement_amendment_route": "outcome=failed",
-        "implement_commit_settle": "",
+        "already_satisfied": "preferred_label=already-satisfied",
+        "commit_red": "",
     }
     assert _edge_conditions(source="implement_amendment_route") == {
         "needs_human": "outcome=failed",
-        "implement_commit_settle": "",
+        "red_admission": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()

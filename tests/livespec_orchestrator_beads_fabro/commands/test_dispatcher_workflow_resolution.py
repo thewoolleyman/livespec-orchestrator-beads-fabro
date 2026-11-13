@@ -374,37 +374,39 @@ def test_candidate_dispatcher_bin_honors_env_override(
 
 
 def test_implement_and_review_prompts_enforce_scope_and_acceptance() -> None:
-    """The shipped prompts carry the stage-consumption discipline."""
-    implement_text = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
-    review_text = (_PROMPTS_DIR / "review.md").read_text(encoding="utf-8")
+    """The shipped prompts carry the stage-consumption discipline.
 
-    assert "SCOPE-MINIMALISM" in implement_text
-    assert "edit ONLY what the work-item requires" in implement_text
-    assert "unrelated files, unrelated docs" in implement_text
+    The split implement stage's two implementing turns, `red` and `green`, each
+    carry the scope rule the single implement prompt carried.
+    """
+    review_text = (_PROMPTS_DIR / "review.md").read_text(encoding="utf-8")
+    for name in ("red.md", "green.md"):
+        stage_text = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
+
+        assert "SCOPE-MINIMALISM" in stage_text, name
+        assert "edit ONLY what the work-item requires" in stage_text, name
+        assert "unrelated files, unrelated docs" in stage_text, name
     assert "acceptance criteria" in review_text
     assert "satisfies the work-item" in review_text
     assert "minimal scope" in review_text
 
 
-def test_implement_prompt_leads_with_one_red_green_cycle_per_assertion() -> None:
-    """The implementer reads the test-first loop before secondary guidance."""
-    prompt = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
-    sections = [line for line in prompt.splitlines() if line.startswith("## ")]
+def test_the_red_prompt_writes_one_failing_test_for_one_assertion() -> None:
+    """The Red turn proves one assertion unimplemented, and Green never edits that test.
 
-    assert sections[0] == "## Test-first assertion loop — start here"
-    ordered_steps = (
-        "1. Pick exactly one acceptance assertion.",
-        "2. Write one failing test for that assertion.",
-        "3. Red-commit that test alone.",
-        "4. While HEAD is that open Red, write the minimum product implementation",
-        "5. Repeat from step 1 for the next assertion.",
-    )
-    positions = tuple(prompt.index(step) for step in ordered_steps)
-    assert positions == tuple(sorted(positions))
-    assert prompt.index(sections[0]) < prompt.index("### Refactoring for size")
-    assert "One assertion gets one\n   observable Red-Green cycle." in prompt
-    assert "in as few cohesive commits as the work naturally splits into" not in prompt
-    assert "test+impl land atomically in one commit" not in prompt
+    The single implement turn once ran the whole assertion loop itself; the split
+    stage gives each half its own turn, so the cycle is stated where each half
+    reads it: Red writes ONE failing test for ONE Definition of Done assertion,
+    failing on a genuine assertion, and Green changes implementation files only.
+    """
+    red = (_PROMPTS_DIR / "red.md").read_text(encoding="utf-8")
+    green = (_PROMPTS_DIR / "green.md").read_text(encoding="utf-8")
+
+    assert "Write one failing test for one Definition of Done assertion." in red
+    assert "fail on a genuine assertion rather than during collection or\n   import." in red
+    assert red.index("Write one failing test") < red.index("Do not make a commit.")
+    assert "Make the Red test pass by changing implementation files only." in green
+    assert "Never change the Red test file." in green
 
 
 def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carveout() -> None:
@@ -415,12 +417,16 @@ def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carve
     Claude or Codex. A prompt-level goal template therefore creates the
     duplicate observed in production. Both registered workflow directories
     defer to that preamble, so changing an adapter cannot reintroduce it.
+
+    The single implement prompt's product-write carveout is replaced by the split
+    stage's rule: a Red turn changes no product file, and `commit_red` refuses
+    one that does.
     """
     prompt_paths = tuple(
         path for directory in _REGISTERED_PROMPT_DIRS for path in sorted(directory.glob("*.md"))
     )
 
-    assert len(prompt_paths) == 16
+    assert len(prompt_paths) == 15
     for directory in _REGISTERED_PROMPT_DIRS:
         graph = (directory.parent / "workflow.fabro").read_text(encoding="utf-8")
         assert 'default_fidelity="full"' not in graph, directory
@@ -430,13 +436,9 @@ def test_registered_workflow_prompts_use_the_single_injected_goal_and_stub_carve
         assert "{{ goal }}" not in text, path
         assert _GOAL_PREAMBLE_REFERENCE in text, path
 
-    implement = (_PROMPTS_DIR / "implement.md").read_text(encoding="utf-8")
-    assert "no product file may be created or\nmodified before the first Red commit" in implement
-    assert "every later product write\nrequires HEAD to be an open Red" in implement
-    assert "The ONLY carveout is a new-module\nfailing stub" in implement
-    assert "file that does not exist at HEAD" in implement
-    assert "The stub must make that\nassertion FAIL; it must never satisfy it." in implement
-    assert "Modifying an existing product\nfile outside an open Red" in implement
+    red = (_PROMPTS_DIR / "red.md").read_text(encoding="utf-8")
+    assert "- Change NO product file. Write and edit test files only: `commit_red`" in red
+    assert "refuses a Red whose change touches a product file" in red
 
 
 def test_dispatch_target_credential_wrapper_reads_configured_prefix(tmp_path: Path) -> None:

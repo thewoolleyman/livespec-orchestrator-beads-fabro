@@ -57,6 +57,8 @@ _REPO_ROOT = Path(_config.__file__).resolve().parents[4]
 _GROOM_VARIANT_NAME = "groom-work-item"
 _GROOM_VARIANT_DIRECTORY = ".fabro/workflows/groom-work-item"
 _BUNDLE_DIRECTORY = ".claude-plugin/.fabro/workflows/implement-work-item"
+# The split implement stage's ACP nodes, which share the `implement` layer key.
+_IMPLEMENT_STAGE_NODES = frozenset({"red", "green"})
 _GROOM_PR_ADAPTER = (
     "ANTHROPIC_MODEL=claude-haiku-4-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
@@ -146,7 +148,8 @@ def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
     # meaningless rather than false.
     assert bundle_nodes == {
         "dod_gate",
-        "implement",
+        "red",
+        "green",
         "fix",
         "review_fix",
         "proof_capture",
@@ -154,8 +157,15 @@ def test_the_groom_variant_declares_the_bundles_acp_nodes() -> None:
         "review",
         "disposition",
     }
+    # THE LAYERS ADDRESS `implement`, WHICH THE BUNDLE REALIZES AS `red` AND
+    # `green` (Scenario 285: what the specification says of the `implement` node
+    # it says of the `red` and `green` nodes alike). Both retain the stage's one
+    # `implement` adapter and timeout key (`_node_timeouts._configuration_node`),
+    # while the groom variant's own working node IS `implement`. So parity is
+    # compared on the keys the layers resolve, not on raw node names.
+    layer_keys = {"implement" if node in _IMPLEMENT_STAGE_NODES else node for node in bundle_nodes}
     assert {"pr"} == GROOM_ONLY_ACP_NODES
-    assert _acp_nodes(directory=_GROOM_VARIANT_DIRECTORY) == bundle_nodes | GROOM_ONLY_ACP_NODES
+    assert _acp_nodes(directory=_GROOM_VARIANT_DIRECTORY) == layer_keys | GROOM_ONLY_ACP_NODES
 
 
 def test_the_groom_variant_declares_the_bundles_input_token_set() -> None:

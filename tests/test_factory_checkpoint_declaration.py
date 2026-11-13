@@ -319,6 +319,13 @@ matters here moved: the freshness requirement is still governed by the bounded
 credential-use window, and `credential_deadline_epoch` still caps every run at the
 token's observed expiry minus its margin.
 
+THE RED/GREEN COMMAND SPLIT (work-item bd-ib-vy75ws) adds the separate Red and
+Green ACP turns, their commit commands, and the bounded reset route. The
+released `commit_green` timeout remains 7200 seconds, so the re-measured shipped
+allowance is 1664550 seconds. The bound moves to 1700000: it remains above the
+shipped graph while the retired fifteen-minute checkpoint control remains above
+it, preserving the discriminating relation this module owns.
+
 The v175 lesson is kept: crossing the credential line fails loudly and cannot
 pass behind a bound the repository can move, because the fresh-credential
 lifetime is a constant of the host and not a bound.
@@ -347,7 +354,7 @@ _SHIPPED_WORKFLOW = _PAYLOAD / "workflow.toml"
 # nothing. The bound is the only figure here this repository chooses, and no
 # derived figure is pinned beside it: a node-timeout edit that keeps the
 # allowance under the bound needs no edit to this module.
-_ALLOWANCE_BOUND_SECONDS = 1_400_000
+_ALLOWANCE_BOUND_SECONDS = 1_700_000
 
 # The lifetime of a FRESH Codex credential. Not this repository's to choose: it
 # is what the host mints at renewal, so a requirement past it is a fact about
