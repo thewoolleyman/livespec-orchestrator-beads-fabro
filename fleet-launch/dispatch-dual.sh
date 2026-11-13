@@ -762,6 +762,17 @@ echo "$(date -u +%FT%TZ) target=$target build=$build version=${build_version:-?}
 wait "$drive_pid"; rc=$?
 echo "$(date -u +%FT%TZ) drive rc=$rc"
 echo "$(date -u +%FT%TZ) drive rc=$rc" >> "$OUT/$ITEM-r267.verdict"
+# A successful drive can submit its run after the listing poll read a shared,
+# still-young snapshot. Read the factory directly once more before classifying
+# that exit as early: re-ticketing an item whose run has already listed can
+# strand the launcher behind its own run at the fleet cap.
+if [ -z "$run_row" ] && [ "$rc" -eq 0 ]; then
+  run_row=$(board_rows_direct "$FABRO" "$tserver" | awk -v it="$ITEM" '$4==it {print; exit}')
+  if [ -n "$run_row" ]; then
+    run_listed=1
+    echo "$(date -u +%FT%TZ) LISTED after drive exit on $target: $run_row"
+  fi
+fi
 early_exit_state="$FLEET_LAUNCH_RETICKET_STATE_DIR/$ITEM.early-exits"
 if [ -n "$run_row" ]; then
   # A launched run listed: the consecutive early-exit count for this item starts over.
@@ -781,6 +792,16 @@ else
     write_terminal refused
     report_dropped_ticket refused
     exit "$rc"
+  fi
+  # A zero exit with no final board listing is only re-ticketed while the
+  # ledger still says ready. Once the item has moved on, this launcher has no
+  # run to wait for and must record its non-run exit rather than take a ticket.
+  if [ "$rc" -eq 0 ]; then
+    exit_item_status=$(item_status) || exit_item_status=unreadable
+    if [ "$exit_item_status" != ready ]; then
+      write_terminal "drive-exit-early drive-exit=0 item-status=$exit_item_status"
+      exit 0
+    fi
   fi
   # Any other exit before the run lists re-takes a ticket at the same ticket number, after a
   # delay set by how many consecutive early exits this item has had. The mutex and the in-flight marker
