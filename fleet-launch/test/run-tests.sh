@@ -145,6 +145,13 @@ cat > "$STUB/wrapper" <<'WRAPPER_STUB'
 #!/usr/bin/env bash
 set -u
 if [ "${1:-}" = -- ]; then shift; fi
+if [ "${1:-}" = env ]; then
+    shift
+    while [ "$#" -gt 0 ] && [ "${1:-}" != "${1#*=}" ]; do
+        export "$1"
+        shift
+    done
+fi
 for argument in "$@"; do
     case ${argument##*/} in
         ready-set-check.py)
@@ -259,6 +266,7 @@ for argument in "$@"; do
                 mi-homelab) server=$STUB_SERVER_HL ;;
                 *) server="" ;;
             esac
+            printf '%s\n' "${LIVESPEC_FACTORY_READ_WRAPPER:-missing}" >> "$STUB_FACTORY_READ_WRAPPER_LOG"
             printf '%s\n' "$item" >> "$STUB_DRIVE_LOG"
             if [ -d "$STUB_LOCK_DIR" ]; then
                 # A preceding launcher releases the mutex before it begins its
@@ -444,6 +452,7 @@ CASE_DIR=""
 CASE_LOG=""
 DRIVE_LOG=""
 DRIVE_MUTEX_LOG=""
+FACTORY_READ_WRAPPER_LOG=""
 PREFLIGHT_LOG=""
 RESUME_LOG=""
 RESUME_OBSERVATION_LOG=""
@@ -467,6 +476,8 @@ new_case() {
     : > "$DRIVE_LOG"
     DRIVE_MUTEX_LOG="$CASE_DIR/drive-mutex-log"
     : > "$DRIVE_MUTEX_LOG"
+    FACTORY_READ_WRAPPER_LOG="$CASE_DIR/factory-read-wrapper-log"
+    : > "$FACTORY_READ_WRAPPER_LOG"
     PREFLIGHT_LOG="$CASE_DIR/preflight-log"
     : > "$PREFLIGHT_LOG"
     RESUME_LOG="$CASE_DIR/resume-log"
@@ -492,6 +503,7 @@ new_case() {
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
     export STUB_DRIVE_MUTEX_LOG="$DRIVE_MUTEX_LOG"
+    export STUB_FACTORY_READ_WRAPPER_LOG="$FACTORY_READ_WRAPPER_LOG"
     export STUB_PREFLIGHT_LOG="$PREFLIGHT_LOG"
     export STUB_RESUME_LOG="$RESUME_LOG"
     export STUB_RESUME_OBSERVATION_LOG="$RESUME_OBSERVATION_LOG"
@@ -755,6 +767,11 @@ if [ "$(drive_log_items)" = "bd-ib-undercap" ] && [ "$RC" = 0 ]; then
 else
     fail "control: a fleet under the cap did not launch (rc=$RC, dispatches: $(drive_log_items))"
     tail -8 "$CASE_DIR/control.log" >&2
+fi
+if [ "$(cat "$FACTORY_READ_WRAPPER_LOG")" = "$FLEET_LAUNCH_DEFAULT_WRAPPER" ]; then
+    pass "a tenant-wrapped drive receives only the host default wrapper path for factory reads"
+else
+    fail "a tenant-wrapped drive did not receive the host default factory-read wrapper"
 fi
 
 # --- 3. two queued tickets launch in FIFO order -----------------------------
