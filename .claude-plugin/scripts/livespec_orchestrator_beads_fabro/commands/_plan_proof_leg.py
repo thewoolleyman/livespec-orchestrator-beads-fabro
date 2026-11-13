@@ -100,7 +100,9 @@ __all__: list[str] = [
     "NOT_EVIDENCE_UNKNOWN_RELEASE",
     "NOT_EVIDENCE_UNREADABLE_RELEASE",
     "PlanProofLeg",
+    "StandingReplay",
     "plan_proof_leg",
+    "standing_replay",
 ]
 
 # The four ways a published plan record fails to be evidence. Each is a distinct
@@ -142,6 +144,15 @@ class PlanProofLeg:
         return not self.unproved
 
 
+@dataclass(frozen=True, kw_only=True)
+class StandingReplay:
+    """The replay that stands, or the later timeline fact that superseded it."""
+
+    replay: PlanProofEntry | None
+    later_capture: PlanProofEntry | None
+    carrier_map_position: int | None
+
+
 def plan_proof_leg(
     *,
     assertions: Sequence[DefinitionOfDoneAssertion],
@@ -161,12 +172,17 @@ def plan_proof_leg(
         (one, _rejection(entry=one, entries=entries, reader=release_reader)) for one in entries
     )
     evidence = tuple(one for one, rejection in judged if rejection is None)
+    standing = standing_replay(
+        entries=evidence,
+        timeline=entries,
+        carrier_map_position=carrier_map_position,
+    )
     fresh = tuple(
         one
         for one in evidence
         if carrier_map_position is None or one.position > carrier_map_position
     )
-    replay = _standing_replay(fresh=fresh, entries=entries)
+    replay = standing.replay
     attested = tuple(one for one in fresh if one.record.verdict == VERDICT_HUMAN_ATTESTED)
     unproved = tuple(
         one.text
@@ -184,9 +200,12 @@ def plan_proof_leg(
     )
 
 
-def _standing_replay(
-    *, fresh: Sequence[PlanProofEntry], entries: Sequence[PlanProofEntry]
-) -> PlanProofEntry | None:
+def standing_replay(
+    *,
+    entries: Sequence[PlanProofEntry],
+    timeline: Sequence[PlanProofEntry],
+    carrier_map_position: int | None,
+) -> StandingReplay:
     """The replay that decides the non-attested assertions, or `None` for none.
 
     Three conditions, all from the clause and all fail-closed: the LATEST replay
@@ -196,13 +215,19 @@ def _standing_replay(
     earlier `verified` one, because that would let a superseded replay hold an
     assertion proved after a later party reported it did not reproduce.
     """
-    replay = latest_plan_proof_entry(entries=fresh, verdicts=PLAN_REPLAY_VERDICTS)
+    replay = latest_plan_proof_entry(entries=entries, verdicts=PLAN_REPLAY_VERDICTS)
     if replay is None or replay.record.verdict != VERDICT_VERIFIED:
-        return None
-    capture = latest_plan_proof_entry(entries=entries, verdicts=(VERDICT_CAPTURED,))
+        return StandingReplay(replay=None, later_capture=None, carrier_map_position=None)
+    if carrier_map_position is not None and replay.position < carrier_map_position:
+        return StandingReplay(
+            replay=None,
+            later_capture=None,
+            carrier_map_position=carrier_map_position,
+        )
+    capture = latest_plan_proof_entry(entries=timeline, verdicts=(VERDICT_CAPTURED,))
     if capture is not None and replay.position < capture.position:
-        return None
-    return replay
+        return StandingReplay(replay=None, later_capture=capture, carrier_map_position=None)
+    return StandingReplay(replay=replay, later_capture=None, carrier_map_position=None)
 
 
 def _covered(
