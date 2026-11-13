@@ -197,6 +197,7 @@ Path(f"{side}.record").write_text(
     json.dumps(
         {
             "item_id": item.id,
+            "description": item.description,
             "subject_digest": judgement_subject_digest(
                 item=item, cwd=repo, comments=comments, spec_identity=identity.value
             ),
@@ -258,13 +259,54 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candid
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     did_not_run_comment,
 )
+from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
+    repository_preflight_reading,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
 repo = Path(sys.argv[2])
 prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
 record = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
+
+
+class CommentStore:
+    def comments(self):
+        return tuple(
+            comment.text
+            for comment in read_work_item_comments(
+                path=store_config(repo=repo), work_item_id=record["item_id"]
+            )
+        )
+
+    def append(self, *, body):
+        append_work_item_comment(
+            path=store_config(repo=repo), work_item_id=record["item_id"], body=body
+        )
+
+
+items = materialize_work_items(records=read_work_items(path=store_config(repo=repo)))
+preflight_item = items[record["item_id"]]
+if preflight_item.description != record["description"]:
+    from dataclasses import replace
+
+    preflight_item = replace(preflight_item, description=record["description"])
+decision = repository_preflight_reading(
+    item=preflight_item,
+    repo=repo,
+    store=CommentStore(),
+    runner=ShellCommandRunner(),
+    payload_root=Path(sys.argv[1]),
+)
+if decision.outcome == "did-not-run":
+    print("DID-NOT-RUN")
+    raise SystemExit(2)
+if decision.reused:
+    print(f"REUSED {decision.outcome}")
+raise SystemExit(0 if decision.outcome == "admitted" else 1)
 
 
 def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
