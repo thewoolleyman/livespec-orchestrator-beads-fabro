@@ -223,6 +223,12 @@ def _sandbox(*, tmp_path: Path) -> tuple[Path, Path]:
     _git(work, "add", "seed.txt")
     _git(work, "commit", "--quiet", "-m", "seed")
     _git(work, "remote", "add", "origin", str(origin))
+    # The node preserves the engine-named run branch's tip, so the fixture sits on
+    # one carrying settled work ahead of the default branch.
+    _git(work, "switch", "--quiet", "-c", f"fabro/run/{_RUN_ID}")
+    (work / "run-work.txt").write_text("the run's settled work\n", encoding="utf-8")
+    _git(work, "add", "run-work.txt")
+    _git(work, "commit", "--quiet", "-m", "settled run work")
     (work / "in-progress.txt").write_text("the tree the node must preserve\n", encoding="utf-8")
     return work, origin
 

@@ -229,6 +229,35 @@ def test_needs_human_commit_forces_the_resolved_author_but_preserves_committer_i
     _ = _git("init", "--bare", "--initial-branch=master", str(bare))
     _ = _git("init", "--initial-branch=master", str(repo))
     _ = _git("remote", "add", "origin", str(bare), cwd=repo)
+    # The node preserves the engine-named run branch's tip, so the clone sits on a
+    # run branch carrying settled work ahead of the default branch.
+    _ = (repo / "seed.txt").write_text("seed\n", encoding="utf-8")
+    _ = _git("add", "seed.txt", cwd=repo)
+    _ = _git(
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "seed",
+        cwd=repo,
+    )
+    _ = _git("switch", "--quiet", "-c", "fabro/run/01AUTHOR", cwd=repo)
+    _ = (repo / "run-work.txt").write_text("settled run work\n", encoding="utf-8")
+    _ = _git("add", "run-work.txt", cwd=repo)
+    _ = _git(
+        "-c",
+        "user.name=Fixture",
+        "-c",
+        "user.email=fixture@example.invalid",
+        "commit",
+        "--quiet",
+        "-m",
+        "settled run work",
+        cwd=repo,
+    )
     _ = (repo / "work.txt").write_text("preserve me\n", encoding="utf-8")
     script = _needs_human_script(workflow=directory / "workflow.fabro")
     env = {
