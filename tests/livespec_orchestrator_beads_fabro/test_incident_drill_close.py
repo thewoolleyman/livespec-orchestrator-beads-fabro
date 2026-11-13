@@ -242,3 +242,25 @@ def test_only_well_formed_revert_receipts_name_a_commit_to_compare(tmp_path: Pat
 
     assert closed.reading.attempt.phase == "drill-closed"
     assert forge.compared == [f"repos/{REPOSITORY}/compare/{'2' * 40}...master"]
+
+
+def test_drill_evidence_module_retains_revert_receipt_commits() -> None:
+    """The extraction seam retains a revert commit for the fresh forge comparison."""
+    evidence = importlib.import_module("livespec_orchestrator_beads_fabro._incident_drill_evidence")
+    client, reading = _seed(snapshot=_attempt())
+    client.add_comment(
+        issue_id=ITEM,
+        body=recovery_comment(
+            record={
+                "schema": 1,
+                "kind": "revert-receipt",
+                "repository": REPOSITORY,
+                "item_id": ITEM,
+                "receipt": {"revert_commit": "e" * 40},
+            }
+        ),
+    )
+
+    assert evidence.recorded_commits(client=client, item_id=ITEM, history=(reading.attempt,)) == (
+        ("revert", "e" * 40),
+    )
