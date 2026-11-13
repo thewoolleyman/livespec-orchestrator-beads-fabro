@@ -2166,8 +2166,8 @@ os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LO
             tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
         fi
     }
-    # The normal gate samples each signal once.  A focused stability run sets
-    # HARNESS_SIGNAL_HOLD_ATTEMPTS=200 to repeat every launcher/signal case
+    # The normal gate samples each signal once. A focused stability run sets
+    # HARNESS_SIGNAL_HOLD_ATTEMPTS=50 (or higher) to repeat every launcher/signal case
     # without multiplying the unrelated Scenario 312 exercises.
     for signal_attempt in $(seq 1 "${HARNESS_SIGNAL_HOLD_ATTEMPTS:-1}"); do
         signal_during_hold "$LAUNCHER" impl INT 130 'signal INT' "$signal_attempt"
