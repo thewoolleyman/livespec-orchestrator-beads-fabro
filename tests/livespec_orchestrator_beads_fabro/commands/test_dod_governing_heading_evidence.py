@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
@@ -73,6 +74,39 @@ def test_a_verified_quote_is_rendered_in_the_omitted_heading_finding(tmp_path: P
         governing_heading_verdict(item=item, repo=repo, run_model=lambda _prompt: unsupported)
         is None
     )
+
+
+def test_an_omitted_heading_finding_writes_a_specification_opener_in_bracket_form(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    spec = repo / "SPECIFICATION"
+    spec.mkdir(parents=True)
+    opener = "{" + "{"
+    quote = f"The specification states the asserted behaviour: {opener} item.id }}."
+    _ = (spec / "scenarios.md").write_text(f"{_HEADING}\n\n{quote}\n", encoding="utf-8")
+    item = _item()
+    reply = json.dumps(
+        {
+            "kind": "stated",
+            "stated_by": [_HEADING],
+            "generalization_target": None,
+            "rationale": "It is stated.",
+            "evidence": [{"heading": _HEADING, "quote": quote}],
+        }
+    )
+
+    verdict = governing_heading_verdict(item=item, repo=repo, run_model=lambda _prompt: reply)
+
+    assert verdict is not None
+    finding = governing_heading_findings(
+        item=item,
+        section=definition_of_done(description=item.description),
+        verdict=verdict,
+    )[0]
+
+    assert "[[ item.id }" in finding
+    assert opener not in finding
 
 
 def test_an_uncited_or_irrelevant_clause_is_not_a_governing_heading(tmp_path: Path) -> None:
