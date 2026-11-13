@@ -368,6 +368,11 @@ for argument in "$@"; do
             if [ -n "$item" ] && [ -n "$server" ]; then
                 printf '%s %s\n' "$server" "$item" > "$STUB_DRIVEN_DIR/$item"
             fi
+            if [ -n "${STUB_DRIVE_EXPIRE_SNAPSHOT:-}" ]; then
+                # The shared board snapshot ages out while the drive runs, as the real one does after its
+                # TTL, so the launcher's next listing poll reads the board with this run on it.
+                find "$FLEET_LAUNCH_BOARD_SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} + 2>/dev/null
+            fi
             # A gated drive lingers after submitting, as a real drive polls the run, so the
             # launcher's listing poll sees the run before it sees the drive exit.
             [ -z "${STUB_DRIVE_ADMIT_GATE:-}" ] || sleep 0.5
@@ -547,7 +552,7 @@ new_case() {
     printf '0\n' > "$STUB_WIP_COUNT_FILE"
     printf '5\n' > "$STUB_WIP_CAP_FILE"
     export STUB_WIP_UNREADABLE_FILE="$CASE_DIR/wip-unreadable"
-    unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT
+    unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT STUB_DRIVE_EXPIRE_SNAPSHOT
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
@@ -1438,7 +1443,9 @@ else
     tail -3 "$CASE_DIR/young.log" >&2
 fi
 find "$SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} +
+export STUB_DRIVE_EXPIRE_SNAPSHOT=1
 run_launcher bd-ib-ttl-old "$CASE_DIR/old.log"
+unset STUB_DRIVE_EXPIRE_SNAPSHOT
 if [ "$(ps_count "$GMK_URL")" -ge 2 ] && [ "$(drive_log_items)" = "bd-ib-ttl-old" ] && [ "$RC" = 0 ]; then
     pass "control: a snapshot older than the TTL is refreshed and the launcher counts the new board"
 else
@@ -1485,7 +1492,9 @@ else
     tail -4 "$CASE_DIR/binding.log" >&2
 fi
 write_board "$BOARD_GMK" 1 gmk
+export STUB_DRIVE_EXPIRE_SNAPSHOT=1
 run_launcher bd-ib-binding-control "$CASE_DIR/control.log"
+unset STUB_DRIVE_EXPIRE_SNAPSHOT
 if [ "$(drive_log_items)" = "bd-ib-binding-control" ] && [ "$RC" = 0 ]; then
     pass "control: with the factory agreeing with the snapshot the same launcher launches"
 else
@@ -2834,6 +2843,20 @@ if [ "$template_rc" = 1 ] && [ "$(drive_log_items)" = bd-ib-template ] \
 else
     fail "a goal template failure was re-ticketed or left no record (rc=$template_rc, dispatches: $(drive_log_items))"
     tail -6 "$CASE_LOG" >&2
+fi
+new_case reticket-zero-exit
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=1
+export STUB_DRIVE_FAIL_RC=0
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-zero > "$CASE_LOG" 2>&1
+zero_rc=$?
+if [ "$zero_rc" = 0 ] && [ "$(drive_log_items)" = "bd-ib-zero bd-ib-zero" ] \
+    && [ "$(grep -cF 'terminal: item=bd-ib-zero ticket=100 cause=drive-exit-early drive-exit=0' "$CASE_LOG")" = 1 ]; then
+    pass "a drive that exits 0 before its run lists re-takes ticket 100 rather than dropping the item"
+else
+    fail "a zero-status early drive exit dropped the item (rc=$zero_rc, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
 fi
 new_case reticket-refused
 open_boards
