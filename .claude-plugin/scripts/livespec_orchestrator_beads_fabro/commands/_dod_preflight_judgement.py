@@ -7,8 +7,14 @@ that a prior repository-preflight verdict binds an unchanged later taking.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
+from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
+from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import parse_adapter_string
+from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
+    dod_gate_candidates,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_record import (
     GoverningHeadingReceipt,
     governing_record_lines,
@@ -40,6 +46,7 @@ if TYPE_CHECKING:
 
 __all__: list[str] = [
     "RepositoryPreflightCommentStore",
+    "preflight_dod_gate_candidates",
     "repository_preflight_governing_reading",
     "repository_preflight_reading",
 ]
@@ -59,7 +66,35 @@ class RepositoryPreflightCommentStore(Protocol):
         ...
 
 
-def repository_preflight_reading(
+def preflight_dod_gate_candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
+    """The `dod_gate` chain, bridging the legacy string form the gate no longer reads.
+
+    The legacy string form predates candidate metadata. A recognisable Claude
+    adapter in it is bridged into the same candidate resolver until the
+    configuration is migrated, so a repository still carrying it is judged rather
+    than reported as having no eligible model.
+    """
+    resolved = dod_gate_candidates(cwd=cwd)
+    if resolved is not None:
+        return resolved
+    nodes: object = dispatcher_block(cwd=cwd).get("acp_nodes")
+    entry: object = (
+        cast("dict[str, object]", nodes).get("dod_gate") if isinstance(nodes, dict) else None
+    )
+    if not isinstance(entry, str):
+        return None
+    adapter = parse_adapter_string(text=entry)
+    if "claude-agent-acp" in adapter.command:
+        return (AcpCandidate(adapter=adapter, agent_id="claude-acp"),)
+    return None
+
+
+def _unobserved_governing_heading(*, item: WorkItem, repo: Path) -> None:
+    """The governing-heading reader of a taking whose heading verdict is already settled."""
+    del item, repo
+
+
+def repository_preflight_reading(  # noqa: PLR0913 - each argument is an independent seam input.
     *,
     item: WorkItem,
     repo: Path,
@@ -67,8 +102,17 @@ def repository_preflight_reading(
     runner: CommandRunner,
     payload_root: Path,
     governing_heading: GoverningHeadingReader | None = None,
+    governing_observed: bool = True,
 ) -> DodJudgementDecision:
-    """Reuse or take one repository-preflight Definition-of-Done judgement."""
+    """Reuse or take one repository-preflight Definition-of-Done judgement.
+
+    `governing_observed` is False when the caller's own governing-heading taking
+    could not be observed. That outage fails open and leaves no record, so this
+    taking must not spawn the judge a second time for the verdict the caller has
+    already settled; a recorded verdict is found through `store` either way.
+    """
+    if not governing_observed and governing_heading is None:
+        governing_heading = _unobserved_governing_heading
     return judge_definition_of_done(
         item=item,
         repo=repo,
@@ -78,6 +122,7 @@ def repository_preflight_reading(
         runner=runner,
         payload_root=payload_root,
         governing_heading=governing_heading,
+        candidate_resolver=preflight_dod_gate_candidates,
     )
 
 

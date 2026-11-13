@@ -11,27 +11,30 @@ from __future__ import annotations
 from pathlib import Path
 
 _SCRIPT = Path("dev-tooling/dod-preflight.sh")
+_COMMANDS = Path(".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands")
 
 
 def test_failed_judge_commands_use_the_shared_candidate_chain() -> None:
-    text = _SCRIPT.read_text(encoding="utf-8")
+    script = _SCRIPT.read_text(encoding="utf-8")
+    run = (_COMMANDS / "_dispatcher_dod_judgement_run.py").read_text(encoding="utf-8")
 
-    assert "run_candidate_chain" in text
-    assert "ShellCommandRunner" in text
-    assert "candidate_resolver=candidates" in text
+    assert "run_candidate_chain" in run
+    assert "ShellCommandRunner" in script
+    assert "repository_preflight_reading(" in script
 
 
 def test_failed_judge_commands_emit_the_typed_cannot_run_sentinel_last() -> None:
     text = _SCRIPT.read_text(encoding="utf-8")
 
-    assert 'print(f"DID-NOT-RUN {chain.cause}")' in text
+    assert 'print("DID-NOT-RUN")' in text
     assert "raise SystemExit(2)" in text
 
 
 def test_an_input_bound_cannot_run_is_recorded_without_turning_into_a_refusal() -> None:
-    text = _SCRIPT.read_text(encoding="utf-8")
+    script = _SCRIPT.read_text(encoding="utf-8")
+    gate = (_COMMANDS / "_dispatcher_dod_judgement_gate.py").read_text(encoding="utf-8")
 
-    assert "did_not_run_comment" in text
-    assert "append_work_item_comment" in text
-    assert "cause=chain.cause" in text
-    assert "raise SystemExit(2)" in text
+    assert "did_not_run_comment" in gate
+    assert "cause=cause" in gate
+    assert 'if decision.outcome == "did-not-run":' in script
+    assert "raise SystemExit(2)" in script
