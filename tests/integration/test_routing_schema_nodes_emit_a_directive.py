@@ -14,6 +14,12 @@ almost every visit) in a real throwaway repository, and require a routing
 directive whose label the committed graph resolves to the expected successor.
 The discovery is the recurrence guard: a new routing-schema node with no
 ordinary lap here fails `test_every_routing_schema_node_has_an_ordinary_lap`.
+
+A lap drives one path per node, so it cannot see an `exit 0` on a path no lap
+takes. The STATIC cases cover every path: in every routing-schema node, each
+literal `exit 0` must directly follow a literal `preferred_next_label` printf,
+and each `preferred_label=X` edge leaving the node must have a literal X in its
+script, so no edge names a label the node never prints.
 """
 
 from __future__ import annotations
@@ -43,6 +49,11 @@ _WORKFLOW_ROOTS = (
 _IMPLEMENT = ".claude-plugin/.fabro/workflows/implement-work-item/workflow.fabro"
 _DEFAULT_BRANCH_TEMPLATE = re.compile(r"\{\{\s*inputs\.default_branch\s*\}\}")
 _PASSING_HOOK = "#!/bin/sh\nprintf 'lefthook v1.13.6  hook: pre-commit\\n'\nexit 0\n"
+_EXIT_ZERO = re.compile(r"\bexit 0\b")
+_DIRECTIVE_THEN_EXIT = re.compile(
+    r"""printf '%s\\n' '\{"preferred_next_label":"[A-Za-z0-9_]+"\}';\s*$"""
+)
+_PRINTED_LABEL = re.compile(r'"preferred_next_label":"([A-Za-z0-9_]+)"')
 
 
 @dataclass(frozen=True)
@@ -135,6 +146,14 @@ def _passed_fix_commit(*, checkout: Path, scratch: Path) -> _Lap:
     return _Lap(environment={"LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)})
 
 
+def _absent_runner(*, checkout: Path, scratch: Path) -> _Lap:
+    """The sandbox commit runner is not materialized: the settle has no commit run to wait out."""
+    del checkout
+    plugins = scratch / "plugins"
+    plugins.mkdir()
+    return _Lap(environment={"LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)})
+
+
 # The ordinary lap of each routing-schema node and the successor it must select.
 _ORDINARY_LAPS: dict[tuple[str, str], tuple[Callable[..., _Lap], str]] = {
     (_IMPLEMENT, "implement_completion"): (_complete_turn, "implementation_diff"),
@@ -175,6 +194,75 @@ def _destination(*, graph_path: str, source: str, preferred_label: str) -> str:
     assert len(matching) <= 1
     assert len(fallthrough) == 1
     return matching[0] if matching else fallthrough[0]
+
+
+def _routing_scripts() -> list[tuple[str, str, str, list[str]]]:
+    """(graph, node, script, preferred labels its outgoing edges name) for every routing node."""
+    found: list[tuple[str, str, str, list[str]]] = []
+    for graph_path, node in sorted(_routing_nodes()):
+        graph = parse_dot_graph(text=(_REPO_ROOT / graph_path).read_text(encoding="utf-8"))
+        assert not isinstance(graph, str), graph
+        labels = [
+            str(edge.attributes["condition"]).removeprefix("preferred_label=")
+            for edge in graph.edges
+            if edge.source == node
+            and str(edge.attributes.get("condition", "")).startswith("preferred_label=")
+        ]
+        found.append((graph_path, node, graph.nodes[node]["script"], labels))
+    return found
+
+
+def test_every_exit_zero_of_a_routing_node_directly_follows_a_directive() -> None:
+    """No path of a routing-schema node can exit 0 without printing a directive."""
+    unguarded = [
+        (node, script[max(0, match.start() - 80) : match.start()])
+        for _graph, node, script, _labels in _routing_scripts()
+        for match in _EXIT_ZERO.finditer(script)
+        if not _DIRECTIVE_THEN_EXIT.search(script[: match.start()])
+    ]
+    assert unguarded == []
+
+
+def test_every_preferred_label_edge_names_a_label_its_node_prints() -> None:
+    """Each `preferred_label=X` edge has a literal X in its source node's script."""
+    unprinted = [
+        (node, label)
+        for _graph, node, script, labels in _routing_scripts()
+        for label in labels
+        if label not in set(_PRINTED_LABEL.findall(script))
+    ]
+    assert unprinted == []
+
+
+def test_the_settle_with_no_commit_runner_continues_to_the_open_red_route(
+    *, tmp_path: Path
+) -> None:
+    """`fix_commit_settle`'s runner-absent path exits 0 with `continue`, not a bare exit."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _ = _git(repo=checkout, argv=("init", "--quiet", "-b", "master"))
+    lap = _absent_runner(checkout=checkout, scratch=tmp_path)
+    graph = parse_dot_graph(text=(_REPO_ROOT / _IMPLEMENT).read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    script = _DEFAULT_BRANCH_TEMPLATE.sub("master", graph.nodes["fix_commit_settle"]["script"])
+
+    result = subprocess.run(
+        ("sh", "-c", script),
+        cwd=checkout,
+        check=False,
+        capture_output=True,
+        text=True,
+        env={**_clean_environment(), **lap.environment},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT" in result.stderr
+    label = _directive_label(stdout=result.stdout, stderr=result.stderr)
+    assert label == "continue"
+    assert (
+        _destination(graph_path=_IMPLEMENT, source="fix_commit_settle", preferred_label=label)
+        == "fix_open_red_route"
+    )
 
 
 def test_every_routing_schema_node_has_an_ordinary_lap() -> None:
