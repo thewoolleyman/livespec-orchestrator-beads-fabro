@@ -81,7 +81,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
     GUARD_SCRIPT_PATH,
     PROOF_CAPTURE_GIT_BIN_PATH,
     PROOF_CAPTURE_HOOKS_PATH,
+    REVIEW_BIN_PATH,
     credential_use_deadline_epoch_capped,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
+    FLEET_RECIPE_RUNNER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     codex_freshness_required_seconds,
@@ -96,6 +100,7 @@ __all__: list[str] = [
     "credential_use_guard_prepare_steps_block",
     "credential_use_projection_for",
     "proof_capture_asset_sources",
+    "review_asset_sources",
 ]
 
 _PROOF_CAPTURE_ASSETS_DIR = (
@@ -239,6 +244,17 @@ def proof_capture_asset_sources() -> tuple[tuple[str, str], ...]:
             (PROOF_CAPTURE_HOOKS_PATH, "proof-capture-hooks", "pre-commit"),
             (PROOF_CAPTURE_HOOKS_PATH, "proof-capture-hooks", "pre-push"),
         )
+    )
+
+
+def review_asset_sources() -> tuple[tuple[str, str], ...]:
+    """The review command launchers, materialized outside the governed clone."""
+    return tuple(
+        (
+            f"{REVIEW_BIN_PATH}/{name}",
+            (_PROOF_CAPTURE_ASSETS_DIR / "review-bin" / name).read_text(encoding="utf-8"),
+        )
+        for name in ("git", FLEET_RECIPE_RUNNER, "livespec-implement-check-suite")
     )
 
 

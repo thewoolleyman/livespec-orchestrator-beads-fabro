@@ -52,6 +52,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_projection import (
     proof_capture_asset_sources,
+    review_asset_sources,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_gate_preview_program import (
     GATE_PREVIEW_PROGRAM_FILENAME,
@@ -205,7 +206,7 @@ def _plugin_root_programs() -> tuple[Helper, ...]:
 
 
 def _credential_use_helpers() -> tuple[Helper, ...]:
-    """The credential-use guard and the proof-capture launcher and hooks."""
+    """The credential-use guard plus the proof-capture and review boundaries."""
     guard = Helper(
         name="credential-use-guard",
         root=LIVESPEC_ROOT,
@@ -223,7 +224,17 @@ def _credential_use_helpers() -> tuple[Helper, ...]:
         )
         for sandbox_path, text in proof_capture_asset_sources()
     )
-    return (guard, *assets)
+    review_assets = tuple(
+        Helper(
+            name=f"review/{_livespec_relative(sandbox_path=sandbox_path)}",
+            root=LIVESPEC_ROOT,
+            path=_livespec_relative(sandbox_path=sandbox_path),
+            mode=_PRIVATE_EXECUTABLE,
+            compose=_constant(text=text),
+        )
+        for sandbox_path, text in review_asset_sources()
+    )
+    return (guard, *assets, *review_assets)
 
 
 def _livespec_relative(*, sandbox_path: str) -> str:

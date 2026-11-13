@@ -27,6 +27,9 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands._dispatcher_graph_adapters import (
+    guarded_adapter_commands,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_harness_shell_policy import (
     harness_settings_merge_program,
 )
@@ -185,3 +188,9 @@ def test_the_settings_merge_program_installs_the_guard_beside_the_gate() -> None
     program = harness_settings_merge_program()
     assert "livespec-run-plugin-gate.py" in program
     assert "livespec-review-guard.py" in program
+
+
+def test_the_review_adapter_gets_the_adapter_independent_read_only_launcher() -> None:
+    """A Codex review inherits the same command boundary as a Claude review."""
+    commands = guarded_adapter_commands(run_inputs=("review_adapter=CODEX_CONFIG='{}' codex-acp",))
+    assert "LIVESPEC_REVIEW_READ_ONLY=1" in commands["review_adapter"]

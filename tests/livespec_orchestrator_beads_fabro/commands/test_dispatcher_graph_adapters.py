@@ -310,3 +310,38 @@ def test_resolved_run_inputs_become_guarded_commands_by_input_name() -> None:
     guarded = commands["probe_adapter"]
     assert guarded.startswith("ANTHROPIC_MODEL=claude-opus-4-8 ")
     assert guarded != _PREFIXED
+
+
+def test_a_review_adapter_without_a_leading_environment_still_gets_the_read_only_boundary() -> None:
+    """The adapter-neutral boundary also covers a bare executable command."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    commands = module.guarded_adapter_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        run_inputs=("review_adapter=codex-acp",)
+    )
+
+    assert commands["review_adapter"].startswith("LIVESPEC_REVIEW_READ_ONLY=1 ")
+
+
+def test_a_proof_capture_adapter_gets_its_git_read_only_boundary() -> None:
+    """The stage router retains the proof-capture-specific protection."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    commands = module.guarded_adapter_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        run_inputs=("proof_capture_adapter=proof-capture-acp",)
+    )
+
+    assert "LIVESPEC_PROOF_CAPTURE_GIT_READ_ONLY=1" in commands["proof_capture_adapter"]
+
+
+def test_an_assignments_only_review_adapter_still_gets_the_read_only_boundary() -> None:
+    """The assignment scan reaches its end before the review marker is added."""
+    assert _MODULE_PATH.is_file()
+    module = _module()
+    commands = module.guarded_adapter_commands(  # pyright: ignore[reportAttributeAccessIssue]
+        run_inputs=("review_adapter=CODEX_CONFIG='{}' REVIEW_MODE=readonly",)
+    )
+
+    assert commands["review_adapter"].startswith(
+        "CODEX_CONFIG='{}' LIVESPEC_REVIEW_READ_ONLY=1 REVIEW_MODE=readonly "
+    )
