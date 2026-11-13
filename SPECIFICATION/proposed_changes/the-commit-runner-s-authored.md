@@ -1,10 +1,10 @@
 ---
 topic: the-commit-runner-s-authored
 author: claude:factory-run-work-preservation plan seat session d3d4ab
-created_at: 2026-11-13T00:56:29Z
+created_at: 2026-11-13T01:32:53Z
 ---
 
-## Proposal: A commit run's commit carries an authored subject, and a refusal inside a merge or rebase leaves that operation resumable and names the forms that record the resolution
+## Proposal: A commit run's commit carries an authored subject, and a refusal inside a stopped rebase leaves the rebase in progress and names the forms that pass
 
 ### Target specification files
 
@@ -14,7 +14,7 @@ created_at: 2026-11-13T00:56:29Z
 
 ### Summary
 
-Add a paragraph to contracts.md §"ACP node timeouts", directly after "A settled failed commit run is recorded with its cause.", that states the commit runner's authored-subject rule. The runner shipped the rule in v0.317.0 (bd-ib-7cixf3) without spec text. The paragraph extends the rule to commits made inside a merge or rebase. An exit-0 commit run whose resulting commit's first message line is empty or a trailer settles failed, and HEAD returns to the run's start head with the index and working tree kept. When a merge or rebase was in progress, the refusal leaves it in progress and resumable with the resolution intact. The run's recorded output then names the two forms that record the resolution with an authored subject, `git commit --no-edit` and `git commit -m <subject>`, and the fix and review_fix prompts name them too. A commit run of either form whose commit's first line is authored settles passed. Add one numberless scenario plus its heading-coverage and debt-register rows.
+Add a paragraph to contracts.md §"ACP node timeouts", directly before "A commit run outlives a node-timeout cut.", stating the commit runner's authored-subject rule. The rule shipped in v0.317.0 (bd-ib-7cixf3) without spec text; the paragraph pins its definition to the shipped TRAILER_SUBJECT pattern, under which a Conventional Commits subject is authored. It extends the rule to a commit made while a rebase is stopped on a pick. The refusal MUST NOT end the rebase. The agent's in-turn wait report on the refused run MUST state that a rebase is in progress and name `git commit -C REBASE_HEAD` and `git commit -m <subject>` as the forms that pass; `--no-edit` MUST NOT be named. If the turn ends on the refused run, the settle node's existing abort and preservation apply, and the re-entry brief MUST NOT claim the rebase is open. Merges are out of scope. Add one numberless scenario plus its heading-coverage and debt-register rows.
 
 ### Motivation
 
@@ -28,14 +28,47 @@ How the resolution commit came to carry a trailer first is NOT measured: the ref
 
 IN-FLIGHT ALIGNMENT: the pending proposals a-commit-settle-abort-preserves-the-in-progress-resolution (a settle preserves a resolution before aborting an operation whose commit run failed) and a-commit-settle-node-whose (a settle never routes onward over an operation it could not end) govern what the SETTLE node does after a commit run. This proposal governs only the commit RUN's verdict, the state the runner leaves, and the brief text. It changes no settle behaviour. Relationship to both: align.
 
+GRADE MEASUREMENTS (coordinator grade of #5110 @ 14f4e5070, reproduced independently by this seat in a throwaway git 2.51.0 fixture whose only hook appends `Factory-Run-Id:`):
+(1) The shipped guard's TRAILER_SUBJECT is `^[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+:(\s|$)`. It matches `Factory-Run-Id: 01RUN` and does NOT match `fix: run change`, so the paragraph pins that definition rather than a looser `<Token>: <value>` form that would refuse every Conventional Commits subject.
+(2) Inside a stopped rebase, a commit with an empty message produced `Factory-Run-Id: 01RUN` as its subject. After `git reset --soft` to the start head, `.git/MERGE_MSG` was ABSENT, because the refused commit consumed it. A following `git commit --no-edit` therefore again produced `Factory-Run-Id: 01RUN`, while `git commit -C REBASE_HEAD` produced the picked commit's subject `fix: run change`, and `git rebase --continue` then finished. So `--no-edit` fails in exactly the state this paragraph addresses, and `-C REBASE_HEAD` is the form named. The same fixture shows `--no-edit` with MERGE_MSG absent reproduces the trailer-first commit exactly. Any successful commit or reset during the stop, an engine checkpoint commit included, removes MERGE_MSG, so this is the leading candidate for ie7fas's mechanism. It is unconfirmed: bd-ib-vpvdn4's implementer reads the run's fabro dump to check.
+(3) Every commit-settle node aborts a merge or rebase still in progress after a failed commit run, and both pending settle proposals keep that abort. So "in progress and resumable" holds only within the turn: the statement and the named forms belong to the agent's in-turn wait report, and a re-entry brief written after the settle's abort MUST NOT claim the rebase is open.
+(4) A refused merge commit consumes MERGE_HEAD, and the soft reset leaves no merge open, so the paragraph is scoped to a stopped rebase and states that it does not cover a merge.
+ANCHOR: the pending a-commit-settle-node-whose also inserts directly after "A settled failed commit run is recorded with its cause.", so this paragraph is anchored directly BEFORE "A commit run outlives a node-timeout cut.", which is deterministic whichever revise lands first.
+
 ### Proposed Changes
 
 ### 1. `SPECIFICATION/contracts.md` §"ACP node timeouts": add one paragraph
 
-Insert this paragraph directly after the paragraph that begins **A settled failed commit run is recorded with its cause.** No existing paragraph changes:
+Insert this paragraph directly BEFORE the paragraph that begins **A commit run outlives a node-timeout cut.**. No existing paragraph changes:
 
 ```markdown
-**A commit run's commit carries an authored subject.** A commit's *authored subject* is its first message line when that line is neither empty nor a trailer line of the form `<Token>: <value>`. When a commit run started through the commit runner exits 0 and the commit it made has no authored subject, the runner MUST settle that commit run `failed`. It MUST restore `HEAD` to the head the run started from, keeping the index and the working tree, and the run's recorded output MUST name that commit as having no authored subject line. This rule exists because the repository's commit-msg hook may append trailers to an empty message, and Git would then make a commit that nobody authored. It applies to every commit run, including one made while a merge or rebase is in progress. When a merge or rebase was in progress when the commit run started, the refusal MUST leave that operation in progress and resumable, with the index and working tree still holding its resolution. The run's recorded output MUST then also state that the operation is in progress and MUST name the two forms that record the resolution with an authored subject: a commit run of `git commit --no-edit`, which keeps the message Git prepared from the picked or merged commit, and a commit run of `git commit -m <subject>`. A commit run of either form whose commit has an authored subject MUST settle `passed`. The `fix` and `review_fix` stage prompts MUST name both forms for a commit made inside a merge or rebase. This paragraph changes nothing that a commit settle node does after a commit run settles.
+**A commit run's commit carries an authored subject.** A commit has no
+*authored subject* when its first message line is empty or matches
+`^[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+:(\s|$)`, the shape of a hyphenated trailer
+token such as `Factory-Run-Id:`; a Conventional Commits subject such as
+`fix: ...` is an authored subject. When a commit run started through the commit
+runner exits 0 and the commit it made has no authored subject, the runner MUST
+settle that commit run `failed`. It MUST restore `HEAD` to the head the run
+started from, keeping the index and the working tree, and the run's recorded
+output MUST name that commit as having no authored subject line. The rule exists
+because the repository's commit-msg hook may append trailers to an empty
+message, and Git would then make a commit nobody authored. It applies to every
+commit run, including one made while a rebase is stopped on a pick. For such a
+commit run the refusal MUST NOT itself end the rebase: the rebase MUST still be
+in progress, with the index and working tree holding the resolution. When the
+agent's in-turn wait on that commit run reports it `failed`, the wait report
+MUST state that a rebase is in progress and MUST name the two forms that record
+the resolution with an authored subject: a commit run of
+`git commit -C REBASE_HEAD`, which reuses the picked commit's own message, and a
+commit run of `git commit -m <subject>`. The report MUST NOT name
+`git commit --no-edit`, because the refused commit consumed the message Git had
+prepared. A commit run of either named form whose commit has an authored subject
+MUST settle `passed`. The `fix` and `review_fix` stage prompts MUST name both
+forms for a commit made inside a stopped rebase. When the turn ends on the
+refused commit run, the commit settle node's existing abort and preservation
+apply unchanged, and the re-entry brief MUST NOT state that the rebase is still
+in progress. This paragraph does not cover a merge, because a refused merge
+commit consumes `MERGE_HEAD` and the soft reset leaves no merge open.
 ```
 
 ### 2. `SPECIFICATION/scenarios.md`: add one scenario, numbered at revise
@@ -43,36 +76,48 @@ Insert this paragraph directly after the paragraph that begins **A settled faile
 The heading is numberless here. The revise pass MUST assign the next free scenario number and update the heading text in changes 3 and 4 to match.
 
 ~~~markdown
-## Scenario: a commit run's commit carries an authored subject, and a refusal inside a rebase leaves it resumable and names the forms that pass
+## Scenario: a commit run's commit carries an authored subject, and a refusal inside a stopped rebase leaves the rebase in progress and names the forms that pass
 
 ```gherkin
-Feature: A resolved conflict can always be committed
+Feature: A resolved rebase conflict can always be committed
   As a maintainer whose factory runs refresh onto a moving default branch
   I want a fix turn's commit of a resolved rebase conflict to pass when it carries an authored subject
   So that a correct resolution is never refused on every visit until the run's budget is spent
 
-  Scenario: A resolution committed with no authored subject is refused and the rebase stays resumable
+  Scenario: A resolution committed with no authored subject is refused and the rebase stays in progress
     Given a fix turn whose rebase stopped on a conflict at picked commit C, which the agent resolved and staged
     And the repository's commit-msg hook appends a Factory-Run-Id trailer
     When the agent's commit run through the commit runner commits the resolution with an empty authored message
     Then the commit run settles failed and its recorded output names the commit as having no authored subject line
     And HEAD is the head the commit run started from
     And the rebase is still in progress with the index holding the resolution
-    And the recorded output states that a rebase is in progress and names git commit --no-edit and git commit -m <subject>
+    And the agent's in-turn wait report on that commit run states that a rebase is in progress and names git commit -C REBASE_HEAD and git commit -m <subject>
 
-  Scenario: The resolution committed under the picked commit's own message settles passed
-    Given a fix turn whose rebase stopped on a conflict at picked commit C, which the agent resolved and staged
-    And the repository's commit-msg hook appends a Factory-Run-Id trailer
-    When the agent's commit run through the commit runner is git commit --no-edit
+  Scenario: After a refusal, the resolution committed with the picked commit's own message passes
+    Given the refused commit run of the previous scenario, with the rebase still in progress at picked commit C
+    When the agent's next commit run through the commit runner is git commit -C REBASE_HEAD
     Then the commit run settles passed
     And the new commit's first message line is C's authored subject
+    And the rebase moves past C to its next pick when it is continued
+
+  Scenario: A Conventional Commits subject is an authored subject
+    Given a repository whose commit-msg hook appends a Factory-Run-Id trailer
+    When a commit run through the commit runner commits with the message "fix: resolve the conflict"
+    Then the commit run settles passed
+    And the new commit's first message line is "fix: resolve the conflict"
 
   Scenario: An ordinary commit with no authored subject is still refused
-    Given a repository with no merge or rebase in progress whose commit-msg hook appends a Factory-Run-Id trailer
+    Given a repository with no rebase in progress whose commit-msg hook appends a Factory-Run-Id trailer
     When a commit run through the commit runner commits with an empty authored message
     Then the commit run settles failed
     And HEAD is the head the commit run started from
     And the recorded output names the commit as having no authored subject line
+
+  Scenario: A turn that ends on the refused commit run does not claim the rebase is open
+    Given a fix turn that ends while its latest commit run inside a stopped rebase was refused for having no authored subject
+    When the fix_commit_settle node settles that commit run
+    Then the settle node's existing abort and preservation apply
+    And the fix re-entry brief does not state that the rebase is still in progress
 ```
 ~~~
 
@@ -81,7 +126,7 @@ Feature: A resolved conflict can always be committed
 The revise that ratifies this MUST add one entry, using the heading as numbered at revise:
 
 ```json
-{"heading": "## Scenario: a commit run's commit carries an authored subject, and a refusal inside a rebase leaves it resumable and names the forms that pass", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "reason": "A test at the integration tier or above is owed: the commit runner's own suite, delivered by bd-ib-vpvdn4, driving a real rebase stopped on a conflict in a local git fixture whose commit-msg hook appends a trailer."}
+{"heading": "## Scenario: a commit run's commit carries an authored subject, and a refusal inside a stopped rebase leaves the rebase in progress and names the forms that pass", "spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "test": "TODO", "work_item": "bd-ib-vpvdn4", "reason": "A test at the integration tier or above is owed: the commit runner's own suite, delivered by bd-ib-vpvdn4, driving a real rebase stopped on a conflict in a local git fixture whose commit-msg hook appends a trailer."}
 ```
 
 ### 4. `tests/heading-coverage-debt.json`: add the matching row in the same revise
@@ -89,7 +134,7 @@ The revise that ratifies this MUST add one entry, using the heading as numbered 
 The register has no generator, so the row is authored. `check-heading-coverage-debt-register` admits it under its spec-first admission, because this same change introduces the heading:
 
 ```json
-{"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a commit run's commit carries an authored subject, and a refusal inside a rebase leaves it resumable and names the forms that pass", "work_item": "bd-ib-vpvdn4", "first_seen": "<revise date>"}
+{"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a commit run's commit carries an authored subject, and a refusal inside a stopped rebase leaves the rebase in progress and names the forms that pass", "work_item": "bd-ib-vpvdn4", "first_seen": "<revise date>"}
 ```
 
 No existing heading changes, per AGENTS.md §"Revise co-edit discipline".
