@@ -6918,8 +6918,8 @@ def test_goal_rewrites_comment_and_lessons_openers_without_truncating_them(tmp_p
         lessons=lessons,
     )
 
-    assert "comment [{ keep }} then [% keep %} then [# keep #}" in goal
-    assert "lesson [{ keep }} then [% keep %} then [# keep #}" in goal
+    assert "comment [[ keep }} then [% keep %} then [# keep #}" in goal
+    assert "lesson [[ keep }} then [% keep %} then [# keep #}" in goal
 
 
 def test_item_sizing_warnings_empty_for_small_item() -> None:

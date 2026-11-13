@@ -63,6 +63,9 @@ from typing import TYPE_CHECKING
 
 from livespec_runtime.spec_stated import ClauseEvidence
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_minijinja_escape import (
+    rewrite_minijinja_openers_for_goal,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     CondensedClause,
 )
@@ -213,10 +216,11 @@ def governing_heading_block(*, verdict: GoverningHeadingVerdict | None) -> str:
 
 
 def _omitted_heading_finding(*, item: WorkItem, heading: str, quote: str) -> str:
+    safe_quote = rewrite_minijinja_openers_for_goal(text=quote)
     return (
         f"work-item {item.id}: the Definition of Done reference line does not name"
         f" {heading!r}, which the spec-stated judgement returned as a clause governing"
-        f" this item's assertions, quoting {quote!r} from that clause; add that heading"
+        f" this item's assertions, quoting {safe_quote!r} from that clause; add that heading"
         " to the reference line verbatim, so"
         " the capture steps exercise the behaviour it states"
     )

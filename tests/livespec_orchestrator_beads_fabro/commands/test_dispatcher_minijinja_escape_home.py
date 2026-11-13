@@ -69,7 +69,7 @@ def test_the_escaper_has_its_own_module_and_that_module_is_its_whole_surface() -
     assert set(module.__all__) == {_ESCAPER, _OPENER_REWRITER}
     for text, expected in _OPENERS:
         assert module.escape_minijinja_literal(text=text) == expected
-        assert module.rewrite_minijinja_openers_for_goal(text=text) == text.replace("{", "[", 1)
+        assert module.rewrite_minijinja_openers_for_goal(text=text) == text.replace("{", "[", 2)
 
 
 def test_the_overlay_no_longer_carries_the_escaper_at_all() -> None:
@@ -86,10 +86,9 @@ def test_the_overlay_no_longer_carries_the_escaper_at_all() -> None:
 def test_the_opener_rewrite_leaves_no_live_opener_in_overlapping_brace_runs() -> None:
     """A brace that closes one opener and opens the next is rewritten too.
 
-    A non-overlapping scan consumes the first two characters of two opening braces
-    and a percent, which leaves the second brace and the percent as a live statement
-    opener. Every opening brace that precedes a brace, percent or hash must become
-    a square bracket, so no run of such characters survives as an opener.
+    The scan replaces each complete opener from left to right. Every opening
+    brace of those delimiters becomes a square bracket, so no run of such
+    characters survives as an opener.
     """
     module = importlib.import_module(_MODULE)
 
@@ -103,7 +102,7 @@ def test_the_opener_rewrite_leaves_no_live_opener_in_overlapping_brace_runs() ->
         "{{{": "[[{",
         "{{#": "[[#",
         "{{{%": "[[[%",
-        "a {{{{ b": "a [[[{ b",
+        "a {{{{ b": "a [[[[ b",
         "{ {%": "{ [%",
     }
     for text in rewritten.values():
