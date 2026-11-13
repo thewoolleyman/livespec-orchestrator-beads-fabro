@@ -26,7 +26,7 @@ On v0.325.0, which removes woiqjm's cutoff, this class loops fix → fix_commit_
 
 How the resolution commit came to carry a trailer first is NOT measured: the refused commits and the runner's output files died with the sandbox, and the run's four wip refs carry no trailer-subject commit. The clause is therefore written over observable outcomes, whatever produced the empty authored message.
 
-IN-FLIGHT ALIGNMENT: the pending proposals a-commit-settle-abort-preserves-the-in-progress-resolution (a settle preserves a resolution before aborting an operation whose commit run failed) and a-commit-settle-node-whose (a settle never routes onward over an operation it could not end) govern what the SETTLE node does after a commit run. This proposal governs only the commit RUN's verdict, the state the runner leaves, and the brief text. It changes no settle behaviour. Relationship to both: align.
+IN-FLIGHT ALIGNMENT: the pending proposals a-commit-settle-abort-preserves-the-in-progress-resolution (a settle preserves a resolution before aborting an operation whose commit run failed) and a-commit-settle-node-whose (a settle never routes onward over an operation it could not end) govern what the SETTLE node does after a commit run. Two more pending items touch the same surface and align: the-implement-fix-and-review (an agent turn closes each Red before it opens another and never rewrites below HEAD) edits the same fix and review_fix prompts, and #5050 the-engine-s-per-stage (an engine checkpoint never moves a run branch under an open merge or rebase) concerns the engine checkpoint during a rebase, the commit that removes MERGE_MSG in this seat's leading-candidate mechanism. Relationship: align. This proposal governs only the commit RUN's verdict, the state the runner leaves, and the brief text. It changes no settle behaviour. Relationship to both: align.
 
 GRADE MEASUREMENTS (coordinator grade of #5110 @ 14f4e5070, reproduced independently by this seat in a throwaway git 2.51.0 fixture whose only hook appends `Factory-Run-Id:`):
 (1) The shipped guard's TRAILER_SUBJECT is `^[A-Z][A-Za-z0-9]*(-[A-Za-z0-9]+)+:(\s|$)`. It matches `Factory-Run-Id: 01RUN` and does NOT match `fix: run change`, so the paragraph pins that definition rather than a looser `<Token>: <value>` form that would refuse every Conventional Commits subject.
@@ -65,9 +65,10 @@ commit run of `git commit -m <subject>`. The report MUST NOT name
 prepared. A commit run of either named form whose commit has an authored subject
 MUST settle `passed`. The `fix` and `review_fix` stage prompts MUST name both
 forms for a commit made inside a stopped rebase. When the turn ends on the
-refused commit run, the commit settle node's existing abort and preservation
-apply unchanged, and the re-entry brief MUST NOT state that the rebase is still
-in progress. This paragraph does not cover a merge, because a refused merge
+refused commit run and the commit settle node's abort of the rebase completed,
+so that no rebase remains in progress, the re-entry brief MUST NOT state that
+the rebase is still in progress; an abort that did not complete is governed by
+the settle node's own rule for an operation it could not end. This paragraph does not cover a merge, because a refused merge
 commit consumes `MERGE_HEAD` and the soft reset leaves no merge open.
 ```
 
@@ -91,7 +92,7 @@ Feature: A resolved rebase conflict can always be committed
     Then the commit run settles failed and its recorded output names the commit as having no authored subject line
     And HEAD is the head the commit run started from
     And the rebase is still in progress with the index holding the resolution
-    And the agent's in-turn wait report on that commit run states that a rebase is in progress and names git commit -C REBASE_HEAD and git commit -m <subject>
+    And the agent's in-turn wait report on that commit run states that a rebase is in progress and names git commit -C REBASE_HEAD and git commit -m <subject>, and does not name git commit --no-edit
 
   Scenario: After a refusal, the resolution committed with the picked commit's own message passes
     Given the refused commit run of the previous scenario, with the rebase still in progress at picked commit C
@@ -115,8 +116,9 @@ Feature: A resolved rebase conflict can always be committed
 
   Scenario: A turn that ends on the refused commit run does not claim the rebase is open
     Given a fix turn that ends while its latest commit run inside a stopped rebase was refused for having no authored subject
+    And the fix_commit_settle node's abort of that rebase completes
     When the fix_commit_settle node settles that commit run
-    Then the settle node's existing abort and preservation apply
+    Then no rebase remains in progress
     And the fix re-entry brief does not state that the rebase is still in progress
 ```
 ~~~
@@ -131,7 +133,7 @@ The revise that ratifies this MUST add one entry, using the heading as numbered 
 
 ### 4. `tests/heading-coverage-debt.json`: add the matching row in the same revise
 
-The register has no generator, so the row is authored. `check-heading-coverage-debt-register` admits it under its spec-first admission, because this same change introduces the heading:
+The register is generated, never authored by hand. The revise MUST regenerate it with `uv run python -m livespec_dev_tooling.heading_coverage_debt` and stage the result. The generated row is expected to read:
 
 ```json
 {"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a commit run's commit carries an authored subject, and a refusal inside a stopped rebase leaves the rebase in progress and names the forms that pass", "work_item": "bd-ib-vpvdn4", "first_seen": "<revise date>"}
