@@ -209,8 +209,13 @@ def _measure(
     The parent is resolved and the changed paths listed in one read; a failure of
     either means this clone cannot see the pair's source trees. A path the
     counter cannot read is reported as unsupported counting rather than as a
-    missing tree, because the two have different remedies.
+    missing tree, because the two have different remedies. An empty prefix tuple
+    means the repository's source-tree declaration is absent or unreadable, so
+    the canonical product classification cannot be applied: that is unsupported
+    counting for the pair, never a numeric zero over a population nobody declared.
     """
+    if not prefixes:
+        return Unobserved(reason=UNOBSERVED_COUNTING)
     changed = _changed_paths(repo=repo, commit=source.commit, runner=runner)
     if changed is None:
         return Unobserved(reason=UNOBSERVED_SOURCE_TREE)

@@ -154,7 +154,7 @@ def test_entries_without_an_object_shape_or_a_commit_identity_are_skipped() -> N
     assert parsed[0].message.startswith("feat: kept")
 
 
-def test_a_repository_declaring_no_source_trees_measures_no_product_lines(
+def test_a_repository_declaring_no_source_trees_reports_unsupported_counting(
     tmp_path: Path,
 ) -> None:
     repo = _repo(tmp_path=tmp_path, pyproject=None)
@@ -169,7 +169,8 @@ def test_a_repository_declaring_no_source_trees_measures_no_product_lines(
     )
 
     assert series.completed_count == 1
-    assert series.cycles[0].product_lloc_changed == 0
+    assert series.cycles[0].product_lloc_changed is None
+    assert series.cycles[0].product_lloc_unobserved_reason == UNOBSERVED_COUNTING
 
 
 def test_a_product_source_the_counter_cannot_read_reports_unsupported_counting(
