@@ -266,6 +266,28 @@ def test_drill_evidence_module_retains_revert_receipt_commits() -> None:
     )
 
 
+def test_drill_evidence_module_retains_rollback_resolution_commit() -> None:
+    """A retained rollback-conflict resolution is equally master-reachability evidence."""
+    evidence = importlib.import_module("livespec_orchestrator_beads_fabro._incident_drill_evidence")
+    client, reading = _seed(snapshot=_attempt())
+    client.add_comment(
+        issue_id=ITEM,
+        body=recovery_comment(
+            record={
+                "schema": 1,
+                "kind": "revert-receipt",
+                "repository": REPOSITORY,
+                "item_id": ITEM,
+                "resolution": {"revert_commit": "f" * 40},
+            }
+        ),
+    )
+
+    assert evidence.recorded_commits(client=client, item_id=ITEM, history=(reading.attempt,)) == (
+        ("revert", "f" * 40),
+    )
+
+
 def test_drill_evidence_module_retains_landed_and_revert_commits() -> None:
     """The extraction keeps every master-reachability candidate."""
     evidence = importlib.import_module("livespec_orchestrator_beads_fabro._incident_drill_evidence")
