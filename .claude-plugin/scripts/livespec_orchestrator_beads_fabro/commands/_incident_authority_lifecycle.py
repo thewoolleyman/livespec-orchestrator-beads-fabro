@@ -51,17 +51,17 @@ from livespec_orchestrator_beads_fabro.commands._incident_authority_binding impo
     bind_repayment_acceptance,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_authority_completion import (
-    ATTESTATION_FIELDS,
     MASTER_CI_UNOBSERVABLE,
-    CompletionRequest,
-    complete_from_forge,
-    decode_attestation,
+    complete_action,
     observe_master_run,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_authority_decode import (
     decode_attributed_attempt,
     decode_record,
     invalid_payload,
+)
+from livespec_orchestrator_beads_fabro.commands._incident_authority_drill_close import (
+    run_drill_close,
 )
 from livespec_orchestrator_beads_fabro.commands._incident_authority_merge import record_merge
 from livespec_orchestrator_beads_fabro.commands._incident_authority_unmerged import (
@@ -74,6 +74,7 @@ from livespec_orchestrator_beads_fabro.commands._incident_rollback_conflict impo
     resolve_rollback_conflict,
 )
 from livespec_orchestrator_beads_fabro.incident_completion import IncidentCompletion
+from livespec_orchestrator_beads_fabro.incident_drill_close import DrillClose
 from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
     RepaymentEntry,
     advance_repayment,
@@ -117,10 +118,11 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "correct-attempt": ("correction_json", "target_ref"),
     "correct-unmerged-attempt": ("correction_json", "target_ref", "failed_run"),
     "complete-incident": ("master_run", "completion_json"),
+    "drill-close": (),
 }
 _PR_NUMBER = re.compile(r"[1-9][0-9]*")
 
-LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | AuthorityRefusal
+LifecycleReply = RepaymentEntry | RecoveryEntry | IncidentCompletion | DrillClose | AuthorityRefusal
 _Handler = Callable[..., LifecycleReply]
 
 
@@ -260,28 +262,6 @@ def _correct(
     )
 
 
-def _complete(
-    *,
-    args: argparse.Namespace,
-    client: BeadsClient,
-    reading: IncidentReading,
-    runner: CommandRunner,
-) -> LifecycleReply:
-    """Decode the attestation, then gather the forge and tree evidence and complete."""
-    attestation = decode_attestation(text=args.completion_json)
-    if attestation is None:
-        detail = f"needs exactly {list(ATTESTATION_FIELDS)} as one canonical JSON object"
-        return invalid_payload(flag="--completion-json", detail=detail)
-    return complete_from_forge(
-        client=client,
-        reading=reading,
-        runner=runner,
-        repo=args.repo,
-        repository=args.repository,
-        completion=CompletionRequest(run_id=args.master_run, attestation=attestation),
-    )
-
-
 _HANDLERS: dict[str, _Handler] = {
     "record-merge": _record_merge,
     "enter-repayment": _enter,
@@ -294,7 +274,8 @@ _HANDLERS: dict[str, _Handler] = {
     "resolve-rollback-conflict": _resolve_rollback_conflict,
     "correct-attempt": _correct,
     "correct-unmerged-attempt": correct_unmerged_action,
-    "complete-incident": _complete,
+    "complete-incident": complete_action,
+    "drill-close": run_drill_close,
 }
 
 
@@ -311,7 +292,9 @@ def run_lifecycle_action(
 
 
 def lifecycle_body(
-    *, result: RepaymentEntry | RecoveryEntry | IncidentCompletion, body: dict[str, Any]
+    *,
+    result: RepaymentEntry | RecoveryEntry | IncidentCompletion | DrillClose,
+    body: dict[str, Any],
 ) -> None:
     """Serialize the recorded attempt with its carrier exactly as the chain retains it.
 

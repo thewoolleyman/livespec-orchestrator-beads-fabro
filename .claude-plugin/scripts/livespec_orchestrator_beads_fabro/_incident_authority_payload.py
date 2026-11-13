@@ -50,6 +50,7 @@ _PHASES = frozenset(
         "repayment-active",
         "repayment-acceptance",
         "closed",
+        "drill-closed",
     )
 )
 _TEXT_FIELDS = (
