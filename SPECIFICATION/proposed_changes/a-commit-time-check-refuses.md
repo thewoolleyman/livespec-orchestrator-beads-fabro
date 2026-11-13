@@ -51,10 +51,14 @@ Append this bullet to the section's bullet list. No existing bullet changes:
   `preferred_next_label`, `outcome`, `failure_reason`, `suggested_next_ids`
   or `context_updates`. Nothing the script prints after the directive may
   carry such a field. A path that exits non-zero MAY print no directive. So
-  that this is decidable at commit time, the script of such a node MUST have
-  this shape: every `exit 0`, and the end of the script, comes immediately
-  after a command in the same command list that prints a literal directive,
-  such as `printf '%s\n' '{"preferred_next_label":"<label>"}'`; the only
+  that this is decidable at commit time, the script of such a node, read
+  after the DOT string is unescaped, MUST have this shape: every `exit 0`,
+  and the end of the script, comes immediately after a literal directive
+  command in the same command list, joined by `;` or a newline. A literal
+  directive command is a `printf '%s\n'` or an `echo` whose final operand is
+  one single-quoted JSON object literal carrying a routing field, such as
+  `printf '%s\n' '{"preferred_next_label":"<label>"}'`. A command joined by
+  `||` or `&&`, as in `cmd || exit 0`, is not immediately after one. The only
   other exits are a literal non-zero `exit <N>` and the `|| exit $?` idiom.
   When a directive's `preferred_next_label` matches no `preferred_label=`
   condition on the node's outgoing edges, the node MUST carry an
@@ -63,8 +67,10 @@ Append this bullet to the section's bullet list. No existing bullet changes:
   graph file and the node, and also the label when the label rule is
   broken. It MUST refuse as unverifiable, naming the graph file, the node
   and the construct, a routing-schema script that uses a non-literal exit
-  status other than `|| exit $?`, `exec`, `trap`, a shell function, `exit`
-  inside a subshell, or a non-literal directive label. The check MUST take
+  status other than `|| exit $?`, a bare `exit` with no status, `exec`,
+  `trap`, a shell function, `exit` inside a subshell, a non-literal directive
+  label, or a compound last command (`if`, `case` or a loop) unless every
+  branch of it ends in that shape. The check MUST take
   a repository root and read every `*.fabro` workflow graph committed under
   `.claude-plugin/.fabro/workflows` and `.fabro/workflows` there. It MUST
   need neither a fabro client nor network access, and it MUST be invocable
@@ -87,7 +93,7 @@ Feature: A routing-schema node always tells the engine where to go
 
   Scenario: A success path with no directive is refused
     Given a committed workflow graph with a command node declaring output_schema="routing"
-    And the node's script has a path that exits 0 printing nothing on stdout
+    And the node's script has a path that exits 0 printing no routing directive
     When the repository's commit-time check aggregate runs
     Then the aggregate fails naming the graph file and the node
 
@@ -99,7 +105,7 @@ Feature: A routing-schema node always tells the engine where to go
     Then the aggregate fails naming the graph file, the node and the label retry
 
   Scenario: A non-zero exit needs no directive
-    Given a routing-schema command node whose failure path exits 1 printing nothing on stdout
+    Given a routing-schema command node whose failure path exits 1 printing no routing directive
     And every exit 0 and the end of the node's script come immediately after a literal directive that an outgoing edge takes
     When the repository's commit-time check aggregate runs
     Then the aggregate reports no finding for that node
@@ -110,7 +116,7 @@ Feature: A routing-schema node always tells the engine where to go
     Then the aggregate fails naming the graph file, the node and the construct exit "$status" as unverifiable
 
   Scenario: Another fleet repository's committed graph is held to the same rule without a fabro client
-    Given another fleet repository that commits under .fabro/workflows a graph with a routing-schema command node whose success path prints nothing
+    Given another fleet repository that commits under .fabro/workflows a graph with a routing-schema command node whose success path prints no routing directive
     And no fabro client is installed on the host
     When that repository's check aggregate runs the check against its own repository root
     Then that repository's aggregate fails naming its graph file and the node
@@ -127,7 +133,7 @@ The revise that ratifies this MUST add one entry, using the heading as numbered 
 
 ### 4. `tests/heading-coverage-debt.json`: add the matching row in the same revise
 
-The register has no generator, so the row is authored. `check-heading-coverage-debt-register` admits it under its spec-first admission, because this same change introduces the heading:
+The register is generated, never authored by hand. The revise MUST regenerate it with `uv run python -m livespec_dev_tooling.heading_coverage_debt` and stage the result. The generated row is expected to read:
 
 ```json
 {"spec_root": "SPECIFICATION", "spec_file": "scenarios.md", "heading": "## Scenario: a commit-time check refuses a committed graph whose routing-schema command node can exit 0 without a literal routing directive", "work_item": "bd-ib-nuswku", "first_seen": "<revise date>"}
