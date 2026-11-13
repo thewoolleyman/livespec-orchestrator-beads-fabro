@@ -24,6 +24,7 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_gate import (
     RUNTIME_CONVERGENCE_STAGE,
     TERMINAL_BOUNDARY,
+    CycleGateSubject,
     pre_merge_runtime_gate,
     record_dispatch_runtime_convergence,
 )
@@ -108,13 +109,15 @@ def test_a_config_unreadable_mid_run_names_the_fault_and_breaches_nothing(
     journal = JournalFile(path=tmp_path / "journal.jsonl")
 
     gate = pre_merge_runtime_gate(
-        repo=tmp_path,
-        item=_item(),
-        dispatch_id=_DISPATCH_ID,
+        subject=CycleGateSubject(
+            repo=tmp_path,
+            item=_item(),
+            dispatch_id=_DISPATCH_ID,
+            fix_loop_cap=3,
+            journal=journal,
+            runner=_ForgeRunner(stdout=_payload()),
+        ),
         fix_loop_count=lambda: 0,
-        fix_loop_cap=3,
-        journal=journal,
-        runner=_ForgeRunner(stdout=_payload()),
     )
 
     assert gate(pr_number=4242, run_id="run-1") is None

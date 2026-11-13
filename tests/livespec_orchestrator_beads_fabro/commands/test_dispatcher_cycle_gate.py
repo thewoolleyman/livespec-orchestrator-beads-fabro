@@ -131,13 +131,15 @@ def test_the_pre_merge_boundary_journals_its_reading_and_passes_a_healthy_run(
     journal = JournalFile(path=tmp_path / "journal.jsonl")
 
     gate = module.pre_merge_runtime_gate(
-        repo=tmp_path,
-        item=_item(),
-        dispatch_id=_DISPATCH_ID,
+        subject=module.CycleGateSubject(
+            repo=tmp_path,
+            item=_item(),
+            dispatch_id=_DISPATCH_ID,
+            fix_loop_cap=3,
+            journal=journal,
+            runner=_ForgeRunner(stdout=_payload()),
+        ),
         fix_loop_count=lambda: 0,
-        fix_loop_cap=3,
-        journal=journal,
-        runner=_ForgeRunner(stdout=_payload()),
     )
     terminal = gate(pr_number=4242, run_id="run-1")
 
@@ -162,13 +164,15 @@ def test_a_pre_merge_ceiling_breach_returns_a_sanctioned_non_convergence_termina
     journal = JournalFile(path=tmp_path / "journal.jsonl")
 
     gate = module.pre_merge_runtime_gate(
-        repo=tmp_path,
-        item=_item(),
-        dispatch_id=_DISPATCH_ID,
+        subject=module.CycleGateSubject(
+            repo=tmp_path,
+            item=_item(),
+            dispatch_id=_DISPATCH_ID,
+            fix_loop_cap=3,
+            journal=journal,
+            runner=_ForgeRunner(stdout=_payload()),
+        ),
         fix_loop_count=lambda: 0,
-        fix_loop_cap=3,
-        journal=journal,
-        runner=_ForgeRunner(stdout=_payload()),
     )
     terminal = gate(pr_number=4242, run_id="run-1")
 
@@ -191,20 +195,22 @@ def test_the_terminal_boundary_records_its_own_reading(tmp_path: Path) -> None:
     journal = JournalFile(path=tmp_path / "journal.jsonl")
 
     verdict = module.record_terminal_runtime_convergence(
-        repo=tmp_path,
-        item=_item(
-            criteria=(
-                "- The first assertion holds.\n"
-                "- The second assertion holds.\n"
-                "- The third assertion holds.\n"
-            )
+        subject=module.CycleGateSubject(
+            repo=tmp_path,
+            item=_item(
+                criteria=(
+                    "- The first assertion holds.\n"
+                    "- The second assertion holds.\n"
+                    "- The third assertion holds.\n"
+                )
+            ),
+            dispatch_id=_DISPATCH_ID,
+            fix_loop_cap=3,
+            journal=journal,
+            runner=_ForgeRunner(stdout=_payload()),
         ),
         pr_number=4242,
-        dispatch_id=_DISPATCH_ID,
         fix_loop_count=3,
-        fix_loop_cap=3,
-        journal=journal,
-        runner=_ForgeRunner(stdout=_payload()),
     )
 
     assert verdict.progress_deficit
@@ -226,13 +232,15 @@ def test_invalid_committed_policy_leaves_the_gate_observational(tmp_path: Path) 
     journal = JournalFile(path=tmp_path / "journal.jsonl")
 
     gate = module.pre_merge_runtime_gate(
-        repo=tmp_path,
-        item=_item(),
-        dispatch_id=_DISPATCH_ID,
+        subject=module.CycleGateSubject(
+            repo=tmp_path,
+            item=_item(),
+            dispatch_id=_DISPATCH_ID,
+            fix_loop_cap=3,
+            journal=journal,
+            runner=_ForgeRunner(stdout=_payload()),
+        ),
         fix_loop_count=lambda: 0,
-        fix_loop_cap=3,
-        journal=journal,
-        runner=_ForgeRunner(stdout=_payload()),
     )
 
     assert gate(pr_number=4242, run_id="run-1") is None

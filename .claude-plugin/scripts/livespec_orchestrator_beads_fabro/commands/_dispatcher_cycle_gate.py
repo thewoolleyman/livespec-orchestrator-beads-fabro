@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 from returns.unsafe import unsafe_perform_io
@@ -104,6 +105,7 @@ __all__: list[str] = [
     "PROGRESS_DEFICIT_CONTRIBUTOR",
     "RUNTIME_CONVERGENCE_STAGE",
     "TERMINAL_BOUNDARY",
+    "CycleGateSubject",
     "pre_merge_runtime_gate",
     "record_dispatch_runtime_convergence",
     "record_terminal_runtime_convergence",
@@ -123,15 +125,32 @@ _PRE_MERGE_STAGE = "pre-merge-convergence"
 _CEILING_POLICY_ERRORS = (LivespecConfigUnreadableError, ConnectionPrefixMissingError)
 
 
-def pre_merge_runtime_gate(  # noqa: PLR0913 — kw-only seam; each field is an independent dispatch input.
+@dataclass(frozen=True, kw_only=True)
+class CycleGateSubject:
+    """The inputs one dispatch fixes for BOTH boundary readings.
+
+    Everything here is the same at the pre-merge boundary and at the terminal one:
+    which repository and item the dispatch is for, the correlation its commits
+    carry, the cap its fix loop runs under, and the two seams the reading writes
+    and probes through. What differs between the readings -- the pull request
+    known at that moment and the fix-loop count then observed -- stays a
+    parameter of each call, so a function taking a subject names only what varies.
+    Carrying them as one value is what keeps every seam within the repository's
+    parameter budget honestly, rather than by suppressing the lint that flags it.
+    """
+
+    repo: Path
+    item: WorkItem
+    dispatch_id: str | None
+    fix_loop_cap: int
+    journal: JournalFile
+    runner: CommandRunner
+
+
+def pre_merge_runtime_gate(
     *,
-    repo: Path,
-    item: WorkItem,
-    dispatch_id: str | None,
+    subject: CycleGateSubject,
     fix_loop_count: Callable[[], int],
-    fix_loop_cap: int,
-    journal: JournalFile,
-    runner: CommandRunner,
 ) -> Callable[..., DispatchOutcome | None]:
     """Bind the pre-merge runtime gate to one dispatch.
 
@@ -144,20 +163,15 @@ def pre_merge_runtime_gate(  # noqa: PLR0913 — kw-only seam; each field is an 
 
     def gate(*, pr_number: int, run_id: str | None) -> DispatchOutcome | None:
         verdict, _ = _evaluate(
-            repo=repo,
-            item=item,
+            subject=subject,
             pr_number=pr_number,
-            dispatch_id=dispatch_id,
             fix_loop_count=fix_loop_count(),
-            fix_loop_cap=fix_loop_cap,
             boundary=PRE_MERGE_BOUNDARY,
-            journal=journal,
-            runner=runner,
         )
         if not verdict.bounces:
             return None
         return DispatchOutcome(
-            work_item_id=item.id,
+            work_item_id=subject.item.id,
             status="failed",
             stage=_PRE_MERGE_STAGE,
             pr_number=pr_number,
@@ -169,16 +183,11 @@ def pre_merge_runtime_gate(  # noqa: PLR0913 — kw-only seam; each field is an 
     return gate
 
 
-def record_terminal_runtime_convergence(  # noqa: PLR0913 — kw-only seam; each field is an independent dispatch input.
+def record_terminal_runtime_convergence(
     *,
-    repo: Path,
-    item: WorkItem,
+    subject: CycleGateSubject,
     pr_number: int | None,
-    dispatch_id: str | None,
     fix_loop_count: int,
-    fix_loop_cap: int,
-    journal: JournalFile,
-    runner: CommandRunner,
 ) -> RuntimeConvergenceVerdict:
     """Take and record the TERMINAL reading, whatever the run's outcome was.
 
@@ -188,15 +197,10 @@ def record_terminal_runtime_convergence(  # noqa: PLR0913 — kw-only seam; each
     the bounce. The returned verdict is what the bounce surfaces.
     """
     verdict, _ = _evaluate(
-        repo=repo,
-        item=item,
+        subject=subject,
         pr_number=pr_number,
-        dispatch_id=dispatch_id,
         fix_loop_count=fix_loop_count,
-        fix_loop_cap=fix_loop_cap,
         boundary=TERMINAL_BOUNDARY,
-        journal=journal,
-        runner=runner,
     )
     return verdict
 
@@ -264,35 +268,37 @@ def _terminal_reading(
         effective_review_fix_cap(item=item, cwd=repo).value_or(DEFAULT_REVIEW_FIX_CAP)
     )
     return record_terminal_runtime_convergence(
-        repo=repo,
-        item=item,
+        subject=CycleGateSubject(
+            repo=repo,
+            item=item,
+            dispatch_id=dispatch_id_for(records=records, work_item_id=item.id),
+            fix_loop_cap=review_fix_visit_cap_for(review_fix_cap=cap),
+            journal=journal,
+            runner=ShellCommandRunner(),
+        ),
         pr_number=outcome.pr_number,
-        dispatch_id=dispatch_id_for(records=records, work_item_id=item.id),
         fix_loop_count=fix_loop_count(records=records, work_item_id=item.id),
-        fix_loop_cap=review_fix_visit_cap_for(review_fix_cap=cap),
-        journal=journal,
-        runner=ShellCommandRunner(),
     )
 
 
-def _evaluate(  # noqa: PLR0913 — kw-only internal seam shared by both boundaries.
+def _evaluate(
     *,
-    repo: Path,
-    item: WorkItem,
+    subject: CycleGateSubject,
     pr_number: int | None,
-    dispatch_id: str | None,
     fix_loop_count: int,
-    fix_loop_cap: int,
     boundary: str,
-    journal: JournalFile,
-    runner: CommandRunner,
 ) -> tuple[RuntimeConvergenceVerdict, CompletedCycleSeries]:
     """The ONE evaluation both boundaries take, journaled as it is taken."""
     series = gather_completed_cycle_series(
-        repo=repo, item=item, pr_number=pr_number, dispatch_id=dispatch_id, runner=runner
+        repo=subject.repo,
+        item=subject.item,
+        pr_number=pr_number,
+        dispatch_id=subject.dispatch_id,
+        runner=subject.runner,
     )
     resolved = attempt(
-        action=lambda: resolve_adopted_cycle_ceilings(cwd=repo), exceptions=_CEILING_POLICY_ERRORS
+        action=lambda: resolve_adopted_cycle_ceilings(cwd=subject.repo),
+        exceptions=_CEILING_POLICY_ERRORS,
     )
     unresolved = _policy_fault(resolved=resolved)
     verdict = runtime_convergence_verdict(
@@ -300,17 +306,17 @@ def _evaluate(  # noqa: PLR0913 — kw-only internal seam shared by both boundar
         ceilings=(
             resolved if isinstance(resolved, AdoptedCycleCeilings) else NO_ADOPTED_CYCLE_CEILINGS
         ),
-        at_fix_loop_cap=fix_loop_count >= fix_loop_cap,
+        at_fix_loop_cap=fix_loop_count >= subject.fix_loop_cap,
         cap=FIX_LOOP_VISIT_CAP,
-        cap_value=fix_loop_cap,
+        cap_value=subject.fix_loop_cap,
     )
-    journal.append(
+    subject.journal.append(
         record={
             "stage": RUNTIME_CONVERGENCE_STAGE,
-            "work_item_id": item.id,
+            "work_item_id": subject.item.id,
             "boundary": boundary,
             "fix_loop_count": fix_loop_count,
-            "fix_loop_cap": fix_loop_cap,
+            "fix_loop_cap": subject.fix_loop_cap,
             "ceiling_policy_unresolved": unresolved,
             **cycle_journal_fields(series=series, verdict=verdict),
         }

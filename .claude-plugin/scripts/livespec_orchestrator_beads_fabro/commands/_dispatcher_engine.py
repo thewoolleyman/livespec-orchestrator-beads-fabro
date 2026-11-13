@@ -51,7 +51,6 @@ accounting.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import cast
 
@@ -128,13 +127,6 @@ __all__: list[str] = [
 # from happening silently.
 _FABRO_AUTH_TIMEOUT_SECONDS = 300.0
 
-# The PRE-MERGE runtime-convergence gate (S6 / bd-ib-z2y4ca), injected rather
-# than imported: `_dispatcher_cycle_gate` needs `DispatchOutcome` from here, so
-# importing it back would close a cycle. It is called at the moment the pull
-# request is confirmed and nothing about merging has been decided, and a
-# non-None answer is the sanctioned non-convergence terminal.
-PreMergeGate = Callable[..., DispatchOutcome | None]
-
 
 def run_fabro_factory_auth_login(*, plan: DispatchPlan, runner: CommandRunner) -> None:
     _ = fabro_port_for_plan(plan=plan, runner=runner).auth_login(
@@ -192,7 +184,7 @@ class SynchronousFabroLauncher:
         return FabroRunResult(command=cast("CommandResult", result.command), run_id=result.run_id)
 
 
-def run_dispatch(  # noqa: PLR0913 — kw-only engine seam; each field is an independent caller input.
+def run_dispatch(
     *,
     plan: DispatchPlan,
     runner: CommandRunner,
@@ -200,7 +192,6 @@ def run_dispatch(  # noqa: PLR0913 — kw-only engine seam; each field is an ind
     sleep: SleepFn,
     poll: PollPolicy,
     fabro_launcher: FabroLauncher | None = None,
-    pre_merge_gate: PreMergeGate | None = None,
 ) -> DispatchOutcome:
     """Drive one work-item end-to-end; never raises for expected failures.
 
@@ -262,11 +253,17 @@ def run_dispatch(  # noqa: PLR0913 — kw-only engine seam; each field is an ind
     # which is the same reasoning the pre-dispatch wall records for its own
     # consolidation. The runtime gate is asked FIRST because a hold is a reason
     # not to merge YET while a runtime non-convergence is a reason not to merge
-    # at all.
-    gated = None if pre_merge_gate is None else pre_merge_gate(pr_number=view.number, run_id=run_id)
+    # at all. The gate rides the PLAN rather than a seventh parameter: the plan is
+    # already the one value that carries a dispatch's resolved inputs into this
+    # function, and the gate is bound where the same inputs stand together.
+    gated = (
+        None
+        if plan.pre_merge_gate is None
+        else plan.pre_merge_gate(pr_number=view.number, run_id=run_id)
+    )
     pre_merge_terminal = (
         gated
-        if gated is not None
+        if isinstance(gated, DispatchOutcome)
         else merge_hold_terminal(
             outcome_type=DispatchOutcome, plan=plan, view=view, hold=hold, run_id=run_id
         )

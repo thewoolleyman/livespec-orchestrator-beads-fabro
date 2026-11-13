@@ -14,6 +14,7 @@ adapters on the plan.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -244,6 +245,17 @@ class DispatchPlan:
     # None is not "retention off by default": it is an invocation that minted
     # no identity, whose janitor rows then carry their bounded excerpt alone.
     janitor_retention: JanitorRetention | None = None
+    # The PRE-MERGE runtime-convergence gate (S6 / bd-ib-z2y4ca), bound where the
+    # dispatched item, the dispatch id and the rendered fix-loop cap stand
+    # together. It rides the plan -- the one value that already carries a
+    # dispatch's resolved inputs into the engine -- so the engine's own seam does
+    # not grow a parameter for it. Typed `object` on the way out because the
+    # outcome type it returns is the engine's, and naming it here would close an
+    # import cycle; the engine accepts only a `DispatchOutcome` from it.
+    #
+    # None is an invocation with no runtime gate to take (reconcile paths, the
+    # engine tests), which proceeds straight to the merge hold exactly as before.
+    pre_merge_gate: Callable[..., object] | None = None
 
 
 def build_plan(  # noqa: PLR0913 — kw-only plan resolver; each field is an independent caller input.

@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_correlation import (
     dispatch_correlation,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_gate import (
+    CycleGateSubject,
     pre_merge_runtime_gate,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_id_journal import (
@@ -163,16 +164,18 @@ class DispatchRunContext:
 def pre_merge_gate_for(*, context: DispatchRunContext) -> Callable[..., DispatchOutcome | None]:
     """Bind this dispatch's pre-merge runtime gate to the item it was launched for."""
     return pre_merge_runtime_gate(
-        repo=context.repo,
-        item=context.item,
-        dispatch_id=context.dispatch_id,
+        subject=CycleGateSubject(
+            repo=context.repo,
+            item=context.item,
+            dispatch_id=context.dispatch_id,
+            fix_loop_cap=context.plan.review_fix_visit_cap,
+            journal=context.journal,
+            runner=ShellCommandRunner(),
+        ),
         fix_loop_count=lambda: fix_loop_count(
             records=read_journal_records_for(args=context.args, repo=context.repo),
             work_item_id=context.item.id,
         ),
-        fix_loop_cap=context.plan.review_fix_visit_cap,
-        journal=context.journal,
-        runner=ShellCommandRunner(),
     )
 
 
@@ -223,6 +226,20 @@ def run_dispatch_with_watchdog(
                     directory=context.journal.path.parent,
                     invocation=context.dispatch_id,
                 ),
+                # The PRE-MERGE runtime-convergence gate (S6 / bd-ib-z2y4ca). It
+                # is bound here, where the dispatched item, the dispatch id and
+                # the rendered fix-loop cap are all in hand, and carried on the
+                # plan so the engine never imports the gate module.
+                #
+                # The fix-loop count is this dispatch's own, derived from the
+                # journal the engine has already been appending to — the same
+                # poll/retry signal `fix_loop_count` reads for calibration. The
+                # graph's visit counter lives inside the sandbox and no terminal
+                # carries it, which is the limitation
+                # `_dispatcher_non_convergence_cap` records; this is the
+                # host-observable stand-in, and naming it in the journaled record
+                # is what keeps the substitution visible.
+                pre_merge_gate=pre_merge_gate_for(context=context),
             ),
             # Pillar 1 (first-class remint): the decorator re-resolves
             # GH_TOKEN from the caching provider before EVERY engine
@@ -259,18 +276,5 @@ def run_dispatch_with_watchdog(
                 dispatch_id=context.dispatch_id,
                 prelaunch_checkpoint=context.prelaunch_checkpoint,
             ),
-            # The PRE-MERGE runtime-convergence gate (S6 / bd-ib-z2y4ca). It is
-            # bound here, where the dispatched item, the dispatch id and the
-            # rendered fix-loop cap are all in hand, and handed to the engine as
-            # a callable so the engine never imports the gate module.
-            #
-            # The fix-loop count is this dispatch's own, derived from the
-            # journal the engine has already been appending to — the same
-            # poll/retry signal `fix_loop_count` reads for calibration. The
-            # graph's visit counter lives inside the sandbox and no terminal
-            # carries it, which is the limitation `_dispatcher_non_convergence_cap`
-            # records; this is the host-observable stand-in, and naming it in the
-            # journaled record is what keeps the substitution visible.
-            pre_merge_gate=pre_merge_gate_for(context=context),
         )
     return started_at, outcome
