@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_build_identity import (
     build_identity_in,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import VERDICT_VERIFIED
+from livespec_orchestrator_beads_fabro.commands._plan_carrier_map import (
+    last_carrier_map_position,
+)
+from livespec_orchestrator_beads_fabro.commands._plan_proof_leg import (
+    StandingReplay,
+    standing_replay,
+)
 from livespec_orchestrator_beads_fabro.commands._plan_proof_record import (
     PLAN_REPLAY_VERDICTS,
     latest_plan_proof_entry,
@@ -37,6 +44,7 @@ from livespec_orchestrator_beads_fabro.errors import (
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._store_comments import WorkItemComment
+    from livespec_orchestrator_beads_fabro.commands._plan_proof_record import PlanProofEntry
 
 __all__: list[str] = ["observe_plan_verified_proof"]
 
@@ -69,6 +77,26 @@ def observe_plan_verified_proof(
                 f" plan epic {target.subject_id}"
             ),
         )
+    return _observe_latest(
+        repository=repository,
+        target=target,
+        now=now,
+        comments=comments,
+        entries=entries,
+        latest=latest,
+    )
+
+
+def _observe_latest(
+    *,
+    repository: ResultRepository,
+    target: VerifiedProofTarget,
+    now: str,
+    comments: tuple[WorkItemComment, ...],
+    entries: tuple[PlanProofEntry, ...],
+    latest: PlanProofEntry,
+) -> ResultObservation:
+    """Grade the newest verdict-bearing record against the target and timeline."""
     comment = comments[latest.position]
     evidence = (
         f"ledger comment {_comment_identity(comment=comment, position=latest.position)}"
@@ -83,6 +111,25 @@ def observe_plan_verified_proof(
             detail=(
                 f"the latest verdict-bearing plan Proof of Done record on {target.subject_id}"
                 f" is {latest.record.verdict}, not verified"
+            ),
+        )
+    standing = standing_replay(
+        entries=entries,
+        timeline=entries,
+        carrier_map_position=last_carrier_map_position(
+            comments=tuple({"text": one.text} for one in comments)
+        ),
+    )
+    if standing.replay is None:
+        return _unsatisfied(
+            repository=repository,
+            target=target,
+            now=now,
+            evidence=evidence,
+            detail=_stale_replay_detail(
+                comments=comments,
+                subject_id=target.subject_id,
+                standing=standing,
             ),
         )
     identity = build_identity_in(body=latest.record.body)
@@ -179,3 +226,22 @@ def _unsatisfied(
 def _comment_identity(*, comment: WorkItemComment, position: int) -> str:
     """The ledger identity a plan-proof observation cites."""
     return comment.comment_id or comment.created_at or f"position {position + 1}"
+
+
+def _stale_replay_detail(
+    *, comments: tuple[WorkItemComment, ...], subject_id: str, standing: StandingReplay
+) -> str:
+    """Name the timeline fact the shared standing-replay reader found later."""
+    if standing.later_capture is not None:
+        capture = standing.later_capture
+        return (
+            f"the verified plan Proof of Done record on {subject_id} predates captured"
+            f" plan Proof of Done record at ledger comment"
+            f" {_comment_identity(comment=comments[capture.position], position=capture.position)}"
+        )
+    position = cast(int, standing.carrier_map_position)
+    return (
+        f"the verified plan Proof of Done record on {subject_id} predates carrier-map"
+        " event at ledger comment "
+        f"{_comment_identity(comment=comments[position], position=position)}"
+    )
