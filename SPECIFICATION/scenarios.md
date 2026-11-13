@@ -14824,3 +14824,50 @@ Feature: The factory-graph gate validates with the engine the factory moves onto
     When the factory-graph gate validates it with a fabro client whose release triple is at or after 0.396.0
     Then the gate fails naming that graph and attractor.exit_unreachable
 ```
+
+## Scenario 367 — A run whose sandbox is lost mid-stage is resumed onto a re-acquired sandbox, and a run that still ends on a lost sandbox is released rather than classified deterministic
+
+Governing clause: `contracts.md` §"Provider-limit permanence and root-cause surfacing" → "A lost sandbox is a host error, never a permanent cause." and → "A sandbox killed for memory is named."
+
+```gherkin
+Feature: A lost factory sandbox is a host error the factory recovers from
+
+  Scenario: The engine resumes a run whose sandbox was lost onto a re-acquired sandbox
+    Given a run at its implement stage on a Kubernetes-sandboxed factory server
+    When the run's sandbox pod is deleted and the run's next sandbox operation is refused because the sandbox is not found
+    Then the engine ends that execution as a host error and the run is not finished
+    And the factory server resumes the run onto a re-acquired sandbox
+    And the run's setup steps run again before the interrupted stage continues
+    And no node the run completed before the loss runs again
+
+  Scenario: A fourth lost sandbox ends the run
+    Given a run whose sandbox was lost and that the factory server resumed three times
+    When the run's sandbox is lost a fourth time
+    Then the run ends failed with a lost-sandbox cause
+
+  Scenario: A run that ended on a lost sandbox is released, not classified deterministic
+    Given a run that ended failed with a sandbox exec error naming a sandbox the provider reports as not found
+    And the sandbox's termination cannot be read on that pass
+    When the Dispatcher derives the run's outcome
+    Then the failure carries a lost-sandbox cause naming the run id and the sandbox
+    And the failure is not classified deterministic or permanent
+    And the item's dispatch claim is released to ready without a human
+
+  Scenario: A second consecutive lost-sandbox ending keeps the existing route
+    Given an item whose preceding dispatch ended failed on a lost sandbox
+    When its current dispatch also ends failed on a lost sandbox
+    Then the item keeps the existing route for that failure
+    And its needs-human cause record names both runs
+
+  Scenario: The termination reading is taken from the run's own factory cluster
+    Given a run on a Kubernetes-sandboxed factory instance
+    And a dispatching host whose ambient cluster configuration names no cluster
+    When the Dispatcher reads the run's sandbox termination
+    Then the reading is taken from that instance's cluster with that instance's credentials
+    And the run's pod is reported as observed
+
+  Scenario: A checkpoint commit that fails while the sandbox is present ends the run as before
+    Given a run whose sandbox is present
+    When its checkpoint commit fails for a reason other than a not-found sandbox
+    Then the run ends as a workflow error
+```
