@@ -61,6 +61,12 @@ _SETTLE_SECONDS = 10
 # measures the protected path still working rather than a timing race.
 _FRESH_SECONDS = 3600
 
+# The reaper's TERM instant must occur only when this test says so.  Its real
+# wall-clock deadline stays comfortably future so startup work cannot pre-empt
+# the child before it announces readiness.
+_TERM_POINT_RELEASE_FILE_ENV_VAR = "LIVESPEC_TEST_TERM_POINT_RELEASE_FILE"
+_TERM_POINT_EPOCH_ENV_VAR = "LIVESPEC_TEST_TERM_POINT_EPOCH"
+
 # THE DECLARATION, SPELLED AS A LITERAL AND BOUND BELOW. These cases predate
 # the constants they name, and a Red's test bytes are fixed across its
 # Red-to-Green pair -- so reaching for the exported names here would make every
@@ -82,6 +88,29 @@ def _guard(*, tmp_path: Path) -> Path:
     _ = script.write_text(guard_script_text(), encoding="utf-8")
     script.chmod(0o755)
     return script
+
+
+def _date_that_releases_the_term_point(*, tmp_path: Path) -> Path:
+    """Return `date` that advances only after this test has read readiness."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    date = bin_dir / "date"
+    script = "\n".join(
+        (
+            "#!/bin/sh",
+            f'if [ -f "${{{_TERM_POINT_RELEASE_FILE_ENV_VAR}}}" ]; then',
+            f'    printf "%s.000000000\\n" "${{{_TERM_POINT_EPOCH_ENV_VAR}}}"',
+            "else",
+            '    exec /bin/date "$@"',
+            "fi",
+        )
+    )
+    _ = date.write_text(
+        f"{script}\n",
+        encoding="utf-8",
+    )
+    date.chmod(0o755)
+    return bin_dir
 
 
 def _hermetic_env() -> dict[str, str]:
@@ -166,11 +195,12 @@ def test_an_unprotected_launch_outlives_any_deadline_a_protected_one_would_hit(
     """No deadline is enforced: a protected TERM does not stop this child.
 
     The DISCRIMINATOR against the two cases above, which a guard that simply
-    exec'd fast commands would also pass.  Both children wait for test-controlled
-    input.  The protected companion receives the guard's TERM first; only then
-    does the test release the unprotected child.  A build that still armed a
-    reaper for an unprotected launch would kill that child too and change its
-    exit status.
+    exec'd fast commands would also pass. Both children wait for test-controlled
+    input. The protected companion's deadline stays far enough out that startup
+    cannot reach it; after reading its ready line, the test releases the
+    reaper's TERM instant. Only then does the test release the unprotected child.
+    A build that still armed a reaper for an unprotected launch would kill that
+    child too and change its exit status.
     """
     guard = _guard(tmp_path=tmp_path)
     command = ["/bin/sh", "-c", "printf 'ready\\n'; IFS= read -r _; exit 3"]
@@ -187,9 +217,14 @@ def test_an_unprotected_launch_outlives_any_deadline_a_protected_one_would_hit(
     assert unprotected.stdout is not None
     assert unprotected.stdout.readline() == "ready\n"
 
+    deadline = int(time.time()) + _FRESH_SECONDS
+    term_point_release = tmp_path / "release-term-point"
     protected_env = _hermetic_env()
-    protected_env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(
-        int(time.time()) + GUARD_TERM_GRACE_SECONDS + 2
+    protected_env[CREDENTIAL_USE_DEADLINE_ENV_VAR] = str(deadline)
+    protected_env[_TERM_POINT_RELEASE_FILE_ENV_VAR] = str(term_point_release)
+    protected_env[_TERM_POINT_EPOCH_ENV_VAR] = str(deadline - GUARD_TERM_GRACE_SECONDS)
+    protected_env["PATH"] = (
+        f"{_date_that_releases_the_term_point(tmp_path=tmp_path)}:{protected_env['PATH']}"
     )
     protected = subprocess.Popen(
         ["/bin/sh", str(guard), "--", *command],
@@ -201,6 +236,7 @@ def test_an_unprotected_launch_outlives_any_deadline_a_protected_one_would_hit(
     assert protected.stdout is not None
     assert protected.stdout.readline() == "ready\n"
 
+    term_point_release.touch()
     assert protected.wait(timeout=_SETTLE_SECONDS) == 143
 
     assert unprotected.stdin is not None
