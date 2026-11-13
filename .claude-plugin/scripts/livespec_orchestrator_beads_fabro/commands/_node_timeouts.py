@@ -59,8 +59,8 @@ REPOSITORY_LAYER = "repository"
 WORKFLOW_DEFAULT_LAYER = "default"
 
 # The graph's worst-case path, expressed as the visit budget each node can
-# actually consume in one run -- read off `workflow.fabro`: `dod_gate` and
-# `implement` carry `max_retries=1` (two attempts each), the janitor fix loop is
+# actually consume in one run -- read off `workflow.fabro`: `dod_gate`, `red`,
+# and `green` carry `max_retries=1` (two attempts each), the janitor fix loop is
 # bounded by the `< 3` visit guard on the janitor's own visit count (three
 # janitor visits, two fix attempts), and the review loop is bounded by the
 # default `review_fix_visit_cap` of four review visits with three
@@ -71,7 +71,7 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `fabro run` subprocess ceiling comes from, so an omitted node is a node the
 # Dispatcher can kill the CLI out from under.
 #
-# `implementation_diff` after `implement` carries the budget of the retryable
+# `implementation_diff` after `commit_green` carries the budget of the retryable
 # node it guards, because it can be reached once per attempt of it. It is cheap
 # in practice (one `git` call) and budgeting it at the guarded node's count is
 # what keeps the ceiling ABOVE the graph rather than level with an optimistic
@@ -165,10 +165,13 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 6,
-    "implement_commit_settle": 3,
-    "implement_completion": 3,
-    "implement_hook_route": 3,
+    "red_admission": 4,
+    "red": 6,
+    "commit_red": 3,
+    "green_admission": 4,
+    "green": 6,
+    "commit_green": 3,
+    "test_wrong_reset": 3,
     "implementation_diff": 3,
     "janitor_admission": 3,
     "janitor": 3,

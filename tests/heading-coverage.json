@@ -2585,9 +2585,9 @@
     "heading": "## Scenario 285 \u2014 Red and Green run as separate nodes and every implement commit is made by a command node",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: ratified with proposal implement-red-green-node-split (v262); livespec-dev-tooling-sv6m5p (plan implement-test-performance) owns it; the implementation children are filed under that plan.",
-    "work_item": "livespec-dev-tooling-sv6m5p"
+    "test": "tests.integration.test_implement_red_green_graph_scenario285",
+    "reason": "Scenario 285 is exercised against the released workflow payload and a scratch-repository reset helper.",
+    "work_item": "bd-ib-vy75ws"
   },
   {
     "heading": "## Scenario 289 \u2014 A Green amend whose staged test fails is refused before the rest of its gate's tests run",

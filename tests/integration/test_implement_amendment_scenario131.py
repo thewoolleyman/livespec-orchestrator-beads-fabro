@@ -341,18 +341,19 @@ def test_an_implement_amendment_rests_the_item_at_blocked_needs_human_and_publis
     item = _seed(root=tmp_path)
     graph = parse_workflow_graph(text=_dot())
 
-    # LEG 1 — the committed graph. A failed implement outcome first reaches the
+    # LEG 1 — the committed graph. A failed Red outcome first reaches the
     # amendment classifier. It alone decides whether an amendment rests at the
     # terminal or every other explicit failure proceeds through Scenario 204's
     # completion and hook-refusal route. Both arms are pinned, so a broad failed
     # edge cannot silently reclaim the amendment or bypass the retry path.
-    assert _edge_conditions(source="implement") == {
+    assert _edge_conditions(source="red") == {
         "implement_amendment_route": "outcome=failed",
-        "implement_commit_settle": "",
+        "already_satisfied": "preferred_label=already-satisfied",
+        "commit_red": "",
     }
     assert _edge_conditions(source="implement_amendment_route") == {
         "needs_human": "outcome=failed",
-        "implement_commit_settle": "",
+        "red_admission": "",
     }
     # Nothing is downstream of the terminal, so nothing it reaches can publish.
     assert _reachable(graph=graph, start="needs_human") == frozenset()
