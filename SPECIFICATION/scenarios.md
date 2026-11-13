@@ -15103,3 +15103,34 @@ Feature: Operator preserve copies do not accumulate, and the only copy of a run'
     Then it pushes no commit for that copy, on this run or any later start, and keeps it
     And its standard-output summary states the count and total bytes of kept copies, and names this copy with its run id, its bytes and the reason no candidate carries work, or objects missing
 ```
+
+## Scenario 371 — An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one
+
+```gherkin
+Feature: A dispatcher loop is bounded by the host's dispatch memory slice without ever depending on it
+  As the operator of a host that runs many dispatcher loops
+  I want each impl dispatch's loop launched inside the host's dispatch memory slice with its own memory bound
+  So that one runaway loop cannot exhaust the host, while a host without the slice dispatches exactly as before
+
+  Scenario: A host with the slice gets a scoped launch
+    Given the launching user's service manager loads factory-dispatch.slice and delegates the memory controller
+    And /etc/livespec/factory-dispatch-loop-memory-max holds 3500M
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then the loop process's control group lies in a transient scope under factory-dispatch.slice
+    And that scope reports a memory maximum of 3500M and an out-of-memory policy of continue
+    And the dispatch journal records stage dispatch-launch-scope with launch scoped and the scope unit
+
+  Scenario: A host without the slice launches as before
+    Given the launching user's service manager does not load factory-dispatch.slice, or the host has no /etc/livespec/factory-dispatch-loop-memory-max
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then the loop starts with the same argv and environment as a launch made without the host dispatch memory slice clause
+    And the dispatch journal records stage dispatch-launch-scope with launch unscoped
+
+  Scenario: A scoped launch that fails falls back to the unscoped launch
+    Given the launching user's service manager loads factory-dispatch.slice and delegates the memory controller
+    And /etc/livespec/factory-dispatch-loop-memory-max holds 3500M
+    And the scope launcher exits non-zero without creating a scope or starting a loop
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then exactly one loop starts, with the same argv and environment as a launch made without the host dispatch memory slice clause
+    And the dispatch journal records stage dispatch-launch-scope with launch unscoped and the scoped launch's failure as its detail
+```
