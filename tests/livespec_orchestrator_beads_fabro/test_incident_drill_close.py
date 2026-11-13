@@ -123,7 +123,7 @@ class _Forge:
                 ),
                 stderr="",
             )
-        raise AssertionError(argv)
+        raise AssertionError(argv)  # pragma: no cover - fixture contract guard
 
 
 def test_a_recorded_scratch_branch_drill_closes_done_without_repayment(tmp_path: Path) -> None:
