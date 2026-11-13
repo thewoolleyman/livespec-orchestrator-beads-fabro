@@ -53,14 +53,16 @@ _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-w
 _GRAPH = _PAYLOAD / "workflow.fabro"
 
 _GATE = "implement_completion"
-_IMPLEMENT = "implement"
+_GREEN = "green"
+# The stage the partial-progress cause is attributed to: the implement STAGE, which
+# the split graph runs as red and green, not the node that wrote the cause.
+_CAUSE_STAGE = "implement"
+_COMMIT_GREEN = "commit_green"
 _DIFF = "implementation_diff"
 _NEEDS_HUMAN = "needs_human"
-_HOOK_ROUTE = "implement_hook_route"
-_AMENDMENT_ROUTE = "implement_amendment_route"
+_INCOMPLETE_ROUTE = "green_incomplete_route"
+_AMENDMENT_ROUTE = "green_amendment_route"
 _JANITOR = "janitor"
-# The commit-run settle (bd-ib-xj3qqb) now sits between the turn and the gate.
-_SETTLE = "implement_commit_settle"
 
 # The per-clone record the prompt directs the turn to write and this gate reads,
 # resolved through `git rev-parse --git-path` so it lands in the clone's own
@@ -81,13 +83,14 @@ _INCOMPLETE_FIELD = (
     '"definition_of_done_complete": false}'
 )
 
-# The gate's worst-case visit budget, which is the retryable node it guards:
-# `implement` carries `max_retries=1`, so two attempts can each reach it. The
+# The gate's worst-case visit budget, which is the visit count of the turn it
+# guards: `green` is entered three times through `green_admission` and once more
+# by the incomplete-turn re-entry, and each visit can reach the gate once. The
 # figure is spelled here because the assertion below is that the gate is billed
 # at EXACTLY this count — a node absent from the subprocess-ceiling table is
 # billed at ZERO, which is a node the Dispatcher can kill the engine out from
 # under, and "greater than zero" would pass for a budget of one.
-_GATE_VISITS = 3
+_GATE_VISITS = 4
 # A delta over the fully-defaulted resolution, chosen small and non-round so the
 # arithmetic below cannot coincide with any literal the committed graph carries.
 _CONFIGURED_DELTA = 137
@@ -166,27 +169,28 @@ def _stage_cause(*, repo: Path) -> str:
     return (repo / ".git" / _STAGE_CAUSE_GIT_PATH).read_text(encoding="utf-8")
 
 
-def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_spend() -> None:
-    """The gate sits between the implement turn and the diff breaker, unconditionally.
+def test_the_green_turn_reaches_the_completion_gate_before_any_downstream_spend() -> None:
+    """The gate sits between the Green turn and `commit_green`, unconditionally.
 
     POSITION is the assertion, not mere presence. A gate the graph reached after
-    janitor, publication or capture would be a gate that fired once the spend the
-    clause exists to prevent had already happened — which is exactly the shape of
-    the run that motivated it. So the fallthrough out of `implement` must be this
-    node, and `implement` must reach neither the breaker nor the janitor directly.
+    the Green commit, janitor, publication or capture would be a gate that fired
+    once the spend the clause exists to prevent had already happened -- which is
+    exactly the shape of the run that motivated it. So the fallthrough out of
+    `green` must be this node, `green` must reach neither `commit_green`, the
+    breaker nor the janitor directly, and only a COMPLETE turn proceeds to
+    `commit_green`.
 
     The gate emits a successful routing label, so its unmatched fallthrough is
     still required: a node whose every outgoing edge carries a condition is
     rejected before anything runs (`all_conditional_edges`).
     """
-    onward = _targets(source=_IMPLEMENT)
+    onward = _targets(source=_GREEN)
     gate_onward = _targets(source=_GATE)
 
-    assert (_SETTLE, "") in onward, onward
-    assert (_GATE, "") in _targets(source=_SETTLE)
-    assert [target for target, _ in onward if target in (_GATE, _DIFF, _JANITOR)] == []
-    assert (_HOOK_ROUTE, "preferred_label=incomplete") in gate_onward, gate_onward
-    assert (_DIFF, "preferred_label=complete") in gate_onward, gate_onward
+    assert (_GATE, "") in onward, onward
+    assert [target for target, _ in onward if target in (_COMMIT_GREEN, _DIFF, _JANITOR)] == []
+    assert (_INCOMPLETE_ROUTE, "preferred_label=incomplete") in gate_onward, gate_onward
+    assert (_COMMIT_GREEN, "preferred_label=complete") in gate_onward, gate_onward
     assert (_NEEDS_HUMAN, "outcome=failed") in gate_onward, gate_onward
     assert [condition for _, condition in gate_onward if condition == ""] == [""]
 
@@ -194,20 +198,20 @@ def test_the_implement_turn_reaches_the_completion_gate_before_any_downstream_sp
 def test_an_explicit_failed_outcome_reaches_the_completion_gate_unless_it_is_an_amendment() -> None:
     """Only a recorded Definition-of-Done amendment takes the failed terminal route.
 
-    An explicit failed implement outcome formerly bypassed the completion gate
-    altogether. The classifier is deliberately the conditional edge's target:
-    it can preserve Scenario 131's amendment terminal while every ordinary
-    failed/incomplete output reaches the existing hook-refusal re-entry path.
+    The classifier is deliberately the conditional edge's target: it preserves
+    Scenario 131's amendment terminal while every ordinary failed or incomplete
+    Green output reaches the completion gate and from there the incomplete-turn
+    re-entry, which fails once its one re-entry is spent.
     """
-    implement = _targets(source=_IMPLEMENT)
+    green = _targets(source=_GREEN)
     amendment = _targets(source=_AMENDMENT_ROUTE)
 
-    assert (_HOOK_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
-    assert (_NEEDS_HUMAN, "") in _targets(source=_HOOK_ROUTE)
-    assert (_AMENDMENT_ROUTE, "outcome=failed") in implement
-    assert (_SETTLE, "") in implement
+    assert (_INCOMPLETE_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
+    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_INCOMPLETE_ROUTE)
+    assert (_GREEN, "") in _targets(source=_INCOMPLETE_ROUTE)
+    assert (_AMENDMENT_ROUTE, "outcome=failed") in green
     assert (_NEEDS_HUMAN, "outcome=failed") in amendment
-    assert (_SETTLE, "") in amendment
+    assert (_GATE, "") in amendment
 
 
 def test_a_target_naming_the_completion_gate_in_node_timeouts_is_not_refused() -> None:
@@ -291,7 +295,7 @@ def test_a_turn_whose_field_reports_the_work_incomplete_routes_to_the_hook(tmp_p
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {"preferred_next_label": "incomplete"}
     assert _PARTIAL_PROGRESS in result.stderr
-    assert _stage_cause(repo=repo).startswith(f"stage: {_IMPLEMENT}\n")
+    assert _stage_cause(repo=repo).startswith(f"stage: {_CAUSE_STAGE}\n")
     assert _PARTIAL_PROGRESS in _stage_cause(repo=repo)
 
 

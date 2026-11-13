@@ -26,6 +26,8 @@ _GRAPH = (
 )
 _COMPLETION = "implement_completion"
 _ROUTE = "implement_hook_route"
+# The split graph's incomplete-turn route (Scenario 285), which the gate reaches.
+_GREEN_ROUTE = "green_incomplete_route"
 _NEEDS_HUMAN = "needs_human"
 
 
@@ -54,10 +56,16 @@ def _route_script() -> str:
 def test_three_incomplete_visits_are_successful_routes_to_needs_human_with_failed_commit_cause(
     tmp_path: Path,
 ) -> None:
-    """Each incomplete visit avoids the breaker and selects the hook route."""
+    """Each incomplete visit avoids the breaker and selects the incomplete-turn route.
+
+    In the split graph the gate's `incomplete` label reaches
+    `green_incomplete_route`; the single-node hook route's script, still declared
+    for the single-node form, keeps its exhausted-budget cause, exercised below.
+    """
     graph = _parsed_graph()
     assert graph.nodes[_COMPLETION].get("output_schema") == "routing"
-    assert (_ROUTE, "preferred_label=incomplete") in _targets(source=_COMPLETION)
+    assert (_GREEN_ROUTE, "preferred_label=incomplete") in _targets(source=_COMPLETION)
+    assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GREEN_ROUTE)
     assert (_NEEDS_HUMAN, "") in _targets(source=_ROUTE)
 
     repo = tmp_path / "clone"

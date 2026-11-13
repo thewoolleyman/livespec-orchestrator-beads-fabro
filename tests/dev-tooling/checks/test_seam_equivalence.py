@@ -699,20 +699,19 @@ def test_discovery_control_fails_when_the_graph_scan_finds_no_adapter_token(
 ) -> None:
     payload = _seed_repo(repo_root=tmp_path, check=check)
     graph = payload / "workflow.fabro"
+    # The split implement stage's `red` and `green` nodes both carry the token,
+    # and the control asks whether the scan finds it ANYWHERE, so every
+    # occurrence is removed and the control must name both nodes.
     _ = graph.write_text(
-        graph.read_text(encoding="utf-8").replace("{{ inputs.implement_adapter }}", "acp", 1),
+        graph.read_text(encoding="utf-8").replace("{{ inputs.implement_adapter }}", "acp"),
         encoding="utf-8",
     )
 
     assert "inputs.implement_adapter" not in graph.read_text(encoding="utf-8")
     failures = check.control_failures(repo_root=tmp_path)
-    assert [failure for failure in failures if "node implement" in failure]
+    assert [failure for failure in failures if failure.endswith("for node red")]
+    assert [failure for failure in failures if failure.endswith("for node green")]
     assert not [failure for failure in failures if "matcher" in failure]
-
-
-# ---------------------------------------------------------------------------
-# Every REGISTERED variant is checked, and every finding names its directory.
-# ---------------------------------------------------------------------------
 
 
 def test_the_shared_payload_enumeration_module_is_installed() -> None:

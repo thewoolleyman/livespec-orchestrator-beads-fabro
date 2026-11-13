@@ -16,16 +16,15 @@ rather than inferred from a Codex-specific symptom. Claude's tool tolerates the
 long hook today, so Claude implement turns do not show this; an adapter change or
 a slower host reproduces it anywhere.
 
-THE PROMPTS UNDER TEST ARE DERIVED from the committed graph's `implement` and
-`fix` node blocks rather than named by path: a literal path keeps passing after a
-node is re-pointed at a different prompt, which is an instrument that cannot
-return the hit it exists to find. The sibling control asserts the derivation named
-exactly one prompt per node and that both are on disk.
+THE PROMPT UNDER TEST IS DERIVED from the committed graph's `fix` node block
+rather than named by path: a literal path keeps passing after a node is
+re-pointed at a different prompt, which is an instrument that cannot return the
+hit it exists to find. The sibling control asserts the derivation named exactly
+one prompt and that it is on disk. Red and Green do not commit: their adjacent
+command nodes own the repository commits.
 
-ONE WORDING ACROSS BOTH PROMPTS, asserted by comparing the two sections' bytes.
-The item's Definition of Done requires the fix prompt to carry "the same four
-commit-hook directions as the implement stage prompt", and two paraphrases drift
-apart while each still satisfies a per-prompt needle list.
+The command-node split means only `fix` remains an agent stage that commits. Its
+prompt therefore remains the single source for these waiting directions.
 
 POLARITY IS PINNED POSITIVELY throughout. Every needle is a sentence that must be
 PRESENT; none probes for the absence of a phrase, because an absence probe reads
@@ -61,7 +60,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_COMMITTING_STAGE_NODES = ("implement", "fix")
+_COMMITTING_STAGE_NODES = ("fix",)
 
 _HEADING = "## A commit hook outlasts a tool call — a return is not a verdict"
 # One regex rather than a find-the-next-heading walk: the lookahead ends the
@@ -91,10 +90,8 @@ _WAIT_WITHOUT_KILLING = (
     "DO NOT START ANOTHER `git commit` WHILE ONE IS STILL LIVE.",
 )
 
-# Direction 4 — the implement turn does not end while a hook it started is still
-# running. The fix turn limits this rule to a commit made inside its own
-# foreground `git commit` tool call (bd-ib-oueyxf).
-_NO_TURN_END_MID_HOOK = ("DO NOT END YOUR TURN WHILE A COMMIT HOOK YOU STARTED IS STILL RUNNING.",)
+# Direction 4 — the fix turn limits its rule to a commit made inside its own
+# foreground `git commit` tool call (bd-ib-oueyxf). Red and Green do not commit.
 _FOREGROUND_TURN_END_BOUND = (
     "DO NOT END YOUR TURN WHILE A COMMIT HOOK IS STILL RUNNING INSIDE YOUR OWN",
     "FOREGROUND `git commit` TOOL CALL. That commit is waited out in the",
@@ -109,8 +106,6 @@ _LEAVE_RUNNING_COMMIT_FOR_SETTLE = (
     "end the turn as SUCCEEDED, not failed,",
     "and name that commit run's id in your final message.",
 )
-
-_TURN_END_BULLET = "\n- DO NOT END YOUR TURN WHILE"
 
 # The waiting direction must hold for the detached commit runner's bounded waits
 # too, so bd-ib-sufca7 can ship that runner without contradicting this prose.
@@ -143,7 +138,7 @@ def _section(*, node: str) -> str:
     return str(sections[0])
 
 
-def test_the_graph_names_one_prompt_per_committing_stage_and_both_are_on_disk() -> None:
+def test_the_graph_names_one_prompt_per_committing_stage_and_it_is_on_disk() -> None:
     """Control: the derivation can return a hit, and the files it names exist."""
     prompts = _committing_stage_prompts()
 
@@ -179,13 +174,6 @@ def test_the_prompt_directs_waiting_without_killing_or_a_second_commit(node: str
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-def test_the_implement_prompt_forbids_ending_the_turn_while_a_commit_hook_runs() -> None:
-    section = _section(node="implement")
-
-    for phrase in _NO_TURN_END_MID_HOOK:
-        assert phrase in section, f"the implement prompt's commit-hook section omits {phrase!r}"
-
-
 def test_the_fix_prompt_limits_the_turn_end_rule_to_its_own_foreground_commit() -> None:
     section = _section(node="fix")
 
@@ -209,21 +197,9 @@ def test_the_waiting_direction_holds_for_a_commit_runner_s_bounded_waits(node: s
         assert phrase in section, f"the {node} prompt's commit-hook section omits {phrase!r}"
 
 
-def test_the_fix_prompt_carries_the_same_directions_as_the_implement_prompt() -> None:
-    """One wording, not two: a per-prompt paraphrase drifts and cannot be audited.
-
-    The comparison stops before the turn-end bullet, the one direction the fix
-    prompt words differently (bd-ib-oueyxf).
-    """
-    distinct = {
-        _section(node=node).split(_TURN_END_BULLET, maxsplit=1)[0]
-        for node in _COMMITTING_STAGE_NODES
-    }
-
-    assert len(distinct) == 1, (
-        f"{len(distinct)} distinct commit-hook wordings across "
-        f"{len(_COMMITTING_STAGE_NODES)} prompts; expected one"
-    )
+def test_the_only_agent_stage_that_commits_carries_the_waiting_directions() -> None:
+    """The command nodes, not Red or Green, own implement commits."""
+    assert len({_section(node=node) for node in _COMMITTING_STAGE_NODES}) == 1
 
 
 @pytest.mark.parametrize("node", _COMMITTING_STAGE_NODES)

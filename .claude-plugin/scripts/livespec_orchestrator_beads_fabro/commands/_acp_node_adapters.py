@@ -87,6 +87,8 @@ ACP_NODES: tuple[str, ...] = (
 NODE_INPUT_CANDIDATES: Mapping[str, tuple[str, ...]] = {
     "dod_gate": ("dod_gate_adapter",),
     "implement": ("implement_adapter", "acp_adapter"),
+    "red": ("implement_adapter", "acp_adapter"),
+    "green": ("implement_adapter", "acp_adapter"),
     "fix": ("fix_adapter", "acp_adapter"),
     "review_fix": ("review_fix_adapter", "acp_adapter"),
     # The capture node's built-in default is the IMPLEMENTER entry, but the
