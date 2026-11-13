@@ -10,10 +10,15 @@ resolution it needs stays private here, because only this question uses it.
 from __future__ import annotations
 
 import argparse
+import os
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    CommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     NON_TERMINAL_STATUS_KINDS,
 )
@@ -42,6 +47,13 @@ __all__: list[str] = [
 
 _PS_TIMEOUT_SECONDS = 60.0
 _INSPECT_TIMEOUT_SECONDS = 60.0
+_FACTORY_READ_WRAPPER_ENV = "LIVESPEC_FACTORY_READ_WRAPPER"
+_FACTORY_READ_SHELL = (
+    'factory="$1"; server="$2"; shift 2; '
+    'token="$(printenv "FABRO_DEV_TOKEN__$factory")" || exit 1; '
+    '"$1" auth login --dev-token "$token" --server "$server" >/dev/null || exit $?; '
+    'exec "$@"'
+)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -68,6 +80,52 @@ class FactoryReading:
     earlier_run_succeeded: bool = False
 
 
+@dataclass(frozen=True, kw_only=True)
+class _FactoryCredentialRunner:
+    """Run one factory read in the host wrapper that owns its credential.
+
+    The Dispatcher can be started below a sealed tenant wrapper, whose child
+    intentionally has no ``FABRO_*`` settings. The host launcher supplies the
+    default-wrapper pathname as a non-secret command operand; this runner asks
+    that wrapper to resolve the named factory's token itself, logs the client
+    in inside that child, then performs the read. The tenant wrapper therefore
+    never receives a factory address or credential.
+    """
+
+    runner: CommandRunner
+    wrapper: str
+    factory_name: str
+    server: str
+
+    def run(
+        self,
+        *,
+        argv: list[str],
+        cwd: Path,
+        timeout_seconds: float,
+        env: Mapping[str, str | None] | None = None,
+        stdin: int | None = None,
+    ) -> CommandResult:
+        """Authenticate and execute the original read inside the default wrapper."""
+        _ = env
+        return self.runner.run(
+            argv=[
+                self.wrapper,
+                "--",
+                "sh",
+                "-ec",
+                _FACTORY_READ_SHELL,
+                "factory-read",
+                self.factory_name,
+                self.server,
+                *argv,
+            ],
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            stdin=stdin,
+        )
+
+
 def factory_reading(
     *,
     args: argparse.Namespace,
@@ -86,7 +144,7 @@ def factory_reading(
     port = FabroPort(
         fabro_bin=args.fabro_bin,
         target=_factory_target(args=args),
-        runner=runner,
+        runner=_factory_read_runner(args=args, runner=runner),
         cwd=repo,
     )
     ps = port.ps(timeout_seconds=_PS_TIMEOUT_SECONDS)
@@ -143,4 +201,18 @@ def _factory_target(*, args: argparse.Namespace) -> FabroTarget:
     return FabroTarget(
         server_url=getattr(target, "server", None),
         dev_token=getattr(target, "dev_token", None),
+    )
+
+
+def _factory_read_runner(*, args: argparse.Namespace, runner: CommandRunner) -> CommandRunner:
+    """Use the host default wrapper for factory reads when the launcher supplied it."""
+    wrapper = os.environ.get(_FACTORY_READ_WRAPPER_ENV, "")
+    if wrapper == "":
+        return runner
+    target = getattr(args, "fabro_factory_target", None)
+    return _FactoryCredentialRunner(
+        runner=runner,
+        wrapper=wrapper,
+        factory_name=getattr(target, "name", "default"),
+        server=getattr(target, "server", "") or "",
     )

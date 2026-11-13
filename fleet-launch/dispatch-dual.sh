@@ -586,7 +586,7 @@ while :; do
     ready_refused "$rcout"; ensure_ticket; sleep "$FLEET_LAUNCH_POLL_S"; continue
   fi
   echo "$(date -u +%FT%TZ) LAUNCH target=$target head=$(git -C "$REPO" rev-parse --short HEAD) build=$build version=${build_version:-?}"
-  (cd "$REPO" && "$WRAP" -- python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
+  (cd "$REPO" && "$WRAP" -- env LIVESPEC_FACTORY_READ_WRAPPER="$FLEET_LAUNCH_DEFAULT_WRAPPER" python3 "$plugin/scripts/bin/drive.py" --repo "$REPO" --action "impl:$ITEM" --invoker "claude:$SEAT" --json) > "$OUT/$ITEM-r267.json" 2>"$OUT/$ITEM-r267.stderr" &
   drive_pid=$!
   if [ -n "${CAPTURE_NULL:-}" ]; then
     # Watch for the first fabro run of THIS item and check that its argv names the expected server.
