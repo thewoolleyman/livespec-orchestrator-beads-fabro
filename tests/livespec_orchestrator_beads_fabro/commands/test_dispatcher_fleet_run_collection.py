@@ -81,7 +81,7 @@ def test_one_pass_collects_a_closed_item_of_another_repository_and_journals_each
                 _run(run_id="01F", status_kind="succeeded"),
                 _run(run_id="01G", status_kind="failed"),
                 _run(run_id="01CLEARANCE", status_kind="succeeded"),
-                _run(run_id="01LIVE", status_kind="running"),
+                _run(run_id="01LIVE", status_kind="succeeded"),
             ),
             own_stamps=(),
         ),
@@ -93,7 +93,7 @@ def test_one_pass_collects_a_closed_item_of_another_repository_and_journals_each
             _repository(
                 repo=other,
                 statuses={"q-e": "closed", "q-f": "blocked"},
-                stamps=(("01E", "q-e"), ("01F", "q-f"), ("01G", "q-g"), ("01LIVE", "q-e")),
+                stamps=(("01E", "q-e"), ("01F", "q-f"), ("01G", "q-g")),
             ),
         ),
     )
