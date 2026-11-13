@@ -55,14 +55,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_governing_reading import (
+    filing_governing_heading_reading,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
     UNPUBLISHED_REPORT,
     mirrored_sandbox_capabilities,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
-    host_governing_heading_taking_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
@@ -145,11 +146,9 @@ def filing_display(
     """
     not_taken_reason: str | None = None
     if governing is None:
-        taking = host_governing_heading_taking_reader(runner=ShellCommandRunner())(
-            item=item, repo=cwd
-        )
-        verdict = taking.verdict
-        not_taken_reason = taking.not_taken_reason
+        reading = filing_governing_heading_reading(item=item, repo=cwd)
+        verdict = reading.verdict
+        not_taken_reason = reading.not_taken_reason
     else:
         verdict = governing(item=item, repo=cwd)
         if verdict is None:
