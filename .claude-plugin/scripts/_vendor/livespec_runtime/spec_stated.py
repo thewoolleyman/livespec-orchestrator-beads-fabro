@@ -40,8 +40,8 @@ from returns.result import Failure, Result, Success
 
 __all__: list[str] = [
     "CLASSIFY_PROMPT",
-    "ClauseEvidence",
     "JUDGE_PROMPT",
+    "ClauseEvidence",
     "ItemClass",
     "ModelRunner",
     "SpecChangeTier",
@@ -234,21 +234,22 @@ def _evidence(*, value: object) -> Result[tuple[ClauseEvidence, ...], SpecStated
         return Failure(
             SpecStatedParseError(field="evidence", detail=f"evidence is not a list: {value!r}")
         )
-    entries = cast("list[object]", value)
     evidence: list[ClauseEvidence] = []
-    for entry in entries:
+    for entry in cast("list[object]", value):
         if not isinstance(entry, dict):
             return Failure(
                 SpecStatedParseError(
                     field="evidence", detail=f"evidence has a non-object entry: {entry!r}"
                 )
             )
-        heading = entry.get("heading")
-        quote = entry.get("quote")
+        fields = cast("dict[str, object]", entry)
+        heading = fields.get("heading")
+        quote = fields.get("quote")
         if not isinstance(heading, str) or not isinstance(quote, str) or not quote.strip():
             return Failure(
                 SpecStatedParseError(
-                    field="evidence", detail=f"evidence entry is not a heading and quote: {entry!r}"
+                    field="evidence",
+                    detail=f"evidence entry is not a heading and quote: {entry!r}",
                 )
             )
         evidence.append(ClauseEvidence(heading=heading, quote=quote))
@@ -281,15 +282,19 @@ def _verdict_from(
                 field="rationale", detail=f"rationale is not a string: {rationale!r}"
             )
         )
-    return _stated_by(value=payload["stated_by"], headings=headings).bind(
-        lambda stated_by: _evidence(value=payload.get("evidence")).map(
-            lambda evidence: SpecStatedVerdict(
-                kind=kind,
-                stated_by=stated_by,
-                generalization_target=target,
-                rationale=rationale,
-                evidence=evidence,
-            )
+    stated_by = _stated_by(value=payload["stated_by"], headings=headings)
+    if isinstance(stated_by, Failure):
+        return stated_by
+    evidence = _evidence(value=payload.get("evidence"))
+    if isinstance(evidence, Failure):
+        return evidence
+    return Success(
+        SpecStatedVerdict(
+            kind=kind,
+            stated_by=stated_by.unwrap(),
+            generalization_target=target,
+            rationale=rationale,
+            evidence=evidence.unwrap(),
         )
     )
 
