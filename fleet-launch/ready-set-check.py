@@ -12,8 +12,8 @@ Exit 0: dispatchable (in the ready set, or pending-approval, which the loop admi
 itself). Exit 3: not in the ready set, with the reason printed. Exit 2: usage error.
 
 With the trailing `capacity` argument it instead prints one JSON object carrying the
-repository's counted-claims count, read through the Dispatcher's side-effect-free
-capacity projection, and its configured `wip_cap`, then exits 0.
+repository's counted-claims count, the status of each counted work item (for the
+launcher's in-flight early-yield margin), and its configured `wip_cap`, then exits 0.
 """
 
 import json
@@ -39,34 +39,15 @@ def main(*, argv: list[str]) -> int:
     from _bootstrap import bootstrap
 
     bootstrap()
-    from livespec_orchestrator_beads_fabro.commands._config import (
-        resolve_store_config,
-    )
+    if len(argv) == CAPACITY_ARGC:
+        return _capacity(repo=repo)
+    from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
     from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import (
         ready_items,
     )
     from livespec_orchestrator_beads_fabro.store import read_work_items
 
     items = list(read_work_items(path=resolve_store_config(cwd=repo, work_items_arg=None)))
-    if len(argv) == CAPACITY_ARGC:
-        from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
-            claimed_active_projection,
-        )
-        from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
-        from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
-            DEFAULT_WIP_CAP,
-            resolve_wip_cap,
-        )
-        from returns.unsafe import unsafe_perform_io
-
-        cap = unsafe_perform_io(resolve_wip_cap(cwd=repo).value_or(DEFAULT_WIP_CAP))
-        accounting = claimed_active_projection(
-            repo=repo,
-            items=items,
-            journal=JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl"),
-        )
-        print(json.dumps({"counted_claims": accounting.active_count, "wip_cap": cap}))
-        return 0
     me = next((i for i in items if i.id == item_id), None)
     if me is None:
         print(f"READY-CHECK {item_id}: not found")
@@ -95,6 +76,43 @@ def main(*, argv: list[str]) -> int:
         f"assignee={me.assignee} open blockers: {blockers or 'none visible'})"
     )
     return NOT_READY
+
+
+def _capacity(*, repo: Path) -> int:
+    from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_reclaim import (
+        claimed_active_projection,
+    )
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_valves import (
+        DEFAULT_WIP_CAP,
+        resolve_wip_cap,
+    )
+    from livespec_orchestrator_beads_fabro.store import read_work_items
+    from returns.unsafe import unsafe_perform_io
+
+    items = list(read_work_items(path=resolve_store_config(cwd=repo, work_items_arg=None)))
+    cap = unsafe_perform_io(resolve_wip_cap(cwd=repo).value_or(DEFAULT_WIP_CAP))
+    accounting = claimed_active_projection(
+        repo=repo,
+        items=items,
+        journal=JournalFile(path=repo / "tmp" / "fabro-dispatch-journal.jsonl"),
+    )
+    counted_ids = set(accounting.live_lock_active_ids) | set(
+        accounting.journal_unreadable_active_ids
+    )
+    counted_statuses = {item.id: item.status for item in items if item.id in counted_ids}
+    print(
+        json.dumps(
+            {
+                "counted_claims": accounting.active_count,
+                "wip_cap": cap,
+                "counted_item_statuses": counted_statuses,
+            },
+            separators=(",", ":"),
+        )
+    )
+    return 0
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ fi
 
 HARNESS_SLICE=${1:-all}
 case "$HARNESS_SLICE" in
-    all|scenario242|scenario297|scenario307|scenario312|scenario316|scenario330|launcher-reexec) ;;
+    all|scenario242|scenario297|scenario307|scenario309|scenario312|scenario316|scenario330|launcher-reexec) ;;
     *)
         echo "usage: run-tests.sh [scenario242|scenario297|scenario307|scenario312|scenario316|scenario330|launcher-reexec]" >&2
         exit 2
@@ -190,9 +190,11 @@ for argument in "$@"; do
             if [ "${!#}" = capacity ]; then
                 # The capacity projection read: a counted-claims count and a wip_cap, both from files
                 # a case rewrites while a launcher runs, or an unreadable answer.
+                [ -z "${STUB_WIP_READ_LOG:-}" ] || printf '%s\n' "${STUB_WIP_REPOSITORY:-unknown}" >> "$STUB_WIP_READ_LOG"
                 [ ! -e "${STUB_WIP_UNREADABLE_FILE:-/nonexistent}" ] || exit 1
-                printf '{"counted_claims": %s, "wip_cap": %s}\n' \
-                    "$(cat "$STUB_WIP_COUNT_FILE")" "$(cat "$STUB_WIP_CAP_FILE")"
+                printf '{"counted_claims": %s, "wip_cap": %s, "counted_item_statuses": %s}\n' \
+                    "$(cat "$STUB_WIP_COUNT_FILE")" "$(cat "$STUB_WIP_CAP_FILE")" \
+                    "$(cat "$STUB_WIP_STATUSES_FILE")"
                 exit 0
             fi
             printf 'READY-CHECK stub: in the ready set\n'
@@ -563,6 +565,12 @@ new_case() {
     printf '0\n' > "$STUB_WIP_COUNT_FILE"
     printf '5\n' > "$STUB_WIP_CAP_FILE"
     export STUB_WIP_UNREADABLE_FILE="$CASE_DIR/wip-unreadable"
+    export STUB_WIP_STATUSES_FILE="$CASE_DIR/wip-statuses"
+    printf '{}\n' > "$STUB_WIP_STATUSES_FILE"
+    export STUB_WIP_READ_LOG="$CASE_DIR/wip-projection-reads"
+    : > "$STUB_WIP_READ_LOG"
+    stub_wip_repository=$(basename "$TENANT")
+    export STUB_WIP_REPOSITORY="$stub_wip_repository"
     unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT STUB_DRIVE_EXPIRE_SNAPSHOT
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
@@ -616,6 +624,8 @@ new_case() {
     export FLEET_LAUNCH_GMK_TARGET_FILE="$CASE_DIR/state/gmk-target"
     export FLEET_LAUNCH_GMK_CANDIDATE_CAP=2
     export FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE="$CASE_DIR/breakage-exception"
+    export FLEET_LAUNCH_WIP_CACHE_DIR="$CASE_DIR/wip-cache"
+    export FLEET_LAUNCH_WIP_CACHE_TTL_S=30
     export FLEET_LAUNCH_RETICKET_STATE_DIR="$CASE_DIR/state/reticket-state"
     export FLEET_LAUNCH_RETICKET_DELAY_1_S=0
     export FLEET_LAUNCH_RETICKET_DELAY_2_S=0.01
@@ -2756,6 +2766,7 @@ open_boards() {
 echo "--- 23. a repository at its wip_cap yields the FIFO head without a preflight"
 new_case wip-at-cap
 export FLEET_LAUNCH_MAX_WAIT_S=120
+export FLEET_LAUNCH_WIP_CACHE_TTL_S=0
 open_boards
 printf '5\n' > "$STUB_WIP_COUNT_FILE"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-wip-held > "$CASE_LOG" 2>&1 &
@@ -2783,6 +2794,7 @@ fi
 echo "--- 24. only a breakage-exception item passes the WIP gate one above the cap"
 new_case wip-breakage-exception
 export FLEET_LAUNCH_MAX_WAIT_S=120
+export FLEET_LAUNCH_WIP_CACHE_TTL_S=0
 open_boards
 printf '5\n' > "$STUB_WIP_COUNT_FILE"
 printf 'bd-ib-listed\n' > "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE"
@@ -3125,6 +3137,135 @@ if [ "$blocker_rc" = 3 ] && grep -qF 'bd-dep-open=ready' <<<"$blocker_line" \
 else
     fail "the refusal line mislists blockers (rc=$blocker_rc): $blocker_line"
 fi
+
+fi
+
+# --- Scenario 309: shared repository WIP claim-count cache ---------------------------------------
+if [ "$HARNESS_SLICE" = all ] || [ "$HARNESS_SLICE" = scenario309 ]; then
+
+wip_cache_path() {
+    printf '%s/wip-claimed-cache.%s.json' "$FLEET_LAUNCH_WIP_CACHE_DIR" "$(basename "$TENANT")"
+}
+
+prepare_wip_gate() {
+    : > "$BOARD_GMK"
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+}
+
+echo "--- 32. repository WIP reads share a per-repository cache"
+new_case wip-cache-shared
+prepare_wip_gate
+printf '5\n' > "$STUB_WIP_COUNT_FILE"
+wip_pids=""
+for wip_item in 1 2 3 4 5; do
+    ONLY_GMK=1 TICKET_NS="10$wip_item" "$LAUNCHER" "bd-ib-wip-cache-$wip_item" > "$CASE_DIR/$wip_item.log" 2>&1 &
+    wip_pids="$wip_pids $!"
+done
+for wip_item in 1 2 3 4 5; do
+    wait_for_line "$CASE_DIR/$wip_item.log" "repository WIP at cap" 10 \
+        || fail "the shared-cache launcher $wip_item did not reach the WIP gate"
+done
+sleep 0.1
+wip_reads=$(wc -l < "$STUB_WIP_READ_LOG")
+if [ "$wip_reads" = 1 ] && [ -f "$(wip_cache_path)" ]; then
+    pass "five launchers in one cache time-to-live take one projection read and reuse its cache file"
+else
+    fail "five launchers took $wip_reads projection reads instead of one shared cached read"
+fi
+# shellcheck disable=SC2086
+stop_launcher $wip_pids
+# shellcheck disable=SC2086
+wait $wip_pids 2>/dev/null
+
+echo "--- 33. an expired repository WIP cache is recomputed"
+new_case wip-cache-expired
+prepare_wip_gate
+printf '5\n' > "$STUB_WIP_COUNT_FILE"
+mkdir -p "$FLEET_LAUNCH_WIP_CACHE_DIR"
+printf '{"taken":%s,"counted_claims":0,"wip_cap":5,"counted_item_statuses":{}}\n' \
+    "$(( $(date +%s) - FLEET_LAUNCH_WIP_CACHE_TTL_S - 1 ))" > "$(wip_cache_path)"
+ONLY_GMK=1 TICKET_NS=200 "$LAUNCHER" bd-ib-wip-cache-expired > "$CASE_LOG" 2>&1 &
+expired_pid=$!
+wait_for_line "$CASE_LOG" "repository WIP at cap" 10 \
+    || fail "the expired-cache launcher did not reach the WIP gate"
+sleep 0.1
+if [ "$(wc -l < "$STUB_WIP_READ_LOG")" = 1 ]; then
+    pass "a cache older than its time-to-live is replaced by one projection read"
+else
+    fail "an expired cache did not trigger exactly one replacement projection read"
+fi
+stop_launcher "$expired_pid"
+wait "$expired_pid" 2>/dev/null
+
+echo "--- 34. a WIP gate excludes its own in-flight marker"
+new_case wip-cache-own-marker
+prepare_wip_gate
+printf '2\n' > "$STUB_WIP_COUNT_FILE"
+printf '3\n' > "$STUB_WIP_CAP_FILE"
+printf '{}\n' > "$STUB_WIP_STATUSES_FILE"
+mkdir -p "$FLEET_LAUNCH_INFLIGHT_DIR"
+sleep 60 &
+other_marker_pid=$!
+printf 'owner=other pid=%s item=bd-y repo=%s\n' "$other_marker_pid" "$(basename "$TENANT")" \
+    > "$FLEET_LAUNCH_INFLIGHT_DIR/other-marker"
+own_marker="$FLEET_LAUNCH_INFLIGHT_DIR/own-marker"
+bash -c 'printf "owner=self pid=%s item=bd-x repo=%s\\n" "$$" "$1" > "$2"; exec "$3" bd-x' \
+    bash "$(basename "$TENANT")" "$own_marker" "$LAUNCHER" > "$CASE_LOG" 2>&1 &
+own_marker_pid=$!
+if wait_for_line "$CASE_LOG" "counted=2 cap=3 effective=3 in-flight=1 sum=3" 10 \
+    && kill -0 "$own_marker_pid" 2>/dev/null && [ ! -s "$DRIVE_LOG" ]; then
+    pass "the launcher's own marker is excluded while one other not-yet-active marker reaches the cap"
+else
+    fail "the WIP gate did not exclude its own marker and hold on the remaining in-flight addition"
+    tail -8 "$CASE_LOG" >&2
+fi
+stop_launcher "$own_marker_pid" "$other_marker_pid"
+wait "$own_marker_pid" "$other_marker_pid" 2>/dev/null
+rm -f "$own_marker"
+
+echo "--- 35. a failed cache recomputation remains fail-open and writes no cache"
+new_case wip-cache-unreadable
+prepare_wip_gate
+: > "$STUB_WIP_UNREADABLE_FILE"
+run_launcher bd-ib-wip-cache-unreadable
+if [ "$RC" = 0 ] && [ "$(drive_log_items)" = bd-ib-wip-cache-unreadable ] \
+    && [ ! -e "$(wip_cache_path)" ]; then
+    pass "a failed recomputation does not hold the launch and leaves no cache file"
+else
+    fail "a failed recomputation held the launch or left a cache file (rc=$RC)"
+fi
+
+echo "--- 36. cached and uncached WIP gates compare the same sum"
+new_case wip-cache-equivalent
+prepare_wip_gate
+printf '3\n' > "$STUB_WIP_COUNT_FILE"
+printf '4\n' > "$STUB_WIP_CAP_FILE"
+mkdir -p "$FLEET_LAUNCH_INFLIGHT_DIR"
+sleep 60 &
+equivalent_marker_pid=$!
+printf 'owner=other pid=%s item=bd-y repo=%s\n' "$equivalent_marker_pid" "$(basename "$TENANT")" \
+    > "$FLEET_LAUNCH_INFLIGHT_DIR/other-marker"
+ONLY_GMK=1 TICKET_NS=300 "$LAUNCHER" bd-ib-wip-cache-first > "$CASE_DIR/cached.log" 2>&1 &
+cached_pid=$!
+wait_for_line "$CASE_DIR/cached.log" "repository WIP at cap" 10 \
+    || fail "the cached comparison launcher did not reach the WIP gate"
+stop_launcher "$cached_pid"
+wait "$cached_pid" 2>/dev/null
+FLEET_LAUNCH_WIP_CACHE_TTL_S=0 ONLY_GMK=1 TICKET_NS=301 "$LAUNCHER" bd-ib-wip-cache-second \
+    > "$CASE_DIR/uncached.log" 2>&1 &
+uncached_pid=$!
+wait_for_line "$CASE_DIR/uncached.log" "repository WIP at cap" 10 \
+    || fail "the uncached comparison launcher did not reach the WIP gate"
+cached_sum=$(sed -n '/ sum=/ { s/.* sum=\([0-9][0-9]*\) cap=.*/\1/p; q; }' "$CASE_DIR/cached.log")
+uncached_sum=$(sed -n '/ sum=/ { s/.* sum=\([0-9][0-9]*\) cap=.*/\1/p; q; }' "$CASE_DIR/uncached.log")
+if [ -n "$cached_sum" ] && [ "$cached_sum" = "$uncached_sum" ]; then
+    pass "the cache and a zero-time-to-live recomputation compare the same WIP sum"
+else
+    fail "the cached and uncached WIP sums differ (cached=${cached_sum:-missing} uncached=${uncached_sum:-missing})"
+fi
+stop_launcher "$uncached_pid" "$equivalent_marker_pid"
+wait "$uncached_pid" "$equivalent_marker_pid" 2>/dev/null
 
 fi
 
