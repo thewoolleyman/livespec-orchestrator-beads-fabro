@@ -116,7 +116,7 @@ jobs:
     name: ${{ matrix.target }} (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -360,7 +360,7 @@ jobs:
     name: check-per-file-coverage-shard (${{ matrix.uid }}, ${{ matrix.shard }}/4)
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -445,7 +445,7 @@ jobs:
 
       - name: Publish the flake-retry records for the host-side reader
         if: ${{ !cancelled() }}
-        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.206.0
         with:
           suffix: shard-${{ matrix.uid }}-${{ matrix.shard }}
 
@@ -469,7 +469,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -576,7 +576,7 @@ jobs:
 
       - name: Publish the flake-retry records for the host-side reader
         if: ${{ !cancelled() }}
-        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.206.0
         with:
           suffix: per-file-${{ matrix.uid }}
 
@@ -624,7 +624,7 @@ jobs:
     # Unset, it falls through to CI_RUNNER_LABELS, so nothing moves.
     runs-on: ${{ fromJSON(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       # Lane-selected uv bounds from THIS job's routing (see the top-level env).
       UV_CONCURRENT_DOWNLOADS: ${{ contains(vars.CI_COVERAGE_RUNNER_LABELS || vars.CI_RUNNER_LABELS || '["ubuntu-latest"]', 'ubuntu') && '50' || '4' }}
@@ -750,7 +750,7 @@ jobs:
     name: check-python-batch (${{ matrix.uid }})
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -870,7 +870,7 @@ jobs:
     name: check-doctor-static
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -935,7 +935,7 @@ jobs:
     name: ${{ matrix.target }}
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1025,7 +1025,7 @@ jobs:
     name: e2e-cli
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     # SINGLE env block — this job already had a job-level `env:` carrying
     # LIVESPEC_E2E_HARNESS before the baked-image cutover, so the container
     # preamble's vars are MERGED in here rather than added as a second `env:`
@@ -1070,7 +1070,7 @@ jobs:
 
       - name: Publish the flake-retry records for the host-side reader
         if: ${{ !cancelled() }}
-        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.206.0
         with:
           suffix: e2e-cli
 
@@ -1087,7 +1087,7 @@ jobs:
     name: check-metadata-batch
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1231,7 +1231,7 @@ jobs:
     name: check-fleet-materialized-workflow-toml-size
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1280,7 +1280,7 @@ jobs:
     name: acceptance
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
@@ -1317,7 +1317,7 @@ jobs:
 
       - name: Publish the flake-retry records for the host-side reader
         if: ${{ !cancelled() }}
-        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.205.0
+        uses: thewoolleyman/livespec-dev-tooling/.github/actions/publish-flake-retries@v1.206.0
         with:
           suffix: acceptance
 
@@ -1342,7 +1342,7 @@ jobs:
     name: incident-ci
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     permissions:
       contents: read
       pull-requests: read
@@ -1532,7 +1532,7 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ${{ fromJSON(vars.CI_RUNNER_LABELS || '["ubuntu-latest"]') }}
     container:
-      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.205.0
+      image: ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-v1.206.0
     env:
       MISE_DATA_DIR: /root/.local/share/mise
       MISE_NOT_FOUND_AUTO_INSTALL: "0"
