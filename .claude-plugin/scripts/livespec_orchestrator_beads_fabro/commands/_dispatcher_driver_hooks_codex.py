@@ -105,6 +105,8 @@ def codex_materialize_script() -> str:
     return textwrap.dedent(
         f"""\
         set -eu
+        PATH=/opt/livespec/codex-acp/bin:$PATH
+        export PATH
         acp="$(command -v codex-acp)"
         acp_root="$(CDPATH= cd -- "$(dirname "$(readlink -f "$acp")")/.." && pwd)"
         codex="$(node -p \

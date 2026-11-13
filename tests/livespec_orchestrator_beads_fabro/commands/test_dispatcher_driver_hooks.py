@@ -40,6 +40,19 @@ def test_prepare_steps_materialize_both_runtime_drivers_at_verified_releases() -
     assert "--dangerously-bypass-hook-trust" not in codex
 
 
+def test_codex_prepare_selects_the_adapter_that_bundles_the_codex_binary() -> None:
+    """The step resolves the baked adapter, not whichever `codex-acp` PATH finds first."""
+    module = importlib.import_module(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_driver_hooks"
+    )
+
+    codex = module.codex_driver_hooks_prepare_steps_block()
+
+    path_selection = "PATH=/opt/livespec/codex-acp/bin:$PATH"
+    assert path_selection in codex
+    assert codex.index(path_selection) < codex.index("command -v codex-acp")
+
+
 def test_overlay_places_each_driver_materialization_before_its_consumer() -> None:
     """The Claude cache gate follows materialization; Codex trust follows its config."""
     overlay = (
