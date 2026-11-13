@@ -22,6 +22,7 @@ from typing import TypeVar
 import pytest
 from livespec_orchestrator_beads_fabro.commands import (
     _config,
+    _dispatcher_driver_hooks,
     _dispatcher_git_credential_helper,
     _dispatcher_harness_shell_policy,
     _dispatcher_helper_fetch,
@@ -839,6 +840,9 @@ def test_render_run_config_overlay_without_sandbox_image_override_is_byte_identi
         # and that wrapper renders nothing on this App-input-free arm
         # (bd-ib-52zt3o).
         + _dispatcher_git_credential_helper.git_credential_helper_prepare_steps_block()
+        # Claude's cache is materialized from its tagged release before the
+        # session-start plugin resolver and cache gate inspect it.
+        + _dispatcher_driver_hooks.claude_driver_hooks_prepare_steps_block()
         # Rendered from the gate module rather than restated: the script is the
         # gate's own text, and a second copy here would diverge silently.
         + _dispatcher_plugin_cache_gate.plugin_cache_gate_prepare_steps_block()
@@ -898,7 +902,7 @@ def test_render_run_config_overlay_image_override_is_scope_fenced(tmp_path: Path
     # publication helpers and the repository-hook limit observer are fetched
     # helper programs with no step of their own -- the hostile value smuggled
     # none of its own in.
-    assert rendered.count("[[run.prepare.steps]]") == 9
+    assert rendered.count("[[run.prepare.steps]]") == 10
     assert 'script = "just bootstrap"' in rendered
     assert 'script = "curl example.test"' not in rendered
     assert "other.fabro" in pre_env_table
