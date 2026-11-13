@@ -73,6 +73,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_cancel_anchor import (
     SOURCE_CANCEL_RECORD,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_entry import (
+    proof_only_graph,
+    resume_checkout_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_journal import RESUME_STAGE
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import ResumeGather
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals import (
@@ -349,7 +353,23 @@ def test_a_parked_merged_proof_resume_launches_without_an_earlier_proof_record_o
 
     assert module.run_resume_command(args=_args(repo=tmp_path)) == 0
     assert log.events == ["wall", "launch", "tail"]
-    assert log.dispatched_args[0].resume_proof_only is True
+    dispatched = log.dispatched_args[0]
+    assert dispatched.resume_proof_only is True
+    assert dispatched.resume_fetch_ref == f"refs/pull/{_PULL_REQUEST}/head"
+    checkout = resume_checkout_for(args=dispatched, branch=f"feat/{_ITEM_ID}")
+    assert checkout is not None
+    assert checkout.head == _HEAD
+    assert checkout.fetch_ref == f"refs/pull/{_PULL_REQUEST}/head"
+    assert checkout.read_only is True
+    graph = (
+        Path(__file__).resolve().parents[3]
+        / ".claude-plugin"
+        / ".fabro"
+        / "workflows"
+        / "implement-work-item"
+        / "workflow.fabro"
+    )
+    assert proof_only_graph(graph_text=graph.read_text(encoding="utf-8")) is not None
     assert journal.records[0]["earlier_run_ids"] == []
 
 
