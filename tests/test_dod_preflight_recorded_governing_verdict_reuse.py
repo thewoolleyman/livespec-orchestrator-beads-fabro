@@ -7,8 +7,9 @@ attestation yields the gate's verdict) are proved in
 against a recording runner. What a sandbox can establish about the SCRIPT, whose
 end-to-end run needs the operator host's plugin registry and live tenant, is that
 the committed script delegates to that seam with the comment texts it already reads
-and a shell command runner, and calls the host reader itself only on a registered
-build that predates the seam (`bd-ib-ot4av7`).
+and a shell command runner (recording a fresh verdict through the item's comment
+store), and calls the host reader itself only on a registered build that predates
+the seam (`bd-ib-ot4av7`).
 """
 
 from __future__ import annotations
@@ -17,7 +18,15 @@ from pathlib import Path
 
 _SCRIPT = Path("dev-tooling/dod-preflight.sh")
 _SEAM = "preflight_governing_heading_reading"
-_CALL = f"reading = {_SEAM}(\n    item=item, repo=repo, comments=comments, runner=ShellCommandRunner()\n)"
+_RECORDING_SEAM = "repository_preflight_governing_reading"
+_CALL = (
+    f"reading = {_RECORDING_SEAM}(\n"
+    "        item=item, repo=repo, store=CommentStore(), runner=ShellCommandRunner()\n    )"
+)
+_OLD_BUILD_CALL = (
+    f"reading = {_SEAM}(\n"
+    "        item=item, repo=repo, comments=comments, runner=ShellCommandRunner()\n    )"
+)
 _MODULE = "_dod_preflight_governing_reading import"
 
 
@@ -31,6 +40,7 @@ def test_the_preflight_takes_its_lines_from_the_reading_with_its_comments_and_a_
     text = _script()
 
     assert _CALL in text
+    assert _OLD_BUILD_CALL in text
     assert "reading.report" in text
     assert "reading.findings" in text
     assert "reading.holds" in text
