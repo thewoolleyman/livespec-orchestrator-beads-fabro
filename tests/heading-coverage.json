@@ -3197,5 +3197,13 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading: the owning work-item bd-ib-txbv7i adds cases in which read-current, given the current head's full fenced identity (repository, item id, attempt id, phase, generation, operation id, owner), replies status verified, exits 0 and sets authorizes_current_effects true; naming a superseded generation or a different owner or operation refuses incident-authority-identity-mismatch with status refused, exit 78 and authorizes_current_effects false; a head that moves after selection refuses incident-authority-changed with status refused and exit 78 and authorizes nothing; a read-current invocation with no owner is a usage error that exits 2, prints its usage on stderr and writes no reply to stdout; and read-head and read-history never set authorizes_current_effects true. bd-ib-txbv7i owns it.",
     "work_item": "bd-ib-txbv7i"
+  },
+  {
+    "heading": "## Scenario 366 \u2014 The factory-graph gate validates only with a client whose release triple is at or after 0.396.0 and names the client version for each graph",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading: the factory-graph gate's own suite (tests/dev-tooling/checks/test_fabro_graph_validity.py) gains cases in which a client reporting a release triple below 0.396.0 or no parseable version fails the gate with a control finding and validates no graph, and a client at or above the floor validates each committed graph and reports it with that version; the preserved implementation is at needs-human/f45193625cd243e5b39d7921ef8d295e. bd-ib-3lxeqf owns it.",
+    "work_item": "bd-ib-3lxeqf"
   }
 ]
