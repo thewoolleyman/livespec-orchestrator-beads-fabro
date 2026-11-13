@@ -129,7 +129,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
     "heading": "## Dispatch pre-launch step attribution and concurrency",
-    "work_item": "bd-ib-sif27g",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-11-03"
   },
   {
@@ -409,7 +409,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 177 — A repository hook that outlives its limit is reaped and named, and publish_draft's limit is configurable",
-    "work_item": "bd-ib-6p7kkd",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-10-13"
   },
   {
@@ -528,7 +528,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 224 — A refused publish_draft push names the cause that refused it",
-    "work_item": "bd-ib-7owmkq",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-10-21"
   },
   {
@@ -661,7 +661,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 257 — A merged item parked on its proof leg is re-proven by a proof-only resume on its merged pull request",
-    "work_item": "bd-ib-o5kdau",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-10-26"
   },
   {
@@ -766,7 +766,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 273 — The run goal omits a filing-time advisory finding comment and still lists a later operator comment",
-    "work_item": "bd-ib-lxohlb",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-10-30"
   },
   {
@@ -787,7 +787,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 276 — A mirror records the sandbox image it was measured on",
-    "work_item": "bd-ib-yq55nk",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-10-30"
   },
   {
@@ -941,7 +941,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 304 — The check aggregate refuses a test that sleeps in real time or judges a wall-clock bound, unless an exemption marker states why",
-    "work_item": "bd-ib-t5yvcj",
+    "work_item": "bd-ib-ntqv42",
     "first_seen": "2026-11-04"
   },
   {
