@@ -68,7 +68,7 @@ PY
 # (bd-ib-tka3wb). The verdict and any check 6 findings go to a side file, because
 # stdout here is the prompt.
 judgement_input=$(mktemp)
-trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings" "$judgement_input.record"' EXIT
+trap 'rm -f "$judgement_input" "$judgement_input.last" "$judgement_input.judge" "$judgement_input.stderr" "$judgement_input.governing" "$judgement_input.findings" "$judgement_input.section_findings" "$judgement_input.record" "$judgement_input.reused"' EXIT
 python3 - "$install_root" "$repo_root" "$item" "$override" "$judgement_input" > "$judgement_input" <<'PROMPT_PY'
 import json
 import sys
@@ -92,6 +92,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
+    reusable_verdict,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
     spec_identity_for_governing,
@@ -211,6 +214,18 @@ Path(f"{side}.record").write_text(
     ),
     encoding="utf-8",
 )
+reused = reusable_verdict(
+    comments=comments,
+    digest=judgement_subject_digest(
+        item=item, cwd=repo, comments=comments, spec_identity=identity.value
+    ),
+    rubric_digest=rubric_digest(rubric=rubric),
+)
+if reused is not None:
+    Path(f"{side}.reused").write_text(reused.outcome, encoding="utf-8")
+    print(f"REUSED {reused.outcome}")
+    raise SystemExit(0)
+Path(f"{side}.reused").write_text("", encoding="utf-8")
 sys.stdout.write(judgement_prompt(gate_prompt=rubric, subject=subject))
 PROMPT_PY
 if [ -s "$judgement_input.section_findings" ]; then
@@ -220,6 +235,13 @@ fi
 [ -s "$judgement_input" ] || exit 2
 [ -f "$judgement_input.governing" ] || exit 2
 cat "$judgement_input.governing"
+if [ -s "$judgement_input.reused" ]; then
+  cat "$judgement_input"
+  case "$(cat "$judgement_input.reused")" in
+    admitted) exit 0 ;;
+    *) exit 1 ;;
+  esac
+fi
 # A check 6 finding that HOLDS — the References line names no governing heading —
 # holds the item at the gate whatever the rubric says, so the candidate legs
 # would spend two model calls to change nothing. An advisory one was printed with
