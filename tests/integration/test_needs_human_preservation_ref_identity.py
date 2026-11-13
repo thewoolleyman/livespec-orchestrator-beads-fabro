@@ -210,6 +210,13 @@ def _sandbox(*, tmp_path: Path, dispatch_id: str | None) -> tuple[Path, Path]:
     _git(work, "add", "seed.txt")
     _git(work, "commit", "--quiet", "-m", "seed")
     _git(work, "remote", "add", "origin", str(origin))
+    # Fabro names the run branch by the engine run id, which is never the dispatch
+    # id; the node preserves that branch's tip, so the fixture carries one that is
+    # ahead of the default branch.
+    _git(work, "switch", "--quiet", "-c", f"fabro/run/{_ENGINE_RUN_ID}")
+    (work / "run-work.txt").write_text("the run's settled work\n", encoding="utf-8")
+    _git(work, "add", "run-work.txt")
+    _git(work, "commit", "--quiet", "-m", "settled run work")
     (work / _WIP).write_text(_WIP_BODY, encoding="utf-8")
     return work, origin
 
