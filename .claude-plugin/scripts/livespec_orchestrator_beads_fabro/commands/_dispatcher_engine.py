@@ -99,6 +99,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_pr_open_diff import 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_labels import (
     dispatch_run_label_pairs,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_terminal_publication import (
+    TerminalPublication,
+)
 from livespec_orchestrator_beads_fabro.commands._fabro_port import fabro_port_for_plan
 
 __all__: list[str] = [
@@ -215,6 +218,7 @@ def run_dispatch(
     if post_run.refusal is not None:
         return post_run.refusal
     run_id, run_output, publication = post_run.run_id, post_run.run_output, post_run.publication
+    publication = cast("TerminalPublication", publication)
     hold, view = publication.hold, publication.view
     if publication.pr_view_error is not None:
         return failed_outcome(

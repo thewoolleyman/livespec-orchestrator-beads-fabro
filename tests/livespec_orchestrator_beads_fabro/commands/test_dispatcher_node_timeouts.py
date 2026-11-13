@@ -135,7 +135,7 @@ def test_committed_graph_renders_every_declared_timeout(tmp_path: Path) -> None:
     )
     assert not isinstance(rendered, str)
     assert set(_rendered_timeouts(text=rendered.text)) == {"1800s"}
-    assert "implement" in rendered.node_seconds
+    assert "red" in rendered.node_seconds
     assert 'stall_timeout="7200s"' in rendered.text
 
 
@@ -177,10 +177,9 @@ def test_subprocess_ceiling_follows_the_resolved_graph() -> None:
         stall_seconds=7200,
         stall_layer="default",
     )
-    # `implement` carries six worst-case attempts (three visits since the
-    # commit-run settle re-entry, two attempts each), so the ceiling grows by six
-    # times the increase over the 1800-second default.
-    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 6 * (14400 - 1800)
+    # Red and Green each carry six worst-case ACP attempts (three admissions,
+    # two retries each), so the ceiling grows by twelve times the increase.
+    assert derive_fabro_timeout_seconds(timeouts=longer) == default_ceiling + 12 * (14400 - 1800)
 
 
 def test_ceiling_never_falls_below_the_stall_watchdog() -> None:

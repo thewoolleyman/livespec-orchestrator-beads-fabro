@@ -72,12 +72,7 @@ def _acp_prompt_files() -> tuple[str, ...]:
 
 
 _ACP_PROMPT_FILES = _acp_prompt_files()
-# Red and Green are deliberately shipped before their graph wiring so separate
-# work can introduce the nodes without coupling it to the prompt contract.
-# They are not ACP-node prompts yet and therefore do not carry this suite's
-# turn-end section; keep that bounded exception explicit so a truly orphaned
-# prompt still fails the inventory control.
-_PENDING_GRAPH_PROMPT_FILES = ("green.md", "red.md")
+_PENDING_GRAPH_PROMPT_FILES: tuple[str, ...] = ()
 
 
 def _prompt_text(*, name: str) -> str:

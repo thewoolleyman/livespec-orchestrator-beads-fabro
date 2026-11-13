@@ -160,6 +160,16 @@ _REVIEW_FIX_OPEN_RED_ROUTE_ADDED = {"review_fix_open_red_route"}
 # route instead of the engine's unroutable entry abort.
 _REVIEW_FIX_ADMISSION_ADDED = {"review_fix_admission"}
 _IMPLEMENT_AMENDMENT_ROUTE_ADDED = {"implement_amendment_route"}
+_RED_GREEN_SPLIT_ADDED = {
+    "already_satisfied",
+    "commit_green",
+    "commit_red",
+    "green",
+    "red",
+    "test_wrong_reset",
+    "red_admission",
+    "green_admission",
+}
 # The `dod_gate` post-turn mutation guard (work-item bd-ib-al54tl), kept as its
 # own constant for the reason every set above gives. It sits on `dod_gate`'s
 # single fallthrough, closes no cycle and is reached once, so it moves no other
@@ -769,6 +779,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_ADDED
         | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
+        | _RED_GREEN_SPLIT_ADDED
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED
@@ -779,7 +790,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _DOD_GATE_GUARD_ADDED
         | _SETUP_ADDED
     )
-    assert set(pre_port.node_visits) - set(ported.node_visits) == set()
+    assert set(pre_port.node_visits) - set(ported.node_visits) == {"implement"}
 
     # The visit TABLE, not just its sum: two different tables can total the same
     # seconds, and it is the per-node figure the credential deadline and the
@@ -802,6 +813,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _RECAPTURE_LOOP
         | _HOOK_ROUTE_LOOP
         | _IMPLEMENT_AMENDMENT_ROUTE_LOOP
+        | _RED_GREEN_SPLIT_ADDED
         | _COMMIT_SETTLE_ADDED
         | _JANITOR_ADMISSION_ADDED
         | _JANITOR_REFRESH_ROUTE_ADDED

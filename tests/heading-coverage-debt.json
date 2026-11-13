@@ -828,13 +828,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node",
-    "work_item": "bd-ib-vy75ws",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 288 — An absent five-hour window is no five-hour limit, and the seven-day status still governs",
     "work_item": "bd-ib-75dpxr",
     "first_seen": "2026-11-01"
