@@ -394,17 +394,16 @@ chmod 755 \"$runner\""
     // visit and do not count. The counters refuse a further re-entry first, so
     // this cut is a backstop nothing reaches. It is also the tightest bound the
     // execution-budget derivation reads for the cycle.
-    implement [
-        label="Implement (Red-Green-Replay)"
+    red [
+        label="Red: write one failing acceptance test"
         backend="acp"
         acp.command="{{ inputs.implement_adapter }}"
-        output_schema="{\"type\":\"object\",\"properties\":{\"definition_of_done_complete\":{\"type\":\"boolean\"}}}"
+        output_schema="{\"type\":\"object\",\"properties\":{\"definition_of_done_complete\":{\"type\":\"boolean\"},\"preferred_next_label\":{\"type\":\"string\"}}}"
         timeout="1800s"
         max_retries=1
         goal_gate=true
-        retry_target="implement"
-        max_visits=3
-        prompt="@prompts/implement.md"
+        retry_target="red"
+        prompt="@prompts/red.md"
     ]
 
     // Implement-completion gate (SPECIFICATION/contracts.md §"Self-contained
@@ -631,6 +630,61 @@ END { if (tid != \"\") { kind = \"test\"; text = tid; line = tline } else if (el
         timeout="3900s"
         max_visits=3
         script="runner=\"${LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT:-$HOME/.claude/plugins}/livespec-commit-runner.py\"; live=$(git rev-parse --git-path livespec-implement-live-commit); if test ! -f \"$runner\"; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_RUNNER_ABSENT: the sandbox commit runner is not materialized, so no commit run could be waited out' >&2; else if ! python3 \"$runner\" settle --timeout-seconds 3600 --restore-head-before-wait --brief-file \"$live\" >&2; then rm -f \"$live\"; echo 'LIVESPEC_COMMIT_SETTLE_FAILED: the commit runner settle operation did not complete, so no live-commit brief was written' >&2; fi; fi; capture_root=\"${LIVESPEC_SANDBOX_GH_REFRESH_ROOT:-/workspace/.livespec-gh-refresh}\"; capture=\"$capture_root/bin/livespec-capture-wip\"; publish_branch=\"${LIVESPEC_PUBLISH_BRANCH:-}\"; run_branch=$(git for-each-ref --format='%(refname:short)' refs/heads/fabro/run/ | head -n 1); case \"$publish_branch $run_branch\" in feat/[0-9A-Za-z-]*' 'fabro/run/[0-9A-Za-z-]*) \"$capture\" \"${publish_branch#feat/}\" \"${run_branch#fabro/run/}\" \"{{ inputs.default_branch }}\" ;; *) echo 'LIVESPEC_WIP_CAPTURE_FAILED: ref=unresolved tip=unresolved reason=the Dispatcher publish branch or run branch is absent' >&2 ;; esac; exit 0"
+    ]
+
+    commit_red [
+        label="Commit Red test through repository hooks"
+        shape=parallelogram
+        timeout="7200s"
+        script="bash dev-tooling/commit-red.sh"
+    ]
+
+    red_admission [
+        label="Red admission: re-enter Red or name its exhausted bound"
+        shape=parallelogram
+        timeout="1800s"
+        max_visits=4
+        script="counter=$(git rev-parse --git-path livespec-red-admission-count); handoff=$(git rev-parse --git-path livespec-implement-handoff.md); cause=$(git rev-parse --git-path livespec-stage-cause); count=$(cat \"$counter\" 2>/dev/null || echo 0); if test \"$count\" -ge 3 2>/dev/null; then section=$(awk '/^## red/{text=$0 RS; seen=1; next} seen && /^## /{seen=0} seen{ text=text $0 RS } END{printf \"%s\", text}' \"$handoff\" 2>/dev/null | tail -c 2000 | tr '\\n' ' '); message=\"LIVESPEC_IMPLEMENT_RED_BOUND_EXHAUSTED: red admission bound exhausted; latest red handoff section: ${section:-absent, so its recorded exit status and failed targets are unavailable}\"; printf 'stage: %s\\ncause: %s\\n' red_admission \"$message\" > \"$cause\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; echo $((count + 1)) > \"$counter\""
+    ]
+
+    green [
+        label="Green: implement against the Red handoff"
+        backend="acp"
+        acp.command="{{ inputs.implement_adapter }}"
+        output_schema="{\"type\":\"object\",\"properties\":{\"definition_of_done_complete\":{\"type\":\"boolean\"},\"preferred_next_label\":{\"type\":\"string\"}}}"
+        timeout="1800s"
+        max_retries=1
+        prompt="@prompts/green.md"
+    ]
+
+    commit_green [
+        label="Amend Red commit through repository hooks"
+        shape=parallelogram
+        timeout="7200s"
+        script="bash dev-tooling/commit-green.sh"
+    ]
+
+    green_admission [
+        label="Green admission: re-enter Green or name its exhausted bound"
+        shape=parallelogram
+        timeout="1800s"
+        max_visits=4
+        script="counter=$(git rev-parse --git-path livespec-green-admission-count); handoff=$(git rev-parse --git-path livespec-implement-handoff.md); cause=$(git rev-parse --git-path livespec-stage-cause); count=$(cat \"$counter\" 2>/dev/null || echo 0); if test \"$count\" -ge 3 2>/dev/null; then section=$(awk '/^## green/{text=$0 RS; seen=1; next} seen && /^## /{seen=0} seen{ text=text $0 RS } END{printf \"%s\", text}' \"$handoff\" 2>/dev/null | tail -c 2000 | tr '\\n' ' '); message=\"LIVESPEC_IMPLEMENT_GREEN_BOUND_EXHAUSTED: green admission bound exhausted; latest green handoff section: ${section:-absent, so its recorded exit status and failed targets are unavailable}\"; printf 'stage: %s\\ncause: %s\\n' green_admission \"$message\" > \"$cause\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; echo $((count + 1)) > \"$counter\""
+    ]
+
+    already_satisfied [
+        label="Already satisfied: Red left the dispatch base unchanged"
+        shape=parallelogram
+        timeout="1800s"
+        script="if git diff --quiet \"origin/{{ inputs.default_branch }}...HEAD\"; then echo \"LIVESPEC_ALREADY_SATISFIED: base=$(git rev-parse \"origin/{{ inputs.default_branch }}\") red declared the work already satisfied on the unchanged dispatch base\" >&2; exit 0; fi; echo 'LIVESPEC_ALREADY_SATISFIED_UNPROVABLE: red declared already-satisfied but the tree differs from dispatch base' >&2; exit 1"
+    ]
+
+    test_wrong_reset [
+        label="Return a test-wrong lap to the dispatch base"
+        shape=parallelogram
+        timeout="1800s"
+        max_visits=3
+        script="handoff=$(git rev-parse --git-path livespec-implement-handoff.md); counter=$(git rev-parse --git-path livespec-implement-test-wrong-reentries); cause=$(git rev-parse --git-path livespec-stage-cause); count=$(cat \"$counter\" 2>/dev/null || echo 0); if test \"$count\" -ge 2; then sections=$(awk '/^## red|^## green/{text=text $0 RS; seen=1; next} seen && /^## /{seen=0} seen{text=text $0 RS} END{printf \"%s\", text}' \"$handoff\" 2>/dev/null | tail -c 2000 | tr '\\n' ' '); message=\"LIVESPEC_IMPLEMENT_TEST_WRONG_BUDGET_EXHAUSTED: the test-wrong route exhausted its bound; latest red and green handoff sections: ${sections:-absent, so their recorded exit status and failed targets are unavailable}\"; printf 'stage: %s\\ncause: %s\\n' test_wrong_reset \"$message\" > \"$cause\"; printf '%s\\n' \"$message\" >&2; exit 1; fi; echo $((count + 1)) > \"$counter\"; bash dev-tooling/reset-test-wrong-to-dispatch-base.sh \"{{ inputs.default_branch }}\""
     ]
 
     // Dead-implementer circuit breaker (C5 / bd-ib-vdpb): after the
@@ -2578,19 +2632,29 @@ script="cut_root=$(printenv LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT || true); if te
     // (bd-ib-al54tl); one that graded and changed nothing proceeds to implement
     // exactly as before.
     dod_gate_mutation_guard -> needs_human [label="dod_gate mutated the sandbox", condition="outcome=failed"]
-    dod_gate_mutation_guard -> implement
+    dod_gate_mutation_guard -> red_admission
 
-    // An explicit failed implement output first reaches the amendment
-    // classifier. A Definition-of-Done amendment still rests at needs_human;
-    // every other failed outcome falls through to the completion gate and can
-    // re-enter implement with the hook's recorded failure while budget remains.
-    // Conditional edges take priority over the ordinary completion fallthrough.
-    implement -> implement_amendment_route [label="Blocked", condition="outcome=failed"]
-    implement -> implement_commit_settle
-
+    // Red and Green carry the implementation work; each repository commit is
+    // made by its adjacent command node.  The conditional edges come first so
+    // Fabro still has an unconditional success fallthrough for every node.
+    red_admission -> needs_human [label="red bound exhausted", condition="outcome=failed"]
+    red_admission -> red
+    red -> implement_amendment_route [label="Definition-of-Done amendment", condition="outcome=failed"]
+    red -> already_satisfied [label="already satisfied", condition="preferred_label=already-satisfied"]
+    red -> commit_red
+    commit_red -> red_admission [label="refused", condition="outcome=failed"]
+    commit_red -> green_admission
+    green_admission -> needs_human [label="green bound exhausted", condition="outcome=failed"]
+    green_admission -> green
+    green -> test_wrong_reset [label="test wrong", condition="preferred_label=test-wrong"]
+    green -> needs_human [label="Blocked", condition="outcome=failed"]
+    green -> commit_green
+    test_wrong_reset -> needs_human [label="test-wrong bound exhausted", condition="outcome=failed"]
+    test_wrong_reset -> red_admission
+    commit_green -> green_admission [label="refused", condition="outcome=failed"]
+    commit_green -> implementation_diff
     implement_amendment_route -> needs_human [label="Definition-of-Done amendment", condition="outcome=failed"]
-    implement_amendment_route -> implement_commit_settle
-    implement_commit_settle -> implement_completion
+    implement_amendment_route -> red_admission
 
     // Completion-field routing (v165, Scenario 204). The gate emits a SUCCESSFUL
     // routing label for both outcomes: `incomplete` reaches the incomplete-turn
@@ -2607,7 +2671,7 @@ script="cut_root=$(printenv LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT || true); if te
     // Incomplete-turn routing (v208, widened v214). An incomplete turn
     // re-enters implement once with its latest failing gate; a turn whose
     // re-entry budget is spent reaches needs_human.
-    implement_hook_route -> implement [label="Incomplete: re-enter", condition="outcome=succeeded"]
+    implement_hook_route -> green [label="Incomplete: re-enter", condition="outcome=succeeded"]
     implement_hook_route -> needs_human
 
     // Changed-tree routing: exit 0 means `git diff --quiet` found a

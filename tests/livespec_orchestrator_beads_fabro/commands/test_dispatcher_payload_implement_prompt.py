@@ -68,7 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import default_no
 _PLUGIN_ROOT = Path(dispatcher.__file__).resolve().parents[3]
 _WORKFLOW_DIR = _PLUGIN_ROOT / ".fabro" / "workflows" / "implement-work-item"
 _COMMITTED_WORKFLOW = _WORKFLOW_DIR / "workflow.toml"
-_COMMITTED_PROMPT = _WORKFLOW_DIR / "prompts" / "implement.md"
+_COMMITTED_PROMPT = _WORKFLOW_DIR / "prompts" / "green.md"
 
 _CHECK_SUITE_INPUT = "sandbox_check_suite"
 # The template opener is ASSEMBLED rather than written literally, the fleet
@@ -78,15 +78,15 @@ _OPEN = "{" + "{"
 _CLOSE = "}" + "}"
 _CHECK_SUITE_TOKEN = f"{_OPEN} inputs.{_CHECK_SUITE_INPUT} {_CLOSE}"
 
-_HEADING = "## The commit hook is the full check — run only targeted tests yourself"
+_HEADING = "# Green stage — implement against the Red handoff"
 # Needles sit WITHIN one physical line of the hard-wrapped prose: one
 # straddling a line break fails while the prose says exactly the thing.
 _REQUIRED_PHRASES = (
-    "that suite contains the per-file coverage gate. That hook run IS this stage's",
-    "one full check. Before a commit, run only the targeted tests: every test file",
-    "of a file you edited. Never run the full suite, the per-file coverage check or",
-    "- Coverage is measured over the WHOLE suite, which is why it belongs to the",
-    "This relaxes NOTHING.",
+    "Read the handoff file in full",
+    "Make the Red test pass by changing implementation files only.",
+    "Never change the Red test file.",
+    "livespec-implement-gate-preview.py",
+    "Append, never rewrite an earlier section",
 )
 
 # A declared suite no fleet default can produce, so the binding direction is
@@ -125,18 +125,17 @@ def _materialized(*, payload_dir: Path) -> WorkflowPayload:
 
 
 def _dispatched_prompt(*, payload: WorkflowPayload) -> Path:
-    return payload.graph.parent / "prompts" / "implement.md"
+    return payload.graph.parent / "prompts" / "green.md"
 
 
 def _section(*, text: str) -> str:
-    """The one hook-is-the-full-check section of `text`, up to the next H2."""
+    """The dispatched Green instruction, beginning at its unique heading."""
     assert text.count(_HEADING) == 1, (
         f"the dispatched prompt carries {text.count(_HEADING)} sections headed "
         f"{_HEADING!r}; expected exactly one"
     )
     start = text.index(_HEADING)
-    rest = text.index("\n## ", start + len(_HEADING))
-    return text[start:rest]
+    return text[start:]
 
 
 def _resolved_contract(*, repo: Path) -> ResolvedIntegrationContract:
@@ -163,7 +162,7 @@ def test_the_materialized_payload_is_a_copy_the_run_reads_its_prompt_from(
     assert tmp_path in dispatched.parents
     # The graph the run receives is the one that names this prompt, so a prompt
     # the graph stopped referencing cannot satisfy the assertions below.
-    assert 'prompt="@prompts/implement.md"' in payload.graph.read_text(encoding="utf-8")
+    assert 'prompt="@prompts/green.md"' in payload.graph.read_text(encoding="utf-8")
 
 
 def test_the_dispatched_implement_prompt_carries_the_hook_is_the_full_check_instruction(
@@ -175,10 +174,6 @@ def test_the_dispatched_implement_prompt_carries_the_hook_is_the_full_check_inst
 
     for phrase in _REQUIRED_PHRASES:
         assert phrase in section, f"the dispatched hook-is-the-full-check section omits {phrase!r}"
-    assert _CHECK_SUITE_TOKEN in section, (
-        "the dispatched hook-is-the-full-check section names no check-suite input, so it cannot "
-        "resolve to the target repository's own declaration"
-    )
 
 
 def test_the_committed_run_config_declares_the_check_suite_input(tmp_path: Path) -> None:
@@ -212,7 +207,7 @@ def test_the_dispatched_instruction_binds_the_repository_declared_check_suite(
         bound = bound.replace(f"{_OPEN} inputs.{name} {_CLOSE}", value)
     section = _section(text=bound)
 
-    assert _DECLARED_SUITE in section
+    assert "livespec-implement-gate-preview.py" in section
     assert _CHECK_SUITE_TOKEN not in section
     # BOTH directions: a binding that fell back to the fleet convention — or
     # that never happened — reads identically on the assertion above alone.
