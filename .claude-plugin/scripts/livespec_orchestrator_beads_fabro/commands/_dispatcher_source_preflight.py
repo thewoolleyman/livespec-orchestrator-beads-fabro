@@ -68,11 +68,19 @@ def source_checkout_preflight(*, repo: Path, runner: CommandRunner) -> SourceChe
     origin_refs = _origin_refs(repo=repo, runner=runner)
     head = _git_stdout(repo=repo, runner=runner, argv=["rev-parse", "HEAD"])
     default_branch = resolve_default_branch(repo=repo, runner=runner) if head else None
-    origin_ref = _containing_origin_ref(
+    origin_ref = _default_origin_ref_containing_head(
+        repo=repo,
+        runner=runner,
+        head=head,
         origin_refs=origin_refs,
-        containing_refs=_containing_origin_refs(repo=repo, runner=runner, head=head),
         default_branch=default_branch,
     )
+    if origin_ref is None:
+        origin_ref = _containing_origin_ref(
+            origin_refs=origin_refs,
+            containing_refs=_containing_origin_refs(repo=repo, runner=runner, head=head),
+            default_branch=default_branch,
+        )
     if origin_ref is not None:
         return pass_outcome(head=head, origin_refs=origin_refs, origin_ref=origin_ref)
     return unreachable_outcome(
@@ -131,6 +139,26 @@ def _containing_origin_refs(*, repo: Path, runner: CommandRunner, head: str) -> 
         for line in result.stdout.splitlines()
         if line.strip() and line.strip() not in _ORIGIN_HEAD_SHORT_FORMS
     )
+
+
+def _default_origin_ref_containing_head(
+    *,
+    repo: Path,
+    runner: CommandRunner,
+    head: str,
+    origin_refs: tuple[str, ...],
+    default_branch: str | None,
+) -> str | None:
+    """Return the default origin ref when one direct ancestry proof succeeds."""
+    default_ref = f"origin/{default_branch}" if default_branch is not None else None
+    if not head or default_ref not in origin_refs:
+        return None
+    result = _git(
+        repo=repo,
+        runner=runner,
+        argv=["merge-base", "--is-ancestor", head, default_ref],
+    )
+    return default_ref if result.exit_code == 0 else None
 
 
 def _containing_origin_ref(
