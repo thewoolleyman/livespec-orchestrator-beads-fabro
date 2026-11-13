@@ -84,7 +84,9 @@ def _repo(*, tmp_path: Path) -> Path:
     _ = (tmp_path / ".livespec.jsonc").write_text(
         "{\n"
         '  "livespec-orchestrator-beads-fabro": {\n'
-        '    "connection": {"prefix": "bd-ib", "tenant": "t", "fake": true}\n'
+        '    "connection": {"prefix": "bd-ib", "tenant": "t", "fake": true},\n'
+        '    "dispatcher": {"factories": {"hp": {'
+        '"defer_collection_while_active": false, "rm_min_interval_seconds": 0}}}\n'
         "  }\n"
         "}\n",
         encoding="utf-8",
