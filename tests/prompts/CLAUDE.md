@@ -230,6 +230,15 @@ instead.
   the proof ACP nodes in the workflow graph, with a control that fails if the
   graph no longer resolves exactly the two proof-stage prompts.
 
+- `test_fix_publish_repair_brief.py` — bd-ib-7owmkq: the fix prompt carries its
+  own section for a repair brief naming `stage: publish_draft` with a refused
+  head: removing each GH001-named path from every run commit origin does not
+  already hold (never one it does), repairing a pre-push hook's failed targets,
+  redoing Red-Green for a rewritten commit instead of hand-editing its trailers,
+  and the unchanged no-bypass rules. A prompt test because the removal is done by
+  the `fix` agent out of this prose; the stage that records the brief is bound in
+  `tests/integration/test_workflow_publish_repair_scenario329.py`.
+
 Conventions:
 
 - Read the prompt as COMMITTED BYTES. Never render it through a template engine

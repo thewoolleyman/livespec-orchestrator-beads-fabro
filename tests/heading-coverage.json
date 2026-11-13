@@ -2992,8 +2992,8 @@
     "heading": "## Scenario 329 \u2014 A publish_draft push refused for an oversize file or by the pre-push hook is repaired through fix",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: the owning work-item bd-ib-7owmkq makes publish_draft route a GH001 large-file rejection or a pre-push hook refusal of its push to fix with a repair brief naming the refused head and the oversize paths or failed hook targets, inside the shared two-round refresh-repair budget, while protected-branch, non-fast-forward, unreachable-origin and authentication refusals stay fail-closed and no publish refusal ends at LIVESPEC_REFRESH_REPAIR_ABSENT.",
+    "test": "tests.integration.test_workflow_publish_repair_scenario329",
+    "reason": "Integration-tier execution of the shipped publish_draft and refresh_repair script bytes against a real throwaway origin: a GH001 large-file rejection and a pre-push hook refusal each record a repair brief naming the refused head and the oversize paths or failed hook targets with the last 80 lines of hook output and reach fix; a repaired head republishes; the repair counts toward the shared two-round budget and exhausts naming the refused head; protected-branch, non-fast-forward, unreachable-origin and authentication refusals stay fail-closed with their own named cause and no brief.",
     "work_item": "bd-ib-7owmkq"
   },
   {

@@ -306,7 +306,8 @@ def test_the_publish_after_a_repair_that_removed_the_path_publishes_the_repaired
     assert _remote_head(clone=clone) == _head(clone=clone)
     assert not _state(clone=clone, name=_BRIEF).exists()
     assert _state(clone=clone, name=_COUNT).read_text(encoding="utf-8") == "1\n"
-    assert ("janitor_admission", None) in _arms(source="fix_commit_settle")
+    assert ("fix_open_red_route", None) in _arms(source="fix_commit_settle")
+    assert ("janitor_admission", None) in _arms(source="fix_open_red_route")
     assert ("janitor", None) in _arms(source="janitor_admission")
     assert ("publish_draft", "outcome=succeeded") in _arms(source="janitor")
     assert ("proof_capture", None) in _arms(source="publish_merged_reconcile_route")
