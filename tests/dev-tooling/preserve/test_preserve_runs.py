@@ -182,6 +182,7 @@ def test_a_worker_nodes_run_is_preserved_through_kubectl_exec(tmp_path: Path) ->
     assert row[5] == "VERIFIED", result.stdout + result.stderr
     assert row[3] == work_sha and row[7] == "tip"
     assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    assert not (Path(env["PRESERVE_WORK"]) / f"{_RUN}.git").exists()
 
 
 def test_a_worker_node_is_never_reached_over_ssh_or_crictl(tmp_path: Path) -> None:
@@ -262,9 +263,7 @@ def test_an_exact_chunk_multiple_and_an_empty_file_copy_without_extra_or_missing
     filler = [c for c in calls if c.startswith("exec dd ") and "filler.tmp" in c]
     assert len(filler) == 2, filler
     assert not [c for c in calls if c.startswith("exec dd ") and "packed-refs" in c]
-    copied = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
-    assert (copied / "packed-refs").read_bytes() == b""
-    assert (copied / "objects" / "pack" / "filler.tmp").stat().st_size == 2 * 1024 * 1024
+    assert not (Path(env["PRESERVE_WORK"]) / f"{_RUN}.git").exists()
 
 
 def test_a_reset_chunk_is_retried_and_never_reaches_the_copy_partial(tmp_path: Path) -> None:
