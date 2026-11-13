@@ -86,14 +86,42 @@ yield_ticket() {
   [ -n "$ticket" ] && [ -f "$ticket" ] && ! grep -q '^held=' "$ticket" && echo "held=$1" >> "$ticket"
 }
 restore_ticket() { [ -n "$ticket" ] && [ -f "$ticket" ] && sed -i '/^held=/d' "$ticket"; }
+trim_hold_value() {
+  HOLD_VALUE=$1
+  while :; do
+    case "$HOLD_VALUE" in
+      ' '*) HOLD_VALUE=${HOLD_VALUE#' '} ;;
+      $'\t'*) HOLD_VALUE=${HOLD_VALUE#$'\t'} ;;
+      *) return ;;
+    esac
+  done
+}
 repository_hold_applies() {
-  local raw compact
+  # This is also the signal-during-hold path.  Keep its read and parsing in
+  # bash builtins because an INT or HUP can land just after a prior hold line.
+  local line raw="" compact="" character index
   HOLD_KINDS=all
-  HOLD_REASON=$(sed -n '/^reason:/ { s/^reason:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
-  HOLD_UNTIL=$(sed -n '/^until:/ { s/^until:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
+  HOLD_REASON=""
+  HOLD_UNTIL=""
   [ -e "$REPO_HOLD_FILE" ] || return 1
-  raw=$(sed -n '/^kinds:/ { s/^kinds:[[:space:]]*//; p; q; }' "$REPO_HOLD_FILE" 2>/dev/null)
-  compact=$(printf '%s' "$raw" | tr -d '[:space:]')
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      reason:*)
+        [ -n "$HOLD_REASON" ] || { trim_hold_value "${line#reason:}"; HOLD_REASON=$HOLD_VALUE; }
+        ;;
+      until:*)
+        [ -n "$HOLD_UNTIL" ] || { trim_hold_value "${line#until:}"; HOLD_UNTIL=$HOLD_VALUE; }
+        ;;
+      kinds:*)
+        [ -n "$raw" ] || { trim_hold_value "${line#kinds:}"; raw=$HOLD_VALUE; }
+        ;;
+    esac
+  done < "$REPO_HOLD_FILE"
+  [ -e "$REPO_HOLD_FILE" ] || return 1
+  for ((index = 0; index < ${#raw}; index++)); do
+    character=${raw:index:1}
+    case "$character" in ' '|$'\t'|$'\r'|$'\n') ;; *) compact+=$character ;; esac
+  done
   case "$compact" in
     dispatch|resume|dispatch,resume|resume,dispatch) HOLD_KINDS=$compact ;;
   esac
@@ -102,10 +130,14 @@ repository_hold_applies() {
   return 1
 }
 log_repository_hold() {
-  local details="kinds=$HOLD_KINDS"
+  # The hold line releases the signal harness.  Formatting it with builtins
+  # avoids running an INT/HUP trap while bash is parsing a command
+  # substitution at that synchronization point.
+  local timestamp details="kinds=$HOLD_KINDS"
   [ -n "$HOLD_REASON" ] && details="$details reason=$HOLD_REASON"
   [ -n "$HOLD_UNTIL" ] && details="$details until=$HOLD_UNTIL"
-  echo "$(date -u +%FT%TZ) repository hold present ($REPO_HOLD_FILE): $details: yield FIFO head"
+  printf -v timestamp '%(%FT%TZ)T' -1
+  printf '%s repository hold present (%s): %s: yield FIFO head\n' "$timestamp" "$REPO_HOLD_FILE" "$details"
 }
 release_lock() {
   if [ -n "$lock" ] && grep -q "pid=$$ " "$lock/holder" 2>/dev/null; then
@@ -278,7 +310,6 @@ if [ -z "$ticket" ]; then
 fi
 
 while :; do
-  reexec_on_script_change
   [ "$SECONDS" -lt "$wait_deadline" ] || { echo "resume gave up item=$ITEM queue-ticket=${ticket##*/}"; exit_cause="resume gave up: no slot within ${FLEET_LAUNCH_MAX_WAIT_S}s"; exit 75; }
   # TERM uses bash's default action because bash 5.2 can fail to parse a TERM
   # trap while a command substitution is active.  Preserve TERM's non-run
@@ -290,6 +321,9 @@ while :; do
     sleep "$FLEET_LAUNCH_POLL_S"
     continue
   fi
+  # See dispatch-dual.sh: do not enter its command-substitution-based version
+  # probe between the hold line and a signal delivered by the harness.
+  reexec_on_script_change
   restore_ticket
   ahead=$(oldest_live_ticket)
   if [ "$ahead" != "$ticket" ]; then
