@@ -5,6 +5,10 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_observation import (
+    _publications_of,
+)
+
 _HEAD = "a" * 40
 _RUN = "01M7PUBLICATIONRUN"
 
@@ -38,4 +42,29 @@ def test_a_record_by_the_configured_identity_binds_its_pushed_head_to_its_run() 
 
     assert records.publication_pairs(
         comments=comments, publication_identity="thewoolleyman-factory-bot[bot]"
+    ) == ((_HEAD, _RUN),)
+
+
+def test_resume_ranks_a_configured_publication_comment_without_a_proof_record() -> None:
+    """The durable record survives on a host whose journal has no publishing run."""
+    comments = (
+        {
+            "author": {"login": "thewoolleyman-factory-bot[bot]"},
+            "body": "\n".join(
+                (
+                    "livespec-publication-record",
+                    f"run-id: {_RUN}",
+                    f"head: {_HEAD}",
+                    "pull-request: 42",
+                    "stage: publish_draft",
+                    "pushed-at: 2026-11-13T12:37:00Z",
+                )
+            ),
+        },
+    )
+
+    assert _publications_of(
+        records=(),
+        comments=comments,
+        publication_identity="thewoolleyman-factory-bot[bot]",
     ) == ((_HEAD, _RUN),)
