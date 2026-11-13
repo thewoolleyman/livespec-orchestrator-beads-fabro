@@ -1,0 +1,27 @@
+#!/bin/sh
+# The review Git boundary. Review may inspect history, never move its run branch.
+set -u
+
+refuse() {
+ echo "LIVESPEC_REVIEW_GUARD_REFUSED: stage=review refused a command that moves or edits the run branch. Read the change with git diff, git log and git show, then emit your verdict label." >&2
+ exit 1
+}
+
+sub="" opts=1 value=0
+for argument in "$@"; do
+ if [ "$opts" -eq 0 ]; then sub=$argument; break; fi
+ if [ "$value" -eq 1 ]; then value=0; continue; fi
+ case "$argument" in
+  --) opts=0 ;;
+  -c|-C|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--exec-path) value=1 ;;
+  -*) ;;
+  *) sub=$argument; break ;;
+ esac
+done
+
+case "$sub" in
+ rebase|commit|push|merge|reset|cherry-pick|revert|am|pull|checkout|switch|restore|update-ref|clean|apply|add|rm|mv|filter-branch) refuse ;;
+ stash) case "${1:-}" in list|show) ;; *) refuse ;; esac ;;
+esac
+
+exec /usr/bin/git "$@"

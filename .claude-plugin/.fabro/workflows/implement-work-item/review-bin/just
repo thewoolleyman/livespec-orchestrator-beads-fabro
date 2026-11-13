@@ -1,0 +1,21 @@
+#!/bin/sh
+# The review Just boundary. The whole suite belongs to commit hooks and janitor.
+set -u
+
+refuse() {
+ echo "LIVESPEC_REVIEW_GUARD_REFUSED: stage=review refused a whole-suite check. Run named test ids only, then emit your verdict label." >&2
+ exit 1
+}
+
+command="" value=0
+for argument in "$@"; do
+ if [ "$value" -eq 1 ]; then value=0; continue; fi
+ case "$argument" in
+  -f|--justfile|-d|--working-directory|--shell|--chooser|--color|--command-color|--dump-format) value=1 ;;
+  -*) ;;
+  *) command=$argument; break ;;
+ esac
+done
+
+[ "$command" != check ] || refuse
+exec "$LIVESPEC_REVIEW_REAL_JUST" "$@"
