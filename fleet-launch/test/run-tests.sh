@@ -2124,6 +2124,28 @@ else
     term_during_hold_poll "$LAUNCHER" impl
     term_during_hold_poll "$RESUME_LAUNCHER" resume
 
+    # wait_for_signal_exit <pid> <signal>: a directly delivered INT or HUP is
+    # normally handled as soon as the launcher returns from its short hold-poll
+    # sleep. Under CPU saturation, however, one delivery can coincide with that
+    # child exiting. Retry the same signal for a bounded interval so the probe
+    # does not hang forever when that narrow delivery race occurs. A launcher
+    # that still does not exit is stopped and reported as a failed assertion,
+    # never mistaken for a successful signal attribution.
+    SIGNAL_EXIT_GRACE_S=${SIGNAL_EXIT_GRACE_S:-5}
+    wait_for_signal_exit() {
+        local pid="$1" sig="$2" deadline
+        deadline=$(( $(date +%s) + SIGNAL_EXIT_GRACE_S ))
+        while kill -0 "$pid" 2>/dev/null && [ "$(date +%s)" -lt "$deadline" ]; do
+            kill -"$sig" "$pid" 2>/dev/null || true
+            sleep "$HARNESS_POLL_S"
+        done
+        if kill -0 "$pid" 2>/dev/null; then
+            stop_launcher "$pid"
+            return 1
+        fi
+        return 0
+    }
+
     # signal_during_hold <launcher> <label> <signal> <rc> <expected cause>:
     # an INT or HUP that lands in the repository-hold wait must be recorded as
     # that signal, not as the TERM description the wait loop preloads.
@@ -2153,7 +2175,12 @@ os.execv(sys.argv[1], sys.argv[1:])' "$launcher" bd-ib-term > "$STUB_RM_PROBE_LO
             wait "$sig_pid" 2>/dev/null
             return 0
         fi
-        kill -"$sig" "$sig_pid" 2>/dev/null
+        if ! wait_for_signal_exit "$sig_pid" "$sig"; then
+            wait "$sig_pid" 2>/dev/null
+            fail "$label did not exit after bounded $sig delivery during the repository-hold wait"
+            tail -n 4 "$STUB_RM_PROBE_LOG_SOURCE" >&2
+            return 0
+        fi
         wait "$sig_pid"
         sig_rc=$?
         if [ "$sig_rc" = "$want_rc" ] \
