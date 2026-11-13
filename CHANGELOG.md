@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.328.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.327.0...v0.328.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** close a recorded scratch drill ([29316dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29316dc8b9897619157470083bf0174e97b073e9))
+* red ([e41e7f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e41e7f00d38fa63a737dc5fa6c101ba24df79675))
+* repair refused publish draft pushes ([18e334c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/18e334c34dca99c28b7798cc9f551b569741f9ae))
+
+
+### Bug Fixes
+
+* **publish_draft:** restore the newline in the pre-push failed-target parser's printf ([7ad0adb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ad0adbdd4ef092a52cc568641df4f5e488ad61f))
+
+
+### Refactoring
+
+* **incident:** keep the drill evidence helper docstrings verbatim ([ed19b84](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ed19b84631262f06ecaf8f02935faae0cdb7e0d6))
+
 ## [0.327.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.326.1...v0.327.0) (2026-11-13)
 
 
