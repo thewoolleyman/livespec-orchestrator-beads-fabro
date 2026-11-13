@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.325.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.324.0...v0.325.0) (2026-11-13)
+
+
+### Features
+
+* require every input-bound candidate ([0433c9b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/0433c9b55020483eb11f74b22218e3f0742111ba))
+* scope fix-turn commits to affected tests ([936752f](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/936752f43aa0dd56a2e0ec0c98db83e77c8fe047))
+* surface input-bound Definition-of-Done hygiene ([09ea8b9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/09ea8b9fe469400363f180b8c379e0d32ba653aa))
+
+
+### Bug Fixes
+
+* compare input-bound candidates by occurrence count ([ce8d9a6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ce8d9a6931bd69c73519168e46334ca9ccf8bf53))
+* **dispatcher:** attribute needs-human to its terminal route ([592f2ac](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/592f2ac6c38a9aec66dc87e58dee66208dfe9ca9))
+
+
+### Reverts
+
+* drop fix_commit_settle's routing schema from 171ca17b2 (bd-ib-woiqjm) ([ab4dbe8](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab4dbe8126bbb22a5f7f258012005288d2d5eb29))
+
 ## [0.324.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.323.1...v0.324.0) (2026-11-12)
 
 
