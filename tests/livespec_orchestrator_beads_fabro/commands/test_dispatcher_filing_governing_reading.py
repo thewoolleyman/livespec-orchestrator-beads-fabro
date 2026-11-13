@@ -138,6 +138,30 @@ def test_an_unusable_taking_never_appends_a_receipt(
     assert comments == []
 
 
+def test_a_failed_receipt_append_keeps_the_taken_verdict(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    module = importlib.import_module(_MODULE)
+    verdict = GoverningHeadingVerdict(kind="unstated")
+    monkeypatch.setattr(module, "store_config", lambda *, repo: (repo, object())[1])
+    monkeypatch.setattr(module, "judgement_comment_bodies", lambda **_: ())
+    monkeypatch.setattr(module, "reusable_governing_heading_verdict", lambda **_: None)
+    monkeypatch.setattr(
+        module,
+        "host_governing_heading_taking_reader",
+        lambda **_: lambda **_: module.GoverningHeadingTaking(verdict=verdict),
+    )
+    monkeypatch.setattr(
+        module,
+        "append_work_item_comment",
+        lambda **_: (_ for _ in ()).throw(
+            module.BeadsCommandError(command="bd", exit_code=1, stderr="down")
+        ),
+    )
+
+    assert module.filing_governing_heading_reading(item=_item(), repo=tmp_path).verdict == verdict
+
+
 def test_the_claude_journal_header_identifies_the_item_and_full_prompt_digest(
     tmp_path: Path,
 ) -> None:
