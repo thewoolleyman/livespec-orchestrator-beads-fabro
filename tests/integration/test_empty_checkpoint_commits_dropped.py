@@ -387,6 +387,29 @@ def test_a_first_publication_rewrites_checkpoint_and_merge_history_to_authored_c
     assert _git("merge-base", "--is-ancestor", advanced, published, cwd=world.clone).returncode == 0
 
 
+def test_a_first_publication_with_only_authored_commits_preserves_its_head(
+    tmp_path: Path,
+) -> None:
+    """A clean authored branch is pushed without the sanitizer rewriting it."""
+    world = _world(root=tmp_path)
+    _ = _commit(
+        cwd=world.clone,
+        path=_OWNED_FILE,
+        text="this run's work\n",
+        subject="feat: the run's work",
+    )
+    authored_head = world.head()
+    source_tree = _git("rev-parse", "HEAD^{tree}", cwd=world.clone).stdout.strip()
+
+    result = _run_publish_draft(world=world)
+
+    assert result.returncode == 0, result.stderr
+    assert world.head() == authored_head
+    published = world.remote_head(ref=_BRANCH)
+    assert published == authored_head
+    assert _git("rev-parse", f"{published}^{{tree}}", cwd=world.clone).stdout.strip() == source_tree
+
+
 def test_a_first_publication_drops_the_engine_s_empty_checkpoint_commits(
     tmp_path: Path,
 ) -> None:
