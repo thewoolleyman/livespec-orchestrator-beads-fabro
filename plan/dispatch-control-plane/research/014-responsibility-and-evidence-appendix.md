@@ -308,6 +308,8 @@ a native-input probe alone cannot discharge any portable coordination assertion.
 | 29 | Per-dispatch and per-node selection/fallback evidence remains queryable by work item and dispatch identity after journal authority is removed. |
 | 30 | Core component and family dependency diagrams describe the delivered roles, APIs, stores and actuators with code references that resolve. |
 | 31 | While a human-only question remains pending, another independently assigned role completes its authorized required result without waiting for that question. |
+| 32 | An authorized answer to a durable question produces its observed required continuation after the originating worker is lost, through the common client and deployment contracts. |
+| 33 | One fleet-supply schedule supplies work after the superseded per-tenant and per-seat supply timers and policy loops are retired. |
 
 Run the durable question/disposition/continuation case through all six client and
 deployment combinations: Claude, Codex and pi, each on Compose and Kubernetes.
@@ -318,6 +320,12 @@ changes, an old worker writing after replacement, database restore and an
 unavailable owning source. Start with the backlog disposition; the ready-path
 fixture and later spec workflow prove continuation without production queues.
 Record target effects separately from accepted answers and transport receipts.
+For assertion 32, record the answered occurrence, the replacement worker's
+continuation and the authoritative observation of the original required result;
+question discovery or an accepted-answer receipt alone does not pass it.
+For assertion 33, inventory the superseded timers and policy loops, verify their
+retirement, and observe the single replacement schedule supplying work. An old
+loop left active in shadow mode is not retirement evidence.
 For replacement coordination, exercise every retained A–G/S duty against its
 assigned owner; a partial pilot is not retirement evidence. The independent-work
 case leaves the human-only question pending throughout the other role's completion.
@@ -350,11 +358,18 @@ headings, its own permitted proof surface and the public filing display.
 
 The authoritative carrier relation belongs only in the epic's `carriers:` scope
 block. A complete map cannot honestly name unfiled child IDs or use `plan-level
-proof` as a placeholder for work not yet routed. After confirmation, file the
-contract/spec work and ready implementation slices, assign each approved
-assertion to actual named carriers or a genuine plan-level proof, then write and
-read back the complete map before any implementation admission. Until then the
-map is a named remaining prerequisite, not claimed complete by this document.
+proof` as a placeholder for work not yet routed. After confirmation, first record
+the scope and explicit deferrals without claiming a complete map. File the
+contract/spec work before its dependent implementation work. File dependent
+implementation slices as backlog or otherwise held work, with their governing
+proposed-change dependencies; filing does not establish readiness or admission.
+Once the actual carrier IDs exist, assign every confirmed assertion to those
+carriers or a genuine plan-level proof, amend the epic through the sanctioned
+ledger path, and write and read back the complete carrier map. Ratify the
+governing contracts and resolve each slice's admission findings before making it
+ready or admitting it to implementation. Until those steps complete, the map and
+contract changes remain named prerequisites, not accomplishments claimed by this
+document.
 
 ## November 13 source reconciliation
 
@@ -394,3 +409,12 @@ progress while a human-only question waited. The revised proposed outcomes now
 require observed replacement/retirement and that pending-question case. The review
 also added definitive no-run reservation release and the Process boundaries
 amendment prerequisite. These are design corrections, not executed proof cases.
+
+A later independent requirements review (`phase_two_requirement_review`) made
+the positive answer-to-continuation proof and retirement of per-tenant supply
+loops explicit in proposed assertions 32 and 33. The duty inventory and delivery
+prose already required those outcomes; named assertions avoid relying on the
+omnibus duty-replacement assertion as their only proof obligation. The review
+also clarified the scope, backlog filing, contract ratification and carrier-map
+sequence above. These additions remain session-derived for confirmation and do
+not amend the epic or authorize implementation.
