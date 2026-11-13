@@ -1172,7 +1172,7 @@
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
     "heading": "## Scenario 331 — The release branch advances only on an operator dispatch that starts a canary",
-    "work_item": "bd-ib-sghxlk",
+    "work_item": "bd-ib-5psq3e",
     "first_seen": "2026-11-09"
   },
   {
