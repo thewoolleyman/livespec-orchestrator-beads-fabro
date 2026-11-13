@@ -1,7 +1,7 @@
 ---
 topic: the-fleet-launcher-serializes-each
 author: claude-opus-5-5
-created_at: 2026-11-13T05:15:10Z
+created_at: 2026-11-13T06:11:08Z
 ---
 
 ## Proposal: Queued fleet launchers finish their pre-dispatch checks before the queue head, so only the mutex-held binding count is serialized
@@ -27,7 +27,7 @@ created_at: 2026-11-13T05:15:10Z
 
   No pre-dispatch check may run under the mutex. After the release, a check the pass already covers is not run again. A launcher MUST drop its ticket before it releases the mutex. The next ticket then becomes the head at that release, not at the earlier launcher's LAUNCH line.
 - **Preflight verdict cache (coordinator ruling, about 05:1xZ).** Three of the checks are preflights: the origin-tip refresh before the preflight, the size screen and the Definition-of-Done preflight, which runs claude. Every launcher caches each preflight verdict, keyed on the work item, the target's origin tip, the launch build and a digest of the item's description and Definition of Done. A launcher reuses a cached PASS while the key is unchanged, however old the PASS is, and re-runs the preflight only when part of the key changes. The other checks keep the `FLEET_LAUNCH_PREFLIGHT_REUSE_S` window. Scenario 297's two time-based scenarios and the base harness list are reworded to match.
-- **Preflight window.** The oldest queued tickets run their checks at the same time, as many as the smaller of the free shared fleet slots and `FLEET_LAUNCH_PREFLIGHT_WINDOW` (default 10). The checks are never limited to the next ticket to bind, which would bring back the head-only serializer. A ticket outside the window starts no preflight.
+- **Preflight window.** The oldest queued tickets run their checks at the same time, as many as the smaller of the launchable queue depth and `FLEET_LAUNCH_PREFLIGHT_WINDOW` (default 10). The window does not depend on free fleet slots, so it keeps its size at 0 free slots, at 1 free slot and when the count cannot be read. The checks are never limited to the next ticket to bind, which would bring back the head-only serializer. A ticket outside the window starts no preflight.
 - **The two launch-point rules stay at the launch point.** The hold re-read under the mutex and the origin-tip refresh immediately before `drive` or `resume` do not move. Their bullets are reworded to place them in the list above.
 - **ACP override assembly is a pre-dispatch check.** A launcher assembles its `--acp-node` arguments while queued and reuses them within its pre-dispatch pass.
 - **Sequence-log timing.** Each launcher logs when each pre-dispatch check passes, when it reaches the FIFO head, when it takes and releases the mutex, and when it launches. The host-captured proof can then read the gap between consecutive launches from the logs.
@@ -97,7 +97,7 @@ A host-captured assertion requires consecutive LAUNCH lines after the next lift 
   - The Definition-of-Done preflight leg (R316) runs claude, so every repeat also costs tokens.
 
   A verdict therefore stays valid while its inputs are unchanged. Those inputs are the work item, the target's origin tip, the launch build and the item's description and Definition of Done. A launcher re-runs a preflight only when one of them changes. The cache is shared across launchers and survives a restart or an early-exit re-ticket, so each item pays once per key. Two kinds of result are never cached: a tool failure, and a key that cannot be read. The cheap non-preflight checks keep the existing `FLEET_LAUNCH_PREFLIGHT_REUSE_S` window. The ruling replaces that window for preflights, so Scenario 297's two time-based scenarios and the matching base harness cases are reworded (changes 1a–1c).
-- **The early preflight keeps its breadth (same ruling).** Up to min(free shared fleet slots, `FLEET_LAUNCH_PREFLIGHT_WINDOW` = 10) of the oldest queued tickets run their checks at the same time. Preflighting only the next ticket to bind would bring back the head-only serializer this proposal removes. The cap at the free-slot count keeps tickets that cannot bind soon from burning CPU and tokens. With the cache, each ticket in the window pays for each preflight once per key.
+- **The early preflight keeps its breadth (same ruling, and the coordinator's grade fix 1).** The oldest min(launchable queue depth, `FLEET_LAUNCH_PREFLIGHT_WINDOW` = 10) queued tickets run their checks at the same time. The window does not depend on free fleet slots. An earlier draft bounded it by the free-slot count, and that brought back next-slot-only preflight: at 1 free slot only the head preflighted. At 0 free slots, or with an unreadable count, no queued launcher preflighted, which would also have regressed Scenario 297's unconditional queued preflight. The fixed cap of 10 bounds the CPU and tokens that queued tickets spend. With the cache, each ticket in the window pays for each preflight once per key.
 - **Only the launch point is serialized.** The launch point is a closed, ordered list. The binding count, with its in-flight marker, and the re-reads run under the mutex. The ticket is dropped before the mutex is released. After the release, the launcher runs the launch-point origin-tip refresh and does not re-run any check its pass already covers. That refresh is serialized per checkout, not per queue, so it never holds another ticket's head. The committed impl launcher today runs its credential probe and a ready-set re-check after the release, and this change moves both into the pass. Its seat-gated release path (`RELEASE_BLOCKED`) is different: its ready-set check cannot pass until the release valve runs at the launch. That check MAY still run after the release, because by then the launcher holds no ticket and no mutex.
 - **Holds and caps are re-read under the mutex at the launch point, unchanged in substance.** Today "Holds re-read at the launch point" asks for the re-read "immediately before it invokes drive or resume" while the mutex is held. The section also requires the mutex to be released before `drive` starts, so with the launch-point origin-tip refresh in between, "immediately" has always meant the last step under the mutex. The rewording states that. A hold set during the post-release refresh is still caught for an impl launch by "Holds re-read until admission". The shared fleet cap and the target factory's capacity were already re-read under the mutex by the binding count. The paragraph now names them so a reused pass can never stand in for them.
 - **FIFO order is untouched.** A launcher that reaches the head before its own checks pass finishes them there, then binds. The rule never lets a later ticket whose checks passed overtake an earlier one. This keeps Definition of Done assertion 3 and Scenario 297's ordering, and it is why the host-captured bound holds only for queued tickets whose checks passed while they waited.
@@ -145,10 +145,7 @@ Every edit below is in `contracts.md` §"Provisional fleet launch scripts", plus
 > - the usable-credential probe (`dispatcher.py claude-cred-status`), where the launcher makes one;
 > - the assembly of the `--acp-node` arguments from the ACP overrides file.
 >
-> The *preflights* are three of those checks: the checkout at the origin tip that precedes the launch-time Definition-of-Done preflight, the size screen, and the launch-time Definition-of-Done preflight. The *preflight window* of a per-factory FIFO is its oldest live tickets that this section's FIFO rules do not skip, counted from the head. The window holds as many of those tickets as the smaller of two numbers:
->
-> - the free shared fleet slots, which are the shared fleet cap minus the shared fleet count as the launcher last read them; a count that cannot be read gives 0 free slots;
-> - `FLEET_LAUNCH_PREFLIGHT_WINDOW`, a host value assigned in `fleet-launch/config.sh` with the default 10 and overridable like any other.
+> The *preflights* are three of those checks: the checkout at the origin tip that precedes the launch-time Definition-of-Done preflight, the size screen, and the launch-time Definition-of-Done preflight. The *launchable queue depth* of a per-factory FIFO is the number of its live tickets that this section's FIFO rules do not skip. The *preflight window* of that FIFO is its oldest such tickets, counted from the head. The window holds as many tickets as the smaller of the launchable queue depth and `FLEET_LAUNCH_PREFLIGHT_WINDOW`. `FLEET_LAUNCH_PREFLIGHT_WINDOW` is a host value assigned in `fleet-launch/config.sh`, with the default 10 and overridable like any other. The window's size MUST NOT depend on the shared fleet count, the free shared fleet slots or any cap. It is the same at 0 free slots, at 1 free slot and when the shared fleet count cannot be read.
 >
 > A launcher that holds a per-factory FIFO ticket, impl or resume, MUST run every pre-dispatch check that applies to its launch while its ticket is in the preflight window and it is queued behind older tickets. It MUST NOT wait to reach the head of the FIFO before any of them starts. Every ticket in the window MUST be able to run its checks at the same time. A launcher MUST NOT limit those checks to the next ticket to bind, or to any other single ticket. A launcher whose ticket is outside the preflight window MUST NOT start a preflight. It MAY run its other pre-dispatch checks. This rule applies to every lane whose launches take a per-factory FIFO ticket:
 >
@@ -237,7 +234,7 @@ In the scenario "a reused pass does not skip the hold check", replace "holding a
     Then it runs the preflight again before it takes the factory's mutex
 ```
 
-The scenarios "two queued launchers preflight concurrently" and "a preflight that fails while queued drops the ticket" are unchanged. The first holds while at least two shared fleet slots are free, which its stub boards provide.
+The scenarios "two queued launchers preflight concurrently" and "a preflight that fails while queued drops the ticket" are unchanged. The first holds whatever the free shared fleet slots, because two queued launchers are always inside the default preflight window.
 
 **2. Holds re-read at the launch point (`contracts.md`).** In the bullet that begins "**Holds re-read at the launch point.**", replace "while it holds the factory launch mutex, immediately before it invokes `drive` or `resume`." with:
 
@@ -267,15 +264,21 @@ At the end of the same bullet, after "it is not an admission decision.", add:
 
 > The `check-fleet-launch` harness cases MUST also cover pre-dispatch checks ahead of the queue head. They run against stub checks that each record their start and pass times, a stub launch-point refresh that records its start time and runs for a set interval, stub factory boards, and throwaway queue, lock, in-flight and state directories. The cases are:
 >
-> - three impl launchers queued on one factory FIFO. Each younger launcher's sequence log shows these checks passed before it shows that launcher's ticket at the head: the origin-tip refresh before its preflight, its preflight, its size screen, its credential probe, its ACP override assembly and its ready-set check.
+> - three impl launchers queued on one factory FIFO. Each younger launcher's sequence log shows these checks passed before it shows that launcher's ticket at the head: the origin-tip refresh before its preflight, its preflight, its size screen, its host-only screen, its credential probe, its ACP override assembly and its ready-set check.
 > - the head launcher releasing the mutex after its binding count. The next launcher takes the mutex and makes its binding count while the head's stub launch-point refresh is still running, before the head's launch line.
 > - the youngest launcher's checks passing first. The three launchers still bind in FIFO ticket order.
 > - a launcher whose pre-dispatch pass is reusable. It starts no pre-dispatch check between taking the mutex and its launch line.
 > - a launcher reaching the head with a non-preflight check older than `FLEET_LAUNCH_PREFLIGHT_REUSE_S`. It runs that check again before it takes the mutex, and it runs no preflight whose key is unchanged.
 > - a stub Definition-of-Done preflight that counts its runs. A launcher that re-takes its ticket after an early exit, and a fresh launcher for the same item, each reuse the cached PASS while the key is unchanged, so the stub runs once. When the stub origin's default branch advances, the stub launch build changes, or the item's description or Definition of Done is edited, the stub runs once more for the new key. A stub preflight that fails as a tool failure records no verdict, and the next poll runs it again.
-> - fourteen launchers queued on one FIFO with five free shared fleet slots. Exactly the oldest five start preflights while queued, and those five run them at the same time. With fifteen free slots and `FLEET_LAUNCH_PREFLIGHT_WINDOW` at its default, exactly the oldest ten start preflights. A launcher outside the window starts no preflight until its ticket enters the window.
+> - fourteen launchers queued on one FIFO, with `FLEET_LAUNCH_PREFLIGHT_WINDOW` at its default. In each of these cases exactly the oldest ten start preflights while queued, and those ten run them at the same time:
+>   - 0 free shared fleet slots;
+>   - 1 free shared fleet slot;
+>   - a shared fleet count that cannot be read;
+>   - fifteen free slots.
+>
+>   A launcher outside the window starts no preflight until its ticket enters the window. Three launchers queued with 0 free slots all start preflights while queued.
 > - a queued launcher whose stub credential probe fails. It never creates the factory's mutex and exits as the same failure at the head would.
-> - a hold file created after a queued launcher's pass was taken. At its launch point the launcher re-reads the hold under the mutex, releases the mutex and its marker, keeps its ticket and launches nothing. A shared fleet count read at the cap under the mutex holds it in the same way.
+> - a hold file created after a queued launcher's pass was taken. At its launch point the launcher re-reads the hold under the mutex, releases the mutex and its marker, keeps its ticket and launches nothing. A shared fleet count read at the cap under the mutex holds it in the same way. So does the target factory's capacity: a launch the gmktec target setting sends to the candidate instance, whose pass was taken while the candidate's live run count was below the candidate cap, finds that count at the candidate cap when it re-reads it under the mutex. That launcher releases the mutex and its marker, keeps its ticket and launches nothing onto the candidate. A per-factory cap reached on the default instance between the pass and the launch point holds a default-instance launch in the same way.
 > - a stub origin advanced after a launcher's pass was taken. Its checkout is at the new tip when the stub drive starts.
 > - an overrides file edited after a queued launcher's pass was taken. A launcher reusing that pass hands the stub drive the old arguments. A launcher whose pass was taken after the edit hands it the new ones.
 > - a resume launcher queued behind an impl launcher on the same factory. It logs its pre-dispatch checks as passed before its ticket reaches the head, and takes the mutex as soon as the impl launcher releases it.
@@ -299,7 +302,7 @@ Feature: A fleet launcher holds its FIFO head only for the mutex-held binding co
   Scenario: Queued impl launchers finish every pre-dispatch check before they reach the head
     Given impl launchers A, B and C hold FIFO tickets on one gmktec factory instance, A oldest and C youngest
     When all three poll while A holds the head
-    Then B's and C's sequence logs show the origin-tip refresh, the preflight, the size screen, the credential probe, the ACP override assembly and the ready-set check passed
+    Then B's and C's sequence logs show the origin-tip refresh, the preflight, the size screen, the host-only screen, the credential probe, the ACP override assembly and the ready-set check passed
     And each of those lines comes before that launcher's line showing its ticket at the head
 
   Scenario: The next queued launcher binds as soon as the head releases the mutex
@@ -325,6 +328,15 @@ Feature: A fleet launcher holds its FIFO head only for the mutex-held binding co
     When the hold file is instead absent and the shared fleet count read under the mutex is at the shared fleet cap
     Then the launcher releases the mutex and launches nothing
 
+  Scenario: A candidate cap reached after the pass is still read under the mutex at the launch point
+    Given a launch the gmktec target setting sends to the candidate instance
+    And its reusable pre-dispatch pass was taken while the candidate's live run count was below the candidate cap
+    And the candidate's live run count reaches the candidate cap after that pass
+    When the launcher reaches the head and takes the factory launch mutex
+    Then it re-reads the candidate's live run count under the mutex after its binding count
+    And it releases the mutex and its fleet in-flight marker
+    And it keeps its FIFO ticket and launches nothing onto the candidate instance
+
   Scenario: The checkout is brought to the origin tip at the launch point
     Given a queued impl launcher whose pre-dispatch pass was taken at origin tip T1
     And the stub origin's default branch advances to T2 after that pass
@@ -336,19 +348,30 @@ Feature: A fleet launcher holds its FIFO head only for the mutex-held binding co
     And impl launcher A for work item bd-k whose preflight passed at origin tip T1, launch build B1 and description-and-Definition-of-Done digest H1
     When A's drive exits before its run lists and A re-takes its ticket at the same ticket number
     Then A reuses the cached PASS and the stub has run once
+    When a fresh launcher for bd-k starts with the key unchanged
+    Then it reuses the cached PASS and the stub has not run again
     When the stub origin's default branch advances to T2
     Then A runs the preflight once more for the key bd-k, T2, B1, H1
+    When the launch build changes to B2
+    Then A runs the preflight once more for the key bd-k, T2, B2, H1
     When bd-k's Definition of Done is edited
     Then A runs the preflight once more for the new digest
+    When the stub preflight then fails as a tool failure
+    Then no verdict is recorded for that key
+    And A's next poll runs the preflight again
 
-  Scenario: The preflight window is as wide as the free slots, up to the configured window
-    Given fourteen launchers queued on one FIFO
-    And five free shared fleet slots
+  Scenario: The preflight window covers the oldest queued tickets whatever the free slots
+    Given fourteen launchers queued on one FIFO and FLEET_LAUNCH_PREFLIGHT_WINDOW is 10
+    And 0 shared fleet slots are free
     When all fourteen poll
-    Then exactly the oldest five start preflights while queued, and the five run at the same time
-    When fifteen shared fleet slots are free and FLEET_LAUNCH_PREFLIGHT_WINDOW is 10
-    Then exactly the oldest ten start preflights while queued
+    Then exactly the oldest ten start preflights while queued, and the ten run at the same time
+    When 1 shared fleet slot is free
+    Then exactly the oldest ten still start preflights while queued
+    When the shared fleet count cannot be read
+    Then exactly the oldest ten still start preflights while queued
     And no launcher outside the window starts a preflight
+    When only three launchers are queued and 0 shared fleet slots are free
+    Then all three start preflights while queued
 
   Scenario: The resume launcher, the candidate lane and the mi-homelab lane finish their checks while queued
     Given a resume launcher queued behind an impl launcher on one factory
