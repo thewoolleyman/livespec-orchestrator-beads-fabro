@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.326.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.325.0...v0.326.0) (2026-11-13)
+
+
+### Features
+
+* read recovery liveness through factory credentials ([d8df6c1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/d8df6c1594ad88b62efdd5d066eed2d4bc44e5c6))
+
 ## [0.325.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.324.0...v0.325.0) (2026-11-13)
 
 
