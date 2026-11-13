@@ -56,8 +56,11 @@ def start_spend_journal(
         "first_prompt_sha256": hashlib.sha256(first_prompt.encode()).hexdigest(),
         "final_usage_line": True,
     }
-    if work_item_id is not None:
-        header["work_item_id"] = work_item_id
+    resolved_work_item_id = work_item_id
+    if resolved_work_item_id is None and name.startswith("purpose:dod_judgement_"):
+        resolved_work_item_id = name.rpartition("@")[2]
+    if resolved_work_item_id is not None:
+        header["work_item_id"] = resolved_work_item_id
     _append(path=path, record=header, mode="x")
     return HostJudgeSpendJournal(path=path, session_id=session_id)
 
