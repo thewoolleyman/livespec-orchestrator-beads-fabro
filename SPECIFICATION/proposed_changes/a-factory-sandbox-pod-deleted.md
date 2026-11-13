@@ -14,7 +14,7 @@ created_at: 2026-11-13T12:51:47Z
 
 ### Summary
 
-Add one paragraph to contracts.md §"Provider-limit permanence and root-cause surfacing" that makes a LOST sandbox a host error. A sandbox is lost when the provider reports it not found while its run is unfinished (on Kubernetes: the pod was deleted or evicted, or was lost with its node). Two layers are bound. (1) The factory engine on every factory server ends the execution as a resumable host error, as it already does for a failed run-store append. The factory server resumes the run onto a re-acquired sandbox, where setup re-runs and the interrupted stage continues; completed nodes are not run again; there are at most three resumes per run. (2) When a run still ends failed on a lost sandbox, the Dispatcher records a lost-sandbox cause and never classifies it deterministic or permanent, whether or not the termination is observable. It releases the item to ready without a human for recovery routing, with no rework-cap cost, and a second consecutive loss keeps the existing route naming both runs. It also amends the OOM paragraph so that the termination reading is taken from the run's own factory cluster with that instance's credentials. A CONTROL keeps every other sandbox-operation failure classified as today. One new scenario, numbered at revise, exercises all of it.
+Add one paragraph to contracts.md §"Provider-limit permanence and root-cause surfacing" that makes a LOST sandbox a host error. A sandbox is lost when the provider reports it not found while its run is unfinished (on Kubernetes: the pod was deleted or evicted, or was lost with its node). Two layers are bound. (1) The factory engine on every factory server ends the execution as a resumable host error, as it already does for a failed run-store append. The factory server resumes the run onto a re-acquired sandbox, where setup re-runs and the interrupted stage continues; completed nodes are not run again; there are at most three resumes per run, counted separately from store-failure resumes, matching the carrier's MAX_STORE_INTERRUPTIONS = 3. (2) When a run still ends failed on a lost sandbox, the Dispatcher records a lost-sandbox cause and never classifies it deterministic or permanent, whether or not the termination is observable. It releases the item to ready without a human for recovery routing, with no rework-cap cost, and a second consecutive loss keeps the existing route naming both runs. It also amends the OOM paragraph so that the termination reading is taken from the run's own factory cluster with that instance's credentials. A CONTROL keeps every other sandbox-operation failure classified as today. One new scenario, numbered at revise, exercises all of it.
 
 ### Motivation
 
@@ -37,7 +37,7 @@ The launch pre-screen tiered the filed items, bd-ib-xqgeav (Dispatcher half, thi
 
 FLEET SCOPE: every sandbox-termination observer path (the Kubernetes driver and any non-Kubernetes sandbox kind that reads termination), every factory server's engine, and every bundled workflow. The lost-sandbox classification applies to a not-found sandbox from any provider.
 
-OPEN DESIGN POINT for the grade: the three-resume bound per run, chosen to match the three-release bound of an-anthropic-acp-node-refused.
+DECIDED (fabro-currency plan, session d8ec15, 2026-11-13 ~13:00Z, on legacy-coordinator-agent's instruction to decide it): at most THREE resumes per run after a lost sandbox, counted separately from store-failure resumes. Measured basis: (a) the serving carrier already bounds its one resumable host-error path at exactly this number. lib/apps/fabro-server/src/server/petri_runs.rs:568 sets MAX_STORE_INTERRUPTIONS = 3, and petri_runs.rs:634 fails the run past it. Reusing the same number and mechanism keeps one engine policy for interrupt-and-resume. (b) bd-ib-ljw2xg's run 01M6G24SQHM0 resumed from two consecutive store interruptions (08:05:32Z and 08:09:02Z) and continued, so a bound of 1 would have failed a run that recovered. (c) A separate counter: a run that lost its sandbox and also met store failures should not exhaust one budget with the other's cause, and each count stays attributable in its cause record. (d) A sandbox lost again on every re-acquire signals a node or cluster fault that no further resume fixes. Three re-runs of the setup nodes (run_prepare_1..40 on the drilled run) bound the waste, and the Dispatcher's release-once rule then routes the item.
 
 ### Proposed Changes
 
@@ -65,7 +65,8 @@ the run onto a re-acquired sandbox. The resumed run MUST re-run its setup
 steps (§"Self-contained plugin dispatch"), MUST continue from the stage the
 loss interrupted, and MUST NOT run again a node it completed before the loss.
 The factory server MUST resume one run after a lost sandbox at most three
-times; a fourth loss of that run's sandbox ends the run. When a run ends
+times, counting those resumes separately from any it makes after a failed
+run-store append; a fourth loss of that run's sandbox ends the run. When a run ends
 failed on a lost sandbox anyway (on an engine without this behaviour, or at
 that bound), the Dispatcher MUST record the failure with a lost-sandbox cause
 naming the run id and the sandbox. It MUST NOT classify that failure as
