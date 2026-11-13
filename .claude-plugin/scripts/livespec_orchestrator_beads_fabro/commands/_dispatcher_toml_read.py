@@ -73,6 +73,7 @@ import tomli
 __all__: list[str] = [
     "TomlDocumentUnparseable",
     "TomlStringUnreadable",
+    "toml_document",
     "toml_section_string",
     "toml_section_string_declaration",
 ]
@@ -101,6 +102,27 @@ class TomlStringUnreadable:
     """
 
     raw: str
+
+
+def toml_document(*, text: str) -> dict[str, Any] | TomlDocumentUnparseable:
+    """The whole parsed document, or the unparseable verdict.
+
+    The reader for a declaration this module's two string readers cannot
+    express — an ARRAY of tables, such as the repository's
+    `[[tool.livespec_dev_tooling.mirror_pairings]]` source-tree declaration.
+    The parse itself is shared rather than repeated, which is the point: a
+    second `tomli.loads` elsewhere would be a second answer to "is this file
+    TOML" that nothing could show agrees with this one, and the vendoring
+    rationale in the module docstring would then have two places to hold.
+
+    Walking the parse tree is left to the caller, because an array-of-tables
+    walk has no single shape: the two string readers want one table, and a
+    caller reading an array wants every entry of it.
+    """
+    try:
+        return tomli.loads(text)
+    except tomli.TOMLDecodeError as error:
+        return TomlDocumentUnparseable(detail=str(error))
 
 
 def _table_at(*, document: dict[str, Any], section: str) -> dict[str, Any] | None:
@@ -133,10 +155,9 @@ def toml_section_string_declaration(
     file is not TOML at all; neither is ever safe to treat as a default, because
     both mean the configuration says something the caller would be ignoring.
     """
-    try:
-        document = tomli.loads(text)
-    except tomli.TOMLDecodeError as error:
-        return TomlDocumentUnparseable(detail=str(error))
+    document = toml_document(text=text)
+    if isinstance(document, TomlDocumentUnparseable):
+        return document
     table = _table_at(document=document, section=section)
     if table is None or key not in table:
         return None

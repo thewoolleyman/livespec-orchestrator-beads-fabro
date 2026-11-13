@@ -152,6 +152,9 @@ class CalibrationRecord:
     bounce_cap: NonConvergenceCap = UNTRIGGERED_NON_CONVERGENCE_CAP
     # --- TDD order signals (plan slice S3) ---
     tdd: TddSignals = UNOBSERVED_TDD_SIGNALS
+    # Scenario 165's terminal reading, copied from the boundary journal rather
+    # than measured again by calibration.
+    cycle_fields: tuple[tuple[str, object | None], ...] = ()
 
 
 def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each field is an independent observed input.
@@ -166,6 +169,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
     merged_pr_diff_size: int | None,
     bounce_cap: NonConvergenceCap = UNTRIGGERED_NON_CONVERGENCE_CAP,
     tdd: TddSignals = UNOBSERVED_TDD_SIGNALS,
+    cycle_fields: tuple[tuple[str, object | None], ...] = (),
 ) -> CalibrationRecord:
     """Assemble the calibration record from already-observed dispatch inputs.
 
@@ -213,6 +217,7 @@ def build_calibration_record(  # noqa: PLR0913 — kw-only pure builder; each fi
         fabro_failure_signature=outcome.fabro_failure_signature,
         bounce_cap=bounce_cap,
         tdd=tdd,
+        cycle_fields=cycle_fields,
     )
 
 
@@ -388,4 +393,5 @@ def calibration_journal_record(*, record: CalibrationRecord) -> dict[str, object
         **record.bounce_cap.as_record(),
         **tdd_signal_fields(signals=record.tdd),
         IMPLEMENT_SELECTED_INDEX_KEY: record.tdd.selected_index,
+        **dict(record.cycle_fields),
     }

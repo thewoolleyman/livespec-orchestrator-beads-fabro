@@ -246,11 +246,30 @@ def run_dispatch(
             diff_size=view.diff_size,
         )
     )
-    current_hold = merge_hold_terminal(
-        outcome_type=DispatchOutcome, plan=plan, view=view, hold=hold, run_id=run_id
+    # THE PRE-MERGE BOUNDARY DECIDES AT MOST ONE TERMINAL, so the runtime gate
+    # and the merge hold share this function's single exit rather than adding a
+    # seventh. That is not tidiness: suppressing the too-many-returns rule here
+    # would hide the fact that the engine's hot path had grown another exit,
+    # which is the same reasoning the pre-dispatch wall records for its own
+    # consolidation. The runtime gate is asked FIRST because a hold is a reason
+    # not to merge YET while a runtime non-convergence is a reason not to merge
+    # at all. The gate rides the PLAN rather than a seventh parameter: the plan is
+    # already the one value that carries a dispatch's resolved inputs into this
+    # function, and the gate is bound where the same inputs stand together.
+    gated = (
+        None
+        if plan.pre_merge_gate is None
+        else plan.pre_merge_gate(pr_number=view.number, run_id=run_id)
     )
-    if current_hold is not None:
-        return current_hold
+    pre_merge_terminal = (
+        gated
+        if isinstance(gated, DispatchOutcome)
+        else merge_hold_terminal(
+            outcome_type=DispatchOutcome, plan=plan, view=view, hold=hold, run_id=run_id
+        )
+    )
+    if pre_merge_terminal is not None:
+        return pre_merge_terminal
     outcome = settle_merge_wait(
         outcome_type=DispatchOutcome,
         plan=plan,

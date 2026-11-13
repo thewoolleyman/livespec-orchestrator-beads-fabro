@@ -9,6 +9,9 @@ from pathlib import Path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration import (
     CalibrationRecord,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_projection import (
+    cycle_span_fields_from_journal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
     IMPLEMENT_SELECTED_INDEX_KEY,
     tdd_span_fields,
@@ -118,6 +121,7 @@ def _attrs(*, record: CalibrationRecord) -> dict[str, object]:
             if record.tdd.selected_index is not None
             else {}
         ),
+        **cycle_span_fields_from_journal(fields=dict(record.cycle_fields)),
     }
 
 

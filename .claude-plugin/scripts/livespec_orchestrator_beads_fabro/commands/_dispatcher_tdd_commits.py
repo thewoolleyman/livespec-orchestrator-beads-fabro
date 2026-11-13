@@ -69,6 +69,7 @@ __all__: list[str] = [
     "commit_trailers",
     "parse_commit_messages",
     "tdd_commit_signals",
+    "trailer_instant",
 ]
 
 # The three trailer keys `livespec_dev_tooling.checks.red_green_replay` writes.
@@ -181,19 +182,26 @@ def _gap_seconds(*, red_at: str | None, green_at: str | None) -> float | None:
     """The Red→Green interval in seconds, or None when either end is absent."""
     if red_at is None or green_at is None:
         return None
-    red_instant = _instant(value=red_at)
-    green_instant = _instant(value=green_at)
+    red_instant = trailer_instant(value=red_at)
+    green_instant = trailer_instant(value=green_at)
     if red_instant is None or green_instant is None:
         return None
     return (green_instant - red_instant).total_seconds()
 
 
-def _instant(*, value: str) -> datetime | None:
+def trailer_instant(*, value: str) -> datetime | None:
     """Parse one trailer instant, or None when it does not parse.
 
     The hook writes a `Z`-suffixed UTC instant, which `fromisoformat` does not
     accept on this interpreter's version, so the suffix is normalized to the
     equivalent offset before parsing.
+
+    PUBLIC because plan slice S6's per-cycle elapsed interval
+    (`_dispatcher_completed_cycles`) reads the same two trailer instants this
+    module's gap median reads. One parse for one trailer family is the point:
+    a second normalization of the hook's `Z` suffix elsewhere would be a
+    second answer to "when was this Red captured", and the two surfaces would
+    disagree about a pair while each looked correct alone.
     """
     normalized = value.strip()
     if normalized.endswith(_UTC_SUFFIX):

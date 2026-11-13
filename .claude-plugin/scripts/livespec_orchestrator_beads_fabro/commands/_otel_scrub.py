@@ -55,8 +55,9 @@ REDACTION_MARKER = "[redacted-credential-shaped-value]"
 # Defense-in-depth: reject any attribute value that looks like a
 # credential-bearing URL (`scheme://user:secret@host`) rather than
 # redacting a substring — a scrub miss must fail closed
-# (cc-otel-gap-analysis.md §3.6).
-CREDENTIAL_URL_RE = re.compile(r"[a-zA-Z0-9_-]+:[^@\s/]+@")
+# (cc-otel-gap-analysis.md §3.6).  The ``//`` is significant: a preserved
+# Red-Green identity is ``sha256:<checksum>@<timestamp>``, not a URL.
+CREDENTIAL_URL_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^@\s/]+@")
 
 # The forwarded-attribute allowlist (NOT a denylist). Every key here is a
 # scalar id / count / status / duration / token+cost number that is safe
@@ -192,6 +193,15 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "pr_open_diff_size",
         "bounce_cap",
         "bounce_cap_observed",
+        # Per-cycle runtime convergence projections. The observations are a
+        # bounded JSON series; the remaining fields are bounded counts/enums.
+        "cycle_observations",
+        "completed_cycle_count",
+        "effective_assertion_count",
+        "bounce_contributors",
+        "cycle_series_unobserved_reason",
+        "cycle_progress_unobserved_reason",
+        "cycle_measurement_method",
         "dependency_fan_out",
         "spec_surface_touched",
         "dispatch_context_size",
@@ -410,6 +420,12 @@ def attr(*, key: str, value: object) -> dict[str, object]:
     if isinstance(value, int):
         return {"key": key, "value": {"intValue": str(value)}}
     text = scrub(value=str(value))
+    # A cycle series is one structured calibration projection, not an
+    # arbitrary scalar.  Clipping it would produce invalid JSON and make the
+    # span disagree with the journal, so it keeps its already-scrubbed value
+    # intact.  The credential-shaped URL check above still applies first.
+    if key == "cycle_observations" and text != REDACTION_MARKER:
+        text = str(value)
     return {"key": key, "value": {"stringValue": text}}
 
 
