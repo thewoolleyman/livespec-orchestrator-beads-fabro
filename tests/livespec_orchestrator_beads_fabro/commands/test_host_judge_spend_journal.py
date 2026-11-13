@@ -95,3 +95,17 @@ def test_journal_ignores_unspendable_stream_records_and_names_its_non_claude_arm
     assert len(_records(path=journal.path)) == 1
     assert is_claude_agent(agent_id="codex-acp") is False
     assert spend_journal_name(caller=None, cwd=tmp_path / "repo") == "purpose:host_judgement@repo"
+
+
+def test_a_definition_of_done_journal_derives_its_item_id_from_its_name(tmp_path: Path) -> None:
+    """The host chain's existing item-specific name is retained as spend evidence."""
+    journal = start_spend_journal(
+        home=tmp_path,
+        name="purpose:dod_judgement_pre_admission@bd-ib-3h7dsf",
+        cwd=tmp_path,
+        first_prompt="judge this",
+    )
+
+    header = _records(path=journal.path)[0]
+
+    assert header["work_item_id"] == "bd-ib-3h7dsf"
