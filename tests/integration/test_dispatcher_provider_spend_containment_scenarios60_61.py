@@ -720,7 +720,7 @@ def test_scenario61_the_dispatched_workflow_truncates_an_unchanged_tree(
         graph,
     )
     assert re.search(
-        r'\bimplement_completion\s*->\s*implementation_diff\b[^\n]*condition="preferred_label=complete"',
+        r'\bimplement_completion\s*->\s*implement_workflow_guard\b[^\n]*condition="preferred_label=complete"',
         graph,
     )
     assert re.search(

@@ -66,6 +66,7 @@ _SUCCESSFUL_NODES = (
     # `implement`'s single fallthrough: a green run reached the diff breaker
     # THROUGH it, having stated its Definition of Done complete.
     "implement_completion",
+    "implement_workflow_guard",
     "implementation_diff",
     "janitor_admission",
     "janitor",

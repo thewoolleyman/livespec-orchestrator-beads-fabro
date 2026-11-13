@@ -132,8 +132,14 @@ def test_dead_implementer_routes_unchanged_work_away_from_review() -> None:
     )
     assert (
         re.search(
-            r'implement_completion\s*->\s*implementation_diff\b[^\n]*condition="preferred_label=complete"',
+            r'implement_completion\s*->\s*implement_workflow_guard\b[^\n]*condition="preferred_label=complete"',
             text,
+        )
+        is not None
+    )
+    assert (
+        re.search(
+            r"implement_workflow_guard\s*->\s*implementation_diff\b(?![^\n]*condition=)", text
         )
         is not None
     )
