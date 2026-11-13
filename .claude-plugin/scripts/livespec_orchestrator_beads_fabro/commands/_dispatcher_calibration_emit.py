@@ -16,6 +16,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_calibration_span imp
     emit_calibration_span,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_cost_gate import derived_costs
+from livespec_orchestrator_beads_fabro.commands._dispatcher_cycle_projection import (
+    CYCLE_PROJECTED_KEYS,
+    unobserved_cycle_journal_fields,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
@@ -160,6 +164,9 @@ def _build_and_append_calibration(  # noqa: PLR0913 - injectable calibration sea
             sink=TddOrderSink(path=tdd_order_sink_path(args=args, repo=repo)),
             runner=runner,
         ),
+        cycle_fields=tuple(
+            _cycle_fields_from_records(records=journal_records, item_id=item.id).items()
+        ),
     )
     journal.append(record=calibration_journal_record(record=record))
     emit_calibration_span(
@@ -167,6 +174,20 @@ def _build_and_append_calibration(  # noqa: PLR0913 - injectable calibration sea
         spans_path=calibration_spans_path(args=args, repo=repo),
         now_ns=time.time_ns(),
     )
+
+
+def _cycle_fields_from_records(
+    *, records: tuple[dict[str, object], ...], item_id: str
+) -> dict[str, object | None]:
+    """Copy this item's terminal reading into calibration without re-measuring it."""
+    for record in reversed(records):
+        if (
+            record.get("stage") == "runtime-convergence"
+            and record.get("boundary") == "terminal"
+            and record.get("work_item_id") == item_id
+        ):
+            return {key: record.get(key) for key in CYCLE_PROJECTED_KEYS}
+    return unobserved_cycle_journal_fields()
 
 
 def read_journal_records_for(

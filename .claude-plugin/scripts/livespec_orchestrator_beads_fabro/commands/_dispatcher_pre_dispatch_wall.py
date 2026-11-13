@@ -37,6 +37,9 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._config_cycle_ceilings import (
+    resolve_adopted_cycle_ceilings,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
@@ -108,12 +111,18 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_scr
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_wall import (
     spec_change_tier_refusal,
 )
+from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
+from livespec_orchestrator_beads_fabro.errors import (
+    ConnectionPrefixMissingError,
+    LivespecConfigUnreadableError,
+)
 from livespec_orchestrator_beads_fabro.io import write_stderr
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "post_admission_publish_branch_reclaim",
     "pre_dispatch_wall_exit",
+    "runtime_ceiling_policy_refusal",
     "selection_credential_requirement",
 ]
 
@@ -250,6 +259,11 @@ def pre_dispatch_wall_exit(
     proof-credential declaration it is a HOST-level fact, so one refusal covers
     the whole selection rather than reading as one fault per item.
 
+    The RUNTIME-CEILING policy refusal opens the wall (S6 / bd-ib-z2y4ca), ahead
+    of the criteria wall, so invalid committed policy refuses before claim or
+    lifecycle mutation. It is a pure local configuration read; no later gate
+    can make an invalid runtime policy safe to use.
+
     AND THAT IS THE WHOLE WALL: every row above is a refusal, and none of them
     mutates anything. The publish-branch reclaim used to close this sequence and
     now sits past admission, in `post_admission_publish_branch_reclaim` below.
@@ -300,6 +314,30 @@ def pre_dispatch_wall_exit(
         if codex_refusal is not None:
             _ = write_stderr(text=f"{codex_refusal}\n")
             return EXIT_PRECONDITION_ERROR
+    return None
+
+
+def runtime_ceiling_policy_refusal(*, repo: Path) -> str | None:
+    """The refusal for an invalid committed runtime ceiling, or None.
+
+    `None` covers both a repository that adopts neither ceiling and one whose
+    adoption is valid — the wall only needs to know whether to refuse, and the
+    resolved values are read again at the evaluation boundaries that use them.
+
+    An UNREADABLE `.livespec.jsonc` is reported as a refusal rather than allowed
+    to escape: `resolve_adopted_cycle_ceilings` deliberately lets that raise so
+    it cannot be mistaken for "no ceiling adopted", and this is the frame that
+    owns turning it into a diagnostic. Both expected error types are named
+    narrowly, so a genuine bug still propagates.
+    """
+    resolved = attempt(
+        action=lambda: resolve_adopted_cycle_ceilings(cwd=repo),
+        exceptions=(LivespecConfigUnreadableError, ConnectionPrefixMissingError),
+    )
+    if isinstance(resolved, AttemptFailure):
+        return f"ERROR: cannot resolve the adopted per-cycle runtime ceilings: {resolved.error}\n"
+    if isinstance(resolved, str):
+        return f"ERROR: invalid committed runtime-ceiling policy: {resolved}\n"
     return None
 
 
@@ -372,6 +410,12 @@ def _refusing_sequence(
     would change the bytes an operator reads from one group or the other.
     """
     return (
+        (
+            lambda: runtime_ceiling_policy_refusal(repo=repo),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "runtime-ceiling-policy",
+        ),
         (
             lambda: out_of_enum_factory_safety_refusal(items=items),
             EXIT_PRECONDITION_ERROR,
