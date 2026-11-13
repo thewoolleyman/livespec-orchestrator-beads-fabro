@@ -2366,11 +2366,12 @@ def test_render_run_config_overlay_appends_sibling_clone_steps_and_env_root(
     # of livespec core (bd-ib-lupzxt), the tmux socket root's
     # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
     # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
-    # (bd-ib-52zt3o), the plugin-cache gate and the committed `uv sync`. The
+    # (bd-ib-52zt3o), the Claude Driver cache materialization, the plugin-cache
+    # gate and the committed `uv sync`. The
     # helper programs that once rode their own steps (the publication helpers,
     # the Red and Green command programs, the commit runner, the review-turn
     # guard) are fetched by the first of these and render no step of their own.
-    assert rendered.count("[[run.prepare.steps]]") == 11
+    assert rendered.count("[[run.prepare.steps]]") == 12
     assert _LIVESPEC_CLONE_STEP_LINE in rendered
     assert _DEV_TOOLING_CLONE_STEP_LINE in rendered
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
@@ -2498,10 +2499,11 @@ def test_render_run_config_overlay_without_siblings_appends_no_clone_steps(
     # The helper fetch (bd-ib-jrawlp), the tmux socket root's
     # exclude-then-create PAIR (bd-ib-5qxa5q), the harness settings file's
     # exclude-then-write PAIR (bd-ib-rv2jk4), the git credential helper
-    # (bd-ib-52zt3o), the plugin-cache gate and the committed `uv sync` -- no
+    # (bd-ib-52zt3o), the Claude Driver cache materialization, the plugin-cache
+    # gate and the committed `uv sync` -- no
     # clone step among them, and no step per helper program, every one of which
     # the helper fetch lands.
-    assert rendered.count("[[run.prepare.steps]]") == 8
+    assert rendered.count("[[run.prepare.steps]]") == 9
     assert _TMUX_TMPDIR_PREPARE_STEP_LINE in rendered
     assert "LIVESPEC_SIBLING_CLONES_ROOT" not in rendered
 

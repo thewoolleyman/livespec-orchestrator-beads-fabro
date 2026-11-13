@@ -78,6 +78,12 @@ _SNAPSHOT = json.dumps(
 )
 
 
+def test_codex_auth_projection_is_omitted_without_a_routed_snapshot() -> None:
+    """A Claude-only run declares no Codex home, auth payload, or prepare work."""
+    assert codex_auth_prepare_steps_block(codex_auth_snapshot=None) == ""
+    assert codex_auth_env_lines(codex_auth_snapshot=None) == ""
+
+
 def test_no_checkpoint_of_the_prepare_chain_can_stage_the_projected_codex_home(
     tmp_path: Path,
 ) -> None:
