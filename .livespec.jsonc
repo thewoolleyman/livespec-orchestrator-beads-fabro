@@ -1138,6 +1138,8 @@
       "factories": {
         "petri": {
           "registry": true,
+          "defer_collection_while_active": true,
+          "rm_min_interval_seconds": 60,
           // `bin` is the client of the build gmktec serves (0.393.0-nightly.1 at
           // bbe693847; main :32276 since 2026-11-07 03:43Z, which is 85af3547e plus
           // Petri c6bfd5e3, a server-side step change only). It requests compressed
@@ -1162,6 +1164,8 @@
         // shared gmktec fleet cap.
         "candidate": {
           "registry": true,
+          "defer_collection_while_active": true,
+          "rm_min_interval_seconds": 60,
           "bin": "/home/ubuntu/.local/state/fabro-web-prod/v0393-bbe693847/fabro",
           "secret_channel": "native_secrets",
           "environment": "factory-python"
