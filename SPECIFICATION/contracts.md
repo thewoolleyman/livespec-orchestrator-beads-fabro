@@ -3149,6 +3149,33 @@ and it carries no `pyproject.toml` and no lockfile, so it cannot require
 an install step. Because that payload is not a git working tree, no
 promotion into it is possible and none is attempted.
 
+**A launcher removes the private payload holder it made, and the next
+launcher reclaims what a killed one left.** A launcher invocation that
+copies the payload into a private holder directory under the system temp
+directory (named
+`livespec-orchestrator-beads-fabro-payload-<release>-*`) MUST remove
+that holder before it exits. When it receives SIGTERM, SIGHUP or SIGINT
+it MUST remove the holder, except a holder the next sentence spares, and
+then exit with a non-zero status. On any exit, normal or signalled, it
+MUST leave in place a holder that a running process other than itself
+names in `LIVESPEC_RETAINED_PAYLOAD_ROOT`; the next launcher's sweep
+reclaims that holder once no running process names it. It MUST record,
+in every holder it creates, the pid of its own process and that
+process's start time. Before it creates a new holder, a launcher MUST
+remove every payload-holder directory under the system temp directory
+whose recorded creator is no longer running and that no running process
+names in `LIVESPEC_RETAINED_PAYLOAD_ROOT`; a pid now held by a different
+process does not count as the creator. It MUST also remove every
+payload-holder directory that carries no creator record, that no running
+process names, and that was last modified more than 24 hours earlier. It
+MUST leave in place every holder whose recorded creator is still running
+or that a running process names, and every holder that carries no
+creator record and was last modified within the last 24 hours, which
+covers a holder whose creator has not yet written its record. This
+removal is best-effort: a holder that cannot be removed is logged, and
+it MUST NOT turn a dispatch into a refusal or a failure. Scenario 363 in
+`scenarios.md` exercises this paragraph.
+
 Behaviors that presuppose fleet context MUST still degrade to clean
 no-ops rather than failing the dispatch: the fleet-manifest sibling-clone
 projection renders empty when no fleet manifest is present.
