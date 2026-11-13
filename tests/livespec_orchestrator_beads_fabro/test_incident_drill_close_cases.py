@@ -128,7 +128,7 @@ class _Forge:
         if argv[:3] == ["gh", "api", f"repos/{_REPOSITORY}/compare/{'d' * 40}...master"]:
             assert self.comparison is not None
             return self.comparison
-        raise AssertionError(argv)
+        raise AssertionError(argv)  # pragma: no cover - fixture contract guard
 
 
 def _merged(*, base: str = "incident-scratch/bd-ib-drill-cases") -> CommandResult:
