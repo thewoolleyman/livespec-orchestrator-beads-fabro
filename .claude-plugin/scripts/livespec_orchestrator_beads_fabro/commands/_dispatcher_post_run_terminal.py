@@ -13,6 +13,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_already_satisfied import (
+    already_satisfied_outcome,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine_journal import (
     journal_run_output_markers,
     run_wall_budget_outcome,
@@ -70,7 +73,7 @@ class PostRunTerminal:
 
     run_id: str | None
     run_output: str
-    publication: TerminalPublication
+    publication: TerminalPublication | None
     refusal: DispatchOutcome | None
 
 
@@ -144,6 +147,20 @@ def post_run_terminal(
         inspect=inspect,
         terminal=terminal,
     )
+    already_satisfied = already_satisfied_outcome(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        run_id=run_id,
+        terminal=terminal,
+        text=run_output,
+    )
+    if already_satisfied is not None:
+        return PostRunTerminal(
+            run_id=run_id,
+            run_output=run_output,
+            publication=None,
+            refusal=already_satisfied,
+        )
     # A STRUCTURED SUCCESSFUL CHECKPOINT OUTRANKS THE ENGINE'S OWN CONCLUSION,
     # and only for the one conclusion that admits it cannot answer: a worker
     # that exited zero before its terminal run event was persisted. The engine
@@ -175,7 +192,10 @@ def post_run_terminal(
             journal=journal,
         )
     return PostRunTerminal(
-        run_id=run_id, run_output=run_output, publication=publication, refusal=refusal
+        run_id=run_id,
+        run_output=run_output,
+        publication=publication,
+        refusal=refusal,
     )
 
 

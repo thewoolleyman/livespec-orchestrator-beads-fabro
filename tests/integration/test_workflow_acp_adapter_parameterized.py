@@ -42,12 +42,13 @@ _CLAUDE_OPUS_5_ADAPTER = (
     "ANTHROPIC_MODEL=claude-opus-5 CLAUDE_CODE_EFFORT_LEVEL=high "
     "npx -y @agentclientprotocol/claude-agent-acp"
 )
-# One adapter input per ACP node, keyed by the node it belongs to.
+# Red and Green are separate turns of one configured implement stage.
 _NODE_ACP = {
     node: 'acp.command="{{ inputs.' + node + '_adapter }}"'
     for node in (
         "dod_gate",
-        "implement",
+        "red",
+        "green",
         "fix",
         "review_fix",
         "proof_capture",
@@ -56,6 +57,8 @@ _NODE_ACP = {
         "disposition",
     )
 }
+_NODE_ACP["red"] = 'acp.command="{{ inputs.implement_adapter }}"'
+_NODE_ACP["green"] = 'acp.command="{{ inputs.implement_adapter }}"'
 _IMPLEMENTER_NODES = ("implement", "fix", "review_fix")
 
 
@@ -71,16 +74,13 @@ def test_every_acp_node_uses_a_parameterized_adapter() -> None:
     assert all(line in _NODE_ACP.values() for line in acp_lines)
 
 
-def test_each_acp_node_has_its_own_adapter_input() -> None:
-    """Exactly one node per input, which is what makes per-node config expressible.
-
-    A shared input cannot carry two values, so two nodes on one input means
-    configuring either of them alone is unrepresentable — the failure this
-    one-to-one mapping exists to remove.
-    """
+def test_each_acp_node_has_the_declared_stage_adapter_input() -> None:
+    """Red and Green intentionally share the implement adapter; other nodes do not."""
     acp_lines = _acp_lines()
     for node, line in _NODE_ACP.items():
-        assert acp_lines.count(line) == 1, node
+        if node == "green":
+            continue
+        assert acp_lines.count(line) == (2 if node == "red" else 1), node
     assert len(acp_lines) == len(_NODE_ACP)
 
 

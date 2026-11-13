@@ -318,6 +318,7 @@ def emit_outcomes(*, outcomes: list[DispatchOutcome], as_json: bool) -> None:
 # that populate them: a fabro failure, a degraded step outcome, and a
 # dead-implementer truncation.
 _OPTIONAL_OUTCOME_FIELDS: tuple[str, ...] = (
+    "already_satisfied_base",
     # The three readings the overtaken-arming ending measured, which only that
     # ending carries. Dropped on the same terms as the needs-human verdict
     # below, and for the same reason sharpened once more: the field's PRESENCE
