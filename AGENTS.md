@@ -392,7 +392,9 @@ that produced it are in `.ai/maintainer-working-rules.md`. Read that file before
 you act against any of them.
 
 - **Spell out "Definition-of-Ready" in full**; the acronym is banned.
-- **Name every work item by what it does, never by its id alone.**
+- **Name every work item by what it does, never by its id alone.** Use only
+  work-item names and plan slugs; never an id fragment or a ledger shorthand
+  label such as a Definition-of-Done line ordinal.
 - **Maintainer-facing documents must explain their own notation.**
 - **Drive authorized work to completion; do not over-ask.**
 - **A fleet coordinator's ruling is an order; execute it rather than re-asking
