@@ -14676,3 +14676,33 @@ Feature: Launcher payload holders do not accumulate under the system temp direct
     Then the failed removal is logged
     And the dispatch is neither refused nor failed on that account
 ```
+
+## Scenario 364 — An item-only head read reports an incident item's current phase and generation and authorizes nothing
+
+```gherkin
+Feature: An installed consumer reads an incident item's phase from the item id alone
+  Scenario: read-head reports the current phase and generation, drill-closed included, and authorizes nothing
+    Given an incident item whose canonical incident authority chain has a current head
+    And a caller that holds only the repository and the item id, with no attempt, phase, generation, operation or owner
+    When the caller runs the incident authority CLI action read-head
+    Then the reply reports the head's incident phase and generation as read_incident_head selects them
+    And an item whose head is drill-closed is reported at drill-closed
+    And the reply authorizes no side effect, so a caller that will act on an attempt still takes read-current with the full fenced identity immediately before acting
+  Scenario: An item with no incident authority genesis reads absent, not refused
+    Given an item for which no incident authority genesis exists
+    When the caller runs read-head for that item
+    Then the reply reports the item as absent
+    And the reply is not a refusal
+  Scenario: Every other chain fault stays a named refusal and never reads absent
+    Given an item whose incident authority chain is ambiguous, has an invalid genesis, contains a cycle, or fails an identity or item match
+    When the caller runs read-head for that item
+    Then the reply is the named refusal the canonical reader returns for that fault
+    And the item is not reported as absent
+    And no phase is reported
+  Scenario: An unreadable authority store refuses as unavailable with no phase
+    Given the incident authority store cannot be read
+    When the caller runs read-head for any item
+    Then the reply refuses with the named reason incident-authority-unavailable
+    And no phase is reported
+    And the item is not reported as absent
+```
