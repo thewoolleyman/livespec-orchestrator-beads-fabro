@@ -36,6 +36,53 @@ else
     exit 1
 fi
 
+# `kill -0` can be refused for a live child by a container signal policy. The
+# BASH_ENV shim reproduces that result while the real capture child publishes
+# its port after 2.1 seconds. The harness must use its own job state, keep
+# polling, and complete the telemetry case.
+liveness_probe_env="$(mktemp)"
+trap 'rm -f "$liveness_probe_env"' EXIT
+cat >"$liveness_probe_env" <<'PROBE_ENV'
+if [ "${CAPTURE_LIVENESS_PROBE_DENIED:-}" = 1 ]; then
+    kill() {
+        if [ "$1" = "-0" ]; then
+            return 1
+        fi
+        builtin kill "$@"
+    }
+fi
+PROBE_ENV
+if output="$(CAPTURE_LIVENESS_PROBE_DENIED=1 \
+    BASH_ENV="$liveness_probe_env" \
+    CAPTURE_START_DELAY_SECONDS=2.1 \
+    bash "$HARNESS" 2>&1)" \
+        && grep -qF 'telemetry: bd.invoke span emitted' <<<"$output"; then
+    printf '%s\n' 'ok: denied capture liveness probe keeps polling for the port'
+else
+    printf '%s\n' "$output" >&2
+    echo "FAIL: denied capture liveness probe was treated as a capture-server exit" >&2
+    exit 1
+fi
+
+# A capture server that ignores the stop signal must make the harness report a
+# failed telemetry case after its own stop bound.  The server exits shortly
+# after that bound so this regression leaves no process behind; the assertion
+# observes the harness diagnostic rather than timing the host.
+if output="$(CAPTURE_SERVER_IGNORE_STOP=1 \
+    CAPTURE_SERVER_EXIT_AFTER_SECONDS=12 \
+    bash "$HARNESS" 2>&1)"; then
+    printf '%s\n' "$output" >&2
+    echo "FAIL: an unstoppable capture server did not fail the harness" >&2
+    exit 1
+fi
+if grep -qF 'telemetry: capture server still running after its stop (10-second bound)' <<<"$output"; then
+    printf '%s\n' 'ok: unstoppable capture server is named after the stop bound'
+else
+    printf '%s\n' "$output" >&2
+    echo "FAIL: unstoppable capture-server diagnostic was missing" >&2
+    exit 1
+fi
+
 # The failed-server diagnostic is bounded on an EVENT, not on host speed: the
 # harness names the server's exit status only when start_capture observed the
 # process exit BEFORE its own 30-second startup bound (600 polls of 0.05 s);

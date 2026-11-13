@@ -43,3 +43,22 @@ def test_scenario269_failure_diagnostic_is_bounded_on_an_event_not_host_speed() 
     regression_body = _REGRESSION.read_text(encoding="utf-8")
 
     assert "< 5.0" not in regression_body
+
+
+def test_scenario269_treats_a_denied_liveness_probe_as_unknown() -> None:
+    """A refused ``kill -0`` cannot turn a live capture server into an exit."""
+    regression_body = _REGRESSION.read_text(encoding="utf-8")
+    harness_body = _HARNESS.read_text(encoding="utf-8")
+
+    assert "CAPTURE_LIVENESS_PROBE_DENIED" in regression_body
+    assert "capture_process_is_running" in harness_body
+    assert "jobs -pr" in harness_body
+    assert 'kill -0 "$CAP_PID"' not in harness_body
+
+
+def test_scenario269_bounds_an_unstoppable_capture_server_and_names_it() -> None:
+    """Stop polling reaches its diagnostic instead of waiting forever."""
+    harness_body = _HARNESS.read_text(encoding="utf-8")
+
+    assert 'while capture_process_is_running && [ "$i" -lt 200 ]; do' in harness_body
+    assert "still running after its stop" in harness_body

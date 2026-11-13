@@ -134,7 +134,7 @@ log_has() { [ -f "$CLOG" ] && grep -qF -- "$1" "$CLOG"; }
 # killed. Stdlib http.server only — no network, no external deps.
 CAP_PY="${WORK}/capture.py"
 cat > "$CAP_PY" <<'CAPPY'
-import http.server, os, sys, time
+import http.server, os, signal, sys, threading, time
 OUT, PORTF = sys.argv[1], sys.argv[2]
 class H(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
@@ -156,6 +156,14 @@ time.sleep(float(os.environ.get("CAPTURE_START_DELAY_SECONDS", "0")))
 srv = http.server.HTTPServer(("127.0.0.1", 0), H)
 with open(PORTF, "w") as f:
     f.write(str(srv.server_address[1]))
+ignore_stop_marker = os.path.join(os.path.dirname(PORTF), ".ignore-stop-used")
+if os.environ.get("CAPTURE_SERVER_IGNORE_STOP") and not os.path.exists(ignore_stop_marker):
+    with open(ignore_stop_marker, "x"):
+        pass
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+exit_after = os.environ.get("CAPTURE_SERVER_EXIT_AFTER_SECONDS")
+if exit_after:
+    threading.Timer(float(exit_after), srv.shutdown).start()
 srv.serve_forever()
 CAPPY
 
@@ -187,6 +195,26 @@ CAP_EXIT_STATUS=""
 CAP_BOUND_REACHED=0
 CAP_ERR_FILE=""
 
+# capture_process_is_running — determine the background job's state without
+# signalling it. A denied `kill -0` is inconclusive (for example, EPERM from a
+# container profile), while Bash's job table knows whether this shell's child is
+# still running.
+capture_process_is_running() {
+    local job_pid
+    while IFS= read -r job_pid; do
+        [ "$job_pid" = "$CAP_PID" ] && return 0
+    done < <(jobs -pr 2>/dev/null)
+    return 1
+}
+
+# reap_capture_after_exit — reap only after the job table observed the child
+# exit, so this `wait` cannot become an unbounded liveness probe.
+reap_capture_after_exit() {
+    wait "$CAP_PID"
+    CAP_EXIT_STATUS=$?
+    CAP_PID=""
+}
+
 # capture_start_detail — explain why start_capture returned without a port.
 capture_start_detail() {
     local captured_stderr
@@ -210,10 +238,8 @@ start_capture() {
     CAP_PID=$!
     local i=0
     while [ ! -s "$2" ] && [ "$i" -lt 600 ]; do
-        if ! kill -0 "$CAP_PID" 2>/dev/null; then
-            wait "$CAP_PID"
-            CAP_EXIT_STATUS=$?
-            CAP_PID=""
+        if ! capture_process_is_running; then
+            reap_capture_after_exit
             break
         fi
         sleep 0.05
@@ -221,13 +247,11 @@ start_capture() {
     done
     CAP_PORT="$(cat "$2" 2>/dev/null || echo "")"
     if [ -z "$CAP_PORT" ] && [ -n "$CAP_PID" ]; then
-        if kill -0 "$CAP_PID" 2>/dev/null; then
+        if capture_process_is_running; then
             CAP_BOUND_REACHED=1
             stop_capture
         else
-            wait "$CAP_PID"
-            CAP_EXIT_STATUS=$?
-            CAP_PID=""
+            reap_capture_after_exit
         fi
     fi
 }
@@ -235,7 +259,16 @@ start_capture() {
 stop_capture() {
     if [ -n "$CAP_PID" ]; then
         kill "$CAP_PID" 2>/dev/null
-        wait "$CAP_PID" 2>/dev/null
+        local i=0
+        while capture_process_is_running && [ "$i" -lt 200 ]; do
+            sleep 0.05
+            i=$((i + 1))
+        done
+        if capture_process_is_running; then
+            fail "telemetry: capture server still running after its stop (10-second bound)"
+        else
+            reap_capture_after_exit
+        fi
     fi
     CAP_PID=""
 }
