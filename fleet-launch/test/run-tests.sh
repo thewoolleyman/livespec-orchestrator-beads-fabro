@@ -144,6 +144,7 @@ for marker in "$STUB_DRIVEN_DIR"/* "$STUB_RESUMED_DIR"/*; do
     marker_item=$(cut -d' ' -f2 "$marker")
     [ "$marker_server" = "$server" ] || continue
     printf 'DRIVEN000001 stub-repo running 2026-10-25 0m05s %s\n' "$marker_item" >> "$rows"
+    : > "$STUB_DRIVE_LISTED_DIR/$marker_item"
 done
 # A one-shot hook that runs AFTER this read has captured its rows and before it
 # prints them.  It lets the harness move a launch from "in flight, unlisted" to
@@ -401,9 +402,16 @@ for argument in "$@"; do
                 # TTL, so the launcher's next listing poll reads the board with this run on it.
                 find "$FLEET_LAUNCH_BOARD_SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} + 2>/dev/null
             fi
-            # A gated drive lingers after submitting, as a real drive polls the run, so the
-            # launcher's listing poll sees the run before it sees the drive exit.
-            [ -z "${STUB_DRIVE_ADMIT_GATE:-}" ] || sleep 0.5
+            # A real drive polls its run after submitting. Keep this stub alive until a
+            # board listing has observed its marker, so every case orders that observation
+            # instead of hoping a fixed linger outlasts a loaded host's next poll.
+            if [ -n "$item" ] && [ -n "$server" ]; then
+                listed_deadline=$(( $(date +%s) + 10 ))
+                while [ ! -e "$STUB_DRIVE_LISTED_DIR/$item" ] \
+                    && [ "$(date +%s)" -lt "$listed_deadline" ]; do
+                    sleep "$HARNESS_POLL_S"
+                done
+            fi
             printf '{"status": "stub-dispatched", "work_item_id": "%s"}\n' "$item"
             exit 0
             ;;
@@ -541,7 +549,7 @@ HOLD_FILE=""
 new_case() {
     CASE_NAME="$1"
     CASE_DIR="$WORK/case/$CASE_NAME"
-    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,resumed}
+    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,listed,resumed}
     rmdir "$CASE_DIR/lock"
     CASE_LOG="$CASE_DIR/launcher.log"
     DRIVE_LOG="$CASE_DIR/drive-log"
@@ -582,6 +590,7 @@ new_case() {
     export STUB_WIP_UNREADABLE_FILE="$CASE_DIR/wip-unreadable"
     unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT STUB_DRIVE_EXPIRE_SNAPSHOT
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
+    export STUB_DRIVE_LISTED_DIR="$CASE_DIR/listed"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
     export STUB_DRIVE_MUTEX_LOG="$DRIVE_MUTEX_LOG"
@@ -1995,7 +2004,6 @@ export STUB_PS_ACTIVE_LISTING_RELEASE_FILE="$CASE_DIR/release-active-listing-rea
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after-delayed > "$STOP_LOG" 2>&1 &
 stop_pid=$!
 if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
-    rm -f "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE"
     set_hold "$HOLD_FILE" 'engine restart'
     # The launcher lists before its next hold re-read. The normal case above
     # proves that re-read; this control waits for the earlier board-poll state.
