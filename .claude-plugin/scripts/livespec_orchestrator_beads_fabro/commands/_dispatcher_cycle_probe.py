@@ -44,7 +44,7 @@ then exercised through the same objects a live dispatch reads rather than throug
 a stub that could agree with a wrong implementation.
 
 Every git read is fail-soft to the per-pair absence above, and no read mutates
-anything: `diff-tree` and `show` are the whole vocabulary.
+anything: `diff-tree`, `ls-tree` and `show` are the whole vocabulary.
 """
 
 from __future__ import annotations
@@ -220,6 +220,8 @@ def _measure(
             continue
         before = _blob(repo=repo, rev=f"{source.commit}^", path=path, runner=runner)
         after = _blob(repo=repo, rev=source.commit, path=path, runner=runner)
+        if before is None or after is None:
+            return Unobserved(reason=UNOBSERVED_SOURCE_TREE)
         lines = changed_product_logical_lines(before=before, after=after)
         if lines is None:
             return Unobserved(reason=UNOBSERVED_COUNTING)
@@ -239,18 +241,28 @@ def _changed_paths(*, repo: Path, commit: str, runner: CommandRunner) -> tuple[s
     return tuple(line for line in result.stdout.splitlines() if line != "")
 
 
-def _blob(*, repo: Path, rev: str, path: str, runner: CommandRunner) -> str:
-    """One path's content at one revision, or the EMPTY string when absent there.
+def _blob(*, repo: Path, rev: str, path: str, runner: CommandRunner) -> str | None:
+    """One path's content at one revision: the EMPTY string when the tree lacks it.
 
-    An absent path is empty rather than unobservable on purpose: a file the pair
-    ADDED does not exist at the parent, and a file it DELETED does not exist at
-    the commit, and both are ordinary measurable changes. The whole-commit
-    readability question was already settled by `_changed_paths`, so a failure
-    here is the path not being in that tree.
+    None means the content could not be read, which is a different finding from
+    the path being absent. A file the pair ADDED does not exist at the parent and
+    a file it DELETED does not exist at the commit, and both are ordinary
+    measurable changes, so a tree that is readable and does not name the path
+    reads as empty. A tree that cannot be read, or a path it names whose object
+    cannot be read, is missing source evidence: reading it as empty would
+    fabricate a numeric size for a change nobody saw. A failed listing falls
+    through to the read below, which fails for the same reason and answers None.
     """
+    listing = runner.run(
+        argv=["git", "ls-tree", rev, "--", path],
+        cwd=repo,
+        timeout_seconds=_PROBE_TIMEOUT_SECONDS,
+    )
+    if listing.exit_code == 0 and listing.stdout.strip() == "":
+        return ""
     result = runner.run(
         argv=["git", "show", f"{rev}:{path}"],
         cwd=repo,
         timeout_seconds=_PROBE_TIMEOUT_SECONDS,
     )
-    return result.stdout if result.exit_code == 0 else ""
+    return result.stdout if result.exit_code == 0 else None
