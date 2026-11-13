@@ -8,6 +8,7 @@ per line, for the emitter's next cycle.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -40,7 +41,7 @@ class HostJudgeSpendJournal:
 
 
 def start_spend_journal(
-    *, home: Path, name: str, cwd: Path, first_prompt: str
+    *, home: Path, name: str, cwd: Path, first_prompt: str, work_item_id: str | None = None
 ) -> HostJudgeSpendJournal:
     """Create a journal with its emitter-required header before launching Claude."""
     session_id = uuid4().hex
@@ -52,8 +53,11 @@ def start_spend_journal(
         "cwd": str(cwd),
         "started_at": _utc_now(),
         "first_prompt": first_prompt[:_FIRST_PROMPT_LIMIT],
+        "first_prompt_sha256": hashlib.sha256(first_prompt.encode()).hexdigest(),
         "final_usage_line": True,
     }
+    if work_item_id is not None:
+        header["work_item_id"] = work_item_id
     _append(path=path, record=header, mode="x")
     return HostJudgeSpendJournal(path=path, session_id=session_id)
 
