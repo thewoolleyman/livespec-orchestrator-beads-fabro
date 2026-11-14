@@ -1185,6 +1185,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 348 — A seeded recovery dispatch reseeds its seed onto the current default branch, holds on a reseed conflict, and routes a seed carrying no work fresh",
+    "work_item": "bd-ib-zzhy5t",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 349 — Reconciliation applies the whole-run wall budget to a live run no dispatch still owns",
     "work_item": "bd-ib-ag633q",
     "first_seen": "2026-11-12"
@@ -1279,6 +1286,13 @@
     "heading": "## Scenario 371 — An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
     "work_item": "bd-ib-szbxu7",
     "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 372 — A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing",
+    "work_item": "bd-ib-5xihdt",
+    "first_seen": "2026-11-14"
   },
   {
     "spec_root": "SPECIFICATION",
