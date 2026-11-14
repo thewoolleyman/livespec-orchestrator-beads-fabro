@@ -8417,6 +8417,23 @@ Feature: A fix turn does not spend its time limit on a duplicate check suite
     And the stage's last commit is still an open Red
     When the run leaves the stage
     Then the run ends at needs_human with a cause naming the open Red commit
+
+  Scenario: An open Red beneath engine checkpoint commits admits the turn's implementation edit
+    Given a review_fix turn re-entered to complete an open Red's Green amend
+    And two engine checkpoint commits with `fabro(<run>): <stage>` subjects sit above that open Red
+    When the turn edits an existing product implementation path
+    Then the TDD-order guard allows the edit
+
+  Scenario: A closed or untrailered commit beneath engine checkpoint commits refuses an implementation edit
+    Given engine checkpoint commits sit above a commit carrying both TDD trailer sets
+    When a fix turn edits an existing product implementation path
+    Then the TDD-order guard refuses the edit as closed-head
+    And when the commit beneath the checkpoint commits carries no TDD trailers, the guard refuses the edit as trailer-free-head
+
+  Scenario: An unreadable head refuses an implementation edit
+    Given the TDD-order guard cannot read the run's HEAD
+    When a fix turn edits an existing product implementation path
+    Then the guard refuses the edit
 ```
 
 ## Scenario 200 — A refresh whose conflicts lie only in declared record files merges them without a repair round
