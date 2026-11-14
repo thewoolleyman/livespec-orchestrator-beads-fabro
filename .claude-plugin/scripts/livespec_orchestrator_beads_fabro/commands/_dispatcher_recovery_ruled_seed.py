@@ -43,6 +43,12 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_claim_writes import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
+    publish_branch_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publish_branch_preserve import (
+    preserved_publish_ref,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurements import (
     MEASUREMENT_PRESERVED_WORK,
     MEASUREMENT_SEED_RULING_COMMENTS,
@@ -130,10 +136,20 @@ def ruled_seed(
     *,
     runner: CommandRunner,
     repo: Path,
+    work_item_id: str,
     ruling: SeedRuling,
     earlier_run_ids: tuple[str, ...],
 ) -> RecoverySeed | RecoveryHold:
-    """The seed a ruling names when origin carries its ref at its SHA; otherwise the hold."""
+    """The seed a ruling names when origin carries its ref at its SHA; otherwise the hold.
+
+    A ruled ref that is the item's OWN publish branch is read, once the ruling is
+    verified, from the preserved-publish ref the same dispatch's stale publish-branch
+    reclaim writes before it deletes that branch, because a seed record naming the
+    branch sends the sandbox's seed fetch at a ref that no longer exists. The record
+    keeps the ruled commit as its immutable commit; the verification above has
+    already established that the branch stands at it, which is the head the reclaim
+    preserves. Any other ruled ref names itself, as the ruled-seed paragraph says.
+    """
     result = runner.run(
         argv=["git", "ls-remote", SEED_REMOTE, ruling.preservation_ref],
         cwd=repo,
@@ -154,11 +170,16 @@ def ruled_seed(
             name=MEASUREMENT_SEED_RULING_REF,
             detail=ruled_ref_mismatch_detail(ruling=ruling, observed=observed),
         )
+    own_branch = f"refs/heads/{publish_branch_for(work_item_id=work_item_id)}"
     return RecoverySeed(
         source_run_id=leading_identifier(identifiers=earlier_run_ids),
         remote=SEED_REMOTE,
         commit_sha=ruling.commit_sha,
-        preservation_ref=ruling.preservation_ref,
+        preservation_ref=(
+            preserved_publish_ref(work_item_id=work_item_id, head=ruling.commit_sha)
+            if ruling.preservation_ref == own_branch
+            else ruling.preservation_ref
+        ),
     )
 
 
