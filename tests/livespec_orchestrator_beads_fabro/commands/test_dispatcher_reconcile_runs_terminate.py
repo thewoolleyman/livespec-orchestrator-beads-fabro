@@ -156,6 +156,28 @@ def test_rm_force_is_the_fallback_only_after_both_http_routes_fail(tmp_path: Pat
     assert "cancel route unavailable (boom)" in outcome.detail
 
 
+def test_rm_force_fallback_is_deferred_when_the_pacing_refuses_the_deletion(
+    tmp_path: Path,
+) -> None:
+    transport = _FakeTransport(results={"01RUNNING/cancel": _refused(status=500)})
+    runner = _FakeRunner()
+
+    outcome = term.terminate_orphan_run(
+        port=_port(tmp_path=tmp_path, transport=transport, runner=runner),
+        run_id="01RUNNING",
+        status_kind="running",
+        rm_permitted=lambda: False,
+    )
+
+    assert transport.calls == [("POST", "https://hp.example:32276/api/v1/runs/01RUNNING/cancel")]
+    assert runner.calls == []
+    assert outcome is not None
+    assert outcome.route == term.TERMINATION_ROUTE_RM
+    assert outcome.succeeded is False
+    assert "cancel route unavailable (status 500)" in outcome.detail
+    assert "fabro rm -f deferred by deletion pacing" in outcome.detail
+
+
 def test_a_failed_rm_fallback_is_reported_as_not_succeeded(tmp_path: Path) -> None:
     transport = _FakeTransport(results={"01RUNNING/cancel": _refused(status=500)})
 

@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_termi
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_supersession import (
     supersession_held,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rm_pacing import DeletionPacer
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort
 
 __all__: list[str] = ["reconcile_one_run"]
@@ -110,6 +111,14 @@ def reconcile_one_run(
             orphan=orphan,
             inputs=inputs,
             dry_run=False,
+        ),
+        rm_permitted=lambda: DeletionPacer(repo=inputs.repo).permit(
+            factory=orphan.factory_name,
+            run_id=orphan.run_id,
+            caller="reconcile-runs-termination",
+            has_running_run=True,
+            collection=False,
+            journal=inputs.journal,
         ),
     )
     if termination is None:

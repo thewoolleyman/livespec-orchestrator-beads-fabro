@@ -114,8 +114,13 @@ def terminate_orphan_run(
     run_id: str,
     status_kind: str,
     destructive_action_held: Callable[[], bool] = lambda: False,
+    rm_permitted: Callable[[], bool] = lambda: True,
 ) -> TerminationOutcome | None:
-    """Terminate through the first route that works, or hold before an action."""
+    """Terminate through the first route that works, or hold before an action.
+
+    `rm_permitted` is asked only once both HTTP routes have failed, and a
+    refusal leaves the `fabro rm -f` fallback undone for a later pass.
+    """
     server_api = port.server_api()
     pending = _pending_abandon(port=port, run_id=run_id, status_kind=status_kind)
     if pending is not None:
@@ -145,6 +150,25 @@ def terminate_orphan_run(
     unavailable = _route_detail(status=cancelled.status, error=cancelled.error)
     if destructive_action_held():
         return None
+    return _rm_fallback(port=port, run_id=run_id, unavailable=unavailable, permitted=rm_permitted)
+
+
+def _rm_fallback(
+    *,
+    port: FabroPort,
+    run_id: str,
+    unavailable: str,
+    permitted: Callable[[], bool],
+) -> TerminationOutcome:
+    if not permitted():
+        return TerminationOutcome(
+            route=TERMINATION_ROUTE_RM,
+            succeeded=False,
+            detail=(
+                f"cancel route unavailable ({unavailable}); "
+                "fabro rm -f deferred by deletion pacing"
+            ),
+        )
     removed = port.rm(run_id=run_id, timeout_seconds=_RM_TIMEOUT_SECONDS)
     return TerminationOutcome(
         route=TERMINATION_ROUTE_RM,
