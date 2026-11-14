@@ -392,6 +392,27 @@ def test_a_kept_copy_whose_retry_push_fails_stays_for_the_next_pass(tmp_path: Pa
     assert not copy.exists() and not Path(f"{copy}.preserve").exists()
 
 
+def test_represerve_writes_its_alias_from_the_copy_and_then_removes_the_copy(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    script = _SCRIPT.with_name("represerve.sh")
+    result = subprocess.run(
+        ["/bin/bash", str(script), "00:00", _RUN, "bd-ib-item-01testrun"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    assert _git("rev-parse", "refs/heads/preserve/bd-ib-item-01testrun", cwd=origin) == work_sha
+    work = Path(env["PRESERVE_WORK"])
+    assert not (work / f"{_RUN}.git").exists()
+    assert not list(work.glob(f"{_RUN}.git.*"))
+
+
 def test_a_copy_whose_run_commit_is_unreadable_is_kept_and_names_the_fsck_reason(
     tmp_path: Path,
 ) -> None:

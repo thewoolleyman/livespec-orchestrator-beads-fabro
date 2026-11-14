@@ -382,5 +382,7 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
   printf "$out\t%s\t%s\t%s\t%s\t%s\t%s\n" "$repo" "$sha" "$ref" "$v" $(( $(date +%s)-t0 )) "$src"
   # A local bare copy is only disposable after origin has read back the exact sha.
   # `.push.err` is deliberately not a failure marker: git writes its successful banner there too.
-  case "$v" in VERIFIED*) rm -rf "$D"; rm -f "$D".* ;; esac
+  # PRESERVE_KEEP_COPY=1 (represerve.sh sets it) leaves a VERIFIED copy for the caller, which still needs it
+  # to push the alias ref and then removes it itself (README rule 12).
+  case "$v" in VERIFIED*) [ "${PRESERVE_KEEP_COPY:-0}" = 1 ] || discard_copy "$D" ;; esac
 done <<< "$pods"
