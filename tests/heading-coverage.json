@@ -3261,5 +3261,37 @@
     "test": "TODO",
     "work_item": "bd-ib-5xihdt",
     "reason": "An integration-tier test is owed by bd-ib-5xihdt: the reseed route driven against a local bare origin whose default branch has advanced past the seed's merge base."
+  },
+  {
+    "heading": "## Scenario 373 \u2014 A factory run's failure span names its cause class from a closed set, and its run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-2h6cfl",
+    "reason": "A test at the integration tier or above is owed by bd-ib-2h6cfl: a failed factory run's livespec-dispatcher failure span carrying fabro.run_id, livespec.dispatch.id and a closed livespec.dispatch.failure_class, driven through the Dispatcher's failure-span emitter."
+  },
+  {
+    "heading": "## Scenario 374 \u2014 The terminal dispatch span names the repository the dispatch ran for",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-yq7ugj",
+    "reason": "A test at the integration tier or above is owed by bd-ib-yq7ugj: a terminated dispatch's livespec.dispatch.terminal span carrying livespec.repository equal to its run label, or naming it in livespec.dispatch.unavailable_fields."
+  },
+  {
+    "heading": "## Scenario 375 \u2014 The filing display shows the missing-capability finding the pre-admission judgement grades",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-5l4au4",
+    "reason": "A test at the integration tier or above is owed by bd-ib-5l4au4: the filing display showing the missing-capability verdict, reusing a recorded verdict, and reporting a judgement that could not run."
+  },
+  {
+    "heading": "## Scenario 376 \u2014 A factory canary records one line in the committed canary marker file and changes nothing else",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-rsqzew",
+    "reason": "A test at the integration tier or above is owed by bd-ib-rsqzew: a canary work item filed by just canary-dispatch appending exactly one line under the marker heading and changing no other file."
   }
 ]

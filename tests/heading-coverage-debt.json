@@ -1297,6 +1297,34 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 373 — A factory run's failure span names its cause class from a closed set, and its run",
+    "work_item": "bd-ib-2h6cfl",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 374 — The terminal dispatch span names the repository the dispatch ran for",
+    "work_item": "bd-ib-yq7ugj",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 375 — The filing display shows the missing-capability finding the pre-admission judgement grades",
+    "work_item": "bd-ib-5l4au4",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 376 — A factory canary records one line in the committed canary marker file and changes nothing else",
+    "work_item": "bd-ib-rsqzew",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"

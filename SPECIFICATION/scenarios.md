@@ -4261,6 +4261,16 @@ Feature: Target-aware Fabro currency admission
     Then dispatch refuses before claim
     And the stale cache is not accepted as proof
 
+  Scenario: An unread ancestry comparison refuses as unobservable rather than resolving an older base
+    Given the selected factory target serves an integration commit descended from an in-window published release tag
+    And the forge comparison of that tag against the serving integration commit fails or times out
+    And the comparison of an older published release tag succeeds
+    When dispatch evaluates currency
+    Then dispatch refuses before claim, ledger mutation, or run creation as an unobservable ancestry read
+    And the refusal names the tag whose comparison was unread and the comparison's failure
+    And the older release tag is not resolved as the base and the dispatch is not refused as out of window
+    And the corrective route directs a retry once the comparison can be read, not a re-pin of the factory's Fabro build
+
   Scenario: Stable and nightly releases use the same publication-time rule
     Given the candidate base is an official nightly or prerelease release tag
     And the newest observed release is stable, prerelease, or nightly
@@ -8194,6 +8204,7 @@ Feature: The claim half of run reconciliation
 
   Scenario Outline: Every reconciliation surface releases a qualifying absent-run claim
     Given a freshly prepared claim that satisfies every condition of the first absent-run release scenario
+    And this host's dispatch journal holds no fresh fleet-pass record
     When reconciliation runs as <surface>
     Then the item is ready with no fabro assignee and one stranded-claim-release record names the reason run-absent
 
@@ -8202,6 +8213,60 @@ Feature: The claim half of run reconciliation
       | a Dispatcher loop tick          |
       | the dispatch preamble           |
       | the standalone reconcile-runs sweep |
+
+  Scenario Outline: With a fresh fleet-pass record only the dispatched items are reconciled
+    Given this host's dispatch journal holds a fleet-pass record from this host, 300 seconds old, not a dry run, that surveyed every declared factory and recorded zero errors
+    And dispatcher.reconcile_freshness_seconds is absent
+    And item A has a non-terminal orphan run on a declared factory
+    And item B holds a qualifying absent-run claim
+    When <invocation> dispatches item A
+    Then item A's orphan run is exported and terminated before the publish-branch reclaim for item A
+    And item B keeps its claim and changes no status
+    And the journal gains one reconcile-runs-pass record with scope item naming item A
+
+    Examples:
+      | invocation                                          |
+      | dispatcher.py dispatch requesting item A            |
+      | a dispatcher.py loop pass whose admission selects item A |
+
+  Scenario Outline: A dispatch preamble without a fresh fleet-pass record takes the fleet pass
+    Given this host's newest fleet-pass record <condition>
+    And item B, which is not being dispatched, holds a qualifying absent-run claim
+    When the dispatch preamble runs
+    Then item B is ready with no fabro assignee and one stranded-claim-release record names the reason run-absent
+    And the journal gains one reconcile-runs-pass record with scope fleet
+
+    Examples:
+      | condition                                                               |
+      | is 2000 seconds old with dispatcher.reconcile_freshness_seconds absent  |
+      | recorded one error                                                      |
+      | did not survey one of the declared factories                            |
+      | was written by a pass on another host                                   |
+      | was written by a dry-run pass                                           |
+      | carries no scope field                                                  |
+      | cannot be parsed                                                        |
+      | is absent                                                               |
+      | is 10 seconds old with dispatcher.reconcile_freshness_seconds set to 0  |
+
+  Scenario: An unreadable dispatch journal makes the preamble take the fleet pass
+    Given this host's dispatch journal exists but cannot be read
+    And item B, which is not being dispatched, holds a qualifying absent-run claim
+    When the dispatch preamble runs
+    Then it takes the fleet pass
+    And item B's claim is surveyed and measured
+
+  Scenario: An item-pass record never refreshes the window
+    Given this host's newest fleet-pass record is 2000 seconds old
+    And a dispatch 60 seconds ago appended a reconcile-runs-pass record with scope item
+    When the next dispatch preamble runs
+    Then it takes the fleet pass
+
+  Scenario: The standalone sweep always takes the fleet pass
+    Given this host's dispatch journal holds a fresh fleet-pass record
+    And item B holds a qualifying absent-run claim
+    When the standalone reconcile-runs sweep runs
+    Then item B is ready with no fabro assignee
+    And the journal gains one reconcile-runs-pass record with scope fleet
 
   Scenario: A claim re-stamped between the comment and the transition is not overwritten
     Given a qualifying absent-run claim for run R whose journal record and ledger comment the recovery has written
@@ -9127,6 +9192,37 @@ Feature: New behaviour gets new spec before it is built
     And the only revision cut after the item's tier record that amended its generalization-target heading carries decision reject
     When a dispatch of the item is refused, and when needs-attention is composed
     Then the refusal names no relink candidate and needs-attention carries no hygiene:spec-tier-relink fact for the item
+
+  Scenario: A stale hold whose classification did not run is re-judged once
+    Given a held item whose newest tier record was taken against an older spec version
+    And the dispatch-time classification of the item does not run
+    When the pre-dispatch wall evaluates the item
+    Then the wall takes the spec-stated judgement once more in the same pass
+    And when it returns a verdict the hold is decided from a tier record taken against the current spec version
+
+  Scenario: A stale hold that cannot be re-judged stays held and says so
+    Given a held item whose newest tier record was taken against an older spec version and behaviour digest
+    And neither the dispatch-time classification nor the second judgement runs
+    When the pre-dispatch wall evaluates the item
+    Then the item is refused with exit code 5
+    And the refusal names the did-not-run cause, the standing record's spec version and digest, and the current ones
+    And the refusal does not present the unratified topic as a verdict against the current specification
+
+  Scenario: A provider outage releases no held item
+    Given many held items whose classifications all fail to run in one pass
+    When the pre-dispatch wall evaluates them
+    Then every one remains held
+
+  Scenario: A classification that does not run records the judgement's own cause and candidates
+    Given the spec-stated judgement of a classification returns an unparseable verdict from its only candidate
+    When the classification records that it did not run
+    Then the did-not-run record's cause is unparseable-verdict
+    And the record names that candidate's agent, model and exit code
+
+  Scenario: Different failure causes are recorded apart
+    Given one classification of an item that failed on a provider fault
+    When a later classification of the item fails on a timeout
+    Then the item carries two did-not-run records whose causes are provider-fault and timeout
 ```
 
 ## Scenario 207 — The drift run processes each merge behind a contiguous frontier and files proposals it never accepts
@@ -11839,6 +11935,9 @@ Feature: A factory-captured assertion whose proof surface no sandbox capability 
       | a credential or kubeconfig not given to the sandbox                              |
       | operator-host state                                                              |
       | the released-build effects of a prompt or workflow file the item itself changes  |
+      | a reproduction that runs longer than one proof_capture turn                      |
+      | a harness or fixture that neither the repository nor the item provides           |
+      | a git commit or push the read-only proof_capture stage would have to perform     |
 
   Scenario: A prompt or workflow file under .claude-plugin/.fabro/ that the item changes names the released-build requirement
     Given an item that changes a stage prompt file under .claude-plugin/.fabro/
@@ -11846,6 +11945,13 @@ Feature: A factory-captured assertion whose proof surface no sandbox capability 
     When the dod_gate node evaluates the rendered goal
     Then the run ends through the structured needs-human ending
     And the finding names the released-build requirement
+
+  Scenario: A repository-provided reproduction that fits one turn raises no proof-surface finding
+    Given an item whose factory-captured assertion names a reproduction command the repository provides
+    And that command completes within one proof_capture turn
+    And any git write it performs happens inside a test against a repository the test creates
+    When the dod_gate node evaluates the rendered goal
+    Then the gate raises no proof-surface finding for that assertion
 ```
 
 ## Scenario 273 — The run goal omits a filing-time advisory finding comment and still lists a later operator comment
@@ -13719,8 +13825,25 @@ Feature: Run-age-bounded recovery preference
 
   Scenario: a head that nothing attributes still refuses the resume
     Given run R's latest preserved capture on the item and an open pull request whose current head H no publication record, proof record or dispatch-journal record names
+    And the capture's tip tree differs from H's tree
     When the Dispatcher resumes the item
     Then the resume refuses with publishing-run-unobservable, naming that measurement
+
+  Scenario: a head whose tree is identical to the preserved capture is resumed though nothing attributes it
+    Given run R's latest preserved capture W on the item and an open pull request whose current head H no publication record, proof record or dispatch-journal record names
+    And W's tip tree is identical to H's tree
+    When the Dispatcher resumes the item
+    Then the resume does not refuse with publishing-run-unobservable
+    And the resume does not refuse naming W
+    And the run starts at the node the resume is anchored on
+
+  Scenario: a rebased copy of a preserved capture is resumed
+    Given run R's latest preserved capture W at commit C on the item
+    And an open pull request whose head H was committed by hand as a rebased copy of C, with C's tree, and is named by no run's record
+    And neither C nor H is an ancestor of the other
+    When the Dispatcher resumes the item
+    Then the resume does not refuse with publishing-run-unobservable
+    And the run starts at the node the resume is anchored on
 
   Scenario: a marker comment from another identity is not a publication record
     Given the committed dispatcher.publication_identity names the factory's publication login
@@ -14628,6 +14751,29 @@ Feature: The recovery-held record tells the next seat how to resume a recapture-
     Given such an item with no open pull request and no needs-human ref preserved at that run's ending
     When its recovery-held record is written
     Then the detail reads "recapture-exhausted: implementation preserved on no preserved work observed ; resume --item <work-item-id> at proof_capture with a proof rider"
+  Scenario: A closed pull request lifts the hold to a seeded route
+    Given an item held because its latest run exhausted its recapture bound, whose pull request is now closed
+    And a work-in-progress ref of that run verified on origin at commit W
+    When recovery routing grades the item
+    Then the route is seeded from W, not held and not fresh
+    And the journal records the seeded route with the reason no-open-pull-request
+    And the seeded run runs every stage the workflow requires, proof_capture among them
+  Scenario: A resume refused for an unordered head lifts the hold to a seeded route
+    Given an item held because its latest run exhausted its recapture bound, whose open pull request's head H no run's record names
+    And a work-in-progress ref of that run at commit W whose tip tree differs from H's tree
+    When resume --item is taken for the item and refuses naming publishing-run-unobservable
+    Then the item carries one livespec-recapture-resume-unobservable comment naming the pull request, H and the work-in-progress ref
+    And the item's next recovery routing routes it seeded from its preserved work, with the reason resume-refused-publishing-run-unobservable
+  Scenario: A recapture-exhausted item with no verified preserved work stays held
+    Given an item held because its latest run exhausted its recapture bound, whose pull request is closed
+    And no preserved work of the item is verified on origin and no seed ruling is current
+    When recovery routing grades the item
+    Then the item is routed held
+    And its detail reads "recapture-exhausted: implementation preserved on no preserved work observed ; resume --item <work-item-id> at proof_capture with a proof rider"
+  Scenario: A recapture-exhausted item never falls back to fresh
+    Given an item held because its latest run exhausted its recapture bound, whose pull request is closed
+    When recovery routing grades the item, whatever its preserved work
+    Then the route is seeded or held, and never fresh
 ```
 
 ## Scenario 344 — An item classified bug whose asked-for behaviour the spec does not state waits for ratification, and classify-tier re-judges a changed item
@@ -15330,4 +15476,101 @@ Feature: A seeded relaunch far behind the default branch needs no hand-built see
     Given item W released for recovery whose seed's merge base with main is main's current tip
     When the Dispatcher routes and dispatches W
     Then no reseed commit is recorded and the run starts from the seed commit
+```
+
+## Scenario 373 — A factory run's failure span names its cause class from a closed set, and its run
+
+```gherkin
+Feature: Failed factory runs are countable by cause
+  As an operator reading a week of failed factory runs
+  I want every failure span to name its run and a closed cause class
+  So that a breakdown by cause has no empty or None group
+
+  Scenario Outline: Each measured cause maps to its own class
+    Given a factory run that ended in a terminal failure whose recorded cause is <cause>
+    When the Dispatcher emits the span carrying fabro.failure.cause
+    Then the span carries livespec.dispatch.failure_class <class>
+    And the span carries the failed run's fabro.run_id and livespec.dispatch.id
+
+    Examples:
+      | cause                                                         | class                    |
+      | proof capture could not exercise a factory_captured assertion | unprovable_assertion     |
+      | a refresh, janitor or gate script timed out                   | script_timeout           |
+      | the rebase onto the target branch stopped on a conflict       | rebase_conflict          |
+      | a gate check exited non-zero                                  | gate_check_failed        |
+      | review_fix exhausted its open-Red bound                       | open_red_bound_exhausted |
+
+  Scenario: A cause no rule matches is unclassified, never empty
+    Given a failed run whose recorded cause matches no rule of the cause-class table
+    When the Dispatcher emits the failure span
+    Then livespec.dispatch.failure_class is unclassified
+
+  Scenario: A run that reported no category renders unreported
+    Given a failed run whose Fabro failure carries no category
+    When the Dispatcher emits the failure span
+    Then fabro.failure.category is unreported rather than empty or None
+    And the Dispatcher's routing on that run is unchanged
+```
+
+## Scenario 374 — The terminal dispatch span names the repository the dispatch ran for
+
+```gherkin
+Feature: Factory cost is attributable by repository
+  As an operator ranking factory CPU levers per repository
+  I want every terminal dispatch span to name its repository
+  So that a Honeycomb query attributes factory CPU by repository
+
+  Scenario: A terminated dispatch's terminal span carries its repository
+    Given a dispatch whose fabro run carries the run label livespec.repository
+    When the dispatch reaches a terminal state
+    Then its livespec.dispatch.terminal span carries livespec.repository with the same value
+    And the attribute reaches dataset livespec-dispatcher through the receiver allowlist
+
+  Scenario: An unknown repository is named as unavailable, never fabricated
+    Given a dispatch whose repository the Dispatcher cannot establish
+    When the dispatch reaches a terminal state
+    Then its terminal span omits livespec.repository
+    And livespec.dispatch.unavailable_fields names livespec.repository
+```
+
+## Scenario 375 — The filing display shows the missing-capability finding the pre-admission judgement grades
+
+```gherkin
+Feature: A filer sees an unprovable assertion before confirming
+  As a filer capturing an implement-kind item
+  I want to see that a factory_captured assertion needs a surface the sandbox lacks
+  So that I can fix its mode before intake holds the item
+
+  Scenario: An assertion needing a surface outside the grading set is shown before confirmation
+    Given a filer captures an item whose factory_captured assertion needs a surface no name in the committed grading set provides
+    When the filing front-end displays the filing before confirmation
+    Then the display shows a finding naming the assertion and the missing surface
+    And confirming the filing files the item, which intake routes as Scenario 174 prescribes
+
+  Scenario: The display and intake grade one subject alike and judge it once
+    Given an item whose missing-capability verdict for its current subject and rubric digests is already recorded
+    When the filing display runs
+    Then it shows the recorded verdict and takes no new judgement
+
+  Scenario: A judgement that cannot run is reported, not hidden
+    Given the missing-capability judgement cannot run for a filing
+    When the filing front-end displays the filing
+    Then the display shows that the missing-capability check did not run and why
+    And the filing is not refused
+```
+
+## Scenario 376 — A factory canary records one line in the committed canary marker file and changes nothing else
+
+```gherkin
+Feature: A canary fixture is a ratified, minimal factory deliverable
+  As an operator canarying a factory engine, catalog image or sandbox driver
+  I want a canary work item whose only deliverable is one recorded line
+  So that the canary measures the factory, not a change
+
+  Scenario: A canary fixture records its dispatch
+    Given a canary work item filed from orchestrator-image/canary-fixture.md by just canary-dispatch for a factory
+    When its factory run completes its implement node and opens its pull request
+    Then the pull request appends one line under "## Recorded canary dispatches" in orchestrator-image/canary-marker.md
+    And the line names the canary's work-item id, its factory and its run id
+    And the pull request changes no other file
 ```
