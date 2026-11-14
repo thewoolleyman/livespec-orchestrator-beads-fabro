@@ -208,6 +208,10 @@ def session_headroom_reading_fields(*, reading: SessionHeadroomReading) -> dict[
         # window keeps its existing key set (contracts v263: the absent window is
         # journaled as `five-hour-window-absent`, never as unobservable or a figure).
         fields["five_hour_window"] = FIVE_HOUR_WINDOW_ABSENT
+    if reading.provider_exhaustion_expires_at is not None:
+        # Named only where it applies, like the absent window above, so every
+        # record of an unexcluded slot keeps its existing key set (bd-ib-wx4yha).
+        fields["provider_exhaustion_expires_at"] = reading.provider_exhaustion_expires_at
     if reading.slot is not None:
         fields["slot"] = {
             "name": reading.slot.slot,

@@ -91,6 +91,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_baseline import (
     session_headroom_baseline,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_exhaustion import (
+    pool_with_exhaustion,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_session_headroom_io import (
     read_projected_session_headroom,
 )
@@ -326,32 +329,29 @@ def _assessed_pool(
         )
         return PoolSelection(readings=(lone,), chosen_slot=None, representative=lone)
     return select_pool_slot(
-        readings=tuple(
-            (
-                slot,
-                _assessed(
-                    reading=read(token=_projected_token(env_name=slot), observed_at=now_iso),
-                    floor_percent=floor_percent,
-                    horizon_minutes=horizon_minutes,
-                    journal_path=journal_path,
-                    now_iso=now_iso,
-                ),
-            )
-            for slot in slots
+        readings=pool_with_exhaustion(
+            readings=tuple(
+                (
+                    slot,
+                    # Each slot is read by its own name, as the token it would project;
+                    # which slot the dispatch projects is decided once, here, and every
+                    # other consumer follows it through `select_factory_credential`
+                    # (bd-ib-nzp5ln: assessing another account gates on its window).
+                    _assessed(
+                        reading=read(token=os.environ.get(slot), observed_at=now_iso),
+                        floor_percent=floor_percent,
+                        horizon_minutes=horizon_minutes,
+                        journal_path=journal_path,
+                        now_iso=now_iso,
+                    ),
+                )
+                for slot in slots
+            ),
+            journal_path=journal_path,
+            now_iso=now_iso,
         ),
         floor_percent=floor_percent,
     )
-
-
-def _projected_token(*, env_name: str) -> str | None:
-    """The token one injected pool slot would project.
-
-    Each slot is read by its own name; which slot the dispatch then projects is
-    decided once, at admission, and every other consumer follows that choice
-    through `select_factory_credential` (`bd-ib-nzp5ln`: assessing a different
-    account from the one billed gates on someone else's window).
-    """
-    return os.environ.get(env_name)
 
 
 def _bounded_dial(
