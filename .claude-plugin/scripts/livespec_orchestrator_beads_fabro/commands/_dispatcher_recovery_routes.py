@@ -46,6 +46,7 @@ __all__: list[str] = [
     "RecoveryResume",
     "RecoveryRoute",
     "RecoverySeed",
+    "ReseedConflict",
 ]
 
 # The four routes, as the clause names them.
@@ -70,6 +71,21 @@ class RecoveryMeasurement:
 
 
 @dataclass(frozen=True, kw_only=True)
+class ReseedConflict:
+    """What a conflicting diff-apply reseed names: the seed, the tip and every path.
+
+    The `seed-reseed-conflict` refusal's payload, carried beside the refusal token
+    rather than folded into its prose so the `recovery-held` record can name each
+    figure as a field an operator greps for.
+    """
+
+    seed_ref: str
+    seed_commit: str
+    default_branch_tip: str
+    paths: tuple[str, ...]
+
+
+@dataclass(frozen=True, kw_only=True)
 class RecoveryHold:
     """Every reason one item was held, in the order the resume's refusals are listed.
 
@@ -81,11 +97,18 @@ class RecoveryHold:
 
     measurements: tuple[RecoveryMeasurement, ...] = ()
     refusals: tuple[str, ...] = ()
+    reseed_conflict: ReseedConflict | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
 class RecoverySeed:
-    """The four things a seed record must name, resolved from one origin read."""
+    """The four things a seed record must name, resolved from one origin read.
+
+    A REseeded seed names the reseed commit and its reseed ref as `commit_sha` and
+    `preservation_ref`, and the seed it was moved from as `source_ref` and
+    `source_commit`, beside the default branch tip it was applied onto. All three
+    are `None` for a seed used unchanged, which is how a record tells the two apart.
+    """
 
     source_run_id: str
     remote: str
@@ -93,6 +116,9 @@ class RecoverySeed:
     preservation_ref: str
     preservation_tip_sha: str | None = field(default=None, compare=False)
     passed_over_needs_human: tuple[tuple[str, str], ...] = ()
+    source_ref: str | None = None
+    source_commit: str | None = None
+    default_branch_tip: str | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -166,3 +192,4 @@ class RecoveryRoute:
     preserved_work: str | None = None
     fresh_ruling_instant: str | None = None
     passed_over_needs_human: tuple[tuple[str, str], ...] = ()
+    passed_over_no_change: tuple[tuple[str, str], ...] = ()
