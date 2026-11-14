@@ -399,6 +399,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_operator_valve_arguments import (
     add_operator_valve_subcommands,
+    run_supersede_contaminated_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import (
     ensure_otel_receiver,
@@ -536,6 +537,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "sandbox-images": run_sandbox_images_command,
     **SEED_SUBCOMMAND_HANDLERS,
     "spec-check": run_spec_check,
+    "supersede-contaminated": run_supersede_contaminated_command,
 }
 
 
