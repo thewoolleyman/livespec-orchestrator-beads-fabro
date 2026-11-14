@@ -38,7 +38,7 @@ The admission predicate — the shared factory-safety routing predicate that the
 2. the workflow-edit-label arm: the item carries the `approval:workflow-edit` label or the `approval:workflow-edit-additive` label;
 3. the declared-workflow-edit heuristic over the item's scope text, unless a `workflow-scope-override:citation-only` label overrides it.
 
-Consequently this assertion can admit only an item refused by the third arm, and can never admit an item that the first or second arm routes. A label authorizing an edit is not a citation of a path. A refusal by the second arm MUST NOT set the `awaits-scope-override` label, because the citation-only override is not its remedy. Its refusal MUST be a host-route refusal that names the work item, the label that matched (`approval:workflow-edit` when the item carries both) and the attended-host-session route. It MUST be issued before the Dispatcher takes any claim, WIP slot, launch mutex or sandbox run for the item. It MUST reach a terminal verdict without an interactive prompt, and it MUST leave the item `ready`, exactly as a first-arm refusal does. `dispatcher.py host-only --item <id> --json` MUST report `host_only: true` for such an item, with a `reason` naming the label, so the fleet launcher's host-only screen makes its non-run exit without re-taking the ticket. It is an explicit operator override of a factory-boundary heuristic, not a general relaxation of factory safety. A work-item introducing a first-class operator verb MUST include specification coverage for that verb in its acceptance criteria, because the action-id grammar is a consumer contract rather than an implementation-private parser.
+Consequently this assertion can admit only an item refused by the third arm, and can never admit an item that the first or second arm routes. The citation-only override is an explicit operator override of a factory-boundary heuristic, not a general relaxation of factory safety. A work-item introducing a first-class operator verb MUST include specification coverage for that verb in its acceptance criteria, because the action-id grammar is a consumer contract rather than an implementation-private parser. A label authorizing an edit is not a citation of a path. A refusal by the second arm MUST NOT set the `awaits-scope-override` label, because the citation-only override is not its remedy. Its refusal MUST be a host-route refusal that names the work item, the label that matched (`approval:workflow-edit` when the item carries both) and the attended-host-session route. It MUST be issued before the Dispatcher takes any claim, WIP slot, launch mutex or sandbox run for the item. It MUST reach a terminal verdict without an interactive prompt, and it MUST leave the item `ready`, exactly as a first-arm refusal does. `dispatcher.py host-only --item <id> --json` MUST report `host_only: true` for such an item, with a `reason` naming the label, so the fleet launcher's host-only screen makes its non-run exit without re-taking the ticket.
 
 In `scenarios.md`, in Scenario 48 (`## Scenario 48 — Dispatcher refuses a not-factory-safe item at admission`; heading unchanged, so `tests/heading-coverage.json` needs no heading edit), insert after the scenario "A ready item editing .github/workflows/ is refused pre-dispatch":
 
@@ -70,7 +70,6 @@ In `scenarios.md`, in Scenario 48 (`## Scenario 48 — Dispatcher refuses a not-
 
 - SPECIFICATION/contracts.md
 - SPECIFICATION/scenarios.md
-- tests/heading-coverage.json
 
 ### Summary
 
@@ -98,7 +97,7 @@ Feature: The diff backstop catches a workflow edit the admission screens could n
     When the implement stage completes its commit
     Then the stage ends with a failed outcome whose cause is `LIVESPEC_HOST_ROUTE_WORKFLOW_EDIT: .github/workflows/ci.yml, .github/workflows/release.yml`
     And the run never enters the janitor or `publish_draft`
-    And no branch is pushed and no pull request is opened
+    And no publication branch is pushed and no pull request is opened
     And the run's commits are preserved on its needs-human ref
 
   Scenario: The Dispatcher routes the item to the attended host session
@@ -115,5 +114,5 @@ Feature: The diff backstop catches a workflow edit the admission screens could n
     Then the run continues to the janitor without a host-route verdict
 ```
 
-In `tests/heading-coverage.json`, add an entry for the new heading with `test: "TODO"` and a `reason` naming the integration-tier binding owed by bd-ib-tgygh6's implementation (the implement-stage backstop and the Dispatcher's reconcile routing).
+`tests/heading-coverage.json` is not a target of this proposal, because it is not under the spec target. Per the Revise co-edit discipline, the revise COMMIT that cuts this proposal carries a new row for the new scenario heading. The row has `test: "TODO"`, a `reason` naming the integration-tier binding owed by bd-ib-tgygh6's implementation (the implement-stage backstop and the Dispatcher's reconcile routing), and a `work_item` key of `bd-ib-tgygh6`. The same commit regenerates `tests/heading-coverage-debt.json`.
 
