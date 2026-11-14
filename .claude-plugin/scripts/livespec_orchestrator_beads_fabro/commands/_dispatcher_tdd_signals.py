@@ -1,7 +1,8 @@
 """The terminal calibration span's TDD order projection.
 
 Plan `factory-test-first-enforcement` slice S3 (work-item `bd-ib-3h5vfq`) puts
-SEVEN `tdd.*` fields on every terminal `dispatcher.calibration` span, plus the
+SEVEN `tdd.*` fields (slice S6 has since added two verified-pair fields) on every
+terminal `dispatcher.calibration` span, plus the
 implement node's adapter as the second dimension the Honeycomb board groups
 by. This module is the one place that names those keys and assembles their
 values from the three derivations that own them.
@@ -42,6 +43,17 @@ to "what does this number mean" for each:
   slice S4 (`bd-ib-tbgxm4`) has since repaired that field to the same parser,
   and both now read `_dispatcher_assertion_count` so the two cannot diverge
   again.
+- `tdd.verified_pair_count` — the number of DISTINCT verified Red-Green pairs
+  in THIS dispatch's series (Scenario 165, plan slice S6 part one): commits
+  carrying BOTH the Red and the Green trailer, de-duplicated on the Red's own
+  evidence, so a Green amendment, a duplicate observation, an open Red, a
+  suite-green-only commit and another run's history each add nothing. `0` is
+  an OBSERVED empty series; it is the one place a zero is projected, and only
+  for a series that was read. Source: `_dispatcher_completed_cycles`.
+- `tdd.verified_pair_unobserved_reason` — why that count is absent, when the
+  series could not be read (`no-pull-request`, `no-dispatch-id`,
+  `commits-unreadable`, `series-not-identified`). Set exactly when the count
+  is not.
 - `livespec.implement.adapter` — the registry agent id of the implement
   node's resolved ACP adapter. Source: `_dispatcher_implement_adapter`.
 
@@ -62,10 +74,13 @@ This module is PURE: no IO, no environment reads, and it never raises.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_assertion_count import (
     assertion_count_for,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_completed_cycles import (
+    VerifiedPairCount,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_commits import TddCommitSignals
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSignals
@@ -81,6 +96,7 @@ __all__: list[str] = [
     "tdd_signal_fields",
     "tdd_signals",
     "tdd_span_fields",
+    "with_verified_pairs",
 ]
 
 _RED_COMMIT_COUNT_KEY = "tdd.red_commit_count"
@@ -90,6 +106,8 @@ _GAP_SECONDS_MEDIAN_KEY = "tdd.red_green_gap_seconds_median"
 _FIRST_WRITE_BEFORE_RED_KEY = "tdd.first_product_write_before_red"
 _ORDER_REFUSALS_KEY = "tdd.order_refusals"
 _ASSERTION_COUNT_KEY = "tdd.assertion_count"
+_VERIFIED_PAIR_COUNT_KEY = "tdd.verified_pair_count"
+_VERIFIED_PAIR_REASON_KEY = "tdd.verified_pair_unobserved_reason"
 
 # The adapter is NOT a `tdd.*` key: it is a grouping dimension of the dispatch,
 # not a test-first measurement, and naming it `tdd.adapter` would misreport
@@ -109,6 +127,8 @@ TDD_PROJECTED_KEYS: tuple[str, ...] = (
     _FIRST_WRITE_BEFORE_RED_KEY,
     _ORDER_REFUSALS_KEY,
     _ASSERTION_COUNT_KEY,
+    _VERIFIED_PAIR_COUNT_KEY,
+    _VERIFIED_PAIR_REASON_KEY,
     IMPLEMENT_ADAPTER_KEY,
 )
 
@@ -130,6 +150,8 @@ class TddSignals:
     first_product_write_before_red: bool | None = None
     order_refusals: int | None = None
     assertion_count: int | None = None
+    verified_pair_count: int | None = None
+    verified_pair_unobserved_reason: str | None = None
     adapter: str | None = None
     selected_index: int | None = None
     size_justified: bool | None = None
@@ -156,6 +178,9 @@ def tdd_signals(
     commit fields absent rather than zero. `order` always arrives — the sink
     reports its own absence as `None` fields — and `adapter` is `None` when no
     node resolution was journaled for the item.
+    The verified-pair count is NOT assembled here: it is applied afterwards by
+    `with_verified_pairs`, so a path that never read the series leaves the
+    count AND its reason absent rather than manufacturing either.
     """
     return TddSignals(
         red_commit_count=None if commits is None else commits.red_commit_count,
@@ -170,6 +195,15 @@ def tdd_signals(
         adapter=adapter,
         selected_index=selected_index,
         size_justified=size_justified,
+    )
+
+
+def with_verified_pairs(*, signals: TddSignals, pairs: VerifiedPairCount) -> TddSignals:
+    """These signals carrying one dispatch's verified-pair count and its reason."""
+    return replace(
+        signals,
+        verified_pair_count=pairs.count,
+        verified_pair_unobserved_reason=pairs.unobserved_reason,
     )
 
 
@@ -205,6 +239,8 @@ def tdd_signal_fields(*, signals: TddSignals) -> dict[str, object | None]:
         _FIRST_WRITE_BEFORE_RED_KEY: signals.first_product_write_before_red,
         _ORDER_REFUSALS_KEY: signals.order_refusals,
         _ASSERTION_COUNT_KEY: signals.assertion_count,
+        _VERIFIED_PAIR_COUNT_KEY: signals.verified_pair_count,
+        _VERIFIED_PAIR_REASON_KEY: signals.verified_pair_unobserved_reason,
         IMPLEMENT_ADAPTER_KEY: signals.adapter,
     }
 

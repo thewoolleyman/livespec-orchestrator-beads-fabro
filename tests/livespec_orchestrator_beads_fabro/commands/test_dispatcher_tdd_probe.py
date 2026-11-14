@@ -497,3 +497,180 @@ def test_gathered_signals_use_the_selected_implement_candidate_or_primary_fallba
     assert journal["livespec.implement.selected_index"] == 1
     assert attributes["livespec.implement.adapter"] == {"stringValue": CODEX_AGENT_ID}
     assert attributes["livespec.implement.selected_index"] == {"intValue": "1"}
+
+
+# --- the current dispatch's distinct verified Red-Green pairs --------------
+#
+# Scenario 165 / plan slice S6 part one. The count is reported through the SAME
+# gather the terminal calibration record is built from, so these cases drive
+# `gather_tdd_signals` and read the journal projection rather than a helper no
+# Dispatcher path calls. The projection is read with `.get` so an unwired field
+# is an absent value rather than an exception, which is the failure this slice
+# exists to close.
+
+_PAIR_COUNT_KEY = "tdd.verified_pair_count"
+_PAIR_REASON_KEY = "tdd.verified_pair_unobserved_reason"
+
+
+def _pair_body(
+    *,
+    run_id: str = _DISPATCH_ID,
+    checksum: str | None = None,
+    red: str | None = None,
+    green: str | None = None,
+    suite_green: str | None = None,
+) -> str:
+    lines = ["Body prose."]
+    if checksum is not None:
+        lines.append(f"TDD-Red-Test-File-Checksum: {checksum}")
+    if red is not None:
+        lines.append(f"TDD-Red-Captured-At: {red}")
+    if suite_green is not None:
+        lines.append(f"TDD-Suite-Green-Captured-At: {suite_green}")
+    lines.append(f"Factory-Run-Id: {run_id}")
+    if green is not None:
+        lines.append(f"TDD-Green-Verified-At: {green}")
+    return "\n".join(lines) + "\n"
+
+
+def _pair_fields(
+    *,
+    commits: list[tuple[str, str]],
+    outcome: DispatchOutcome | None = None,
+    runner: _Runner | None = None,
+    records: tuple[dict[str, object], ...] | None = None,
+) -> dict[str, object | None]:
+    """The journal projection of one gathered dispatch."""
+    module = _module()
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink import TddOrderSink
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
+        tdd_signal_fields,
+    )
+
+    signals = module.gather_tdd_signals(
+        repo=Path("/repo"),
+        item=_item(),
+        outcome=_outcome() if outcome is None else outcome,
+        records=(_dispatch_id_record(),) if records is None else records,
+        sink=TddOrderSink(path=Path("/nonexistent-order-sink.json")),
+        runner=_Runner(stdout=_commits_payload(commits=commits)) if runner is None else runner,
+    )
+    return tdd_signal_fields(signals=signals)
+
+
+def test_the_count_is_this_dispatchs_distinct_verified_pairs_only() -> None:
+    fields = _pair_fields(
+        commits=[
+            (
+                "feat: first cycle, Green-amended so it carries both trailer sets",
+                _pair_body(
+                    checksum="sha256:aaa",
+                    red="2026-10-01T20:00:00Z",
+                    green="2026-10-01T20:04:00Z",
+                ),
+            ),
+            (
+                "feat: the same pair observed again under a new sha by a retry",
+                _pair_body(
+                    checksum="sha256:aaa",
+                    red="2026-10-01T20:00:00Z",
+                    green="2026-10-01T20:09:00Z",
+                ),
+            ),
+            (
+                "feat: second distinct cycle",
+                _pair_body(
+                    checksum="sha256:bbb",
+                    red="2026-10-01T20:10:00Z",
+                    green="2026-10-01T20:14:00Z",
+                ),
+            ),
+            (
+                "feat: an open Red",
+                _pair_body(checksum="sha256:ccc", red="2026-10-01T20:20:00Z"),
+            ),
+            (
+                "refactor: suite-green only, no Red at all",
+                _pair_body(suite_green="2026-10-01T20:30:00Z"),
+            ),
+            ("docs: unrelated history of this run", _pair_body()),
+            (
+                "feat: a different dispatch of the same item",
+                _pair_body(
+                    run_id=_OTHER_DISPATCH_ID,
+                    checksum="sha256:ddd",
+                    red="2026-09-01T20:00:00Z",
+                    green="2026-09-01T20:05:00Z",
+                ),
+            ),
+        ]
+    )
+
+    assert fields.get(_PAIR_COUNT_KEY) == 2
+    assert fields.get(_PAIR_REASON_KEY) is None
+
+
+def test_a_readable_series_with_no_verified_pair_reports_an_observed_zero() -> None:
+    fields = _pair_fields(
+        commits=[
+            (
+                "feat: an open Red",
+                _pair_body(checksum="sha256:ccc", red="2026-10-01T20:20:00Z"),
+            ),
+            (
+                "refactor: suite-green only",
+                _pair_body(suite_green="2026-10-01T20:30:00Z"),
+            ),
+        ]
+    )
+
+    assert _PAIR_COUNT_KEY in fields
+    assert fields.get(_PAIR_COUNT_KEY) == 0
+    assert fields.get(_PAIR_REASON_KEY) is None
+
+
+def test_a_series_with_no_pull_request_is_unobserved_with_a_reason() -> None:
+    runner = _Runner()
+
+    fields = _pair_fields(commits=[], outcome=_outcome(pr_number=None), runner=runner)
+
+    assert fields.get(_PAIR_COUNT_KEY) is None
+    assert fields.get(_PAIR_REASON_KEY) == "no-pull-request"
+    assert runner.calls == []
+
+
+def test_a_series_that_cannot_be_read_is_unobserved_with_a_reason() -> None:
+    failing = _Runner(exit_code=1)
+    garbled = _Runner(stdout="not json at all")
+
+    for runner in (failing, garbled):
+        fields = _pair_fields(commits=[], runner=runner)
+
+        assert fields.get(_PAIR_COUNT_KEY) is None
+        assert fields.get(_PAIR_REASON_KEY) == "commits-unreadable"
+
+
+def test_a_series_carrying_none_of_this_runs_trailer_is_unobserved_not_zero() -> None:
+    fields = _pair_fields(
+        commits=[
+            (
+                "feat: only another dispatch's pair is visible",
+                _pair_body(
+                    run_id=_OTHER_DISPATCH_ID,
+                    checksum="sha256:ddd",
+                    red="2026-09-01T20:00:00Z",
+                    green="2026-09-01T20:05:00Z",
+                ),
+            ),
+        ]
+    )
+
+    assert fields.get(_PAIR_COUNT_KEY) is None
+    assert fields.get(_PAIR_REASON_KEY) == "series-not-identified"
+
+
+def test_a_dispatch_with_no_journaled_id_is_unobserved_with_a_reason() -> None:
+    fields = _pair_fields(commits=[], records=())
+
+    assert fields.get(_PAIR_COUNT_KEY) is None
+    assert fields.get(_PAIR_REASON_KEY) == "no-dispatch-id"
