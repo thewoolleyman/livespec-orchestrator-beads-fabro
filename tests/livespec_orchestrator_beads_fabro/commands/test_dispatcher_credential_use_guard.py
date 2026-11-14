@@ -204,8 +204,26 @@ def test_review_launchers_refuse_branch_writes_and_whole_suite_commands_for_ever
     assert remedy in result.stderr
 
 
-def test_review_launchers_refuse_a_whole_suite_routed_through_mise_exec(tmp_path: Path) -> None:
-    """`mise exec` must not replace the review boundary's `just` launcher."""
+@pytest.mark.parametrize(
+    ("command", "remedy"),
+    [
+        ("mise exec -- just check", "named test ids only"),
+        ("mise x -- just check", "named test ids only"),
+        ("mise exec just@1.40.0 -- just check", "named test ids only"),
+        ("mise x just@1.40.0 just@1.41.0 -- just check", "named test ids only"),
+        ("mise x -j 2 -E ci just@1.40.0 -- livespec-implement-check-suite", "named test ids only"),
+        ("mise -C . x -- just check", "named test ids only"),
+        ("mise exec just@1.40.0 just check", "named test ids only"),
+        ("mise x -c 'just check'", "named test ids only"),
+        ("mise exec --command=livespec-implement-check-suite", "named test ids only"),
+        ("mise x node -- git push origin review-head", "git diff, git log and git show"),
+        ("mise x git@2 -- git commit -m x", "git diff, git log and git show"),
+    ],
+)
+def test_review_launchers_refuse_commands_routed_through_every_mise_exec_form(
+    tmp_path: Path, command: str, remedy: str
+) -> None:
+    """`mise exec` and its `x` alias must not replace the review boundary's launchers."""
     review_bin = tmp_path / "review-bin"
     review_bin.mkdir()
     for path, source in review_asset_sources():
@@ -237,7 +255,7 @@ def test_review_launchers_refuse_a_whole_suite_routed_through_mise_exec(tmp_path
             "--",
             "/bin/sh",
             "-c",
-            "mise exec -- just check",
+            command,
         ],
         capture_output=True,
         text=True,
@@ -248,8 +266,46 @@ def test_review_launchers_refuse_a_whole_suite_routed_through_mise_exec(tmp_path
 
     assert result.returncode != 0
     assert "LIVESPEC_REVIEW_GUARD_REFUSED" in result.stderr
-    assert "named test ids only" in result.stderr
+    assert remedy in result.stderr
     assert "LIVESPEC_TEST_UNGUARDED_MISE_REACHED" not in result.stderr
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["x", "--", "git", "log"],
+        ["exec", "git@2", "--", "git", "diff"],
+        ["x", "-c", "git show"],
+        ["-C", ".", "x", "node@20", "--", "node", "-v"],
+        ["ls"],
+    ],
+)
+def test_review_mise_launcher_passes_read_only_commands_to_the_real_mise(
+    tmp_path: Path, arguments: list[str]
+) -> None:
+    """The mise launcher refuses only the guarded commands; every other form reaches mise."""
+    review_bin = tmp_path / "review-bin"
+    review_bin.mkdir()
+    launcher = review_bin / "mise"
+    sources = {Path(path).name: source for path, source in review_asset_sources()}
+    _ = launcher.write_text(sources["mise"], encoding="utf-8")
+    launcher.chmod(0o755)
+    real = tmp_path / "real-mise"
+    _ = real.write_text('#!/bin/sh\necho "REAL_MISE_REACHED $*"\n', encoding="utf-8")
+    real.chmod(0o755)
+    env = _hermetic_env()
+    env["LIVESPEC_REVIEW_REAL_MISE"] = str(real)
+    result = subprocess.run(
+        ["/bin/sh", str(launcher), *arguments],
+        capture_output=True,
+        text=True,
+        timeout=_SETTLE_SECONDS,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == f"REAL_MISE_REACHED {' '.join(arguments)}"
 
 
 def _date_shim(*, bin_dir: Path, clock: Path) -> None:
