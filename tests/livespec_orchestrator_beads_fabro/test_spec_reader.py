@@ -2,12 +2,14 @@
 
 from pathlib import Path
 
+import pytest
 from livespec_orchestrator_beads_fabro.spec_reader import (
     current_specification_version,
     diff_specification_versions,
     read_current_specification,
     read_specification_history,
 )
+from livespec_runtime.spec_stated import judge
 from returns.pipeline import is_successful
 from returns.unsafe import unsafe_perform_io
 
@@ -52,6 +54,42 @@ def test_read_current_specification_returns_zero_when_no_history(
     _seed_spec(spec_root=spec_root)
     snapshot = read_current_specification(spec_root=spec_root)
     assert snapshot.version == 0
+
+
+def test_read_current_specification_includes_a_declared_inherited_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A constraint's inherited specification remains citable by a verdict."""
+    spec_root = tmp_path / "repository" / "SPECIFICATION"
+    _seed_spec(spec_root=spec_root)
+    inherited_key = "livespec/SPECIFICATION/non-functional-requirements.md"
+    _ = (spec_root / "constraints.md").write_text(
+        "Every constraint in `livespec/SPECIFICATION/non-functional-requirements.md` "
+        "applies to this plugin without restatement.\n",
+        encoding="utf-8",
+    )
+    sibling_root = tmp_path / "siblings"
+    inherited = sibling_root / inherited_key
+    inherited.parent.mkdir(parents=True)
+    _ = inherited.write_text(
+        "## Inherited credential boundary\n\nCredential helpers remain private to hooks.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("LIVESPEC_SIBLING_CLONES_ROOT", str(sibling_root))
+
+    snapshot = read_current_specification(spec_root=spec_root)
+    verdict = judge(
+        spec_tree=snapshot.files,
+        statement="Credential helpers remain private to hooks.",
+        run_model=lambda _prompt: (
+            '{"kind":"stated","stated_by":["## Inherited credential boundary"],'
+            '"generalization_target":null,"rationale":""}'
+        ),
+    )
+
+    assert inherited_key in snapshot.files
+    assert snapshot.files[inherited_key] == inherited.read_text(encoding="utf-8")
+    assert is_successful(verdict)
 
 
 def test_read_specification_history_happy_path(tmp_path: Path) -> None:

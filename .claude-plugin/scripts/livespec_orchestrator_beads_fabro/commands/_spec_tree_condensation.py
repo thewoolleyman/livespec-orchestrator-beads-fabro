@@ -59,10 +59,6 @@ from typing import TYPE_CHECKING, cast
 
 from livespec_runtime.spec_stated import JUDGE_PROMPT
 
-from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done import (
-    definition_of_done,
-    reference_line_headings,
-)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_clause_resolution import (
     clauses_named as _clauses_named,
 )
@@ -88,11 +84,13 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_referenced_selection 
 from livespec_orchestrator_beads_fabro.commands._spec_tree_relevance import (
     relevance_order as _relevance_order,
 )
+from livespec_orchestrator_beads_fabro.commands._spec_tree_relevant_paragraphs import (
+    combine_paragraphs,
+    pinned_sections_for_statement,
+    reserve_relevant_paragraphs,
+)
 from livespec_orchestrator_beads_fabro.commands._spec_tree_rendering import (
     rendered_tree_length as _rendered_length,
-)
-from livespec_orchestrator_beads_fabro.commands._spec_tree_scenario_governing import (
-    pinned_sections,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_tree_sections import (
     sections_of as _split_sections,
@@ -207,20 +205,19 @@ def condensed_spec_tree(
     selected: dict[tuple[str, int], str] = {}
     complete: set[tuple[str, int]] = set()
     statement_terms = frozenset(_TERM.findall(statement.casefold()))
-    definition = definition_of_done(description=statement)
     asked_text = "\n".join(
         line for line in statement.splitlines() if not line.lstrip().startswith("References:")
     )
     asked_terms = frozenset(_TERM.findall(asked_text.casefold())) - FUNCTION_TERMS
-    references = (
-        definition.references if definition.present else reference_line_headings(text=statement)
-    )
-    pinned, governing_terms = pinned_sections(
-        sections=sections, references=references, spec_tree=spec_tree, term_pattern=_TERM
+    pinned, governing_terms = pinned_sections_for_statement(
+        sections=sections, statement=statement, spec_tree=spec_tree, term_pattern=_TERM
     )
     asked_terms |= governing_terms
     identified, remaining = identified_paragraphs(
         sections=sections, asked_text=asked_text, remaining=remaining
+    )
+    relevant, remaining = reserve_relevant_paragraphs(
+        sections=sections, terms=asked_terms, remaining=remaining
     )
     pinned_selected, pinned_complete, remaining = select_referenced_sections(
         sections=[
@@ -248,22 +245,20 @@ def condensed_spec_tree(
             remaining -= cost
             continue
         matching_terms = section.terms & statement_terms - FUNCTION_TERMS
-        partial = (
-            partially_selected_section(
-                heading=section.heading,
-                body=section.body,
-                full=section.full,
-                elided=section.elided,
-                remaining=remaining,
-            )
-            if section in pinned or matching_terms
-            else None
+        partial = _partial_selection(
+            section=section,
+            pinned=section in pinned,
+            matching_terms=matching_terms,
+            remaining=remaining,
         )
         if partial is not None:
             selected[section.key] = partial
             remaining -= len(partial) - len(section.elided)
     selected = merged_selection(
-        sections=sections, selected=selected, complete=complete, identified=identified
+        sections=sections,
+        selected=selected,
+        complete=complete,
+        identified=combine_paragraphs(first=identified, second=relevant),
     )
     return CondensedSpecTree(
         tree=_condensed(sections=sections, selected=selected, paths=spec_tree),
@@ -332,6 +327,29 @@ def _section(
         terms=frozenset(_TERM.findall(full.casefold())),
         heading=heading,
         body=body,
+    )
+
+
+def _partial_selection(
+    *, section: _Section, pinned: bool, matching_terms: frozenset[str], remaining: int
+) -> str | None:
+    """Relevant paragraphs first, with the established leading-prefix fallback."""
+    if not pinned and not matching_terms:
+        return None
+    partial = partially_selected_section(
+        heading=section.heading,
+        body=section.body,
+        full=section.full,
+        elided=section.elided,
+        remaining=remaining,
+        terms=matching_terms,
+    )
+    return partial or partially_selected_section(
+        heading=section.heading,
+        body=section.body,
+        full=section.full,
+        elided=section.elided,
+        remaining=remaining,
     )
 
 

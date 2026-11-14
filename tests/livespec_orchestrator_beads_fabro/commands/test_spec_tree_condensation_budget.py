@@ -25,6 +25,7 @@ while still passing every fixed-size assertion.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     ELIDED_BODY_MARKER,
@@ -32,6 +33,7 @@ from livespec_orchestrator_beads_fabro.commands._spec_tree_condensation import (
     CondensedClause,
     condensed_spec_tree,
 )
+from livespec_orchestrator_beads_fabro.spec_reader import read_current_specification
 from livespec_runtime.spec_stated import judge
 
 _UNSTATED_REPLY = (
@@ -58,7 +60,7 @@ _TREE = {
 
 # Measured against this fixture: the four budgets at which one more clause body
 # is read in full than at the one before it, plus a budget under which none is.
-_GRADED_CEILINGS = (0, 9900, 10250, 11850, 12650)
+_GRADED_CEILINGS = (0, 9900, 10250, 12275, 12650)
 
 
 @dataclass(kw_only=True)
@@ -229,6 +231,73 @@ def test_an_oversized_relevant_section_contributes_a_marked_leading_body_portion
 
     assert len(recorder.prompts) == 1
     assert len(recorder.prompts[0]) < ceiling
+
+
+def test_an_oversized_relevant_section_keeps_its_deep_stating_paragraph() -> None:
+    """A stated clause beyond an oversized section's prefix reaches the judge."""
+    heading = "## Self-contained plugin dispatch"
+    stating = (
+        "Repository-controlled code reaches a push only through a credential helper "
+        "that hooks and gates cannot read."
+    )
+    tree = {"contracts.md": f"{heading}\n\n" + "unrelated preamble.\n\n" * 3_000 + stating + "\n"}
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="A credential helper keeps repository pushes unavailable to hooks and gates.",
+        ceiling=20_000,
+    )
+
+    assert stating in condensed["contracts.md"]
+
+
+def test_deep_relevant_paragraphs_precede_broad_clause_budget_spending() -> None:
+    """A lexically dominant earlier clause cannot crowd out a later stating paragraph."""
+    stating = (
+        "Repository-controlled code reaches a push only through a credential helper "
+        "that hooks and gates cannot read."
+    )
+    padding = (
+        "background xylophone kaleidoscope marigold nebula quartz rhubarb saffron "
+        "tundra umber velvet willow xenon yucca zephyr. "
+    ) * 1_000
+    tempting = "credential helper repository push hooks gates unrelated background. " * 175
+    tree = {
+        "scenarios.md": "## Lexically tempting background\n\n" + tempting,
+        "contracts.md": (
+            "## Self-contained plugin dispatch\n\n" + padding + "\n\n" + stating + "\n"
+        ),
+    }
+
+    condensed = condensed_spec_tree(
+        spec_tree=tree,
+        statement="credential helper repository push hooks gates",
+        ceiling=20_000,
+    )
+
+    assert stating in condensed["contracts.md"]
+
+
+def test_real_spec_stating_paragraphs_survive_earlier_one_term_matches() -> None:
+    """The proof-capture phrasings reach both deep ratified statements in full."""
+    spec_tree = read_current_specification(spec_root=Path("SPECIFICATION")).files
+    cases = (
+        (
+            "Hooks and gates run without the GitHub token; the push credential reaches "
+            "origin only through the credential helper.",
+            "push only through a credential helper that the hooks and gates cannot read",
+        ),
+        (
+            "A run that is runnable across a fabro-server restart is re-admitted by the "
+            "scheduler and can be started; the server holds it in its own queue.",
+            "promoting waiting runs in FIFO order",
+        ),
+    )
+
+    for statement, stating_text in cases:
+        condensed = condensed_spec_tree(spec_tree=spec_tree, statement=statement)
+
+        assert stating_text in "\n".join(condensed.values())
 
 
 def test_an_oversized_relevant_section_is_partly_carried_after_a_whole_selection() -> None:
