@@ -82,11 +82,17 @@ Resolve the routing before driving anything in-session:
      as a remedy for repeat-flakes; repeated reruns can burn cycles while
      master stays red. If the local pre-commit hook itself refuses every
      commit because master is red, the sanctioned break-glass is a
-     server-side GitHub revert: fetch the offending PR's node id with a
-     `repository.pullRequest(number:)` GraphQL query, then call
-     `revertPullRequest` with that id, passing both the query and the
-     mutation body from files. Prefer re-landing the reverted change
-     paired with its fix in one PR.
+     server-side GitHub revert made as ONE `createCommitOnBranch` commit
+     on a fresh branch. That commit restores every path the reverted
+     change touched to the bytes of the reverted commit's first parent
+     (for a rebase-merged PR, the first parent of its earliest commit),
+     and its message carries a `This reverts commit <sha>.` line. Pass
+     the mutation body from a file. GitHub signs that commit, so
+     `check-red-green-replay` admits it as a forge-authored revert. Never
+     use `revertPullRequest` or the web UI's Revert button: their commits
+     are unsigned, so `check-red-green-replay` convicts them whenever the
+     reverted change touched product impl `.py`. Prefer re-landing the
+     reverted change paired with its fix in one PR.
    - the **maintainer explicitly directed** in-session execution for
      this item in this session.
 4. **Non-product changesets** (docs, spec prose, plans,
