@@ -117,6 +117,7 @@ class BaseAdvancedAfterArming:
     factory: str
     pr_head: str | None
     default_branch_tip: str | None
+    conflicted_paths: tuple[str, ...] | None = None
     cause: str = BASE_ADVANCED_AFTER_ARMING
     conflict_measurement_failure: str | None = None
 

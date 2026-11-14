@@ -292,6 +292,40 @@ def test_an_overtaken_arming_measures_ineligible_paths_before_resting(tmp_path: 
     ]
 
 
+def test_an_overtaken_arming_carries_eligible_paths_to_its_terminal_disposition(
+    tmp_path: Path,
+) -> None:
+    """The post-run arm can resume only from the exact measured path set."""
+    runner = _Runner(
+        queue=[
+            _ok(stdout=_pr_json()),
+            _ok(stdout=_pr_json()),
+            CommandResult(exit_code=1, stdout="record.json\nnotes.md\n", stderr=""),
+        ]
+    )
+    plan = _plan(
+        repo=tmp_path,
+        config_text=(
+            '{"livespec-orchestrator-beads-fabro": {"dispatcher": '
+            '{"record_files": [{"path": "record.json"}, {"path": "notes.md"}]}}}'
+        ),
+    )
+
+    outcome = await_merge(
+        outcome_type=DispatchOutcome,
+        plan=plan,
+        runner=runner,
+        journal=_Journal(),
+        sleep=lambda _: None,
+        poll=PollPolicy(attempts=8, interval_seconds=0.0),
+    )
+
+    assert isinstance(outcome, DispatchOutcome)
+    assert outcome.base_advanced is not None
+    assert hasattr(outcome.base_advanced, "conflicted_paths")
+    assert outcome.base_advanced.conflicted_paths == ("record.json", "notes.md")
+
+
 def test_a_failed_overtaken_arming_measurement_is_carried_to_the_comment_layer(
     tmp_path: Path,
 ) -> None:

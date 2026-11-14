@@ -117,6 +117,7 @@ def await_merge(
                         factory=plan.fabro_factory_name,
                         pr_head=view.head,
                         default_branch_tip=view.base,
+                        conflicted_paths=measurement.paths,
                         conflict_measurement_failure=(
                             "git-merge-tree" if measurement.failure is not None else None
                         ),
