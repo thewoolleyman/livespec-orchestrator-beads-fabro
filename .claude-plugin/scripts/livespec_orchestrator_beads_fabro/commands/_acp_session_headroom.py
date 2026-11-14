@@ -279,6 +279,12 @@ class SessionHeadroomReading:
     seven_day: SevenDayReading = UNOBSERVABLE_SEVEN_DAY
     slot: SlotSelection | None = None
     five_hour_window_absent: bool = False
+    # The expiry of a live provider-exhaustion record naming this reading's
+    # credential identity, or `None` when no live record names it. It is a
+    # live hold observed from a real run, not a headroom figure: the provider's
+    # rate windows cannot see an organisation spend cap, so a slot that has hit
+    # one keeps a reading that qualifies on every headroom test (bd-ib-wx4yha).
+    provider_exhaustion_expires_at: str | None = None
 
     @property
     def observable(self) -> bool:

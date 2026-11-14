@@ -366,6 +366,9 @@ def test_the_record_carries_no_credential_value_or_raw_provider_response() -> No
         "seven_day",
         "slot",
         "five_hour_window_absent",
+        # An instant copied from a journaled provider-exhaustion record, never a
+        # credential value or a provider response (bd-ib-wx4yha).
+        "provider_exhaustion_expires_at",
     }
     # The one field that is itself a VALUE has to be closed too, or the
     # structural guarantee stops at the outer type and the nested one becomes

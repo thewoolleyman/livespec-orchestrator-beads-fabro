@@ -11,7 +11,11 @@ slots sat at zero utilization and every factory lane starved.
 A SLOT QUALIFIES when no headroom shortfall stops it, and the shortfall test is
 the SAME `headroom_skip_kind` the per-candidate filter applies (floor, seven-day,
 projection; an unobservable reading is a floor skip), so admission cannot qualify
-a slot the filter would then skip.
+a slot the filter would then skip. That test also reports a provider-exhaustion
+skip for a slot whose credential identity a live provider-exhaustion record
+names, so a slot whose account has hit a spend cap the rate windows cannot see
+is passed over for the next qualifying slot rather than chosen again
+(bd-ib-wx4yha).
 
 AMONG QUALIFYING SLOTS the ranking is, in order: a slot whose projection was
 MEASURED outranks one whose projection is unavailable; then the sooner

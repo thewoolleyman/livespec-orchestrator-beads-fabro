@@ -73,6 +73,7 @@ __all__: list[str] = [
     "FLOOR_SKIP_KIND",
     "NO_BASELINE_REASON",
     "PROJECTION_SKIP_KIND",
+    "PROVIDER_EXHAUSTION_SKIP_KIND",
     "SEVEN_DAY_SKIP_KIND",
     "UNOBSERVABLE_READING_REASON",
     "UNREADABLE_OBSERVATION_REASON",
@@ -122,6 +123,11 @@ _HORIZON_DISABLED_MINUTES = 0
 FLOOR_SKIP_KIND = "floor"
 PROJECTION_SKIP_KIND = "projection"
 SEVEN_DAY_SKIP_KIND = "seven-day"
+# A live provider-exhaustion record names the reading's credential identity. It
+# is tested FIRST and is not disabled by a floor of 0: the floor is the dial for
+# headroom skips, and this is an observed hold on the account itself, which a
+# floor of 0 "disables no other admission condition" leaves in force.
+PROVIDER_EXHAUSTION_SKIP_KIND = "provider-exhaustion"
 
 
 def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -> str | None:
@@ -132,7 +138,14 @@ def headroom_skip_kind(*, reading: SessionHeadroomReading, floor_percent: int) -
     authoritative than an extrapolation, while the floor remains the operator
     dial that governs every shortfall. A zero floor disables the weekly arm via
     `seven_day_skips_candidate`.
+
+    A live provider-exhaustion record naming the reading's credential identity
+    is tested before all three, whatever the floor: the provider's rate windows
+    cannot see an organisation spend cap, so without it a spend-capped slot that
+    resets soonest keeps winning the pool ranking (bd-ib-wx4yha).
     """
+    if reading.provider_exhaustion_expires_at is not None:
+        return PROVIDER_EXHAUSTION_SKIP_KIND
     if headroom_skips_candidate(reading=reading, floor_percent=floor_percent):
         return FLOOR_SKIP_KIND
     if seven_day_skips_candidate(reading=reading, floor_percent=floor_percent):
