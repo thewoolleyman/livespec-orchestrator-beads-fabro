@@ -173,8 +173,6 @@ tests/integration/test_idle_slot_audit_scenario187.py	0.130
 tests/integration/test_implement_amendment_scenario131.py	0.050
 tests/integration/test_implement_commit_commands.py	0.550
 tests/integration/test_implement_completion_field_scenario204.py	0.580
-tests/integration/test_implement_hook_refusal_cause_scenario285.py	2.660
-tests/integration/test_implement_hook_refusal_reentry_scenario204.py	0.610
 tests/integration/test_implement_incomplete_route_breaker_scenario204.py	0.130
 tests/integration/test_implement_live_commit_settle_scenario204.py	1.390
 tests/integration/test_incident_lifecycle_walk.py	0.810
