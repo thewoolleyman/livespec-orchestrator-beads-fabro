@@ -307,7 +307,6 @@ import argparse
 from collections.abc import Callable
 
 from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
-    add_clear_acp_availability_hold_arguments,
     run_clear_acp_availability_hold_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
@@ -353,7 +352,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_inspect impo
     run_factory_inspect_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fresh_ruling import (
-    add_fresh_ruling_arguments,
     run_fresh_ruling_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_host_record_cli import (
@@ -396,7 +394,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_post_verdict import 
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_probe import run_probe_command
 from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion_clear import (
-    add_clear_provider_exhaustion_arguments,
     run_clear_provider_exhaustion_command,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_merged import (
@@ -435,9 +432,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args impo
     add_janitor_check_arguments,
     add_ledger_check_arguments,
     add_ledger_normalize_arguments,
+    add_operator_valve_subcommands,
     add_reconcile_merged_arguments,
     add_reconcile_runs_arguments,
     add_spec_check_arguments,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_supersede_contaminated import (
+    add_supersede_contaminated_arguments,
+    run_supersede_contaminated_command,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_record_cli import (
     add_post_plan_record_arguments,
@@ -524,6 +526,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "sandbox-images": run_sandbox_images_command,
     "seed-ruling": run_seed_ruling_cli,
     "spec-check": run_spec_check,
+    "supersede-contaminated": run_supersede_contaminated_command,
 }
 
 
@@ -532,14 +535,6 @@ def main(*, argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     handler = _SUBCOMMAND_HANDLERS.get(args.subcommand, run_loop_command)
     return handler(args=args)
-
-
-def _add_operator_valve_subcommands(
-    *, add_parser: Callable[[str], argparse.ArgumentParser]
-) -> None:
-    add_clear_provider_exhaustion_arguments(parser=add_parser("clear-provider-exhaustion"))
-    add_clear_acp_availability_hold_arguments(parser=add_parser("clear-acp-availability-hold"))
-    add_fresh_ruling_arguments(parser=add_parser("fresh-ruling"))
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -551,12 +546,13 @@ def _build_parser() -> argparse.ArgumentParser:
     add_codex_cred_refresh_arguments(parser=subparsers.add_parser("codex-cred-refresh"))
     add_codex_cred_status_arguments(parser=subparsers.add_parser("codex-cred-status"))
     add_claude_cred_status_arguments(parser=subparsers.add_parser("claude-cred-status"))
-    _add_operator_valve_subcommands(add_parser=subparsers.add_parser)
+    add_operator_valve_subcommands(add_parser=subparsers.add_parser)
     add_spec_check_arguments(parser=subparsers.add_parser("spec-check"))
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
     add_seed_ruling_arguments(parser=subparsers.add_parser("seed-ruling"))
+    add_supersede_contaminated_arguments(parser=subparsers.add_parser("supersede-contaminated"))
     add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
