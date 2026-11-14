@@ -49,6 +49,7 @@ from livespec_runtime.attention_item import (
     InvalidAttentionItemIdError,
     SourceRef,
 )
+from livespec_runtime.hygiene_scan import scan_hygiene
 from livespec_runtime.needs_attention import (
     ImplNextOutput,
     PlanThreadOutput,
@@ -61,6 +62,7 @@ __all__: list[str] = [
     "ConformanceContext",
     "composed_conformant",
     "conformant_lane",
+    "hygiene_scan_lane",
 ]
 
 # The failure item is itself an envelope item, so it must clear the very
@@ -198,6 +200,22 @@ def conformant_lane(
     except InvalidAttentionItemIdError:
         return [_failure_item(context=context, subject=subject, key=key)]
     return composed
+
+
+def hygiene_scan_lane(
+    *, context: ConformanceContext, project_root: Path, repo_name: str, include_hygiene: bool
+) -> list[AttentionItem]:
+    """The runtime's hygiene scan behind the lane-granular boundary, or nothing when skipped."""
+    return (
+        conformant_lane(
+            context=context,
+            subject=f"hygiene scan of {repo_name}",
+            key=f"hygiene-scan-{repo_name}",
+            compose=partial(scan_hygiene, repo_path=project_root, repo_name=repo_name),
+        )
+        if include_hygiene
+        else []
+    )
 
 
 def _failure_item(*, context: ConformanceContext, subject: str, key: str) -> AttentionItem:

@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import argparse
-from functools import partial
 from pathlib import Path
 
 from livespec_runtime.attention_item import AttentionItem
-from livespec_runtime.hygiene_scan import scan_hygiene
 
 from livespec_orchestrator_beads_fabro._store_answer_disposition import (
     read_answer_disposition_labels,
@@ -27,7 +25,7 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_claim_tokens im
 from livespec_orchestrator_beads_fabro.commands._needs_attention_conformance import (
     ConformanceContext,
     composed_conformant,
-    conformant_lane,
+    hygiene_scan_lane,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_currency_staleness import (
     currency_staleness_items,
@@ -76,6 +74,9 @@ from livespec_orchestrator_beads_fabro.commands._needs_attention_release_adoptio
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_next_run import (
     spec_next,
+)
+from livespec_orchestrator_beads_fabro.commands._needs_attention_spec_tier_relink import (
+    spec_tier_relink_items,
 )
 from livespec_orchestrator_beads_fabro.commands._needs_attention_unpreflightable import (
     unpreflightable_definition_of_done_items,
@@ -173,15 +174,11 @@ def build_attention(
     # carry that boundary at their own construction; the hygiene scan builds its
     # items inside the runtime, so it crosses the lane-granular one here.
     context = ConformanceContext(project_root=project_root, repo=repo_name)
-    hygiene_scan = (
-        conformant_lane(
-            context=context,
-            subject=f"hygiene scan of {repo_name}",
-            key=f"hygiene-scan-{repo_name}",
-            compose=partial(scan_hygiene, repo_path=project_root, repo_name=repo_name),
-        )
-        if include_hygiene
-        else []
+    hygiene_scan = hygiene_scan_lane(
+        context=context,
+        project_root=project_root,
+        repo_name=repo_name,
+        include_hygiene=include_hygiene,
     )
     # The acceptance-eligibility wall behind `impl_next`, `idle_slot_items` and
     # `unrunnable_acceptance_items` reads each item's recorded workflow pin; one
@@ -354,5 +351,12 @@ def build_attention(
             # aging, the writers simply stand down. Composes nothing, and reads
             # nothing, while the key is false or absent.
             + claim_token_missing_items(project_root=project_root, repo=repo_name, config=config)
+            # A held spec-change-tier item whose generalization-target heading was
+            # ratified under a different topic. The hold clears only on its EXACT
+            # linked topic and no other lane can tell the seat its stem went stale;
+            # the row names the candidate and the relink route, and changes nothing.
+            + spec_tier_relink_items(
+                project_root=project_root, repo=repo_name, items=materialized, config=config
+            )
             + hygiene_scan
         )
