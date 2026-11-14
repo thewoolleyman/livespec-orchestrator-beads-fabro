@@ -2256,7 +2256,14 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   projected keys are named, plus their source semantics, and the two
   projections — all keys with nulls for the journal, observed keys only for
   the span) → `_dispatcher_tdd_probe` (the IO gather: the `gh pr view --json
-  commits` probe and the per-run selection).
+  commits` probe and the per-run selection). Plan slice S6 part one
+  (`bd-ib-defs3b`) adds `_dispatcher_completed_cycles` (PURE: the distinct
+  verified Red-Green pairs in that same per-run series) and projects its count
+  as `tdd.verified_pair_count` plus `tdd.verified_pair_unobserved_reason`
+  through `with_verified_pairs`. A series that was read and holds no pair is an
+  observed `0`; a series that could not be read or attributed is an absent count
+  with a reason. Pair enumeration only: logical-line and Red-to-Green duration
+  measurement belong to the next slice.
   Three properties an editor must not invert. Absence is `None`, NEVER zero:
   a zero gap with zero refusals is exactly the post-hoc signature, so
   manufacturing one from a dropped signal would invent the finding the span

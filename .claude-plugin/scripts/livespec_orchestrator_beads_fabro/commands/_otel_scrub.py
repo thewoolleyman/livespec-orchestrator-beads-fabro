@@ -311,6 +311,8 @@ ATTRIBUTE_ALLOWLIST: frozenset[str] = frozenset(
         "tdd.first_product_write_before_red",
         "tdd.order_refusals",
         "tdd.assertion_count",
+        "tdd.verified_pair_count",
+        "tdd.verified_pair_unobserved_reason",
         "tdd.size_justified",
         "livespec.implement.adapter",
         "livespec.implement.selected_index",

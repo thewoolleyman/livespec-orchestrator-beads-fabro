@@ -36,8 +36,18 @@ restriction is a separate limitation that slice S4 owns.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_completed_cycles import (
+    UNOBSERVED_COMMITS_UNREADABLE,
+    UNOBSERVED_NO_DISPATCH_ID,
+    UNOBSERVED_NO_PULL_REQUEST,
+    UNOBSERVED_SERIES_NOT_IDENTIFIED,
+    VerifiedPairCount,
+    observed_pair_count,
+    unobserved_pair_count,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandRunner,
     DispatchOutcome,
@@ -58,12 +68,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_order_sink impor
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tdd_signals import (
     TddSignals,
     tdd_signals,
+    with_verified_pairs,
 )
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "FACTORY_RUN_ID_TRAILER_KEY",
+    "DispatchCommitSeries",
     "commit_signals_for_dispatch",
+    "dispatch_commit_series",
     "dispatch_id_for",
     "dispatch_ids_for",
     "gather_tdd_signals",
@@ -107,11 +120,12 @@ def gather_tdd_signals(
         work_item_id=item.id,
         dispatch_id=dispatch_id,
     )
-    return tdd_signals(
+    series = dispatch_commit_series(
+        repo=repo, outcome=outcome, dispatch_id=dispatch_id, runner=runner
+    )
+    signals = tdd_signals(
         item=item,
-        commits=commit_signals_for_dispatch(
-            repo=repo, outcome=outcome, dispatch_id=dispatch_id, runner=runner
-        ),
+        commits=_commit_signals(series=series),
         order=sink.signals_for(
             keys=(dispatch_id, item.id) if dispatch_id is not None else (item.id,)
         ),
@@ -124,6 +138,7 @@ def gather_tdd_signals(
             dispatch_id=dispatch_id,
         ),
     )
+    return with_verified_pairs(signals=signals, pairs=_verified_pairs(series=series))
 
 
 def _size_justified_signal(
@@ -178,6 +193,56 @@ def dispatch_id_for(*, records: tuple[dict[str, object], ...], work_item_id: str
     return found[-1] if found else None
 
 
+@dataclass(frozen=True, kw_only=True)
+class DispatchCommitSeries:
+    """This dispatch's own commit messages, or why they could not be identified.
+
+    `unreadable_reason` is `None` exactly when the series was read, and then
+    `messages` is never empty: a series holding none of this run's trailer is
+    not a series that was read and held nothing, it is one that could not be
+    attributed to this run.
+    """
+
+    messages: tuple[str, ...] = ()
+    unreadable_reason: str | None = None
+
+
+def dispatch_commit_series(
+    *,
+    repo: Path,
+    outcome: DispatchOutcome,
+    dispatch_id: str | None,
+    runner: CommandRunner,
+) -> DispatchCommitSeries:
+    """This dispatch's own commit messages, selected by its `Factory-Run-Id` trailer.
+
+    Unreadable, each arm with its own reason, for every case that cannot
+    identify THIS run's series: no pull request to read, no dispatch id to
+    select by, a failing `gh` probe, an unparseable payload, or a payload whose
+    commits carry none of this run's trailer.
+    """
+    if outcome.pr_number is None:
+        return _unreadable(reason=UNOBSERVED_NO_PULL_REQUEST)
+    if dispatch_id is None:
+        return _unreadable(reason=UNOBSERVED_NO_DISPATCH_ID)
+    result = runner.run(
+        argv=["gh", "pr", "view", str(outcome.pr_number), "--json", "commits"],
+        cwd=repo,
+        timeout_seconds=_COMMITS_PROBE_TIMEOUT_SECONDS,
+    )
+    messages = parse_commit_messages(stdout=result.stdout) if result.exit_code == 0 else None
+    if messages is None:
+        return _unreadable(reason=UNOBSERVED_COMMITS_UNREADABLE)
+    mine = tuple(
+        message
+        for message in messages
+        if commit_trailers(message=message).get(FACTORY_RUN_ID_TRAILER_KEY) == dispatch_id
+    )
+    if not mine:
+        return _unreadable(reason=UNOBSERVED_SERIES_NOT_IDENTIFIED)
+    return DispatchCommitSeries(messages=mine, unreadable_reason=None)
+
+
 def commit_signals_for_dispatch(
     *,
     repo: Path,
@@ -185,30 +250,26 @@ def commit_signals_for_dispatch(
     dispatch_id: str | None,
     runner: CommandRunner,
 ) -> TddCommitSignals | None:
-    """This dispatch's commit-derived TDD signals, or None when unobservable.
+    """This dispatch's commit-derived TDD signals, or None when unobservable."""
+    return _commit_signals(
+        series=dispatch_commit_series(
+            repo=repo, outcome=outcome, dispatch_id=dispatch_id, runner=runner
+        )
+    )
 
-    `None` for every arm that cannot identify THIS run's series: no pull
-    request to read, no dispatch id to select by, a failing `gh` probe, an
-    unparseable payload, or a payload whose commits carry none of this run's
-    `Factory-Run-Id` trailer.
-    """
-    if outcome.pr_number is None or dispatch_id is None:
+
+def _unreadable(*, reason: str) -> DispatchCommitSeries:
+    return DispatchCommitSeries(unreadable_reason=reason)
+
+
+def _commit_signals(*, series: DispatchCommitSeries) -> TddCommitSignals | None:
+    if series.unreadable_reason is not None:
         return None
-    result = runner.run(
-        argv=["gh", "pr", "view", str(outcome.pr_number), "--json", "commits"],
-        cwd=repo,
-        timeout_seconds=_COMMITS_PROBE_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return None
-    messages = parse_commit_messages(stdout=result.stdout)
-    if messages is None:
-        return None
-    mine = tuple(
-        message
-        for message in messages
-        if commit_trailers(message=message).get(FACTORY_RUN_ID_TRAILER_KEY) == dispatch_id
-    )
-    if not mine:
-        return None
-    return tdd_commit_signals(messages=mine)
+    return tdd_commit_signals(messages=series.messages)
+
+
+def _verified_pairs(*, series: DispatchCommitSeries) -> VerifiedPairCount:
+    """The series' verified-pair count: observed (zero included) or unobserved."""
+    if series.unreadable_reason is not None:
+        return unobserved_pair_count(reason=series.unreadable_reason)
+    return observed_pair_count(messages=series.messages)

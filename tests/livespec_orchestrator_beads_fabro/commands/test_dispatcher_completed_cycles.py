@@ -1,4 +1,4 @@
-"""One dispatch's completed Red-Green cycles, derived from its own provenance.
+"""One dispatch's distinct verified Red-Green pairs, derived from its own provenance.
 
 Scenario 165 requires the Dispatcher to derive current-dispatch progress from
 its actual preserved commit and test-first provenance, where one completed cycle
@@ -6,37 +6,22 @@ is one DISTINCT verified Red-Green pair. The cases that matter are the ones that
 would inflate or blind the count: a Green-amended commit retains BOTH trailer
 sets and is one cycle rather than two; a retry re-committing the identical Red is
 the same pair observed twice; an open Red, a suite-green-only commit and
-unrelated history are not cycles at all; a reversed timestamp is unobserved
-rather than zero; and an OBSERVED EMPTY series is not the same answer as a series
-nobody could read.
+unrelated history are not cycles at all; and an OBSERVED EMPTY series is not the
+same answer as a series nobody could read.
+
+The Dispatcher path that reports these counts is exercised end to end in
+`test_dispatcher_tdd_probe`; this file pins the pure derivation beneath it.
 """
 
 from __future__ import annotations
 
-import importlib
-from pathlib import Path
-from types import ModuleType
-
-_MODULE_NAME = "livespec_orchestrator_beads_fabro.commands._dispatcher_completed_cycles"
-_MODULE_PATH = (
-    Path(__file__).resolve().parents[3]
-    / ".claude-plugin"
-    / "scripts"
-    / "livespec_orchestrator_beads_fabro"
-    / "commands"
-    / "_dispatcher_completed_cycles.py"
+from hypothesis import given
+from hypothesis import strategies as st
+from livespec_orchestrator_beads_fabro.commands._dispatcher_completed_cycles import (
+    observed_pair_count,
+    unobserved_pair_count,
+    verified_pair_ids,
 )
-
-
-def _module() -> ModuleType:
-    """Import the module under test, asserting it exists first.
-
-    The existence assertion is the genuine failing assertion this slice's Red
-    commit stands on, rather than a collection-time `ModuleNotFoundError` that
-    would prove only unimportability.
-    """
-    assert _MODULE_PATH.is_file(), f"{_MODULE_PATH} does not exist yet"
-    return importlib.import_module(_MODULE_NAME)
 
 
 def _message(
@@ -65,37 +50,26 @@ def _message(
 
 
 def test_a_green_amended_commit_is_one_completed_pair() -> None:
-    module = _module()
-
-    pairs = module.verified_pairs(
-        commits=(
-            module.ProvenanceCommit(
-                sha="aaaa111",
-                message=_message(
-                    red_at="2026-10-01T10:00:00Z",
-                    green_at="2026-10-01T10:04:10Z",
-                    checksum="sha256:one",
-                ),
+    pairs = verified_pair_ids(
+        messages=(
+            _message(
+                red_at="2026-10-01T10:00:00Z",
+                green_at="2026-10-01T10:04:10Z",
+                checksum="sha256:one",
             ),
         )
     )
 
-    assert len(pairs) == 1
-    assert pairs[0].commit == "aaaa111"
+    assert pairs == ("sha256:one@2026-10-01T10:00:00Z",)
 
 
 def test_open_reds_suite_green_commits_and_unrelated_history_are_not_pairs() -> None:
-    module = _module()
-
-    pairs = module.verified_pairs(
-        commits=(
-            module.ProvenanceCommit(
-                sha="open1", message=_message(red_at="2026-10-01T10:00:00Z", checksum="sha256:a")
-            ),
-            module.ProvenanceCommit(
-                sha="suite1", message=_message(suite_green_at="2026-10-01T10:00:00Z")
-            ),
-            module.ProvenanceCommit(sha="plain1", message=_message()),
+    pairs = verified_pair_ids(
+        messages=(
+            _message(red_at="2026-10-01T10:00:00Z", checksum="sha256:open"),
+            _message(green_at="2026-10-01T10:04:10Z", checksum="sha256:green-only"),
+            _message(suite_green_at="2026-10-01T10:05:00Z"),
+            _message(),
         )
     )
 
@@ -103,113 +77,70 @@ def test_open_reds_suite_green_commits_and_unrelated_history_are_not_pairs() -> 
 
 
 def test_a_retry_re_committing_the_identical_red_counts_the_pair_once() -> None:
-    module = _module()
-    message = _message(
-        red_at="2026-10-01T10:00:00Z", green_at="2026-10-01T10:04:10Z", checksum="sha256:same"
+    first = _message(
+        red_at="2026-10-01T10:00:00Z", green_at="2026-10-01T10:04:10Z", checksum="sha256:one"
+    )
+    retry = _message(
+        red_at="2026-10-01T10:00:00Z", green_at="2026-10-01T10:09:00Z", checksum="sha256:one"
     )
 
-    pairs = module.verified_pairs(
-        commits=(
-            module.ProvenanceCommit(sha="first", message=message),
-            module.ProvenanceCommit(sha="first", message=message),
-            module.ProvenanceCommit(sha="retried", message=message),
-        )
-    )
-
-    assert len(pairs) == 1
+    assert len(verified_pair_ids(messages=(first, retry))) == 1
+    assert len(verified_pair_ids(messages=(first, first))) == 1
 
 
-def test_cycles_are_ordinalled_one_based_in_preserved_red_chronology() -> None:
-    module = _module()
-
-    pairs = module.verified_pairs(
-        commits=(
-            module.ProvenanceCommit(
-                sha="second",
-                message=_message(
-                    red_at="2026-10-01T11:00:00Z",
-                    green_at="2026-10-01T11:05:00Z",
-                    checksum="sha256:two",
-                ),
+def test_two_reds_with_different_evidence_are_two_pairs() -> None:
+    pairs = verified_pair_ids(
+        messages=(
+            _message(
+                red_at="2026-10-01T10:00:00Z",
+                green_at="2026-10-01T10:04:10Z",
+                checksum="sha256:one",
             ),
-            module.ProvenanceCommit(
-                sha="first",
-                message=_message(
-                    red_at="2026-10-01T10:00:00Z",
-                    green_at="2026-10-01T10:04:10Z",
-                    checksum="sha256:one",
-                ),
+            _message(
+                red_at="2026-10-01T10:00:00Z",
+                green_at="2026-10-01T10:04:10Z",
+                checksum="sha256:two",
+            ),
+            _message(
+                red_at="2026-10-01T11:00:00Z",
+                green_at="2026-10-01T11:04:10Z",
+                checksum="sha256:one",
             ),
         )
     )
-    series = module.observed_series(
-        cycles=tuple(
-            module.completed_cycle(ordinal=index + 1, source=source, product_lloc=7)
-            for index, source in enumerate(pairs)
-        ),
-        assertion_count=2,
-    )
 
-    assert [cycle.ordinal for cycle in series.cycles] == [1, 2]
-    assert [cycle.commit for cycle in series.cycles] == ["first", "second"]
-    assert series.completed_count == 2
-    assert series.assertion_count == 2
+    assert len(pairs) == 3
 
 
-def test_elapsed_seconds_come_from_the_preserved_red_to_green_interval() -> None:
-    module = _module()
+def test_a_pair_with_no_red_checksum_is_identified_by_its_message() -> None:
+    message = _message(red_at="2026-10-01T10:00:00Z", green_at="2026-10-01T10:04:10Z")
 
-    assert (
-        module.elapsed_cycle_seconds(red_at="2026-10-01T10:00:00Z", green_at="2026-10-01T10:04:10Z")
-        == 250
-    )
-
-
-def test_reversed_or_unparseable_instants_are_unobserved_rather_than_zero() -> None:
-    module = _module()
-
-    reversed_pair = module.elapsed_cycle_seconds(
-        red_at="2026-10-01T10:04:10Z", green_at="2026-10-01T10:00:00Z"
-    )
-    unparseable = module.elapsed_cycle_seconds(red_at="not-an-instant", green_at="also-not")
-
-    assert isinstance(reversed_pair, module.Unobserved)
-    assert reversed_pair.reason == module.UNOBSERVED_TIMESTAMPS
-    assert isinstance(unparseable, module.Unobserved)
-    assert unparseable.reason == module.UNOBSERVED_TIMESTAMPS
-
-
-def test_an_unavailable_size_measurement_keeps_the_pair_count_intact() -> None:
-    module = _module()
-    source = module.CycleSource(
-        commit="aaaa111",
-        pair_id="sha256:one@2026-10-01T10:00:00Z",
-        red_captured_at="2026-10-01T10:00:00Z",
-        green_verified_at="2026-10-01T10:04:10Z",
-    )
-
-    cycle = module.completed_cycle(
-        ordinal=1,
-        source=source,
-        product_lloc=module.Unobserved(reason=module.UNOBSERVED_SOURCE_TREE),
-    )
-    series = module.observed_series(cycles=(cycle,), assertion_count=3)
-
-    assert cycle.product_lloc_changed is None
-    assert cycle.product_lloc_unobserved_reason == module.UNOBSERVED_SOURCE_TREE
-    assert cycle.elapsed_seconds == 250
-    assert series.completed_count == 1
+    assert verified_pair_ids(messages=(message,)) == (f"message:{message}",)
+    assert len(verified_pair_ids(messages=(message, message))) == 1
 
 
 def test_an_observed_empty_series_is_not_an_unreadable_series() -> None:
-    module = _module()
+    observed = observed_pair_count(messages=(_message(red_at="2026-10-01T10:00:00Z"),))
+    unreadable = unobserved_pair_count(reason="commits-unreadable")
 
-    empty = module.observed_series(cycles=(), assertion_count=2)
-    unreadable = module.unreadable_series(reason=module.UNREADABLE_PROVENANCE, assertion_count=2)
+    assert (observed.count, observed.unobserved_reason) == (0, None)
+    assert (unreadable.count, unreadable.unobserved_reason) == (None, "commits-unreadable")
 
-    assert empty.observed
-    assert empty.completed_count == 0
-    assert empty.unreadable_reason is None
-    assert not unreadable.observed
-    assert unreadable.completed_count is None
-    assert unreadable.unreadable_reason == module.UNREADABLE_PROVENANCE
+
+@given(
+    cycles=st.lists(st.integers(min_value=0, max_value=5), max_size=12),
+    open_reds=st.integers(min_value=0, max_value=4),
+)
+def test_the_count_is_the_number_of_distinct_cycles_however_often_each_repeats(
+    cycles: list[int], open_reds: int
+) -> None:
+    messages = tuple(
+        _message(
+            red_at=f"2026-10-01T10:00:0{cycle}Z",
+            green_at="2026-10-01T10:30:00Z",
+            checksum=f"sha256:{cycle}",
+        )
+        for cycle in cycles
+    ) + tuple(_message(red_at="2026-10-01T09:00:00Z") for _ in range(open_reds))
+
+    assert observed_pair_count(messages=messages).count == len(set(cycles))
