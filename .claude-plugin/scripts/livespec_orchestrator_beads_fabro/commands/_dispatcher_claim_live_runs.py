@@ -21,6 +21,7 @@ live run is. Each factory is read at most once per accounting pass.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -29,6 +30,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_idle_slot_board impo
     RunLister,
     read_idle_slot_board,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
 __all__: list[str] = ["RunSlotBoard", "current_run_factories", "read_live_item_ids"]
@@ -48,18 +50,26 @@ def read_live_item_ids(
 def current_run_factories(*, journal_path: Path) -> dict[str, str]:
     """Each work item whose CURRENT dispatch has a stamped run, mapped to that run's factory.
 
-    An unreadable journal maps nothing, which keeps every claim counted.
+    An unreadable journal maps nothing, which keeps every claim counted. Inside a live
+    pass the records are the pass's one parsed snapshot rather than a second parse.
     """
-    read = attempt(action=lambda: journal_path.read_text(encoding="utf-8"), exceptions=(OSError,))
-    text = "" if isinstance(read, AttemptFailure) else read
     factories: dict[str, str] = {}
-    for line in text.splitlines():
-        item_id, stage, factory = _stamp_fields(record=parse_json(text=line))
+    for record in _journal_records(journal_path=journal_path):
+        item_id, stage, factory = _stamp_fields(record=record)
         if stage == _ADMIT_STAGE and item_id is not None:
             _ = factories.pop(item_id, None)
         elif stage == _STAMP_STAGE and item_id is not None and factory is not None:
             factories[item_id] = factory
     return factories
+
+
+def _journal_records(*, journal_path: Path) -> Iterable[object]:
+    snapshot = snapshot_records(journal_path=journal_path)
+    if snapshot is not None:
+        return snapshot
+    read = attempt(action=lambda: journal_path.read_text(encoding="utf-8"), exceptions=(OSError,))
+    text = "" if isinstance(read, AttemptFailure) else read
+    return (parse_json(text=line) for line in text.splitlines())
 
 
 @dataclass(kw_only=True)
