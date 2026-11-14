@@ -12,6 +12,7 @@ _VERBS = (
     "record-merge",
     "enter-repayment",
     "advance-repayment",
+    "recover-repayment-phases",
     "bind-repayment-acceptance",
     "reopen-regression",
     "record-deferred-finding",

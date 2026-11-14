@@ -22,6 +22,8 @@ from livespec_orchestrator_beads_fabro._incident_carrier import PrBound
 from livespec_orchestrator_beads_fabro._incident_genesis import decode_genesis_request
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
     CLAIM_TOKEN_METADATA_KEY,
+    ClaimStamp,
+    claim_stamp_metadata,
     create_claim_token,
 )
 from livespec_orchestrator_beads_fabro.commands import incident_authority as command
@@ -555,3 +557,119 @@ def test_bind_repayment_acceptance_requires_its_pr_argument_and_only_its_own(
     assert tenant.cli("advance-repayment", active, "--to-phase", "x", "--pr", "12")[0] == 2
     assert tenant.cli("bind-repayment-acceptance", active, "--pr", "12", "--to-phase", "x")[0] == 2
     assert tenant.forge.calls == []
+
+
+def _factory_claimed(
+    world: _Tenant,
+    *,
+    dispatch_id: str = "01DISPATCH",
+    status: str = "acceptance",
+    assignee: str = "fabro",
+) -> None:
+    """Ordinary admission claimed the item for the factory, then its PR merged."""
+    stamp = ClaimStamp(
+        dispatch_id=dispatch_id,
+        dispatching_host="vps",
+        run_id="01RUN",
+        factory_name="petri",
+        factory_server="http://petri",
+    )
+    world.client.update_issue(
+        issue_id=ITEM,
+        status=status,
+        assignee=assignee,
+        metadata=claim_stamp_metadata(stamp=stamp),
+    )
+
+
+def test_recover_repayment_phases_records_the_skipped_phases_after_which_the_merged_pr_binds(
+    tenant: _Tenant,
+) -> None:
+    admission = _repayment(tenant.client, through="repayment-admission")[-1]
+    _factory_claimed(tenant)
+    active = _bound(tenant.cli("recover-repayment-phases", admission))
+    assert (active.phase, active.generation, active.operation_id, active.pr_number) == (
+        "repayment-active",
+        admission.generation + 2,
+        "repayment-1#repayment-active",
+        0,
+    )
+    standing = read_incident_standing(client=tenant.client, item_id=ITEM)
+    assert [attempt.phase for attempt in standing.history[-3:]] == [
+        "repayment-admission",
+        "repayment-ready",
+        "repayment-active",
+    ]
+    # It wrote no lifecycle status: the item still rests where ordinary policy left it.
+    assert tenant.client.show_issue(issue_id=ITEM)["status"] == "acceptance"
+    # A repeated delivery recovers the recorded generations and writes nothing.
+    before = _snapshot(tenant)
+    code, reply = tenant.cli("recover-repayment-phases", admission)
+    assert (code, reply["result"]["recovered"]) == (0, True)
+    assert _snapshot(tenant) == before
+    _merged(tenant)
+    bound = _bound(tenant.bind(active))
+    assert (bound.phase, bound.pr_number) == ("repayment-acceptance", REPAYMENT_PR)
+
+
+def test_recover_repayment_phases_from_ready_records_only_the_active_phase(
+    tenant: _Tenant,
+) -> None:
+    ready = _repayment(tenant.client, through="repayment-ready")[-1]
+    _factory_claimed(tenant, status="active")
+    active = _bound(tenant.cli("recover-repayment-phases", ready))
+    assert (active.phase, active.generation) == ("repayment-active", ready.generation + 1)
+
+
+@pytest.mark.parametrize(
+    ("through", "claim", "expected"),
+    [
+        ("repayment-admission", {"status": "ready"}, "incident-repayment-recovery-premature"),
+        ("repayment-admission", {"assignee": "someone"}, "incident-repayment-claim-missing"),
+        (
+            "repayment-admission",
+            {"dispatch_id": "incident:holder"},
+            "incident-repayment-claim-missing",
+        ),
+        ("repayment-active", {}, "incident-repayment-recovery-not-needed"),
+    ],
+)
+def test_recover_repayment_phases_refuses_by_name_and_writes_nothing(
+    tenant: _Tenant, through: str, claim: dict[str, str], expected: str
+) -> None:
+    current = _repayment(tenant.client, through=through)[-1]
+    _factory_claimed(tenant, **claim)
+    before = _snapshot(tenant)
+    assert _refused(tenant.cli("recover-repayment-phases", current))[0] == expected
+    assert _snapshot(tenant) == before
+
+
+def test_recover_repayment_phases_refuses_a_stale_observation_and_writes_nothing(
+    tenant: _Tenant,
+) -> None:
+    admission = _repayment(tenant.client, through="repayment-admission")[-1]
+    observed = read_incident_authority(
+        client=tenant.client,
+        repository=REPOSITORY,
+        item_id=ITEM,
+        query={key: getattr(admission, key) for key in _IDENTITY},
+        historical=True,
+    )
+    assert isinstance(observed, IncidentReading)
+    # Another writer already moved the chain past the observed generation.
+    _ = _advance(
+        tenant.client,
+        observed,
+        attempt_id="repayment-1",
+        owner="fabro",
+        base=REPAIR_HEAD,
+        head=REPAIR_HEAD,
+        operation_id="repayment-1#elsewhere",
+        phase="repayment-ready",
+        carrier=_carrier(ref=REPAYMENT_REF, state="branch-reserved"),
+    )
+    _factory_claimed(tenant)
+    before = _snapshot(tenant)
+    code, _ = _refused(tenant.cli("recover-repayment-phases", admission))
+    assert code.startswith("incident-")
+    assert _snapshot(tenant) == before
