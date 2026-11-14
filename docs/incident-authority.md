@@ -409,11 +409,17 @@ attempt. The action records each skipped phase only when the item already rests
 the dispatcher claims only an item ordinary admission approved to `ready`, so
 that stamp evidences both phases. It writes no lifecycle status. An item still
 at `pending-approval` or `ready` is `incident-repayment-recovery-premature`
-(use `advance-repayment`), a missing or incident-holder claim is
-`incident-repayment-claim-missing`, and an attempt already past
-`repayment-ready` is `incident-repayment-recovery-not-needed`. A repeated
-delivery recovers the recorded generations and writes nothing. After it,
-`bind-repayment-acceptance` binds the merged repayment PR.
+(use `advance-repayment`). Any other status outside `active` and `acceptance`,
+such as `blocked`, `backlog` or `closed`, is
+`incident-repayment-recovery-ineligible`: no `advance-repayment` step pairs with
+it, so the item has left the repayment dispatch path. A missing or
+incident-holder claim is `incident-repayment-claim-missing`, and an attempt
+already past `repayment-ready` is `incident-repayment-recovery-not-needed`. A
+repeated delivery recovers the recorded generations and writes nothing. The
+reply's `lifecycle_state` is always `active`, the state `repayment-active` pairs
+with; it does not report the item's current status, which may already be
+`acceptance`. After it, `bind-repayment-acceptance` binds the merged repayment
+PR.
 
 `bind-repayment-acceptance` records `repayment-acceptance` once the factory
 run's repayment PR has merged (bd-ib-pqz3nw). `advance-repayment --to-phase
