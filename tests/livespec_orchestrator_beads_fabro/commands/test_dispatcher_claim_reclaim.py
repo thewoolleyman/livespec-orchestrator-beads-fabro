@@ -360,6 +360,39 @@ def test_a_merge_held_items_green_terminal_run_is_reclaimed_and_counts_no_claim(
     assert _records(path=journal.path)[-1]["reason"] == "green-terminal-active-reclaimed"
 
 
+def test_a_budget_rested_item_is_not_a_counted_claim_and_is_not_reclaimed(
+    tmp_path: Path,
+) -> None:
+    """An item resting at `blocked` after a budget cancel holds no `wip_cap` slot.
+
+    Scenario 175, "A run resting for a person blocks no admission". The journal
+    still carries the item's `ledger-admit` and `run-wall-budget-exceeded` rows,
+    which is what a count keyed on the journal rather than on status would read
+    as a claim. It is also not an abandoned claim: reclamation writes a
+    `dispatch-claim-abandoned` row for an `active` item only, and a row written
+    for the rested item would mark a sanctioned rest as a leak.
+    """
+    rested = _item(item_id="bd-budget-rested", status="blocked")
+    journal = JournalFile(path=tmp_path / "journal.jsonl")
+    journal.append(record={"stage": "ledger-admit", "work_item_id": rested.id})
+    journal.append(
+        record={
+            "stage": "run-wall-budget-exceeded",
+            "work_item_id": rested.id,
+            "bound_exceeded": "ceiling",
+        }
+    )
+
+    accounting = claimed_active_accounting(repo=tmp_path, items=[rested], journal=journal)
+
+    assert accounting.active_count == 0
+    assert accounting.live_lock_active_ids == ()
+    assert [record["stage"] for record in _records(path=journal.path)] == [
+        "ledger-admit",
+        "run-wall-budget-exceeded",
+    ]
+
+
 def _tenant_checkout(*, root: Path, name: str) -> Path:
     """A checkout of one shared tenant, declared the way a real one declares it."""
     checkout = root / name
