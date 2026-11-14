@@ -144,6 +144,44 @@ def test_the_host_wrapper_reads_an_ended_run_without_tenant_factory_settings(
     assert environment is None
 
 
+def test_a_held_run_that_ended_at_proof_verify_is_read_as_such(tmp_path: Path) -> None:
+    """Bd-ib-bwwkne: the stage map shows the approved capture and the unrecorded replay."""
+    stages = {
+        f"{node}@1": {"handler": "agent", "state": state}
+        for node, state in (
+            ("proof_capture", "succeeded"),
+            ("review", "succeeded"),
+            ("proof_verify", "failed"),
+            ("needs_human", "succeeded"),
+        )
+    }
+    ps = _ok(
+        payload=[{"run_id": _EARLIER_RUN, "status": "failed", "goal": f"Work-item: {_ITEM_ID}"}]
+    )
+    ended = _reading(
+        tmp_path=tmp_path,
+        args=_args(),
+        runner=_Runner(answers={"ps": ps, "inspect": _ok(payload=[{"stages": stages}])}),
+    )
+    plain = _reading(
+        tmp_path=tmp_path,
+        args=_args(),
+        runner=_Runner(answers={"ps": ps, "inspect": _ok(payload=[{"status": "failed"}])}),
+    )
+    lost = _reading(
+        tmp_path=tmp_path,
+        args=_args(),
+        runner=_Runner(
+            answers={"ps": _ok(payload=[]), "inspect": _ok(payload=[{"stages": stages}])}
+        ),
+    )
+
+    assert ended.proof_verify_ended is True
+    assert ended.executing_node is None
+    assert plain.proof_verify_ended is False
+    assert lost.proof_verify_ended is False
+
+
 def test_factory_liveness_failure_remains_unobservable(tmp_path: Path) -> None:
     """A factory error differs from a terminal earlier run the factory reports."""
     runner = _Runner(answers={"ps": _failed()})

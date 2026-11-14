@@ -33,6 +33,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_run_record import (
     executing_node_from_payload,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_verify_ending import (
+    proof_verify_ended_from_payload,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade import (
     RUN_SUCCEEDED,
     run_state_from_inventory,
@@ -80,12 +83,18 @@ class FactoryReading:
     ended `succeeded`. It is graded by the stranded-claim grader's reading of the
     listing, so a resume refusal and `reconcile-runs` agree on which claims the
     latter holds as `run-succeeded`.
+
+    `proof_verify_ended` is the factory record's own account that the earlier run
+    approved a capture and then ended at `proof_verify` posting no record. It is
+    separate from `executing_node` because such a run names no running stage: it
+    took a terminal node, so `executing_node` is `None` for it.
     """
 
     observed: bool
     live_runs: tuple[LiveRun, ...]
     executing_node: str | None
     earlier_run_succeeded: bool = False
+    proof_verify_ended: bool = False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -208,6 +217,7 @@ def factory_reading(
         live_runs=live,
         executing_node=executing_node_from_payload(payload=inspected.payload),
         earlier_run_succeeded=succeeded,
+        proof_verify_ended=proof_verify_ended_from_payload(payload=inspected.payload),
     )
 
 

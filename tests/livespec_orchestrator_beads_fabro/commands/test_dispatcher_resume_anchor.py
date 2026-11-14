@@ -179,6 +179,44 @@ def test_the_executing_node_outranks_the_verdict_fallback() -> None:
     assert anchor.source == module.SOURCE_FACTORY_RUN
 
 
+def test_an_ended_proof_verify_over_a_captured_record_anchors_proof_verify() -> None:
+    """Bd-ib-bwwkne: the factory record decides `proof_verify`, not the `captured` verdict."""
+    module = _anchor_module()
+    captured = _record(verdict=VERDICT_CAPTURED, body=_body(verdict=VERDICT_CAPTURED, head=_HEAD))
+    for executing_node in (None, "needs_human", "non_converged"):
+        anchor = module.resume_anchor(
+            records=[captured], executing_node=executing_node, proof_verify_ended=True
+        )
+        assert anchor is not None
+        assert anchor.resumed_at == "proof_verify"
+        assert anchor.source == module.SOURCE_FACTORY_RUN
+        assert anchor.head == _HEAD
+        assert anchor.record is captured
+
+
+def test_an_ended_proof_verify_does_not_displace_the_other_readings() -> None:
+    """Only a `captured` latest record with no running stage takes the new entry."""
+    module = _anchor_module()
+    captured = _record(verdict=VERDICT_CAPTURED, body=_body(verdict=VERDICT_CAPTURED, head=_HEAD))
+    verified = _record(verdict=VERDICT_VERIFIED, body=_body(verdict=VERDICT_VERIFIED, head=_HEAD))
+    named = module.resume_anchor(
+        records=[captured], executing_node="review_fix", proof_verify_ended=True
+    )
+    other_verdict = module.resume_anchor(
+        records=[captured, verified], executing_node=None, proof_verify_ended=True
+    )
+    not_ended = module.resume_anchor(records=[captured], executing_node=None)
+    assert (named.resumed_at, named.source) == ("review_fix", module.SOURCE_FACTORY_RUN)
+    assert (other_verdict.resumed_at, other_verdict.source) == (
+        _PR_REFRESH,
+        module.SOURCE_LATEST_RECORD,
+    )
+    assert (not_ended.resumed_at, not_ended.source) == (
+        module.RESUMED_AT_REVIEW,
+        module.SOURCE_LATEST_RECORD,
+    )
+
+
 def test_a_legacy_pr_executing_node_normalizes_to_pr_refresh() -> None:
     """A factory naming the retired `pr` entry resumes at `pr_refresh` instead.
 
