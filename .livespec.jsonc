@@ -396,6 +396,13 @@
       // lower or delete is not a floor. Raise it by hand, through a committed
       // change, when a release fixes something a dispatch must not run without.
       "minimum_release": "0.161.0",
+      // THE FORGE LOGIN a publication record's comment must come from to count
+      // (contracts.md §"Self-contained plugin dispatch" -> "A publication is bound
+      // to its run on the pull request"): the factory GitHub App's bot login, the
+      // identity the publication stages push and comment with. Committed-only, and
+      // unset means no comment is a publication record, so a repository that leaves
+      // it out keeps attributing a published head by proof and journal records alone.
+      "publication_identity": "thewoolleyman-factory-bot[bot]",
       "fabro_sandbox_image": "ghcr.io/thewoolleyman/livespec-fabro-sandbox:python-agent-v1.92.0",
       // THE COMMITTED MIRROR of the capability set the sandbox image above
       // publishes at /etc/livespec/sandbox-capabilities — one lowercase
