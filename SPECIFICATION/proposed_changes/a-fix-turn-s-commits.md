@@ -13,7 +13,7 @@ created_at: 2026-11-14T09:17:13Z
 
 ### Summary
 
-State how the affected-tests gate selects the tests for a changed product module and over which tests that module's coverage is measured. The selection is its mirror-paired test module plus every test module that imports it, directly or through another imported module, and coverage is measured over that whole set. When the gate cannot resolve which test modules import a changed product module, the commit hook runs the full check aggregate instead of refusing the commit.
+State how the affected-tests gate selects the tests for a changed product module and over which tests that module's coverage is measured. The selection is its mirror-paired test module plus every test module that imports it directly, or imports a module that (transitively) imports it, and coverage is measured over that whole set. A coverage refusal from that scoped set is never final: before refusing, the gate re-measures the module's coverage over the repository's whole test suite and refuses only for lines that the whole suite also leaves unexecuted, so the gate is never stricter than the full suite, including for importers it could not see (such as dynamic imports).
 
 ### Motivation
 
@@ -21,7 +21,7 @@ The ratified paragraph 'An implement, fix or review_fix turn's commits run the a
 
 The first implementation (livespec-orchestrator-beads-fabro#5085, bd-ib-fde4ie, released in v0.325.0) chose the narrowest reading: each changed module's coverage was measured from its mirror-paired test module alone, at fail-under=100. A module whose lines are executed by other test modules then read as uncovered, so every in-turn commit on such a module was refused. That stopped the fleet factory (hold-gmktec, 2026-11-13 06:09:34Z, STOP-AT-SECOND), and #5085 was reverted by #5142 (1c2a3794e, 2026-11-13T08:16Z).
 
-The re-land of bd-ib-fde4ie widens the selection, and the dispatch-time spec-change-tier judgement of 2026-11-14T09:10:52Z holds it, because that selection rule and its unresolvable-import fallback are not stated in ratified text. Stating them makes the gate never stricter than the full aggregate for coverage reached through imports, keeps Scenario 255's refusal naming each missing line, and keeps the existing 'cannot determine' fallback as the route for a scan that cannot resolve importers.
+The re-land of bd-ib-fde4ie widens the selection, and the dispatch-time spec-change-tier judgement of 2026-11-14T09:10:52Z holds it, because that selection rule is not stated in ratified text. A static import scan cannot see an importer it cannot resolve (a dynamic import, a module path built at runtime), so a fallback conditioned on 'the gate cannot determine its importers' would not be detectable, and an unseen importer would under-read coverage and refuse the commit, which is exactly the #5085 failure. Re-measuring over the whole test suite before any coverage refusal makes the refusal never stricter than the full suite without the gate having to know what it missed. The re-measure runs the whole test suite's coverage of that module, not the full check aggregate, so Scenario 255's ratified refusal ('refused with a per-file coverage failure naming that module and each missing line ... the full check aggregate is not run') still holds, and the cost is paid only on a commit that would otherwise be refused.
 
 Measured cost the gate removes: an implement-turn Green amend paid the full 98-target aggregate in its hook in 1,259.53 s (bd-ib-hzul2n run 01M7BMBCD352, 2026-11-14), against 18.52 s for a scoped commit on the reverted gate (bd-ib-3h7dsf run 01M79K37K1D0).
 
@@ -29,7 +29,7 @@ Measured cost the gate removes: an implement-turn Green amend paid the full 98-t
 
 1. In SPECIFICATION/contracts.md, paragraph '**An implement, fix or review_fix turn's commits run the affected-tests gate.**', insert after the sentence ending 'When the gate cannot determine which test modules read the graph, the commit hook MUST run the full check aggregate instead.' the following sentences:
 
-'The affected tests of a changed product module are its mirror-paired test module together with every test module that imports it, directly or through another module it imports; selecting more test modules than strictly needed is permitted, because over-selection only runs more tests. The gate MUST measure that module's per-file coverage over every test module so selected, never over its mirror-paired test module alone. When the gate cannot determine which test modules import a changed product module, for example because a module is loaded by a dynamic import or a module path cannot be resolved, the commit hook MUST run the full check aggregate instead of refusing the commit. Measured 2026-11-13: a gate that measured coverage from the mirror-paired test module alone, at fail-under=100, refused every in-turn commit on modules covered through other test modules and stopped every factory run (livespec-orchestrator-beads-fabro#5085, reverted by #5142).'
+'The affected tests of a changed product module are its mirror-paired test module together with every test module that imports it directly, or imports a module that (transitively) imports it; selecting more test modules than strictly needed is permitted, because over-selection only runs more tests. The gate MUST measure that module's per-file coverage over every test module so selected, never over its mirror-paired test module alone. A per-file coverage refusal from the selected test modules MUST NOT be final: before refusing, the gate MUST re-measure that module's coverage over the repository's whole test suite, and MUST refuse only for the lines the whole test suite also leaves unexecuted, naming that module and each of those lines. This re-measure runs the whole test suite's coverage, not the full check aggregate. Measured 2026-11-13: a gate that measured coverage from the mirror-paired test module alone, at fail-under=100, refused every in-turn commit on modules covered through other test modules and stopped every factory run (livespec-orchestrator-beads-fabro#5085, reverted by #5142).'
 
 2. In SPECIFICATION/scenarios.md, under '## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once', add inside the existing gherkin block, after the scenario 'A fix turn's commit that leaves a changed module's lines uncovered is refused with those lines':
 
@@ -41,10 +41,12 @@ Measured cost the gate removes: an implement-turn Green amend paid the full 98-t
     And the commit is not refused for coverage
     And the full check aggregate is not run
 
-  Scenario: A changed module whose importers cannot be resolved falls back to the full aggregate
-    Given a fix turn committing a change to a product module that a test module loads by a dynamic import the gate cannot resolve
-    When its commit hook runs
-    Then it runs the full check aggregate instead of refusing the commit
+  Scenario: A coverage gap the scoped tests show is re-measured over the whole test suite before the commit is refused
+    Given a fix turn committing a change to a product module whose lines are executed only by a test module that loads it through a dynamic import the gate's selection does not see
+    When its commit hook runs and the selected test modules leave those lines unexecuted
+    Then the gate re-measures that module's coverage over the repository's whole test suite
+    And the commit is not refused for coverage, because the whole test suite executes those lines
+    And the full check aggregate is not run
 ```
 
 No H2 heading is added, changed or removed, so tests/heading-coverage.json is unchanged.
