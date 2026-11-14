@@ -86,13 +86,19 @@ tmux capture-pane -p -t "$WORKER_TARGET" | tail -8 \
   && echo "PICKER OPEN - do not paste" || true
 ```
 
-**A Claude worker is not driven by typing (superseded 2026-11-14).** Send a
-Claude worker its instructions with `SendMessage`, per the fleet's distributed
-SendMessage protocol (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md);
-a managed hook denies literal-text `tmux send-keys` into a Claude pane. The
-typed-text recipes below apply only to a Codex or pi worker, which cannot
-receive `SendMessage`. Key-only input (Escape, Enter, a picker digit) to
-unblock a picker or dialog stays allowed for any worker.
+**The tmux typing recipes below are retired history (superseded 2026-11-14).**
+On the interactive hosts (vps, hetzner-xubuntu, gamingpc-xubuntu) a managed
+hook denies literal-text tmux input — `tmux send-keys` carrying text, and
+`tmux paste-buffer` — into EVERY pane, because tmux is a retired transport
+there. Send a Claude worker its instructions with `SendMessage`, per the
+fleet's distributed SendMessage protocol
+(https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md).
+Drive a Codex or pi worker, which cannot receive `SendMessage`, with
+`herdr pane send-text <pane> "<text>"` and then, in a separate call,
+`herdr pane send-keys <pane> Enter`. Key-only input (Escape, Enter, a picker
+digit) to unblock a picker or dialog stays allowed for any worker. The tmux
+recipes that follow are kept as history; their verify-before-Enter rule still
+applies to a `herdr pane send-text` delivery.
 
 For a short instruction, send text, verify it landed, and send Enter
 separately:
