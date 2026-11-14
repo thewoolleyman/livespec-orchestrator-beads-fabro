@@ -265,7 +265,24 @@ def is_dispatch_candidate(
     sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
     repo: Path | None = None,
 ) -> bool:
-    """Whether this row is one the Dispatcher may launch on this pass."""
+    """Whether this row is one the Dispatcher may launch on this pass.
+
+    Three members, and the third is the narrow one: a `ready` row, a
+    `pending-approval` row whose dependencies are clear, and an `active` row
+    the GROOM DOOR itself claimed and pinned. The door opens `backlog ->
+    active` under a claim and a groom-variant pin and then returns, so without
+    the third arm the row it prepared is one no launch path can pick up — it
+    is not `ready`, so this predicate refused it, and the `--item` preflight
+    that consumes this predicate read the door's own claim as somebody else's
+    in-flight dispatch. `groom_door_claimed` owns that recognition, and it is
+    scoped to the door's own claim: an ordinary `active` row is unaffected, so
+    this is NOT a widening to `active` work in general. The status test that
+    scopes it stays INSIDE that predicate rather than being restated as a guard
+    here, so ONE module answers "is this the door's claim?" end to end.
+
+    `repo` is the target repository the claim and pin are read against; it
+    defaults, like `sibling_status_lookup`, to the working directory.
+    """
     effective_repo = repo if repo is not None else Path.cwd()
     effective_sibling_status_lookup = (
         sibling_status_lookup
