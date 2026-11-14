@@ -34,6 +34,7 @@ class _FactoryReading:
     executing_node: None = None
     live_runs: tuple[()] = ()
     observed: bool = True
+    proof_verify_ended: bool = False
 
 
 def _item() -> WorkItem:

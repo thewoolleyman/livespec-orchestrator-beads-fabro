@@ -207,7 +207,11 @@ def gather_resume(
         runner=runner,
     )
     anchor = (
-        resume_anchor(records=records or (), executing_node=factory.executing_node)
+        resume_anchor(
+            records=records or (),
+            executing_node=factory.executing_node,
+            proof_verify_ended=factory.proof_verify_ended,
+        )
         if cancel is None
         else resume_anchor_from_cancel(cancel=cancel, executing_node=factory.executing_node)
     )
