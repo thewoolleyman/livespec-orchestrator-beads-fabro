@@ -469,7 +469,10 @@ wip_cached_projection() {
   mkdir -p "$FLEET_LAUNCH_WIP_CACHE_DIR" || return 1
   path=$(wip_cache_path)
   exec {lock_fd}>"$path.lock" || return 1
-  flock -w 5 "$lock_fd" || { eval "exec ${lock_fd}>&-"; return 1; }
+  # The wait must outlast a legitimately slow recomputation (30-40 s in production): a launcher that
+  # gives up early fails open instead of reusing the refreshed count. The cache is re-read once the
+  # lock is held, so every waiter reuses the holder's result.
+  flock -w "$FLEET_LAUNCH_WIP_LOCK_WAIT_S" "$lock_fd" || { eval "exec ${lock_fd}>&-"; return 1; }
   if wip_cache_read; then
     flock -u "$lock_fd"; eval "exec ${lock_fd}>&-"; return 0
   fi

@@ -191,6 +191,7 @@ for argument in "$@"; do
                 # The capacity projection read: a counted-claims count and a wip_cap, both from files
                 # a case rewrites while a launcher runs, or an unreadable answer.
                 [ -z "${STUB_WIP_READ_LOG:-}" ] || printf '%s\n' "${STUB_WIP_REPOSITORY:-unknown}" >> "$STUB_WIP_READ_LOG"
+                [ -z "${STUB_WIP_READ_DELAY_S:-}" ] || sleep "$STUB_WIP_READ_DELAY_S"
                 [ ! -e "${STUB_WIP_UNREADABLE_FILE:-/nonexistent}" ] || exit 1
                 printf '{"counted_claims": %s, "wip_cap": %s, "counted_item_statuses": %s}\n' \
                     "$(cat "$STUB_WIP_COUNT_FILE")" "$(cat "$STUB_WIP_CAP_FILE")" \
@@ -3266,6 +3267,34 @@ else
 fi
 stop_launcher "$uncached_pid" "$equivalent_marker_pid"
 wait "$uncached_pid" "$equivalent_marker_pid" 2>/dev/null
+
+echo "--- 37. launchers arriving during a slow WIP recomputation wait for it and reuse its cache"
+new_case wip-cache-slow-refresh
+prepare_wip_gate
+printf '5\n' > "$STUB_WIP_COUNT_FILE"
+export STUB_WIP_READ_DELAY_S=7
+slow_pids=""
+for slow_item in 1 2 3; do
+    ONLY_GMK=1 TICKET_NS="40$slow_item" "$LAUNCHER" "bd-ib-wip-slow-$slow_item" > "$CASE_DIR/slow-$slow_item.log" 2>&1 &
+    slow_pids="$slow_pids $!"
+    sleep 0.3
+done
+slow_ok=1
+for slow_item in 1 2 3; do
+    wait_for_line "$CASE_DIR/slow-$slow_item.log" "repository WIP at cap" 30 || slow_ok=0
+done
+unset STUB_WIP_READ_DELAY_S
+slow_reads=$(wc -l < "$STUB_WIP_READ_LOG")
+slow_open=$(cat "$CASE_DIR"/slow-?.log | grep -c "repository WIP count unreadable")
+if [ "$slow_ok" = 1 ] && [ "$slow_reads" = 1 ] && [ "$slow_open" = 0 ] && [ ! -s "$DRIVE_LOG" ]; then
+    pass "launchers that arrive during a slow recomputation wait for it and reuse the one cached count"
+else
+    fail "a slow recomputation was not awaited (all-at-cap=$slow_ok reads=$slow_reads fail-open=$slow_open drives=$(drive_log_items))"
+fi
+# shellcheck disable=SC2086
+stop_launcher $slow_pids
+# shellcheck disable=SC2086
+wait $slow_pids 2>/dev/null
 
 fi
 

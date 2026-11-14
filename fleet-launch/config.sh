@@ -29,6 +29,7 @@
 # reads without making the launcher's early-yield margin stale.
 : "${FLEET_LAUNCH_WIP_CACHE_DIR:=$FLEET_LAUNCH_STATE_DIR}"
 : "${FLEET_LAUNCH_WIP_CACHE_TTL_S:=25}"
+: "${FLEET_LAUNCH_WIP_LOCK_WAIT_S:=120}"
 # The gmktec target setting: a one-word file. `candidate` sends a gmktec launch to the candidate
 # instance; an absent file, or any other word, selects the default instance.
 : "${FLEET_LAUNCH_GMK_TARGET_FILE:=$FLEET_LAUNCH_STATE_DIR/gmk-target}"
