@@ -15,6 +15,105 @@ mkdir -p "$WORK"
 CP="-o ControlMaster=auto -o ControlPersist=120 -o ControlPath=${TMPDIR:-/tmp}/pcm-$$-%C"
 sshn() { local h=$1; shift; ssh -n -o BatchMode=yes $CP "$h" "$@"; }
 
+# A successful push leaves a GitHub banner in .push.err, so preservation is decided only by a
+# read-back of the exact sha. The sidecar makes a failed copy independently retryable if its pod
+# has disappeared before the next pass.
+discard_copy() { local d=$1; rm -rf "$d"; rm -f "$d".*; }
+record_copy() {
+  local d=$1 repo=$2 ref=$3 sha=$4
+  printf 'repo=%s\nref=%s\nsha=%s\n' "$repo" "$ref" "$sha" > "$d.preserve"
+}
+read_copy_record() {
+  local d=$1
+  RECORD_REPO=$(sed -n 's/^repo=//p' "$d.preserve" | head -n 1)
+  RECORD_REF=$(sed -n 's/^ref=//p' "$d.preserve" | head -n 1)
+  RECORD_SHA=$(sed -n 's/^sha=//p' "$d.preserve" | head -n 1)
+}
+read_origin_ref() { git ls-remote "$1" "$2" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
+retry_kept_copies() {
+  local d run got pushed pa repo ref sha mb candidate record
+  RETRIED_RUNS=" "
+  for d in "$WORK"/*.git; do
+    [ -d "$d" ] || continue
+    run=${d##*/}; run=${run%.git}
+    [ -f "$d.preserve" ] || {
+      # Copies from before the sidecar existed have no repository identity. Re-run the same
+      # merge-base test against the stored master ref, then look for that selected commit on
+      # origins recorded by other kept copies. Never guess an origin when none reads it back.
+      candidate=$(git -C "$d" rev-parse --verify -q "refs/heads/fabro/run/$run" 2>/dev/null)
+      if [ -z "$candidate" ] || ! git -C "$d" fsck --connectivity-only --no-dangling "$candidate" >/dev/null 2>&1 \
+        || ! git -C "$d" rev-parse --verify -q refs/remotes/origin/master >/dev/null 2>&1; then
+        printf '%s\t-\tunknown\t-\t-\tKEPT(legacy copy has no candidate)\t0\t-\n' "$run"
+        continue
+      fi
+      mb=$(git -C "$d" merge-base "$candidate" refs/remotes/origin/master 2>/dev/null)
+      if [ -z "$mb" ] || git -C "$d" diff --quiet "$mb" "$candidate" 2>/dev/null; then
+        printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy copy is EMPTY)\t0\t-\n' "$run" "$candidate"
+        continue
+      fi
+      for record in "$WORK"/*.git.preserve; do
+        [ -f "$record" ] || continue
+        read_copy_record "${record%.preserve}"; repo=$RECORD_REPO
+        [ -n "$repo" ] || continue
+        ref=refs/heads/preserve/run-$run
+        got=$(read_origin_ref "$repo" "$ref")
+        if [ "$got" != "$candidate" ]; then
+          ref=$ref-${candidate:0:12}; got=$(read_origin_ref "$repo" "$ref")
+        fi
+        if [ "$got" = "$candidate" ]; then
+          printf '%s\t-\t%s\t%s\t%s\tVERIFIED\t0\tlegacy\n' "$run" "$repo" "$candidate" "$ref"
+          discard_copy "$d"; RETRIED_RUNS="$RETRIED_RUNS$run "
+          break
+        fi
+      done
+      [ -d "$d" ] && printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy origin unknown)\t0\tlegacy\n' "$run" "$candidate"
+      continue
+    }
+    read_copy_record "$d"; repo=$RECORD_REPO; ref=$RECORD_REF; sha=$RECORD_SHA
+    if [ -z "$repo" ] || [ -z "$ref" ] || [ -z "$sha" ]; then
+      printf '%s\t-\tunknown\t%s\t%s\tKEPT(incomplete metadata)\t0\t-\n' "$run" "${sha:--}" "${ref:--}"
+      continue
+    fi
+    if ! git -C "$d" fsck --connectivity-only --no-dangling "$sha" >/dev/null 2>&1; then
+      printf '%s\t-\t%s\t%s\t%s\tKEPT(fsck missing object)\t0\t-\n' "$run" "$repo" "$sha" "$ref"
+      continue
+    fi
+    got=$(read_origin_ref "$repo" "$ref")
+    if [ "$got" = "$sha" ]; then
+      printf '%s\t-\t%s\t%s\t%s\tVERIFIED\t0\tretry\n' "$run" "$repo" "$sha" "$ref"
+      discard_copy "$d"
+      RETRIED_RUNS="$RETRIED_RUNS$run "
+      continue
+    fi
+    if [ -n "$got" ] && ! git -C "$d" merge-base --is-ancestor "$got" "$sha" 2>/dev/null; then
+      ref=$ref-${sha:0:12}
+      got=$(read_origin_ref "$repo" "$ref")
+    fi
+    record_copy "$d" "$repo" "$ref" "$sha"
+    pushed=1
+    for pa in 1 2 3 4 5; do
+      git -C "$d" push -q "$repo" "+${sha}:${ref}" 2>"$d.push.err" && { pushed=0; break; }
+      sleep $((pa * 7 + RANDOM % 7))
+    done
+    for _ in 1 2 3 4 5; do
+      got=$(read_origin_ref "$repo" "$ref")
+      [ "$got" = "$sha" ] && break
+      sleep 3
+    done
+    if [ "$got" = "$sha" ]; then
+      printf '%s\t-\t%s\t%s\t%s\tVERIFIED\t0\tretry\n' "$run" "$repo" "$sha" "$ref"
+      discard_copy "$d"
+      RETRIED_RUNS="$RETRIED_RUNS$run "
+    elif [ "$pushed" = 0 ]; then
+      printf '%s\t-\t%s\t%s\t%s\tKEPT(MISMATCH:%s)\t0\tretry\n' "$run" "$repo" "$sha" "$ref" "${got:-none}"
+    else
+      printf '%s\t-\t%s\t%s\t%s\tKEPT(push failed)\t0\tretry\n' "$run" "$repo" "$sha" "$ref"
+    fi
+  done
+}
+
+printf 'RUN\tNODE\tREPO\tHEAD\tREF\tVERIFIED\tSECONDS\tSOURCE\n'
+retry_kept_copies
 pods=$(sshn poweredge-xubuntu 'sudo -n k3s kubectl get pods -n factory -o json' | python3 -c '
 import json,sys
 for p in json.load(sys.stdin)["items"]:
@@ -26,10 +125,10 @@ for p in json.load(sys.stdin)["items"]:
 # (legacy-coordinator-agent ruling 2026-11-09, livespec-dev-tooling-smzkpu). Every other node keeps ssh.
 workers=" $(sshn poweredge-xubuntu "sudo -n k3s kubectl get nodes -l homelab-worker.livespec.dev/class=worker -o jsonpath='{.items[*].metadata.name}'") "
 want=" $* "
-printf 'RUN\tNODE\tREPO\tHEAD\tREF\tVERIFIED\tSECONDS\tSOURCE\n'
 while read -r run pod node; do
   [ -n "$run" ] || continue
   if [ $# -gt 0 ] && [[ "$want" != *" $run "* ]]; then continue; fi
+  if [[ "$RETRIED_RUNS" == *" $run "* ]]; then continue; fi
   t0=$(date +%s); out="$run\t$node"
   if [[ "$workers" == *" $node "* ]]; then
     # rd <command>: run one read-only command inside the pod's sandbox container, through the API server.
@@ -185,6 +284,7 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
     if [ "$decided" = 1 ]; then v=EMPTY
     else v="FAILED(fail=$fail sha=${sha:-none} repo=${repo:-none}: copy, fsck or master fetch failed)"; fi
     printf "$out\t%s\t%s\t-\t%s\t%s\t-\n" "${repo:--}" "${sha:-none}" "$v" $(( $(date +%s)-t0 ))
+    printf 'KEPT %s: %s\n' "$D" "$v" >&2
     continue
   fi
   # Never move a preserve ref off its own history: if the new tip does not contain the old one, keep
@@ -193,6 +293,7 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
   if [ -n "$old" ] && [ "$old" != "$sha" ] && ! git -C "$D" merge-base --is-ancestor "$old" "$sha" 2>/dev/null; then
     ref=$ref-${sha:0:12}
   fi
+  record_copy "$D" "$repo" "$ref" "$sha"
   if { pushed=1; for pa in 1 2 3 4 5; do git -C "$D" push -q "$repo" "+${sha}:${ref}" 2>"$D.push.err" && { pushed=0; break; }
           # GitHub answers "[remote rejected] ... (failed)" to concurrent pushes into one repo: back off, retry.
           sleep $((pa * 7 + RANDOM % 7)); done; [ "$pushed" = 0 ]; }; then
