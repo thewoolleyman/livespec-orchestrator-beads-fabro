@@ -9745,6 +9745,55 @@ Feature: A weekly-exhausted account is never dispatched into a refusal
     And the provider response reports the seven-day status as rejected for a covered candidate
     When admission assesses the candidate
     Then no seven-day skip applies and the reading is still journaled
+
+  Scenario: A slot below the weekly floor does not qualify even with a warning status
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot A whose five-hour window is absent and whose seven-day status is allowed_warning at a seven-day utilization of 99
+    And a pool slot B whose five-hour remaining headroom is above the floor and whose seven-day utilization is 0
+    And slot B's projection is unavailable, its response carries no reset instant, and slot A's name sorts before slot B's, so slot A would otherwise rank first
+    When admission assesses the pool
+    Then slot A is not chosen and its assessment names a seven-day floor skip
+    And slot B is chosen and every covered candidate of the dispatch projects slot B
+
+  Scenario: A slot exactly at the weekly floor qualifies
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose five-hour remaining headroom is above the floor and whose seven-day utilization is 90
+    When admission assesses the pool
+    Then the slot qualifies and no seven-day floor skip applies
+
+  Scenario: An absent seven-day utilization is not skipped by the weekly floor
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose five-hour remaining headroom is above the floor and whose provider response carries no seven-day utilization, or one that is unparseable or outside 0 through 100
+    When admission assesses the pool
+    Then no seven-day floor skip applies and the seven-day reading is journaled as unobservable
+
+  Scenario: A weekly floor of 0 disables only the seven-day floor skip
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 0
+    And a pool slot whose five-hour remaining headroom is above the floor and whose seven-day status is allowed_warning at a seven-day utilization of 99
+    And another pool slot whose seven-day status is rejected
+    When admission assesses the pool
+    Then the first slot qualifies
+    And the second slot is still skipped by a seven-day skip
+
+  Scenario: When every slot is below the weekly floor the covered candidate falls back
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And every pool slot's seven-day remaining headroom is below 10
+    And an admission-required node whose primary is a covered claude-acp candidate and whose fallback is an eligible codex-acp candidate
+    When admission assesses the node
+    Then no pool slot qualifies and the claude-acp candidate is skipped
+    And per-node selection selects the codex-acp fallback
+
+  Scenario: A floor of 0 disables the seven-day floor skip
+    Given dispatcher.session_headroom_floor_percent is 0 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose seven-day utilization is 99
+    When admission assesses the pool
+    Then no seven-day floor skip applies, the slot qualifies, and the seven-day reading is still journaled
+
+  Scenario: A rejected slot is named a seven-day skip, not a seven-day floor skip
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose five-hour remaining headroom is above the floor and whose seven-day status is rejected at a seven-day utilization of 100
+    When admission assesses the pool
+    Then the slot does not qualify and its assessment names a seven-day skip, not a seven-day floor skip
 ```
 
 ## Scenario 243 — Admission skips a Codex candidate whose usage window is short of headroom
