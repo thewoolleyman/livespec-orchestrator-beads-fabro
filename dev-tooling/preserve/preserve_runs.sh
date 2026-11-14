@@ -356,24 +356,46 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
     # mid-run copy written here pre-empts the tree the run's own ending later pushes. Measured
     # 2026-11-07 on bd-ib-azhnw5 and livespec-dev-tooling-t5ct2q. So only a preserve at the
     # 330-minute wall-budget line or right before a cancel writes one: set
-    # PRESERVE_WRITE_NEEDS_HUMAN=1. CREATE-ONLY at the verified sha; never move an existing one.
+    # PRESERVE_WRITE_NEEDS_HUMAN=1. Create at the verified sha, or fast-forward an existing
+    # one; never force-move it.
     # The ref is keyed by the DISPATCH id, the name the factory's own needs-human ending writes and
     # every seed lookup reads; keying it by the run ULID left two refs per run and lookups finding
-    # none (bd-ib-mfl2qa, 2026-11-08). An existing dispatch-id ref at another sha (the run ended on
-    # its own) is never overwritten: this pass goes to a SHA-suffixed sibling and the row says so.
+    # none (bd-ib-mfl2qa, 2026-11-08). An existing dispatch-id ref that is an ancestor of this tree
+    # moves forward by a non-force push and the row names it and the commit it advanced from; one at
+    # an unrelated sha (the run ended on its own) is never overwritten: this pass goes to a SHA-suffixed
+    # sibling and the row says so (bd-ib-4jxlnn).
     # No marker means no needs-human ref at all, never a fallback to the run ULID.
     # TEMPORARY (legacy-coordinator-agent, 2026-11-07): remove this flag and restore one behaviour
     # when bd-ib-qshcwc ships.
     if [ "$v" = VERIFIED ] && [ "${PRESERVE_WRITE_NEEDS_HUMAN:-0}" = 1 ]; then
       if [ -z "$did" ]; then v="VERIFIED+NH_NO_DISPATCH_ID"
       else
-        nh=refs/heads/needs-human/$did; nold=$(git ls-remote "$repo" "$nh" | cut -f1); kept=""
-        if [ -n "$nold" ] && [ "$nold" != "$sha" ]; then kept=$nold; nh=$nh-${sha:0:12}; nold=$(git ls-remote "$repo" "$nh" | cut -f1); fi
-        if [ -z "$nold" ]; then
-          for pa in 1 2 3 4 5; do git -C "$D" push -q "$repo" "${sha}:${nh}" 2>"$D.nh.err" && break; sleep $((pa * 7 + RANDOM % 7)); done
+        nh=refs/heads/needs-human/$did; nold=$(git ls-remote "$repo" "$nh" | cut -f1); kept=""; adv=""
+        # An existing dispatch-id ref that is an ancestor of this tree moves forward (a fast-forward loses
+        # nothing, the old tip stays in history); an unreadable ancestry counts as not an ancestor.
+        nh_ancestor() { git -C "$D" fetch -q "$repo" "$nh" 2>/dev/null; git -C "$D" merge-base --is-ancestor "$1" "$sha" 2>/dev/null; }
+        if [ -n "$nold" ] && [ "$nold" != "$sha" ]; then
+          if nh_ancestor "$nold"; then adv=$nold
+          else kept=$nold; nh=$nh-${sha:0:12}; nold=$(git ls-remote "$repo" "$nh" | cut -f1); fi
+        fi
+        if [ -n "$adv" ] || [ -z "$nold" ]; then
+          # No + refspec: origin refuses a non-fast-forward, so a ref that moved to an unrelated commit
+          # meanwhile is left where it stands and this pass goes to the SHA-suffixed sibling.
+          for pa in 1 2 3 4 5; do
+            git -C "$D" push -q "$repo" "${sha}:${nh}" 2>"$D.nh.err" && break
+            if [ -n "$adv" ]; then
+              cur=$(git ls-remote "$repo" "$nh" | cut -f1)
+              if [ -n "$cur" ] && [ "$cur" != "$sha" ] && [ "$cur" != "$adv" ]; then
+                if nh_ancestor "$cur"; then adv=$cur
+                else kept=$cur; adv=""; nh=$nh-${sha:0:12}; continue; fi
+              fi
+            fi
+            sleep $((pa * 7 + RANDOM % 7))
+          done
           for _ in 1 2 3 4 5; do nold=$(git ls-remote "$repo" "$nh" | cut -f1); [ "$nold" = "$sha" ] && break; sleep 3; done
         fi
         if [ "$nold" != "$sha" ]; then v="VERIFIED+NH_FAILED:${nh#refs/heads/}"
+        elif [ -n "$adv" ]; then v="VERIFIED+NH_ADVANCED:${nh#refs/heads/}:${adv:0:12}"
         elif [ -n "$kept" ]; then v="VERIFIED+NH_KEPT:${kept:0:12}+NH_SUFFIX:${nh#refs/heads/}"
         else v="VERIFIED+NH:${nh#refs/heads/}"; fi
       fi

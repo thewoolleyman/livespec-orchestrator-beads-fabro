@@ -78,10 +78,15 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
    inherit the variable. With it set, the ref is `refs/heads/needs-human/<DISPATCH ID>`: the dispatch id
    is read from the sandbox clone's `livespec.factoryRunId` marker, because that is the name the factory's
    own needs-human ending writes and every seed lookup reads (a run-ULID-keyed ref left two names per run
-   and lookups finding neither; bd-ib-mfl2qa, 2026-11-08). It is written create-only at the verified sha,
-   and the row reads `VERIFIED+NH:needs-human/<dispatch id>`. If it already exists at another sha (the run
-   ended on its own) it is never moved: this pass is written to `needs-human/<dispatch id>-<sha12>` and the
-   row reads `VERIFIED+NH_KEPT:<old sha12>+NH_SUFFIX:<that ref>`. A clone with no marker gets no
+   and lookups finding neither; bd-ib-mfl2qa, 2026-11-08). It is written at the verified sha: created when absent, and moved forward by a
+   non-force push when the existing ref is an ancestor of the preserved commit (an unreadable ancestry
+   counts as not an ancestor). The row reads `VERIFIED+NH:needs-human/<dispatch id>` for a create and
+   `VERIFIED+NH_ADVANCED:needs-human/<dispatch id>:<old sha12>` for a forward move, and neither reads
+   `VERIFIED` unless a remote ref listing shows the ref at the preserved sha. If it exists at a commit
+   that is not an ancestor (the run ended on its own), or origin refuses the forward move because the
+   ref meanwhile moved to such a commit, it is never moved: this pass is written to
+   `needs-human/<dispatch id>-<sha12>` and the row reads
+   `VERIFIED+NH_KEPT:<old sha12>+NH_SUFFIX:<that ref>`. A clone with no marker gets no
    needs-human ref, and the row reads `VERIFIED+NH_NO_DISPATCH_ID`. The `preserve/run-<RUN ULID>` ref
    stays the run-keyed copy.
    - **Known cost, accepted by legacy-coordinator-agent on 2026-11-07:** a run preserved at 330 minutes
