@@ -125,23 +125,23 @@ def _script_imports(*, script: Path) -> set[tuple[str, str]]:
     }
 
 
-def _top_level_names(*, module: str) -> set[str] | None:
-    relative = Path(*module.split("."))
-    for candidate in (relative.with_suffix(".py"), relative / "__init__.py"):
-        path = _PACKAGE_SCRIPTS / candidate
-        if path.is_file():
-            names: set[str] = set()
-            for node in ast.parse(path.read_text(encoding="utf-8")).body:
-                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-                    names.add(node.name)
-                elif isinstance(node, ast.Assign):
-                    names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-                elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-                    names.add(node.target.id)
-                elif isinstance(node, ast.Import | ast.ImportFrom):
-                    names.update((a.asname or a.name).split(".")[0] for a in node.names)
-            return names
-    return None
+def _module_file(*, module: str) -> Path:
+    """Every floor module is a flat `.py` module; a package `__init__` is not admitted."""
+    return _PACKAGE_SCRIPTS / Path(*module.split(".")).with_suffix(".py")
+
+
+def _top_level_names(*, path: Path) -> set[str]:
+    names: set[str] = set()
+    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names.add(node.target.id)
+        elif isinstance(node, ast.Import | ast.ImportFrom):
+            names.update((a.asname or a.name).split(".")[0] for a in node.names)
+    return names
 
 
 def test_the_scan_finds_the_repository_preflight() -> None:
@@ -167,7 +167,8 @@ def test_the_floor_names_only_what_this_tree_still_ships() -> None:
     absent = sorted(
         (module, name)
         for module, name in _REGISTERED_BUILD_FLOOR
-        if name not in (_top_level_names(module=module) or set())
+        if not _module_file(module=module).is_file()
+        or name not in _top_level_names(path=_module_file(module=module))
     )
 
     assert absent == []
