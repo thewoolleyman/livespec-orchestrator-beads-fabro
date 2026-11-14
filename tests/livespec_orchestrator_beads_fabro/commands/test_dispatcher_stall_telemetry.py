@@ -135,6 +135,11 @@ def test_stall_attributes_carry_the_run_id_and_cause_through_the_allowlist() -> 
     assert set(attributes) <= ATTRIBUTE_ALLOWLIST
 
 
+def test_terminal_span_unavailable_fields_attribute_survives_the_scrub() -> None:
+    """A terminal span can report values the Dispatcher could not observe."""
+    assert "livespec.dispatch.unavailable_fields" in ATTRIBUTE_ALLOWLIST
+
+
 def test_stall_outputs_name_the_server_cancel_route_and_retained_record() -> None:
     detail = _watchdog_cancelled().detail
     comment = release_comment(item_id="bd-a", row={"run_id": "01RUN", "factory": "petri"})
