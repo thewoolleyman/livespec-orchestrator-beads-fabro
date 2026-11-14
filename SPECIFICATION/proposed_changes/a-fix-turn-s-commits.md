@@ -13,7 +13,11 @@ created_at: 2026-11-14T09:17:13Z
 
 ### Summary
 
-State how the affected-tests gate selects the tests for a changed product module and over which tests that module's coverage is measured. The selection is every test module that imports it directly, or imports a module that (transitively) imports it, and coverage is judged against the threshold check-per-file-coverage applies. A coverage refusal from that selection is never taken on that selection alone: before refusing, the gate re-measures over a bounded, statically detectable widening of the selection. The widening adds every test module whose text names the changed module, and every test module containing a dynamic-import call whose module argument is not a string literal. The gate refuses only for lines that the widened selection also leaves unexecuted. The gate therefore never refuses for an importer it could have missed, and never runs the whole test suite at commit time.
+State how the affected-tests gate selects tests for a changed product module, and which lines it may refuse a commit for. Selection is every test module that imports the module directly, or imports a module that (transitively) imports it. Before refusing, the selection is widened by a bounded, statically detectable set: test modules whose text names the changed module, and test modules containing a dynamic-import call whose module argument is not a string literal.
+
+The gate refuses only for CHANGED lines that the widened selection leaves unexecuted. Changed lines are the lines the run's branch added or modified against its base. Unchanged lines are never refused at commit time: they were already covered on the default branch, and the janitor's single full check aggregate still judges whole-module coverage.
+
+The proposal states the residual honestly. A changed line executed only through a path the widening cannot see (a dynamic import made inside a product module, a conftest fixture, a subprocess) can still be refused in-turn, and the janitor's aggregate stays the authority. Every in-turn coverage refusal is made countable: one machine-readable line naming the module and the lines, which the run's exported record carries.
 
 ### Motivation
 
@@ -25,7 +29,7 @@ The re-land of bd-ib-fde4ie widens the selection, and the dispatch-time spec-cha
 
 Two constraints shape the rule. First, a static import scan cannot see an importer it cannot resolve: a dynamic import, or a module path built at runtime. A fallback conditioned on 'the gate cannot determine its importers' is therefore not detectable, and an unseen importer would under-read coverage and refuse the commit, which is the #5085 failure. Second, the commit-time gate must not pay a whole-test-suite coverage run. The check-per-file-coverage leg, which runs the whole suite with coverage, measured 3654.8 s and 3765 s in a fix turn's hook, longer than the 3600 s fix node limit (the ratified 'A fix turn grades each tree once, through its commit hook.').
 
-The widening before refusal meets both constraints. It adds only test modules a scan can find with no knowledge of what it missed: every module whose text names the changed module (its dotted module name, its file name or its module name), and every module containing a dynamic-import call whose module argument is not a string literal. Such a call is the only way a test module can load the changed module without naming it. The widening is bounded to those modules, so a refusal costs a scoped run, not the whole suite. Scenario 255's ratified refusal ('refused with a per-file coverage failure naming that module and each missing line ... the full check aggregate is not run') still holds.
+A scoped gate cannot be proven never stricter than the whole suite, because a test can reach a module through a route that no cheap scan sees. Examples are a product module that loads another by a dynamic import (`_dispatcher_helper_materialize.py` loads its registry module through `importlib.import_module` on a constant), a conftest fixture, `runpy`, or a subprocess. The rule therefore limits the false-refusal surface rather than claiming it is zero. Limiting refusals to changed lines shrinks that surface from the whole module to the edit itself, and loses no guarantee: unchanged lines were covered on the default branch, and the janitor's full aggregate still judges whole-module coverage once per run. Making each in-turn coverage refusal countable means a rise in refusals shows on the board before it can stop the factory, the way #5085 did. The bounded widening keeps a refusal's cost to a scoped run, not the whole-suite coverage leg.
 
 Measured cost the gate removes: an implement-turn Green amend paid the full 98-target aggregate in its hook in 1,259.53 s (bd-ib-hzul2n run 01M7BMBCD352, 2026-11-14), against 18.52 s for a scoped commit on the reverted gate (bd-ib-3h7dsf run 01M79K37K1D0).
 
@@ -33,30 +37,55 @@ Measured cost the gate removes: an implement-turn Green amend paid the full 98-t
 
 1. In SPECIFICATION/contracts.md, paragraph '**An implement, fix or review_fix turn's commits run the affected-tests gate.**', insert after the sentence ending 'When the gate cannot determine which test modules read the graph, the commit hook MUST run the full check aggregate instead.' the following sentences:
 
-'The affected tests of a changed product module are every test module that imports it directly, or imports a module that (transitively) imports it; selecting more test modules than strictly needed is permitted, because over-selection only runs more tests. The gate MUST judge that module's per-file coverage, against the same threshold `check-per-file-coverage` applies, over every test module so selected, and MUST NOT judge it over any narrower set, such as only the test module whose path mirrors the module's. A per-file coverage gap the selected test modules show MUST NOT be final. Before refusing, the gate MUST re-measure that module's coverage over the selected test modules together with every test module whose text names the changed module (by its dotted module name, its file name or its module name) and every test module containing a dynamic-import call (such as `importlib.import_module` or `__import__`) whose module argument is not a string literal. It MUST refuse only for the lines that this widened set also leaves unexecuted, naming that module and each of those lines. Neither measurement runs the whole test suite or the full check aggregate. Measured 2026-11-13: a gate that measured coverage from the test module whose path mirrors the changed module's alone, at fail-under=100, refused every in-turn commit on modules covered through other test modules and stopped every factory run (livespec-orchestrator-beads-fabro#5085, reverted by #5142).'
+'The affected tests of a changed product module are every test module that imports it directly, or imports a module that (transitively) imports it. Selecting more test modules than strictly needed is permitted, because over-selection only runs more tests. The gate MUST NOT measure that module's coverage over any narrower set, such as only the test module whose path mirrors the module's. Before the gate refuses a commit for coverage, it MUST widen the selected test modules with every test module whose text names the changed module (by its dotted module name or the final component of that name), and every test module containing a dynamic-import call (such as `importlib.import_module` or `__import__`) whose module argument is not a string literal. It MUST re-measure that module's line execution over the widened set. The gate MUST refuse only for CHANGED lines, meaning lines of that module the run's branch added or modified relative to its base, that the widened set leaves unexecuted, and its refusal MUST name that module and each of those lines. A line the branch did not change MUST NOT cause an in-turn refusal: whole-module coverage, against the threshold `check-per-file-coverage` applies, is judged by the `janitor` stage's full check aggregate. Neither measurement runs the whole test suite or the full check aggregate. A changed line executed only through a route the widening cannot see, such as a dynamic import made inside a product module, a conftest fixture or a subprocess, can still be refused in-turn; the `janitor` stage's full check aggregate remains the authority on coverage. Every in-turn coverage refusal MUST print one line beginning `LIVESPEC_INTURN_COVERAGE_REFUSAL:` that names the module and each refused line, in the commit run's own recorded output, so the run's exported record carries it and in-turn coverage refusals can be counted across runs. Measured 2026-11-13: a gate that measured coverage from the test module whose path mirrors the changed module's alone, at fail-under=100, refused every in-turn commit on modules covered through other test modules and stopped every factory run (livespec-orchestrator-beads-fabro#5085, reverted by #5142).'
 
 2. In SPECIFICATION/scenarios.md, under '## Scenario 255 — A commit inside an implement, fix or review_fix turn runs the affected-tests gate, and the janitor runs the full aggregate once', add inside the existing gherkin block, after the scenario 'A fix turn's commit that leaves a changed module's lines uncovered is refused with those lines':
 
 ```gherkin
   Scenario: A changed module covered only through other test modules passes the affected-tests gate
-    Given a fix turn committing a change to a product module whose lines are all executed by test modules that import it, and none by the test module whose path mirrors the module's
+    Given a fix turn committing a change to a product module whose changed lines are all executed by test modules that import it, and none by the test module whose path mirrors the module's
     When its commit hook runs
     Then the affected-tests gate measures that module's coverage over every test module that imports it, not over the mirroring test module alone
     And the commit is not refused for coverage
     And the full check aggregate is not run
 
   Scenario: A coverage gap the importing tests show is re-measured over the widened set before the commit is refused
-    Given a fix turn committing a change to a product module whose lines are executed only by a test module that loads it with importlib.import_module and a module name built at runtime
+    Given a fix turn committing a change to a product module whose changed lines are executed only by a test module that loads it with importlib.import_module and a module name built at runtime
     When its commit hook runs and the test modules that import it leave those lines unexecuted
-    Then the gate re-measures that module's coverage over the importing test modules, every test module naming the module, and every test module with a non-literal dynamic-import call
+    Then the gate re-measures that module's line execution over the importing test modules, every test module naming the module, and every test module with a non-literal dynamic-import call
     And the commit is not refused for coverage, because that widened set executes those lines
     And neither the whole test suite nor the full check aggregate is run
 
-  Scenario: A coverage gap no widened test executes is refused with those lines
-    Given a fix turn committing a change that leaves lines of a product module it changed unexecuted by every test module that imports it, names it, or makes a non-literal dynamic-import call
+  Scenario: An unchanged line the selected tests leave unexecuted does not refuse the commit
+    Given a fix turn committing a change to a product module, one of whose lines the run's branch did not change is executed only by a test module the widened set does not include
     When its commit hook runs
-    Then the commit is refused with a per-file coverage failure naming that module and each of those lines
-    And neither the whole test suite nor the full check aggregate is run
+    Then the commit is not refused for that unchanged line
+    And the janitor stage's full check aggregate still judges that module's whole-module coverage
+
+  Scenario: An in-turn coverage refusal is countable
+    Given a fix turn committing a change that leaves a changed line of a product module unexecuted by the widened set
+    When its commit hook refuses the commit for coverage
+    Then the commit run's recorded output carries one line beginning LIVESPEC_INTURN_COVERAGE_REFUSAL: naming that module and each refused line
+```
+
+3. In SPECIFICATION/scenarios.md, in the same Scenario 255 block, replace the existing scenario
+
+```gherkin
+  Scenario: A fix turn's commit that leaves a changed module's lines uncovered is refused with those lines
+    Given a fix turn committing a change that leaves lines of a product module it changed uncovered
+    When its commit hook runs
+    Then the commit is refused with a per-file coverage failure naming that module and each missing line
+    And the full check aggregate is not run
+```
+
+with
+
+```gherkin
+  Scenario: A fix turn's commit that leaves a changed line uncovered is refused with those lines
+    Given a fix turn committing a change that leaves lines it added or modified in a product module unexecuted by the widened set of test modules
+    When its commit hook runs
+    Then the commit is refused with a coverage failure naming that module and each changed line left uncovered
+    And the full check aggregate is not run
 ```
 
 No H2 heading is added, changed or removed, so tests/heading-coverage.json is unchanged.
