@@ -2,19 +2,18 @@
 # install-ci-fabro.sh — put a pinned, checksum-verified `fabro` where CI's
 # factory-graph gate (`check-fabro-graph-validity`) resolves it.
 #
-# WHY THE UPSTREAM RELEASE, NOT THE FACTORY'S FORK BUILD. The legacy 0.254
-# factory ran a fork build that exists only as a host binary; nothing publishes it.
-# Its line is archived on thewoolleyman/fabro as branch
-# legacy/factory-integration-0254 (8b82e99bb). Since 2026-11-12, factory-integration
-# itself carries the v0.408 carrier, and bd-ib-3lxeqf moves this pin to that
-# Petri-era engine. The upstream fabro-sh/fabro v0.254.0 release is that legacy
-# build's own base commit, publishes a static musl asset with a sha256, and
-# validates graphs by identical rules (the fork carries no change to
-# lib/crates/fabro-validate). Its one disagreement is that it cannot parse the
-# fork-only `run.checkpoint.commit_timeout` settings key; the gate validates a
-# scratch copy with exactly that key removed (dev-tooling/checks/_fork_only_settings.py),
-# which gives verdicts identical to the fork build on the real graphs and on the
-# broken release-0.146.0 graph.
+# WHY THE UPSTREAM RELEASE, NOT THE FACTORY'S FORK BUILD. The factory serves a
+# Petri-era fork carrier (v0.393.0-nightly.1, bbe693847) that exists only as a
+# host binary; nothing publishes it. CI therefore pins the newest upstream
+# fabro-sh/fabro Petri-era release at or after that serving base: v0.408.0-nightly.0,
+# whose engine is the Petri-era engine the factory runs and so is at or after the
+# gate's 0.396.0 floor. It publishes a static musl asset per architecture with a
+# sha256, which is pinned below. The retired 0.254 engine (the legacy factory,
+# archived on thewoolleyman/fabro as legacy/factory-integration-0254) accepts
+# graphs the Petri-era engine rejects, so it must not validate the committed graphs.
+# The gate validates a scratch copy of each graph's payload with the fork-only
+# settings keys removed (dev-tooling/checks/_fork_only_settings.py), so the upstream
+# release's verdicts stand in for the fork carrier's.
 #
 # Fail-closed by construction: `set -e`, `curl --fail`, and a checksum mismatch
 # all exit non-zero, and the gate itself runs with
