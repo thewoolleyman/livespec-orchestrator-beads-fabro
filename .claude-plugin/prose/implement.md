@@ -82,15 +82,23 @@ Resolve the routing before driving anything in-session:
      as a remedy for repeat-flakes; repeated reruns can burn cycles while
      master stays red. If the local pre-commit hook itself refuses every
      commit because master is red, the sanctioned break-glass is a
-     server-side GitHub revert made as ONE `createCommitOnBranch` commit
-     on a fresh branch. That commit restores every path the reverted
-     change touched to the bytes of the reverted commit's first parent
-     (for a rebase-merged PR, the first parent of its earliest commit),
-     and its message carries a `This reverts commit <sha>.` line naming
-     that SAME commit (for a rebase-merged PR, the earliest one, never
-     the merge tip), because the gate compares the revert with
-     `<sha>^`. Pass
-     the mutation body from a file. GitHub signs that commit, so
+     server-side GitHub revert. First confirm that
+     `git log <tip-sha>..origin/master -- <paths the change touched>` is
+     empty. If any later commit touches those paths, a whole-file restore
+     discards it and the gate still admits the revert, so do not use this
+     route; revert through the normal lane instead. Otherwise make the
+     revert as ONE `createCommitOnBranch` commit on a fresh branch, using
+     the fleet GitHub App installation token (that is the token whose
+     commits GitHub signs as verified; signing through a personal access
+     token is unverified). That commit restores every path the reverted
+     change touched to the bytes of the first parent of the reverted
+     change's EARLIEST commit, and its message carries a
+     `This reverts commit <sha>.` line naming that earliest commit AS IT
+     LANDED ON MASTER. Never name the merge tip, and never name the PR
+     branch's pre-rebase sha that `gh pr view --json commits` lists: it
+     is not on master. The gate requires `<sha>` to be on
+     `origin/master` and compares the revert with `<sha>^`. Pass the
+     mutation body from a file. GitHub signs that commit, so
      `check-red-green-replay` admits it as a forge-authored revert. Never
      use `revertPullRequest` or the web UI's Revert button: their commits
      are unsigned, so `check-red-green-replay` convicts them whenever the
