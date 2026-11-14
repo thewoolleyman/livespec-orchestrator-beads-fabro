@@ -219,6 +219,28 @@ def test_a_kept_copy_is_retried_before_any_pod_and_removed_after_readback(
     assert not Path(f"{copy}.preserve").exists()
 
 
+def test_a_kept_copy_with_a_missing_object_is_not_replaced_by_its_live_pod(
+    tmp_path: Path,
+) -> None:
+    env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    subprocess.run(
+        ["git", "clone", "-q", "--bare", str(tmp_path / "sandbox" / "workspace"), str(copy)],
+        check=True,
+    )
+    (Path(f"{copy}.preserve")).write_text(
+        f"repo={_URL}\nref=refs/heads/preserve/run-{_RUN}\nsha={'0' * 40}\n",
+        encoding="utf-8",
+    )
+
+    result = _run(env)
+
+    assert result.returncode == 0, result.stderr
+    assert copy.exists()
+    assert "KEPT(fsck missing object)" in result.stdout
+
+
 def test_the_worker_exec_route_runs_only_read_commands(tmp_path: Path) -> None:
     env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
     result = _run(env)
