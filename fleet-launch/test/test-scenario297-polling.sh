@@ -54,10 +54,10 @@ fi
 # hang guard only; a fixed per-attempt deadline would decide its verdict by the
 # wall clock.
 case_10b="$(sed -n '/^echo "--- 10b\./,/^stop_load$/p' "$harness")"
-if grep -qF 'held_deadline' <<<"$case_10b" \
-    || grep -qE '\+ 60 \)\)' <<<"$case_10b" \
-    || ! grep -qF 'held_hang_deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))' <<<"$case_10b" \
-    || ! grep -qF 'hung past the ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard (releases=' <<<"$case_10b"; then
+if [[ "$case_10b" == *held_deadline* ]] \
+    || [[ "$case_10b" == *'+ 60 ))'* ]] \
+    || [[ "$case_10b" != *'held_hang_deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))'* ]] \
+    || [[ "$case_10b" != *'hung past the ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard (releases='* ]]; then
     printf 'case 10b decides on a fixed deadline instead of the shared hang guard\n' >&2
     exit 1
 fi
