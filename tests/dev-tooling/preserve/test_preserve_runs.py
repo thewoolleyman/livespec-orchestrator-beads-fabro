@@ -195,6 +195,30 @@ def test_a_worker_node_is_never_reached_over_ssh_or_crictl(tmp_path: Path) -> No
     assert [c for c in calls if c.startswith("exec ")]
 
 
+def test_a_kept_copy_is_retried_before_any_pod_and_removed_after_readback(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    Path(env["PODS_JSON"]).write_text('{"items": []}', encoding="utf-8")
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    subprocess.run(
+        ["git", "clone", "-q", "--bare", str(tmp_path / "sandbox" / "workspace"), str(copy)],
+        check=True,
+    )
+    (Path(f"{copy}.preserve")).write_text(
+        f"repo={_URL}\nref=refs/heads/preserve/run-{_RUN}\nsha={work_sha}\n",
+        encoding="utf-8",
+    )
+
+    result = _run(env)
+
+    assert result.returncode == 0, result.stderr
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    assert not copy.exists()
+    assert not Path(f"{copy}.preserve").exists()
+
+
 def test_the_worker_exec_route_runs_only_read_commands(tmp_path: Path) -> None:
     env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
     result = _run(env)
