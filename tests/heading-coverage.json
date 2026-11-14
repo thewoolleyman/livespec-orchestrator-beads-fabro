@@ -3245,5 +3245,21 @@
     "test": "TODO",
     "reason": "A real test at the integration tier or above is owed for this heading. The drive impl: launch path is run against doubled systemd-run, slice and bound-file states: a host with the slice and the bound file gets a scoped launch carrying MemoryMax and OOMPolicy=continue; a host missing any condition gets the unchanged argv and environment; a failing scope launcher falls back to exactly one unscoped launch; each case appends a dispatch-launch-scope journal record naming the launch it used. bd-ib-szbxu7 owns it.",
     "work_item": "bd-ib-szbxu7"
+  },
+  {
+    "heading": "## Scenario 348 \u2014 A seeded recovery dispatch reseeds its seed onto the current default branch, holds on a reseed conflict, and routes a seed carrying no work fresh",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-zzhy5t",
+    "reason": "A test at the integration tier or above is owed by bd-ib-zzhy5t: recovery routing driven against a local bare origin whose default branch (not named master) has advanced past a seed's merge base, covering the moved, conflicting, work-free, work-free-ruled and already-current seed routes."
+  },
+  {
+    "heading": "## Scenario 372 \u2014 A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-5xihdt",
+    "reason": "An integration-tier test is owed by bd-ib-5xihdt: the reseed route driven against a local bare origin whose default branch has advanced past the seed's merge base."
   }
 ]
