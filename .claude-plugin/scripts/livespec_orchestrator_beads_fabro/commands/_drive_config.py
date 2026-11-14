@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, cast
 
 from livespec_orchestrator_beads_fabro.commands import _jsonc, _jsonc_splice
+from livespec_orchestrator_beads_fabro.commands._config_cycle_ceilings import (
+    COMMITTED_ONLY_RUNTIME_CEILING_KEYS,
+)
 from livespec_orchestrator_beads_fabro.commands._drive_config_schema import (
     CONFIG_KEYS,
     ConfigKey,
@@ -112,6 +115,8 @@ def _parse_set_config_action(*, action_id: str) -> dict[str, Any]:
     key, raw_value = parts
     config_key = config_key_by_name(key=key)
     if config_key is None:
+        if key in COMMITTED_ONLY_RUNTIME_CEILING_KEYS:
+            return _committed_only_key(action_id=action_id, key=key)
         return _invalid_key(action_id=action_id, key=key)
     value = parse_config_value(config_key=config_key, raw_value=raw_value)
     if value is None:
@@ -192,6 +197,20 @@ def _invalid_key(*, action_id: str, key: str) -> dict[str, Any]:
         "status": "failed",
         "domain_error": "invalid-config-key",
         "summary": f"Unsupported config key {key!r}. Expected one of: {expected_keys()}.",
+    }
+
+
+def _committed_only_key(*, action_id: str, key: str) -> dict[str, Any]:
+    """Refuse a real setting that is deliberately unavailable through the API."""
+    return {
+        "action_id": action_id,
+        "kind": "config-write",
+        "status": "failed",
+        "domain_error": "non-api-configurable-setting",
+        "summary": (
+            f"dispatcher.{key} is committed-only and excluded from API-configurable "
+            "policy; adopt it through a reviewed .livespec.jsonc change."
+        ),
     }
 
 
