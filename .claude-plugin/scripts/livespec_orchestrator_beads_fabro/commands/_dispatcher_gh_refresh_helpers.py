@@ -15,6 +15,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_gh_refresh import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_git_push import PUSH_ORIGIN_SOURCE
 from livespec_orchestrator_beads_fabro.commands._dispatcher_helper_model import Helper
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_record_post import (
+    PUBLICATION_RECORD_POST_PROGRAM_RELPATH,
+    publication_record_post_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_wip_capture import (
     WIP_CAPTURE_PROGRAM_FILENAME,
     wip_capture_program_source,
@@ -55,6 +59,13 @@ def gh_refresh_helpers(*, scripts_root: Path) -> tuple[Helper, ...]:
             path=GH_PUSH_HELPER_RELPATH,
             mode=_EXECUTABLE,
             compose=_constant(text=PUSH_ORIGIN_SOURCE),
+        ),
+        Helper(
+            name="gh-post-publication-record",
+            root=_GH_REFRESH_ROOT,
+            path=PUBLICATION_RECORD_POST_PROGRAM_RELPATH,
+            mode=_EXECUTABLE,
+            compose=_text(source=publication_record_post_program_source),
         ),
         Helper(
             name="gh-wip-capture",

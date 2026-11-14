@@ -79,6 +79,13 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_push imp
     PUBLICATION_PUSH_PROGRAM_FILENAME,
     publication_push_program_source,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_record import (
+    publication_pairs,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_record_post import (
+    PUBLICATION_RECORD_POST_PROGRAM_RELPATH,
+    publication_record_post_program_source,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_state import (
     PUBLICATION_STATE_GIT_PATH,
     PUBLISH_HEAD_STATE_FILENAME,
@@ -592,6 +599,19 @@ if argv[:2] == ["pr", "merge"] and "--disable-auto" in argv:
     if state["disarm_fails"]:
         sys.stderr.write("failed to disable auto-merge: the forge refused\n")
         sys.exit(1)
+    sys.exit(0)
+
+if argv[:2] == ["pr", "comment"]:
+    state.setdefault("posted", []).append(sys.stdin.read())
+    with open(state_path, "w") as handle:
+        json.dump(state, handle)
+    if state.get("comment_fails"):
+        sys.stderr.write("the forge refused the comment\n")
+        sys.exit(1)
+    sys.exit(0)
+
+if argv[:2] == ["pr", "list"]:
+    print(state.get("pr_number", ""))
     sys.exit(0)
 
 sys.stderr.write("unstubbed gh invocation: %%s\n" %% " ".join(argv))
@@ -1991,3 +2011,96 @@ def test_the_non_convergence_reason_carries_no_quote_character_on_both_rendering
     assert "'" not in body, body
     assert body.startswith(_NON_CONVERGED_PREFIX), body
     assert body.endswith("\n"), body
+
+
+_PUBLICATION_IDENTITY = "thewoolleyman-factory-bot[bot]"
+_PUBLICATION_RUN = "01M7PUBLICATIONRUN"
+
+
+def _posting_environment(*, root: Path) -> dict[str, str]:
+    """The sandbox's gh-refresh root carrying the production publication-record program."""
+    helper_root = root / "gh-refresh"
+    program = helper_root / PUBLICATION_RECORD_POST_PROGRAM_RELPATH
+    program.parent.mkdir(parents=True)
+    _ = program.write_text(publication_record_post_program_source(), encoding="utf-8")
+    program.chmod(0o755)
+    return {"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(helper_root), "FABRO_RUN_ID": _PUBLICATION_RUN}
+
+
+def _forge(*, box: _Refresh) -> dict[str, object]:
+    return cast("dict[str, object]", json.loads(box.forge_state.read_text(encoding="utf-8")))
+
+
+def _set_forge(*, box: _Refresh, **fields: object) -> None:
+    _ = box.forge_state.write_text(json.dumps({**_forge(box=box), **fields}), encoding="utf-8")
+
+
+def test_a_changed_head_refresh_binds_its_run_to_the_head_it_pushed(tmp_path: Path) -> None:
+    """`pr_refresh` posts the record, naming origin's new tip and not the head it started from."""
+    box = _build(root=tmp_path)
+    before = box.remote_head(ref=_BRANCH)
+    _set_forge(box=box, pr_number="4515")
+    _ = _advance_default(box=box)
+
+    result = _run(box=box, extra_env=_posting_environment(root=tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    republished = box.remote_head(ref=_BRANCH)
+    assert republished != before
+    posted = cast("list[str]", _forge(box=box)["posted"])
+    assert len(posted) == 1
+    assert publication_pairs(
+        comments=({"body": posted[0], "author": {"login": _PUBLICATION_IDENTITY}},),
+        publication_identity=_PUBLICATION_IDENTITY,
+    ) == ((republished, _PUBLICATION_RUN),)
+    assert "stage: pr_refresh" in posted[0].splitlines()
+    assert "pull-request: 4515" in posted[0].splitlines()
+    assert "LIVESPEC_PUBLICATION_RECORD_POSTED" in result.stderr
+
+
+def test_a_refresh_whose_record_cannot_be_posted_still_succeeds_and_says_why(
+    tmp_path: Path,
+) -> None:
+    """A refused comment changes neither the exit code nor the head the stage pushed."""
+    box = _build(root=tmp_path)
+    _set_forge(box=box, pr_number="4515", comment_fails=True)
+    _ = _advance_default(box=box)
+
+    result = _run(box=box, extra_env=_posting_environment(root=tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    republished = box.remote_head(ref=_BRANCH)
+    assert republished == box.local_head()
+    assert "LIVESPEC_PR_REFRESH_CHANGED" in result.stderr
+    assert "LIVESPEC_PUBLICATION_RECORD_FAILED" in result.stderr
+    assert f"run={_PUBLICATION_RUN}" in result.stderr
+    assert f"pushed={republished}" in result.stderr
+    assert "step=comment-post" in result.stderr
+
+
+def test_a_refresh_with_no_posting_program_still_succeeds_and_says_why(tmp_path: Path) -> None:
+    """An absent helper is reported in the stage's own output, never raised."""
+    box = _build(root=tmp_path)
+    _ = _advance_default(box=box)
+    nothing = tmp_path / "no-helpers"
+    nothing.mkdir()
+
+    result = _run(
+        box=box,
+        extra_env={"LIVESPEC_SANDBOX_GH_REFRESH_ROOT": str(nothing), "FABRO_RUN_ID": "01RUN"},
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "step=helper-absent" in result.stderr
+    assert "run=01RUN" in result.stderr
+
+
+def test_an_unchanged_default_posts_no_record(tmp_path: Path) -> None:
+    """A refresh that pushes nothing leaves the publish branch's tip, so no record is owed."""
+    box = _build(root=tmp_path)
+    _set_forge(box=box, pr_number="4515")
+
+    result = _run(box=box, extra_env=_posting_environment(root=tmp_path))
+
+    assert result.returncode == 0, result.stderr
+    assert "posted" not in _forge(box=box)
