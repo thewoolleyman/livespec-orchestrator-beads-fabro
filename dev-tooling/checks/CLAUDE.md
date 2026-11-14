@@ -137,7 +137,14 @@ Current checks:
   instead of asking the engine. It reads the SAME payload set the two other
   payload gates read (`_checked_workflow_payloads.py`), then globs those
   directories' parents for a `workflow.fabro` the enumeration does not name, so
-  an unregistered sibling graph is a finding rather than an unvalidated file. Its
+  an unregistered sibling graph is a finding rather than an unvalidated file. It
+  also carries a REACHABILITY leg that needs no engine binary
+  (`_fabro_graph_reachability.py`, work-item bd-ib-vvzd3v): for EVERY
+  `.claude-plugin/.fabro/workflows/*/workflow*.fabro` it walks the edges from the
+  graph's `shape=Mdiamond` start node and names each node it cannot reach, so the
+  engine's `attractor.unreachable_node` refusal is caught in a sandbox and in CI
+  where `fabro validate` cannot run. v0.329.0 shipped two such nodes and every
+  implement dispatch was refused at `fabro run`. Its
   matcher control is a MUTANT OF THE REAL GRAPH rather than a hand-authored
   fixture: for each graph it makes one node's single unconditional edge
   conditional — the exact shape both outages had — and requires the engine to

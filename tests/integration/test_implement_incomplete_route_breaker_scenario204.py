@@ -1,10 +1,10 @@
-"""Scenario 204 — incomplete turns reach the hook route without tripping Petri's breaker.
+"""Scenario 204 — incomplete turns reach the incomplete route without tripping Petri's breaker.
 
-The settled-commit re-entry permits a third implement visit. The completion
-gate must therefore report an incomplete turn as a successful routing label:
-three identical non-zero completion-gate exits are a deterministic-failure
-cycle before ``implement_hook_route`` can spend its budget and preserve the
-failed commit's evidence at ``needs_human``.
+The completion gate must report an incomplete turn as a successful routing label:
+repeated identical non-zero completion-gate exits are a deterministic-failure
+cycle before `green_incomplete_route` can spend its one re-entry and fail with the
+partial-progress cause at `needs_human`. The single-turn `implement_hook_route`
+this once covered was removed with the red/green split (work-item bd-ib-vvzd3v).
 """
 
 from __future__ import annotations
@@ -25,7 +25,6 @@ _GRAPH = (
     / "workflow.fabro"
 )
 _COMPLETION = "implement_completion"
-_ROUTE = "implement_hook_route"
 # The split graph's incomplete-turn route (Scenario 285), which the gate reaches.
 _GREEN_ROUTE = "green_incomplete_route"
 _NEEDS_HUMAN = "needs_human"
@@ -49,24 +48,17 @@ def _completion_script() -> str:
     return _parsed_graph().nodes[_COMPLETION]["script"]
 
 
-def _route_script() -> str:
-    return _parsed_graph().nodes[_ROUTE]["script"]
-
-
-def test_three_incomplete_visits_are_successful_routes_to_needs_human_with_failed_commit_cause(
+def test_incomplete_visits_are_successful_routes_to_the_green_incomplete_route(
     tmp_path: Path,
 ) -> None:
     """Each incomplete visit avoids the breaker and selects the incomplete-turn route.
 
-    In the split graph the gate's `incomplete` label reaches
-    `green_incomplete_route`; the single-node hook route's script, still declared
-    for the single-node form, keeps its exhausted-budget cause, exercised below.
+    In the split graph the gate's `incomplete` label reaches `green_incomplete_route`.
     """
     graph = _parsed_graph()
     assert graph.nodes[_COMPLETION].get("output_schema") == "routing"
     assert (_GREEN_ROUTE, "preferred_label=incomplete") in _targets(source=_COMPLETION)
     assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GREEN_ROUTE)
-    assert (_NEEDS_HUMAN, "") in _targets(source=_ROUTE)
 
     repo = tmp_path / "clone"
     repo.mkdir()
@@ -82,26 +74,3 @@ def test_three_incomplete_visits_are_successful_routes_to_needs_human_with_faile
         )
         assert completed.returncode == 0, completed.stderr
         assert json.loads(completed.stdout) == {"preferred_next_label": "incomplete"}
-
-    git_dir = repo / ".git"
-    (git_dir / "livespec-implement-hook-reentries").write_text("1\n", encoding="utf-8")
-    (git_dir / "livespec-implement-live-commit").write_text(
-        "failed\n"
-        "failed targets: check-types\n\n"
-        "Commit run commit-123 ended FAILED with exit status 17; hook rejected changes.\n"
-        "module.py:3:1 - error: broken\n",
-        encoding="utf-8",
-    )
-
-    routed = subprocess.run(
-        ("sh", "-c", _route_script()),
-        cwd=repo,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert routed.returncode != 0, routed.stderr
-    cause = (git_dir / "livespec-stage-cause").read_text(encoding="utf-8")
-    assert "hook exit status: 17" in cause
-    assert "failed targets: check-types" in cause
