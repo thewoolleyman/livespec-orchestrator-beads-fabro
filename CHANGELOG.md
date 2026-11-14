@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.329.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.329.0...v0.329.1) (2026-11-14)
+
+
+### Bug Fixes
+
+* **fleet-launch:** bound case 20c's deciding waits by the harness hang guard (bd-ib-2it27f) ([ab8775e](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ab8775ed6da49643f62a4e6e1bd7ddcda034e96e))
+* **fleet-launch:** make hold-after-admission test deterministic ([f0902c3](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f0902c3d6fbf8ab7cd8af1cf6296c2306fb0146e))
+* **fleet-launch:** order stopped admission test ([664b4a7](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/664b4a763631b3f625da11c18dfd540dfc54d4bf))
+* **fleet-launch:** synchronize stub drive listing ([fca906c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fca906c868673730f4de6e92fd588aa658511130))
+* resolve pytest path-spelled coverage nodes ([6d1bce6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6d1bce64e87a4ea1f15bcea958e7a5eece3683eb))
+
 ## [0.329.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.328.0...v0.329.0) (2026-11-14)
 
 
