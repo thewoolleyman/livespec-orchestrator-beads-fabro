@@ -59,6 +59,15 @@ start gets its whole job as the agent's launch argument instead (the brief-file 
 in rule 2, or a trailing prompt after the agent's own flags), so nothing is typed into its
 pane afterwards; reach a Claude helper later by `SendMessage`.
 
+Since 2026-11-14 this is fleet-wide and enforced: the maintainer ruled that Claude
+sessions talk only through `SendMessage` (across machines via Remote Control), and a
+managed PreToolUse hook denies `herdr pane send-text`, `herdr pane run`,
+`herdr agent prompt` and literal-text `tmux send-keys` into another pane hosting a
+Claude agent. Typing into a Codex or pi pane stays allowed, because those harnesses
+cannot receive `SendMessage`, and so does key-only input such as Escape, Enter or a
+picker digit. The full protocol is the fleet's distributed SendMessage protocol,
+https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md.
+
 A Codex TUI pane is a sharper case of the busy-pane rule above:
 `herdr pane send-text <pane> "..."` followed by `herdr pane send-keys <pane>
 enter` did NOT submit, because Codex takes the text as a paste and the Enter
