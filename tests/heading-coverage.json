@@ -3261,5 +3261,13 @@
     "test": "TODO",
     "work_item": "bd-ib-5xihdt",
     "reason": "An integration-tier test is owed by bd-ib-5xihdt: the reseed route driven against a local bare origin whose default branch has advanced past the seed's merge base."
+  },
+  {
+    "heading": "## Scenario 373 \u2014 An incident whose landed commit's master run was red only on another incident's defect enters repayment on the first green descendant run",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-ah5t7i",
+    "reason": "An integration-tier test is owed by bd-ib-ah5t7i: enter-repayment driven against a recorded incident whose landed commit's master run failed only on a job pre-existing on its first parent and attributed to another incident, asserting admission on the first green descendant run with L kept as base, head, input parent and staged tree, and the condition-2 and condition-4 refusals that write nothing."
   }
 ]
