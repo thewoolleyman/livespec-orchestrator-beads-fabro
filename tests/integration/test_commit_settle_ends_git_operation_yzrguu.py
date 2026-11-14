@@ -42,7 +42,6 @@ _GRAPH = (
     / "workflow.fabro"
 )
 _SETTLES = (
-    ("implement_commit_settle", "implement"),
     ("fix_commit_settle", "fix"),
     ("review_fix_commit_settle", "review_fix"),
 )

@@ -1,7 +1,8 @@
 """Scenario 199 (work-item bd-ib-gisyvv) — a re-entered turn's Green amend amends the open Red.
 
-An open-Red re-entry (`fix_open_red_route`, `review_fix_open_red_route`, or
-`implement_hook_route` after a settled open Red) sends the stage back to finish
+An open-Red re-entry (`fix_open_red_route` or `review_fix_open_red_route`; the
+single-turn `implement_hook_route` that once did the same was removed with the
+red/green split) sends the stage back to finish
 the Green amend of a Red commit that is already complete. Between that Red and
 the re-entered turn, the engine writes one checkpoint commit per stage: some
 are tree-empty, and some carry the implementation the previous turn left staged.
@@ -41,7 +42,7 @@ _RED_MESSAGE = (
 )
 _GREEN_MESSAGE = _RED_MESSAGE + "TDD-Green-Verified-At: 2026-11-11T00:00:00Z\n"
 # One checkpoint subject per stage the engine runs between the open Red and the
-# re-entered turn, for each of the three re-entry routes.
+# re-entered turn, for each of the two re-entry routes.
 _ROUTE_CHECKPOINTS = {
     "fix_open_red_route": ("fix", "fix_commit_settle", "fix_open_red_route"),
     "review_fix_open_red_route": (
@@ -49,7 +50,6 @@ _ROUTE_CHECKPOINTS = {
         "review_fix_commit_settle",
         "review_fix_open_red_route",
     ),
-    "implement_hook_route": ("implement", "implement_commit_settle", "implement_hook_route"),
 }
 
 

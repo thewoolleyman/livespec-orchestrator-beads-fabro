@@ -118,25 +118,22 @@ _RECAPTURE_LOOP = _RECAPTURE_ADDED | {
     "proof_verify",
     "proof_grade",
 }
-# The hook-refusal route (v208, Scenario 204; work-item bd-ib-y7372n), kept as
-# its own constant for the same reason. It closes a NEW cycle --
-# `implement -> implement_completion -> implement_hook_route -> implement` --
-# so the nodes it moves are that cycle's members plus the diff breaker the
-# second visit's completion re-earns; everything below the breaker is already
-# attributed to a loop above.
-_HOOK_ROUTE_ADDED = {"implement_hook_route"}
-_HOOK_ROUTE_LOOP = _HOOK_ROUTE_ADDED | {
+# The hook-refusal route (v208, Scenario 204; work-item bd-ib-y7372n) once closed
+# the cycle `implement -> implement_completion -> implement_hook_route ->
+# implement`. The red/green split left it and `implement_commit_settle`
+# unreachable and bd-ib-vvzd3v removed both, so neither is an ADDED node any more;
+# the loop's surviving members stay allowed to move, since the pre-port graph
+# budgets them under that cycle and the ported one under the split's own.
+_HOOK_ROUTE_LOOP = {
     "implement",
     "implement_completion",
     "implementation_diff",
 }
 # The commit-run settles (bd-ib-xj3qqb), kept as their own constant for the same
-# reason. `implement_commit_settle` sits on `implement`'s fallthrough, and the
-# settled-commit re-entry it informs raises the hook-route cycle from two visits
-# to three (so `_HOOK_ROUTE_LOOP` is the set it moves); `review_fix_commit_settle`
-# sits on `review_fix`'s fallthrough and closes no cycle of its own.
+# reason. `review_fix_commit_settle` sits on `review_fix`'s fallthrough and
+# `fix_commit_settle` on `fix`'s, and neither closes a cycle of its own. The
+# single-turn `implement_commit_settle` was removed with the red/green split.
 _COMMIT_SETTLE_ADDED = {
-    "implement_commit_settle",
     "fix_commit_settle",
     "review_fix_commit_settle",
 }
@@ -769,7 +766,7 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
 
     # The two new stages, the v134 refresh-repair classifier, the v145 refresh
     # route, the v156 per-assertion grade, the v165 completion gate, the v175
-    # recapture route and the v208 hook-refusal route are the ONLY nodes added,
+    # recapture route and the red/green split's nodes are the ONLY nodes added,
     # and nothing was dropped: a node
     # the ported graph lost would be an executable path missing from a figure
     # still presented as an allowance.
@@ -781,7 +778,6 @@ def test_the_ported_graph_derives_the_same_execution_budget_as_the_pre_port_one(
         | _PROOF_GRADE_ADDED
         | _IMPLEMENT_COMPLETION_ADDED
         | _RECAPTURE_ADDED
-        | _HOOK_ROUTE_ADDED
         | _IMPLEMENT_AMENDMENT_ROUTE_ADDED
         | _RED_GREEN_SPLIT_ADDED
         | _COMMIT_SETTLE_ADDED

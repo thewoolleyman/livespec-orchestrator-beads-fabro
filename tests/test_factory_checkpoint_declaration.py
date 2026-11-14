@@ -347,6 +347,13 @@ above the shipped 1641930 and below the retired fifteen-minute control's
 2459130. That keeps the discriminating relation this module owns: the
 five-minute checkpoint budget is still what holds the allowance under the bound.
 
+THE TWO UNREACHABLE NODES WERE REMOVED (work-item bd-ib-vvzd3v). The split left
+`implement_hook_route` and `implement_commit_settle` in the graph with no edge
+entering either, which the engine refuses as `attractor.unreachable_node`, so
+every v0.329.0 implement dispatch was refused at `fabro run`. Removing them
+takes their one billed visit each out of the derivation: the shipped allowance
+re-measures at 1634040 seconds, down from 1641930, still under the same bound.
+
 The v175 lesson is kept: crossing the credential line fails loudly and cannot
 pass behind a bound the repository can move, because the fresh-credential
 lifetime is a constant of the host and not a bound.

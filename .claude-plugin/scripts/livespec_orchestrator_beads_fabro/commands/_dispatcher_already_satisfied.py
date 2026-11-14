@@ -49,9 +49,10 @@ ALREADY_SATISFIED_STAGE = "already-satisfied"
 ALREADY_SATISFIED_NODE = "already_satisfied"
 
 # The Petri-era record of a step's ending, MEASURED on run 01M7AFVCPSK2GT0W2SWXP3258Z
-# (`implement_commit_settle@1`, a succeeded command step): the envelope names the node at
-# `item.subject.node.name`, the event at `item.record.body.event` is `step.finished`
-# (matched as a suffix, as `_dispatcher_terminal_events` does), the verdict is
+# (`implement_commit_settle@1`, a succeeded command step of the pre-split graph): the
+# envelope names the node at `item.subject.node.name`, the event at
+# `item.record.body.event` is `step.finished` (matched as a suffix, as
+# `_dispatcher_terminal_events` does), the verdict is
 # `outcome.status == "success"` (a failed step nests a block there instead), and the
 # script's output, with its stderr merged in, is `outcome.output.stdout`. That run's step
 # carried `github-token source:` lines, which the minting helper writes to stderr.

@@ -110,6 +110,9 @@ from _checked_workflow_payloads import (  # noqa: E402  — sibling private impo
     checked_payloads,
     incompleteness,
 )
+from _fabro_graph_reachability import (  # noqa: E402  — sibling private import
+    unreachable_node_findings,
+)
 from _fabro_wip_capture import wip_capture_findings  # noqa: E402  — sibling private import
 from _fork_only_settings import (  # noqa: E402  — sibling private import
     FORK_ONLY_SETTINGS,
@@ -359,6 +362,7 @@ def report(*, repo_root: Path) -> Report:
     settings_findings, notes = _settings_review(payloads=payloads)
     findings.extend(settings_findings)
     findings.extend(wip_capture_findings(payloads=payloads))
+    findings.extend(unreachable_node_findings(repo_root=repo_root))
     lever = os.environ.get(LEVER, WARN_WHEN_ABSENT)
     if lever not in LEVER_VALUES:
         space = f"outside the closed value space {', '.join(LEVER_VALUES)}"
