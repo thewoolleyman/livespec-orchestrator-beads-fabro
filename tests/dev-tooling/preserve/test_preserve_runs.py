@@ -241,6 +241,74 @@ def test_a_kept_copy_with_a_missing_object_is_not_replaced_by_its_live_pod(
     assert "KEPT(fsck missing object)" in result.stdout
 
 
+def test_a_legacy_copy_uses_its_reflog_candidate_before_reading_origin(
+    tmp_path: Path,
+) -> None:
+    """A branch reset to master still has its run work in the copied reflog."""
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    Path(env["PODS_JSON"]).write_text('{"items": []}', encoding="utf-8")
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    workspace = tmp_path / "sandbox" / "workspace"
+    subprocess.run(["git", "clone", "-q", "--bare", str(workspace), str(copy)], check=True)
+    master_sha = _git("rev-parse", "master", cwd=origin)
+    _git(
+        "update-ref",
+        "--create-reflog",
+        "-m",
+        "reset-to-master",
+        f"refs/heads/fabro/run/{_RUN}",
+        master_sha,
+        work_sha,
+        cwd=copy,
+    )
+    _git(
+        "update-ref",
+        "--create-reflog",
+        "-m",
+        "checkpoint",
+        f"refs/heads/fabro/run/{_RUN}",
+        work_sha,
+        master_sha,
+        cwd=copy,
+    )
+    _git(
+        "update-ref",
+        "--create-reflog",
+        "-m",
+        "reset-to-master",
+        f"refs/heads/fabro/run/{_RUN}",
+        master_sha,
+        work_sha,
+        cwd=copy,
+    )
+    _git(
+        "fetch",
+        "-q",
+        "origin",
+        "+refs/heads/master:refs/remotes/origin/master",
+        cwd=copy,
+    )
+    (copy.parent / "known.git.preserve").write_text(
+        f"repo={_URL}\nref=refs/heads/preserve/run-known\nsha={work_sha}\n",
+        encoding="utf-8",
+    )
+    _git(
+        "fetch",
+        "-q",
+        str(workspace),
+        f"+refs/heads/fabro/run/{_RUN}:refs/heads/preserve/run-{_RUN}",
+        cwd=origin,
+    )
+
+    result = _run(env)
+
+    assert result.returncode == 0, result.stderr
+    assert not copy.exists()
+    assert f"\t{_URL}\t{work_sha}\t" in result.stdout
+    assert "\tVERIFIED\t" in result.stdout
+
+
 def test_the_worker_exec_route_runs_only_read_commands(tmp_path: Path) -> None:
     env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
     result = _run(env)
