@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.332.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.331.0...v0.332.0) (2026-11-14)
+
+
+### Features
+
+* an impl dispatch launches its loop in the host's dispatch memory slice ([b63692c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/b63692cecde477b7c7cc6cb7d405a5050e614648))
+* carry an overtaken arming's measured conflicted paths to its terminal disposition ([a6b0fc1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a6b0fc1ea3b26493fa9855b45ec2caebe17b79b0))
+* **dispatcher:** diff-apply reseed of a stale preserved seed onto the default-branch tip ([9491fbb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9491fbbe718c422814365977ed61017842afb39e))
+* **incident:** recover-repayment-phases records the repayment phases a dispatch skipped (bd-ib-wz6bsa) ([12eb86a](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/12eb86a5d91d0fa9236e8dd2c44779fe5c4db518))
+
+
+### Bug Fixes
+
+* a failed scoped launch of an impl dispatch falls back to one unscoped launch ([a4bf429](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/a4bf4296a1bfe7b943adbe097a825a16a450147a))
+* **incident:** recover-repayment-phases refuses an item outside the dispatch path as ineligible, not premature (bd-ib-wz6bsa) ([82b4bcb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/82b4bcb84e8af349368f576f2a72770efdacfb06))
+* restore the is_dispatch_candidate design-record docstring verbatim after its move ([1bd24fa](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1bd24fa4d5f0c5e086a32cd94d06b35dd2bc9cb8))
+* share reconcile journal snapshots ([f05013d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f05013d5274cc1b0028bbf1e597790b4f111ebfd))
+
 ## [0.331.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.330.0...v0.331.0) (2026-11-14)
 
 
