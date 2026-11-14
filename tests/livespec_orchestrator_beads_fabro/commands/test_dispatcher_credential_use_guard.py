@@ -337,6 +337,38 @@ def _await_event(*, fd: int, expected: bytes, what: str) -> None:
     assert os.read(fd, len(expected)) == expected
 
 
+def _await_group_gone(
+    *, fixture: _GuardedFixture, max_empty_waits: int | None, stayed_live: str
+) -> None:
+    """Block until EOF on the pipe every group member inherited; the clock decides the verdict.
+
+    A real-time wait that elapses with the pipe still open decides NOTHING: on a
+    loaded runner the group's exit can lag by any amount of host time. The only
+    verdict is the controlled clock's. `stayed_live` is raised when the clock has
+    reached the deadline while the pipe is still held, which is the instant the
+    reaper's KILL was due, so a group still live then outlived the bound. A wait
+    that leaves the clock short of the deadline just waits again, and
+    `max_empty_waits` is only the liveness guard against a hang: it names a reaper
+    that stopped advancing the clock, never a guard verdict about the deadline.
+    """
+    empty_waits = 0
+    while True:
+        readable, _, _ = select.select([fixture.holder_read], [], [], _SETTLE_SECONDS)
+        if readable:
+            assert os.read(fixture.holder_read, 1) == b""
+            return
+        empty_waits += 1
+        controlled_now = float(fixture.clock.read_text(encoding="utf-8").strip())
+        if max_empty_waits is not None and empty_waits >= max_empty_waits:
+            pytest.fail(
+                "the reaper stopped advancing the controlled clock before the group ended; "
+                f"controlled clock is {controlled_now}"
+            )
+        assert (
+            controlled_now < fixture.deadline
+        ), f"{stayed_live}; controlled clock is {controlled_now}"
+
+
 def _guarded_group_exit(
     *,
     tmp_path: Path,
@@ -371,22 +403,11 @@ def _guarded_group_exit(
         os.write(fixture.release_fd, b"release\n")
         os.close(fixture.holder_write)
         fixture.holder_write = -1
-        empty_waits = 0
-        while True:
-            readable, _, _ = select.select([fixture.holder_read], [], [], _SETTLE_SECONDS)
-            if readable:
-                assert os.read(fixture.holder_read, 1) == b""
-                break
-            empty_waits += 1
-            controlled_now = float(fixture.clock.read_text(encoding="utf-8").strip())
-            if max_empty_waits is not None and empty_waits >= max_empty_waits:
-                pytest.fail(
-                    "the reaper stopped advancing the controlled clock before the group ended; "
-                    f"controlled clock is {controlled_now}"
-                )
-            assert controlled_now < fixture.deadline, (
-                "the group stayed live past the deadline; " f"controlled clock is {controlled_now}"
-            )
+        _await_group_gone(
+            fixture=fixture,
+            max_empty_waits=max_empty_waits,
+            stayed_live="the group stayed live past the deadline",
+        )
         status = fixture.guarded.wait(timeout=_SETTLE_SECONDS)
         return status, float(fixture.clock.read_text(encoding="utf-8").strip()), fixture.deadline
     finally:
@@ -741,18 +762,24 @@ def test_every_launch_route_is_wrapped_through_one_argv_transform() -> None:
         assert "--" in wrapped
 
 
-def test_losing_the_waiting_process_does_not_disarm_the_bound(
-    tmp_path: Path,
-) -> None:
-    """The host-independence property, read from the guard's injected clock.
+# Only a liveness guard: a healthy reaper ends the group within a handful of waits
+# whatever the runner's load, so reaching this count means the clock stopped.
+_HANG_GUARD_WAITS = 6
 
-    The reaper lives in the sandbox beside the child, so losing the process that
-    is WAITING does not extend anything. Here the waiter is killed deliberately
-    -- standing in for a dying host-side waiter -- before the controlled clock
-    advances. The reaper's FIFO event then releases the clock, and EOF on the
-    inherited holder pipe establishes that the child and reaper exited.
-    """
-    fixture = _start_guarded_fixture(tmp_path=tmp_path)
+
+def _lose_the_waiter_and_await_the_group(
+    *,
+    tmp_path: Path,
+    initial_advance_delay_seconds: int = 0,
+    guard_text: str | None = None,
+    max_empty_waits: int | None = _HANG_GUARD_WAITS,
+) -> None:
+    """Kill the waiting guard shell, release the controlled clock, await the group's end."""
+    fixture = _start_guarded_fixture(
+        tmp_path=tmp_path,
+        initial_advance_delay_seconds=initial_advance_delay_seconds,
+        guard_text=guard_text,
+    )
     try:
         _await_event(fd=fixture.armed_fd, expected=b"armed", what="the reaper's armed announcement")
         _await_event(fd=fixture.ready_fd, expected=b"ready\n", what="the child's readiness")
@@ -764,10 +791,10 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
         os.write(fixture.release_fd, b"release\n")
         os.close(fixture.holder_write)
         fixture.holder_write = -1
-        readable, _, _ = select.select([fixture.holder_read], [], [], _SETTLE_SECONDS)
-        assert readable and os.read(fixture.holder_read, 1) == b"", (
-            "the child stayed live after the waiter died; "
-            f"controlled clock is {fixture.clock.read_text(encoding='utf-8').strip()}"
+        _await_group_gone(
+            fixture=fixture,
+            max_empty_waits=max_empty_waits,
+            stayed_live="the child stayed live after the waiter died",
         )
         assert float(fixture.clock.read_text(encoding="utf-8").strip()) <= fixture.deadline
     finally:
@@ -775,6 +802,54 @@ def test_losing_the_waiting_process_does_not_disarm_the_bound(
             guarded=fixture.guarded,
             pid_file=fixture.pid_file,
             descriptors=fixture.descriptors(),
+        )
+
+
+@pytest.mark.parametrize("initial_advance_delay_seconds", [0, _SETTLE_SECONDS + 1])
+def test_losing_the_waiting_process_does_not_disarm_the_bound(
+    tmp_path: Path, initial_advance_delay_seconds: int
+) -> None:
+    """The host-independence property, read from the guard's injected clock.
+
+    The reaper lives in the sandbox beside the child, so losing the process that
+    is WAITING does not extend anything. Here the waiter is killed deliberately
+    -- standing in for a dying host-side waiter -- before the controlled clock
+    advances. The reaper's FIFO event then releases the clock, and EOF on the
+    inherited holder pipe establishes that the child and reaper exited.
+
+    THE VERDICT IS THE CLOCK'S, NEVER A REAL-TIME WAIT'S. The child's exit after
+    the release can lag by any amount of host time on a loaded runner, and the
+    delayed parameter holds the reaper's first advance past the settle bound to
+    say so: a wait that elapses with the pipe still open reports "stayed live"
+    only once the controlled clock has passed the deadline.
+    """
+    _lose_the_waiter_and_await_the_group(
+        tmp_path=tmp_path, initial_advance_delay_seconds=initial_advance_delay_seconds
+    )
+
+
+def test_a_guard_disarmed_by_losing_its_waiter_fails_the_waiter_death_case(
+    tmp_path: Path,
+) -> None:
+    """The case still rejects a bound that dies with the process waiting on it.
+
+    The mutated reaper exits as soon as the guard shell that launched it is gone,
+    which is the host-dependence the case exists to exclude. The child then keeps
+    the inherited pipe while the controlled clock stops short of the deadline, so
+    the liveness guard names a reaper that stopped advancing -- and NOT a child
+    that outlived a deadline the clock never reached.
+    """
+    poll = '        group_is_ours || exit 0\n        left="$(until_epoch "$term_epoch")"'
+    disarmed = guard_script_text().replace(
+        poll, '        kill -0 "$$" 2>/dev/null || exit 0\n' + poll
+    )
+    assert disarmed != guard_script_text(), "the disarming mutation did not apply"
+
+    with pytest.raises(
+        pytest.fail.Exception, match="reaper stopped advancing the controlled clock"
+    ):
+        _lose_the_waiter_and_await_the_group(
+            tmp_path=tmp_path, guard_text=disarmed, max_empty_waits=1
         )
 
 
