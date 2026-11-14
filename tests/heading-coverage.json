@@ -3242,8 +3242,8 @@
     "heading": "## Scenario 371 \u2014 An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "A real test at the integration tier or above is owed for this heading. The drive impl: launch path is run against doubled systemd-run, slice and bound-file states: a host with the slice and the bound file gets a scoped launch carrying MemoryMax and OOMPolicy=continue; a host missing any condition gets the unchanged argv and environment; a failing scope launcher falls back to exactly one unscoped launch; each case appends a dispatch-launch-scope journal record naming the launch it used. bd-ib-szbxu7 owns it.",
+    "test": "tests.integration.test_impl_dispatch_memory_slice_scenario371.test_a_host_with_the_slice_gets_a_scoped_launch_that_records_its_unit",
+    "reason": "Bound to an integration-tier test, per the heading taxonomy's pyramid-tier requirement: `tests/integration/test_impl_dispatch_memory_slice_scenario371.py` drives the production `run_impl_dispatch` over a stood-in host and runner and a real on-disk dispatch journal, asserting the scoped argv (slice, `OOMPolicy=continue`, the published `MemoryMax`, the loop's own argv after the separator), the `launch` and `scope_unit` keys of the drive result and the `dispatch-launch-scope` journal record. The cgroup placement itself needs a systemd user manager with memory delegation and the slice installed, so it is host-captured on the dev host by bd-ib-szbxu7; the unit-tier cases in `tests/livespec_orchestrator_beads_fabro/commands/test_drive_impl_scope.py` cover each host fact read for real.",
     "work_item": "bd-ib-szbxu7"
   },
   {

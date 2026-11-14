@@ -50,6 +50,7 @@ from hypothesis import settings
 from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_definition_of_done_findings as _dod_findings,
 )
+from livespec_orchestrator_beads_fabro.commands import _drive_impl_scope
 from livespec_orchestrator_beads_fabro.commands._acp_node_layers import resolve_acp_nodes
 from livespec_orchestrator_beads_fabro.commands._config_acp import resolve_acp_node_overlays
 from livespec_orchestrator_beads_fabro.commands._dispatcher_definition_of_done_origin_spec import (
@@ -450,6 +451,23 @@ def _hermetic_codex_home(
     codex_home = tmp_path_factory.mktemp("codex-home")
     _ = (codex_home / "auth.json").write_text(_fresh_codex_auth_json(), encoding="utf-8")
     monkeypatch.setenv("CODEX_HOME", str(codex_home))
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_dispatch_memory_slice_bound(
+    monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory
+) -> None:
+    """Point the published per-loop memory bound at a file that does not exist.
+
+    An `impl:` dispatch reads `/etc/livespec/factory-dispatch-loop-memory-max`
+    to decide whether to launch its loop inside the host's dispatch slice. On the
+    dev host that file exists once the host role converges, so a test driving
+    `drive` with a stand-in runner would otherwise see a scoped launch there and
+    an unscoped one everywhere else. Tests asserting the scoped launch replace
+    `default_scope_host` itself.
+    """
+    absent = tmp_path_factory.mktemp("dispatch-memory-slice") / "factory-dispatch-loop-memory-max"
+    monkeypatch.setattr(_drive_impl_scope, "MEMORY_MAX_PATH", absent)
 
 
 @pytest.fixture(autouse=True)
