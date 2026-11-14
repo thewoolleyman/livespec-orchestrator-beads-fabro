@@ -93,8 +93,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
-    identity_for_dod_taking,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_for_governing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -192,9 +192,7 @@ if not reading.holds:
     with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
         advisory.writelines(f"advisory: {finding}\n" for finding in reading.findings)
 subject = judgement_subject(item=item, cwd=repo, comments=comments, governing=governing)
-identity = identity_for_dod_taking(
-    item=item, cwd=repo, comments=comments, governing=governing
-)
+identity = spec_identity_for_governing(item=item, cwd=repo, governing=governing)
 Path(f"{side}.record").write_text(
     json.dumps(
         {
@@ -203,8 +201,6 @@ Path(f"{side}.record").write_text(
                 item=item, cwd=repo, comments=comments, spec_identity=identity.value
             ),
             "rubric_digest": rubric_digest(rubric=rubric),
-            "spec_identity_form": identity.form,
-            "spec_identity": identity.value,
             "subject_characters": len(subject),
             "carried_rider_count": sum(
                 not is_receipt_comment(body=comment) for comment in comments
@@ -261,9 +257,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candid
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
     did_not_run_comment,
-    verdict_comment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import SpecIdentity
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
@@ -319,22 +313,7 @@ if chain.reply is None:
     print(f"DID-NOT-RUN {chain.cause}")
     raise SystemExit(2)
 print(chain.reply)
-judgement = parse_judgement_reply(reply=chain.reply)
-append_work_item_comment(
-    path=store_config(repo=repo),
-    work_item_id=record["item_id"],
-    body=verdict_comment(
-        item_id=record["item_id"],
-        stage="repository-preflight",
-        digest=record["subject_digest"],
-        rubric_digest=record["rubric_digest"],
-        judgement=judgement,
-        spec_identity=SpecIdentity(
-            form=record["spec_identity_form"], value=record["spec_identity"]
-        ),
-    ),
-)
-outcome = judgement.outcome
+outcome = parse_judgement_reply(reply=chain.reply).outcome
 raise SystemExit(0 if outcome == "admitted" else 1)
 JUDGE_PY
 status=$?

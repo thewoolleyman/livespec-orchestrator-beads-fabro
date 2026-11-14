@@ -40,9 +40,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     judgement_rubric,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    whole_tree_identity,
-)
 from livespec_orchestrator_beads_fabro.errors import BeadsCommandError
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
@@ -114,7 +111,6 @@ def _held_fixture(*, tmp_path: Path) -> tuple[Path, WorkItem]:
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=item, cwd=repo),
             rubric_digest=rubric_digest(rubric=rubric),
-            spec_identity=whole_tree_identity(cwd=repo),
             judgement=DodJudgement(outcome=JUDGEMENT_HELD, findings=("bd-ib-held: fix it.",)),
         ),
     )
