@@ -100,6 +100,7 @@ from livespec_orchestrator_beads_fabro.commands._dod_governing_heading import (
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
     from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
     from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -133,6 +134,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
     payload_root: Path | None = None,
     governing: GoverningHeadingVerdict | None = None,
     caller: str = "dod_judgement_pre_admission",
+    candidate_resolver: Callable[..., tuple[AcpCandidate, ...] | None] | None = None,
 ) -> DodJudgement:
     """Take the judgement for ONE item, or report why it could not be taken.
 
@@ -177,6 +179,7 @@ def run_dod_judgement(  # noqa: PLR0913 - each argument is an independent seam i
         bound_input=True,
         caller=caller,
         journal_name=f"purpose:{caller}@{item.id}",
+        candidate_resolver=candidate_resolver,
     )
     if result.reply is not None:
         parsed = parse_judgement_reply(reply=result.reply)
@@ -221,6 +224,7 @@ def run_dod_gate_prompt(  # noqa: PLR0913 - each argument is an independent seam
     bound_input: bool = False,
     caller: str | None = None,
     journal_name: str | None = None,
+    candidate_resolver: Callable[..., tuple[AcpCandidate, ...] | None] | None = None,
 ) -> CandidateChainResult:
     """Run the resolved `dod_gate` candidates in order, closing stdin for each.
 
@@ -238,7 +242,9 @@ def run_dod_gate_prompt(  # noqa: PLR0913 - each argument is an independent seam
         runner=runner,
         is_verdict=is_verdict,
         timeout_seconds=timeout_seconds,
-        candidate_resolver=dod_gate_candidates,
+        candidate_resolver=dod_gate_candidates
+        if candidate_resolver is None
+        else candidate_resolver,
         bound_input=bound_input,
         caller=caller,
         journal_name=journal_name,

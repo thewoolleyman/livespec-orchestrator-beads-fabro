@@ -176,9 +176,30 @@ if rubric is None:
 # exactly as it does at the gate: no finding is raised on an outage no edit could
 # clear. The reading sees the candidate edit above, so a changed governing-heading
 # subject finds no record and is taken afresh.
-reading = preflight_governing_heading_reading(
-    item=item, repo=repo, comments=comments, runner=ShellCommandRunner()
-)
+# A fresh verdict is recorded on the item, so the rubric judgement that follows, and
+# the next launch, reuse it rather than re-taking it. A build predating that seam
+# keeps the unrecorded reading.
+try:
+    from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+    from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
+        repository_preflight_governing_reading,
+    )
+except ImportError:
+    reading = preflight_governing_heading_reading(
+        item=item, repo=repo, comments=comments, runner=ShellCommandRunner()
+    )
+else:
+
+    class CommentStore:
+        def comments(self):
+            return comments
+
+        def append(self, *, body):
+            append_work_item_comment(path=config, work_item_id=item_id, body=body)
+
+    reading = repository_preflight_governing_reading(
+        item=item, repo=repo, store=CommentStore(), runner=ShellCommandRunner()
+    )
 governing = reading.verdict
 Path(f"{side}.governing").write_text("\n".join(reading.report) + "\n", encoding="utf-8")
 # The omission HOLDS only when the reference line names none of the headings the
@@ -197,6 +218,8 @@ Path(f"{side}.record").write_text(
     json.dumps(
         {
             "item_id": item.id,
+            "description": item.description,
+            "governing_observed": governing is not None,
             "subject_digest": judgement_subject_digest(
                 item=item, cwd=repo, comments=comments, spec_identity=identity.value
             ),
@@ -231,9 +254,8 @@ fi
 # Run through the host's shared candidate chain rather than invoking bare CLIs
 # here.  Besides preserving the configured Codex-first order, this keeps the
 # governing-heading, Definition-of-Done and reflector model bindings in one
-# resolver.  The legacy string form predates candidate metadata, so bridge its
-# recognisable Claude adapter into that resolver until the configuration is
-# migrated.
+# resolver.  The package seam also bridges the legacy string form's recognisable
+# Claude adapter, so nothing about the chain is resolved in this script.
 set +e
 python3 - "$install_root" "$repo_root" "$judgement_input" "$judgement_input.record" <<'JUDGE_PY'
 import json
@@ -243,78 +265,53 @@ from pathlib import Path
 sys.path.insert(0, f"{sys.argv[1]}/scripts")
 sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 
-from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
-from livespec_orchestrator_beads_fabro.commands._acp_node_adapters import parse_adapter_string
-from livespec_orchestrator_beads_fabro.commands._config import dispatcher_block
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_gate_candidates import (
-    dod_gate_candidates,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
-    parse_judgement_reply,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_candidates import (
-    run_candidate_chain,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record import (
-    did_not_run_comment,
+from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
+    repository_preflight_reading,
+    repository_preflight_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro._store_comments import append_work_item_comment
+from livespec_orchestrator_beads_fabro._store_comments import read_work_item_comments
+from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
 
 repo = Path(sys.argv[2])
-prompt = Path(sys.argv[3]).read_text(encoding="utf-8")
 record = json.loads(Path(sys.argv[4]).read_text(encoding="utf-8"))
 
 
-def candidates(*, cwd: Path) -> tuple[AcpCandidate, ...] | None:
-    resolved = dod_gate_candidates(cwd=cwd)
-    if resolved is not None:
-        return resolved
-    entry = (dispatcher_block(cwd=cwd).get("acp_nodes") or {}).get("dod_gate")
-    if not isinstance(entry, str):
-        return None
-    adapter = parse_adapter_string(text=entry)
-    if "claude-agent-acp" in adapter.command:
-        return (AcpCandidate(adapter=adapter, agent_id="claude-acp"),)
-    return None
+class CommentStore:
+    def comments(self):
+        return tuple(
+            comment.text
+            for comment in read_work_item_comments(
+                path=store_config(repo=repo), work_item_id=record["item_id"]
+            )
+        )
+
+    def append(self, *, body):
+        append_work_item_comment(
+            path=store_config(repo=repo), work_item_id=record["item_id"], body=body
+        )
 
 
-def is_verdict(*, text: str) -> bool:
-    return parse_judgement_reply(reply=text).outcome in {"admitted", "rests-at-needs-human"}
+items = materialize_work_items(records=read_work_items(path=store_config(repo=repo)))
+preflight_item = items[record["item_id"]]
+if preflight_item.description != record["description"]:
+    from dataclasses import replace
 
-
-chain = run_candidate_chain(
-    prompt=prompt,
-    cwd=repo,
+    preflight_item = replace(preflight_item, description=record["description"])
+decision = repository_preflight_reading(
+    item=preflight_item,
+    repo=repo,
+    store=CommentStore(),
     runner=ShellCommandRunner(),
-    is_verdict=lambda text: is_verdict(text=text),
-    candidate_resolver=candidates,
-    bound_input=True,
-    caller="dod_preflight",
-    journal_spend=True,
+    payload_root=Path(sys.argv[1]),
+    governing_observed=record["governing_observed"],
 )
-if chain.reply is None:
-    append_work_item_comment(
-        path=store_config(repo=repo),
-        work_item_id=record["item_id"],
-        body=did_not_run_comment(
-            item_id=record["item_id"],
-            stage="repository-preflight",
-            digest=record["subject_digest"],
-            rubric_digest=record["rubric_digest"],
-            cause=chain.cause,
-            subject_characters=record["subject_characters"],
-            carried_rider_count=record["carried_rider_count"],
-            bound_ended_candidates=chain.bound_ended_candidates,
-            attempts=chain.attempts,
-        ),
-    )
-    print(f"DID-NOT-RUN {chain.cause}")
-    raise SystemExit(2)
-print(chain.reply)
-outcome = parse_judgement_reply(reply=chain.reply).outcome
-raise SystemExit(0 if outcome == "admitted" else 1)
+lines, status = repository_preflight_report(decision=decision)
+for line in lines:
+    print(line)
+raise SystemExit(status)
 JUDGE_PY
 status=$?
 set -e
