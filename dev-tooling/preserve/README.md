@@ -120,3 +120,13 @@ dev-tooling/preserve/parity_read.sh <DISPATCH_ID> [<factory-url>] | --pod <names
 ## Shell gotcha
 
 In zsh, `"$sha:refs/..."` applies the `:r` modifier to `$sha`. Always write `"${sha}:${ref}"`.
+
+12. **A local copy is removed only once origin reads its sha back (bd-ib-yw7yot).** A copy leaves the work
+    directory only after `git ls-remote` reads its preserve ref at exactly the copy's sha; `.push.err` is never
+    evidence, because a successful push leaves GitHub's banner there. A kept copy records its repository, ref and
+    sha in a `<run>.git.preserve` sidecar and is pushed again at the start of the next pass, before any pod is read.
+    A copy from before the sidecar existed names no repository, so the script re-runs rule 9's candidate choice on
+    it and looks for that commit on `refs/heads/preserve/run-<RUN>` (or its `-<sha12>` sibling) in each repository
+    of the fleet list (`PRESERVE_REPOS`, space-separated URLs, overrides the default list) and of every sidecar. When
+    none reads it back, the copy is kept and its row names the repository `unknown`. An `EMPTY` verdict or an fsck
+    missing object also keeps the copy, and its row names the reason in `KEPT(...)`.
