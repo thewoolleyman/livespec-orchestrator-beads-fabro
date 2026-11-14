@@ -16,6 +16,7 @@ import shutil
 import stat
 import subprocess
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -515,6 +516,71 @@ def test_a_failed_draft_creation_adopts_an_open_pull_request_at_the_pushed_head(
     assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" in published.result.stderr
     assert "pull_request=#811" in published.result.stderr
     assert published.draft_created is False
+
+
+def _reread_delays() -> tuple[int, ...]:
+    """The script's own fixed re-read schedule, read off the committed bytes."""
+    loop = re.search(r"for retry_delay in (?P<delays>[0-9 ]+); do", _publish_script())
+    assert loop is not None
+    return tuple(int(delay) for delay in loop.group("delays").split())
+
+
+def test_a_failed_draft_creation_with_no_pull_request_at_the_pushed_head_fails_closed_naming_rereads(
+    tmp_path: Path,
+) -> None:
+    """Scenario 369: the 5xx with nothing created fails closed and counts its re-reads."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(tmp_path=tmp_path, run=run, create_failure="HTTP 502 Bad Gateway")
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+    assert f"made {len(_reread_delays())} re-reads" in published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.result.stderr
+    assert published.draft_created is False
+
+
+def test_a_failed_draft_creation_rereads_the_forge_at_increasing_intervals_up_to_a_fixed_cap(
+    tmp_path: Path,
+) -> None:
+    """Scenario 369: the re-read intervals strictly increase and their count is the cap."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(tmp_path=tmp_path, run=run, create_failure="HTTP 503 Service Unavailable")
+
+    delays = _reread_delays()
+    rereads = [
+        call
+        for call in published.calls
+        if call[:2] == ("pr", "list")
+        and "--state" in call
+        and call[call.index("--state") + 1] == "open"
+    ]
+    # The lookup before creation is the first open-state list; the rest are re-reads.
+    assert len(rereads) - 1 == len(delays)
+    recorded = tuple(int(call) for call in published.sleep_calls[-len(delays) :])
+    assert recorded == delays
+    assert all(later > earlier for earlier, later in pairwise(recorded))
+    assert len(delays) == 3
+
+
+def test_a_failed_draft_creation_does_not_adopt_an_open_pull_request_at_a_different_head(
+    tmp_path: Path,
+) -> None:
+    """Scenario 369: an open pull request for the branch at another head is not adopted."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        create_failure="HTTP 502 Bad Gateway",
+        open_prs_after_create="811\t" + "0" * 40,
+    )
+
+    assert published.result.returncode != 0
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" not in published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
+    assert "observed open pull request #811 at " + "0" * 40 in published.result.stderr
 
 
 @pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
