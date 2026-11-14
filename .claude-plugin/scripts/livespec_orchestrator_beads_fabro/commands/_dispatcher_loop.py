@@ -276,6 +276,9 @@ def _dispatch_one_locked(  # noqa: PLR0913 — kw-only dispatch inputs; `verdict
                 item_id=item.id,
                 own_dispatch_id=identity.dispatch_id,
             ),
+            # Stage-specific rider sections are prefixed to each payload prompt;
+            # the run-wide goal must not leak an implement rider into review.
+            include_riders=False,
         )
         _ = goal_file.write_text(goal_text, encoding="utf-8")
     started_at, outcome = run_dispatch_with_watchdog(

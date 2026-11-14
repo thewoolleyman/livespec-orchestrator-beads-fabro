@@ -65,6 +65,7 @@ __all__: list[str] = [
     "claim_journal_record",
     "left_out_line",
     "prior_claim_instant",
+    "riders_for_stage",
 ]
 
 STANDING_RIDER_PREFIX = "STANDING RIDER:"
@@ -73,8 +74,9 @@ STANDING_RIDER_PREFIX = "STANDING RIDER:"
 CLAIM_JOURNAL_STAGE = "ledger-admit"
 
 _STAGE_NAME = r"[A-Za-z_][A-Za-z0-9_-]*"
-_STAGE_SCOPE = re.compile(rf"^FOR\s+{_STAGE_NAME}(?:\s*,\s*{_STAGE_NAME})*\s+ONLY:")
+_STAGE_SCOPE = re.compile(rf"^FOR\s+(?P<stages>{_STAGE_NAME}(?:\s*,\s*{_STAGE_NAME})*)\s+ONLY:")
 _EPOCH = datetime.fromtimestamp(0, tz=timezone.utc)
+_TREE_CHANGING_STAGES = frozenset(("implement", "review_fix"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -132,6 +134,19 @@ def carried_comment_bodies(
     )
 
 
+def riders_for_stage(
+    *, riders: Sequence[WorkItemComment], stage: str
+) -> tuple[WorkItemComment, ...]:
+    """Return carried riders that instruct one stage.
+
+    A standing rider governs every agent stage. A well-formed ``FOR … ONLY:``
+    marker governs only its listed stages; every other rider is deliberately
+    limited to the two tree-changing stages so review and proof turns cannot
+    inherit implementation direction.
+    """
+    return tuple(comment for comment in riders if _applies_to_stage(comment=comment, stage=stage))
+
+
 def left_out_line(*, item_id: str, riders: RiderSet) -> str:
     """The one line a goal states when it left riders out, or the empty string."""
     if riders.left_out == 0:
@@ -186,6 +201,16 @@ def _is_carried(*, comment: WorkItemComment, claim_at: str | None) -> bool:
     claimed = _instant(text=claim_at)
     created = _instant(text=comment.created_at)
     return claimed is None or created is None or created >= claimed
+
+
+def _applies_to_stage(*, comment: WorkItemComment, stage: str) -> bool:
+    marker = comment_marker(body=comment.text)
+    if marker.startswith(STANDING_RIDER_PREFIX):
+        return True
+    scope = _STAGE_SCOPE.match(marker)
+    if scope is None:
+        return stage in _TREE_CHANGING_STAGES
+    return stage in {name.strip() for name in scope.group("stages").split(",")}
 
 
 def _instant(*, text: str | None) -> datetime | None:
