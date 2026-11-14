@@ -48,6 +48,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimStamp
+from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
+    memoized_current_merge_hold,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stale_assignee_survey import (
@@ -141,10 +144,16 @@ class StrandedClaimSurvey:
 def survey_stranded_claims(*, inputs: StrandedClaimInputs) -> StrandedClaimSurvey:
     """Grade every dispatch claim in the ledger, recovering only the proven ones."""
     by_name = {inventory.name: inventory for inventory in inputs.inventories}
+    merge_hold = memoized_current_merge_hold(repo=inputs.repo)
     recovered: list[RecoveredClaim] = []
     held: list[HeldClaim] = []
     for item in inputs.items:
-        if not surveyable(repo=inputs.repo, journal_path=inputs.journal.path, item=item):
+        if not surveyable(
+            repo=inputs.repo,
+            journal_path=inputs.journal.path,
+            item=item,
+            merge_hold=merge_hold,
+        ):
             continue
         outcome = _survey_one(inputs=inputs, item=item, by_name=by_name)
         if isinstance(outcome, HeldClaim):
