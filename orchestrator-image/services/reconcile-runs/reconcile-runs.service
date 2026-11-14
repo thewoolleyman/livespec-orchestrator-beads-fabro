@@ -46,6 +46,19 @@ Restart=no
 # 2026-11-11: a pass used a median of 264 CPU-seconds, 0.45 of a core over the
 # day, while the host sat at about 80% CPU pressure from 19:40Z to 20:50Z.
 CPUWeight=20
+# The disk-side twin of CPUWeight: a pass reads dispatch journals of hundreds of
+# megabytes, so under IO contention it must yield to dispatches and interactive
+# sessions rather than compete as an equal. The default IOWeight is 100.
+IOWeight=20
+# When the kernel must kill something to recover memory, it picks this pass
+# first. A pass is background inventory work that the next tick repeats; a
+# seat's session or a dispatch is not. 500 sits well above the default of 0.
+OOMScoreAdjust=500
+# The pass never swaps. A pass that outgrows its memory should be reclaimed or
+# killed by the bounds below, not drag the host into swap thrash. These four
+# settings make this committed unit the single source of every host-side bound,
+# so no host-role drop-in needs to carry a copy.
+MemorySwapMax=0
 # A reclaim watermark, not a ceiling. Above 5G the kernel throttles the pass
 # and reclaims its memory before the host comes under memory pressure. Measured
 # memory peaks were 3.5 GB median and 4.7 GB max. There is deliberately NO
