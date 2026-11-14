@@ -54,9 +54,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
     judgement_rubric,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    whole_tree_identity,
-)
 from livespec_orchestrator_beads_fabro.store import append_work_item
 from livespec_orchestrator_beads_fabro.types import StoreConfig, WorkItem
 
@@ -306,7 +303,6 @@ def test_the_held_lane_reads_comments_only_for_items_a_judgement_was_recorded_ag
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=judged, cwd=repo),
             rubric_digest=_executing_rubric_digest(),
-            spec_identity=whole_tree_identity(cwd=repo),
             judgement=DodJudgement(
                 outcome=JUDGEMENT_HELD,
                 findings=("bd-ib-judged: restate assertion 1 as behaviour.",),
@@ -377,7 +373,6 @@ def test_the_held_lane_reports_nothing_when_no_ledger_connection_resolves(
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=item, cwd=connected),
             rubric_digest=_executing_rubric_digest(),
-            spec_identity=whole_tree_identity(cwd=connected),
             judgement=DodJudgement(
                 outcome=JUDGEMENT_HELD,
                 findings=("bd-ib-advisory: restate assertion 1 as behaviour.",),

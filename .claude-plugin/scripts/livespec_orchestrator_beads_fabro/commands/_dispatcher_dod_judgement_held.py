@@ -42,7 +42,6 @@ def held_judgement(
             item=item, cwd=repo, comments=comments, spec_identity=identity.value
         ),
         rubric_digest=rubric_digest(rubric=rubric),
-        spec_identity=identity,
     )
     if recorded is None or recorded.outcome != JUDGEMENT_HELD:
         return None

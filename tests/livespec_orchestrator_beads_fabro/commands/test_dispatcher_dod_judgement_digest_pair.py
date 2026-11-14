@@ -49,9 +49,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_wall import (
     dod_unrefused_candidates,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
-    whole_tree_identity,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     unjudged_governing_heading,
@@ -220,7 +217,6 @@ def _stand_a_refusal(
             stage=STAGE_PRE_DISPATCH,
             digest=judgement_subject_digest(item=item, cwd=repo) if subject is None else subject,
             rubric_digest=rubric,
-            spec_identity=whole_tree_identity(cwd=repo),
             judgement=DodJudgement(outcome=JUDGEMENT_HELD, findings=(_FINDING,)),
         ),
     )
