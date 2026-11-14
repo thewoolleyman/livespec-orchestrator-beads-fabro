@@ -256,12 +256,16 @@ def rework_redispatch_eligible_ids(
 
     Unnarrowed and unbounded by construction: this answers "could this item be
     named at all?", so applying the caller's own narrowing here would make the
-    question answer itself.
+    question answer itself. It is a question about a SET, so the rows are taken
+    under the inert ready order: the tenant-wide ready-age read exists only to
+    sequence rows, and sequencing a set that is returned as a set paid a whole-ledger
+    dump for an order nobody reads.
     """
+    projection = claimed_active_projection(repo=repo, items=items, journal=journal)
     return frozenset(
         item.id
-        for item in projected_rework_candidates(
-            repo=repo, items=items, journal=journal, rework=ReworkPass()
+        for item in rework_pending_candidates(
+            items=items, accounting=projection, rework=ReworkPass()
         )
     )
 

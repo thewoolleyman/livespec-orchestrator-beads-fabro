@@ -96,6 +96,7 @@ __all__: list[str] = [
     "livespec_config_text",
     "post_run_dispositions",
     "prepare",
+    "ready_item_ids",
     "ready_items",
     "run_id",
 ]
@@ -137,7 +138,7 @@ def prepare(
     return load_items(repo=repo), journal
 
 
-def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
+def _dispatch_candidates(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     index = {item.id: item for item in items}
     manifest = load_manifest(project_root=repo)
     # Build the cross-tenant sibling resolver ONCE per readiness pass and thread
@@ -146,7 +147,7 @@ def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
     # (qiqz6b Part B). Lazy + memoized: it reads nothing unless an item actually
     # carries a sibling dependency.
     sibling_status_lookup = make_sibling_status_lookup(project_root=repo)
-    ready = [
+    return [
         item
         for item in items
         if is_dispatch_candidate(
@@ -157,6 +158,21 @@ def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
             repo=repo,
         )
     ]
+
+
+def ready_item_ids(*, items: list[WorkItem], repo: Path) -> frozenset[str]:
+    """The ids `ready_items` returns, taken WITHOUT its ordering.
+
+    For a caller that asks set membership and discards the order. The ordering is
+    not free: its ready-age key reads the whole ledger for the ready-dwell instants,
+    so a membership question paid a whole-ledger dump and a parse for a sequence it
+    never looked at.
+    """
+    return frozenset(item.id for item in _dispatch_candidates(items=items, repo=repo))
+
+
+def ready_items(*, items: list[WorkItem], repo: Path) -> list[WorkItem]:
+    ready = _dispatch_candidates(items=items, repo=repo)
     # Compose the single canonical ranking authority so the Dispatcher's drain
     # order never diverges from what `next` advertises (i3jiny): the fractional
     # rank stays the sole primary key, with the equal-rank ready-age tiebreak
