@@ -84,19 +84,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_item_ledger_reads im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_evidence import (
-    read_pull_request_records,
+    read_pull_request_comments,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_precondition import (
     publish_branch_for,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import ProofRecord
+from livespec_orchestrator_beads_fabro.commands._dispatcher_proof_record import (
+    ProofRecord,
+    proof_records,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_publication_record import (
+    publication_identity,
+    publications_of,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reflection_journal import (
     read_journal_records,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_anchor import (
-    FACTORY_RECORD_VERDICTS,
     ResumeAnchor,
-    published_head,
     resume_anchor,
     resume_anchor_from_cancel,
 )
@@ -159,16 +164,6 @@ class ResumeGather:
     publications: tuple[tuple[str, str], ...] = ()
 
 
-def _publications_of(*, records: tuple[ProofRecord, ...]) -> tuple[tuple[str, str], ...]:
-    """Each head a factory record declares, paired with the run that published it."""
-    return tuple(
-        (head, one.run_id)
-        for one in records
-        if one.verdict in FACTORY_RECORD_VERDICTS
-        and (head := published_head(body=one.body)) is not None
-    )
-
-
 def gather_resume(
     *,
     args: argparse.Namespace,
@@ -181,11 +176,12 @@ def gather_resume(
     branch = publish_branch_for(work_item_id=item.id)
     forge = branch_pull_request(repo=repo, branch=branch, runner=runner)
     pull_request = forge.pull_request
-    records = (
-        read_pull_request_records(repo=repo, pr_number=pull_request.number, runner=runner)
+    comments = (
+        read_pull_request_comments(repo=repo, pr_number=pull_request.number, runner=runner)
         if pull_request is not None
         else None
     )
+    records = None if comments is None else proof_records(comments=comments)
     records_observed = pull_request is None or records is not None
     journaled = read_journal_records(journal_path=journal_path)
     cancel = (
@@ -254,7 +250,11 @@ def gather_resume(
         branch=branch,
         earlier_run_ids=_earlier_run_ids(records=journaled, item=item, anchor=anchor, repo=repo),
         workflow_name=earlier_workflow_name(records=journaled, work_item_id=item.id),
-        publications=_publications_of(records=tuple(records or ())),
+        publications=publications_of(
+            records=tuple(records or ()),
+            comments=comments or (),
+            publication_identity=publication_identity(repo=repo),
+        ),
     )
 
 
