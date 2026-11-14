@@ -31,7 +31,7 @@ read_copy_record() {
 }
 read_origin_ref() { git ls-remote "$1" "$2" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
 retry_kept_copies() {
-  local d run got pushed pa repo ref sha mb candidate record legacy_head legacy_rb legacy_src c i k
+  local d run got pushed pa repo ref sha mb candidate record legacy_head legacy_rb c i k
   local -a legacy_labels legacy_shas
   RETRIED_RUNS=" "
   for d in "$WORK"/*.git; do
@@ -59,7 +59,7 @@ retry_kept_copies() {
       i=0; for c in $(tac "$d/logs/HEAD" 2>/dev/null | awk '{print $2}'); do
         legacy_labels+=("HEAD@{$i}"); legacy_shas+=("$c"); i=$((i + 1))
       done
-      candidate=; legacy_src=-; seen=" "
+      candidate=; seen=" "
       for k in "${!legacy_shas[@]}"; do
         c=${legacy_shas[$k]}
         case "$seen" in *" $c "*) continue ;; esac
@@ -68,7 +68,7 @@ retry_kept_copies() {
         git -C "$d" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || continue
         mb=$(git -C "$d" merge-base "$c" refs/remotes/origin/master 2>/dev/null) || continue
         if ! git -C "$d" diff --quiet "$mb" "$c" 2>/dev/null; then
-          candidate=$c; legacy_src=${legacy_labels[$k]}; break
+          candidate=$c; break
         fi
       done
       if [ -z "$candidate" ]; then
