@@ -41,7 +41,7 @@ with
 
 **Edit 3 — same paragraph.** Immediately AFTER the sentence "An absent, unparseable or unrecognised seven-day reading MUST NOT skip a candidate." and BEFORE the sentence that begins "The journal record of each assessment MUST carry the seven-day utilization percentage", insert:
 
-> The definition of seven-day exhaustion above is unchanged by the weekly floor. Seven-day remaining headroom equals 100 minus the provider's seven-day utilization percentage, and a valid seven-day utilization is a finite number from 0 through 100 inclusive. With a positive floor and a positive weekly floor, a pool slot whose valid seven-day remaining headroom is strictly below the weekly floor MUST NOT qualify, whatever its seven-day status and whether or not its five-hour window is absent; equality passes. This is a seven-day floor skip. It is a headroom skip with exactly the semantics of a floor skip, and the assessment's journal record, a headroom-governed refusal record and the per-node selection record MUST name it as a seven-day floor skip, distinct from a seven-day skip, a floor skip and a projection skip. When a slot calls for both a seven-day skip and a seven-day floor skip, it MUST be named as a seven-day skip. A slot whose seven-day utilization is absent, unparseable or out of range MUST NOT be skipped by the weekly floor. The weekly floor MUST only remove slots from the qualifying set and MUST NOT change the ranking among qualifying slots. The weekly floor is a committed-only `dispatcher.session_headroom_weekly_floor_percent` (integer from 0 through 100 inclusive, default **10**), measured in percentage points of the seven-day allowance remaining. It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". A weekly floor of 0 disables only the seven-day floor skip, and a floor of 0 disables it together with every other headroom skip. The weekly floor creates no observed availability record and retires none. Scenario 231 in `scenarios.md` exercises these sentences.
+> The definition of seven-day exhaustion above is unchanged by the weekly floor. Seven-day remaining headroom equals 100 minus the provider's seven-day utilization percentage, and a valid seven-day utilization is a finite number from 0 through 100 inclusive. With a positive floor and a positive weekly floor, a pool slot whose valid seven-day remaining headroom is strictly below the weekly floor MUST NOT qualify, whatever its seven-day status and whether or not its five-hour window is absent; equality passes. This is a seven-day floor skip. It is a headroom skip with exactly the semantics of a floor skip, and the assessment's journal record, a headroom-governed refusal record and the per-node selection record MUST name it as a seven-day floor skip, distinct from a seven-day skip, a floor skip and a projection skip. When a slot calls for both a seven-day skip and a seven-day floor skip, it MUST be named as a seven-day skip. A slot whose seven-day utilization is absent, unparseable or out of range MUST NOT be skipped by the weekly floor. The weekly floor MUST only remove slots from the qualifying set and MUST NOT change the ranking among qualifying slots. The weekly floor is a committed-only `dispatcher.session_headroom_weekly_floor_percent` (integer from 0 through 100 inclusive, default **10**), measured in percentage points of the seven-day allowance remaining. It is NOT declared API-configurable, and is therefore committed-only per §"Orchestrator-owned attention facts" → "The declared-API-configurable class". A weekly floor of 0 disables only the seven-day floor skip, and a floor of 0 disables it together with every other headroom skip. The weekly floor creates no observed availability record and retires none.
 
 **Edit 4 — `SPECIFICATION/scenarios.md`, §"Scenario 231 — Admission skips a Claude candidate whose seven-day allowance is exhausted".** Append these scenarios to the end of that scenario's Gherkin block, inside the same fenced block, after the scenario "A floor of 0 disables the seven-day skip". The scenario's heading is unchanged.
 
@@ -50,7 +50,7 @@ with
     Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
     And a pool slot A whose five-hour window is absent and whose seven-day status is allowed_warning at a seven-day utilization of 99
     And a pool slot B whose five-hour remaining headroom is above the floor and whose seven-day utilization is 0
-    And slot A would otherwise rank first among qualifying slots
+    And slot B's projection is unavailable, its response carries no reset instant, and slot A's name sorts before slot B's, so slot A would otherwise rank first
     When admission assesses the pool
     Then slot A is not chosen and its assessment names a seven-day floor skip
     And slot B is chosen and every covered candidate of the dispatch projects slot B
@@ -62,8 +62,8 @@ with
     Then the slot qualifies and no seven-day floor skip applies
 
   Scenario: An absent seven-day utilization is not skipped by the weekly floor
-    Given dispatcher.session_headroom_weekly_floor_percent is 10
-    And a pool slot whose five-hour remaining headroom is above the floor and whose provider response carries no seven-day utilization
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose five-hour remaining headroom is above the floor and whose provider response carries no seven-day utilization, or one that is unparseable or outside 0 through 100
     When admission assesses the pool
     Then no seven-day floor skip applies and the seven-day reading is journaled as unobservable
 
@@ -76,10 +76,22 @@ with
     And the second slot is still skipped by a seven-day skip
 
   Scenario: When every slot is below the weekly floor the covered candidate falls back
-    Given dispatcher.session_headroom_weekly_floor_percent is 10
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
     And every pool slot's seven-day remaining headroom is below 10
     And an admission-required node whose primary is a covered claude-acp candidate and whose fallback is an eligible codex-acp candidate
     When admission assesses the node
     Then no pool slot qualifies and the claude-acp candidate is skipped
     And per-node selection selects the codex-acp fallback
+
+  Scenario: A floor of 0 disables the seven-day floor skip
+    Given dispatcher.session_headroom_floor_percent is 0 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose seven-day utilization is 99
+    When admission assesses the pool
+    Then no seven-day floor skip applies, the slot qualifies, and the seven-day reading is still journaled
+
+  Scenario: A rejected slot is named a seven-day skip, not a seven-day floor skip
+    Given dispatcher.session_headroom_floor_percent is 20 and dispatcher.session_headroom_weekly_floor_percent is 10
+    And a pool slot whose five-hour remaining headroom is above the floor and whose seven-day status is rejected at a seven-day utilization of 100
+    When admission assesses the pool
+    Then the slot does not qualify and its assessment names a seven-day skip, not a seven-day floor skip
 ```
