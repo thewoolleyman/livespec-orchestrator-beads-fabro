@@ -410,7 +410,7 @@ def test_mutation_helpers_ignore_unusable_ledger_values() -> None:
 def test_operator_valve_parser_registration_is_owned_by_argument_declarations() -> None:
     """The thin dispatcher delegates this cohesive parser group."""
     _ = _subject()
-    from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_operator_valve_arguments import (
         add_operator_valve_subcommands,
     )
 
@@ -422,6 +422,7 @@ def test_operator_valve_parser_registration_is_owned_by_argument_declarations() 
         "clear-acp-availability-hold",
         "clear-provider-exhaustion",
         "fresh-ruling",
+        "supersede-contaminated",
     }
 
 
