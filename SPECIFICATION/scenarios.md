@@ -15331,3 +15331,36 @@ Feature: A seeded relaunch far behind the default branch needs no hand-built see
     When the Dispatcher routes and dispatches W
     Then no reseed commit is recorded and the run starts from the seed commit
 ```
+
+## Scenario 373 — An incident whose landed commit's master run was red only on another incident's defect enters repayment on the first green descendant run
+
+```gherkin
+Feature: repayment entry on an attributed descendant master run
+  As the operator of an incident whose landed commit's master run failed only on a defect another incident owns
+  I want repayment to enter on the first green descendant master run
+  So that the repayment is reachable without a re-run or a fabricated binding, and never inherits an unexplained red
+
+  Scenario: A descendant run is admitted when every red job is pre-existing and attributed
+    Given an incident attempt in master-observation whose landed commit L's own complete master run concluded failure only on job J
+    And J also failed on the complete master run of L's first parent
+    And another recorded incident of the same repository has a landed fix commit F that descends from L
+    And that incident's authority history records F as one of its landed commits
+    And the first complete successful master run whose head descends from L has head F
+    When the operator drives enter-repayment naming that run and attributing J to the other incident
+    Then the item enters repayment-admission
+    And the successor's base, head and carrier input parent are L, with L's landed tree staged
+    And its recorded master-CI evidence names the admitted run, L's failed run, the first-parent run, J, the other incident and F
+
+  Scenario: A descendant run is refused when a red job has no attribution
+    Given the same attempt, but J did not fail on L's first parent's run and no attributing incident retains a failed run naming J
+    When the operator drives enter-repayment naming the green descendant run
+    Then it refuses with incident-repayment-master-ci-outstanding naming the pre-existence condition and the job J
+    And the item's phase, generation and authority history are unchanged
+
+  Scenario: A green descendant run is refused when an earlier green descendant run exists
+    Given the same attempt, with J pre-existing on L's first parent's run and attributed to the other incident as in the first scenario
+    And a complete successful master run whose head G descends from L and is a proper ancestor of F
+    When the operator drives enter-repayment naming the run whose head is F
+    Then it refuses with incident-repayment-master-ci-outstanding naming the fourth condition, that no earlier complete successful descendant run exists
+    And the item's phase, generation and authority history are unchanged
+```
