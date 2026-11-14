@@ -3372,6 +3372,20 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   consumed one and the two kinds never consume each other. A current FRESH ruling reads
   as no seed ruling here: routing it is the fresh ruling's own work.
 
+- `_drive_impl_scope.py` — the HOST DISPATCH MEMORY SLICE an `impl:` dispatch
+  launches its loop inside (`bd-ib-szbxu7`, Scenario 371). When the published
+  bound file holds a memory size, `systemd-run` is installed, the user manager is
+  offered the memory controller and it loads `factory-dispatch.slice`, the loop
+  runs through `systemd-run --user --scope` with `OOMPolicy=continue` and the
+  published `MemoryMax`; otherwise the argv is exactly what it was. Three
+  properties an editor must not invert. Every host fact is read through the
+  `ScopeHost` seam and any failing read answers "not provided", so no read can
+  fail a launch. `OOMPolicy=continue` is required, not decorative: systemd 257
+  defaults to `stop`, under which one OOM-killed child stops the whole scope and
+  strands the run. And the unit is NAMED by the launch (`--unit`), so the journal
+  record and the `drive` result carry it without parsing the launcher's output.
+  The slice and the bound are host provisioning this repository does not install.
+
 Rules an agent editing this tree must follow:
 
 - `main()` is the only place `sys.stdout.write` / `sys.stderr.write`
