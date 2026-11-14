@@ -13,7 +13,7 @@ created_at: 2026-11-14T13:06:51Z
 
 ### Summary
 
-When the Dispatcher refuses a launch before any factory run is created, it emits exactly one span named livespec.dispatch.launch_refused to service livespec-dispatcher. The span carries the repository, the work-item id, the refusal time and livespec.dispatch.refusal_class from a closed set with an explicit unclassified value. A whole-factory outage, in which every launch is refused, then reads as a count of refused launches by class rather than as an absence of runs.
+When a launch is refused before any factory run is created, whichever component refused it (the fleet launcher, the dispatch preamble or the Dispatcher's admission valve or pre-dispatch wall) emits, through a self-contained emitter that imports nothing from the dispatcher package, exactly one span named livespec.dispatch.launch_refused to service livespec-dispatcher. The span carries the repository, the work-item id, the refusal time and livespec.dispatch.refusal_class from a closed set with an explicit unclassified value. A whole-factory outage, in which every launch is refused, then reads as a count of refused launches by class rather than as an absence of runs.
 
 ### Motivation
 
@@ -32,7 +32,7 @@ In-flight alignment: default-align. It extends the terminal-span paragraph along
 
 **1. Pre-run launch refusals (`contracts.md` §"Bounded session waits and observable inventory").** Immediately after the terminal-span paragraph that ends "... an export failure MUST NOT fail, delay or alter the dispatch's recorded outcome.", insert:
 
-> **A launch refused before any run exists.** When the Dispatcher, a fleet launcher or the dispatch preamble refuses to launch a work-item before any factory run is created for it, the Dispatcher MUST emit exactly one span named `livespec.dispatch.launch_refused` to service `livespec-dispatcher` for that refusal. The span MUST carry `livespec.repository`, `work.item.id`, the refusal time and `livespec.dispatch.refusal_class`. It MUST also carry `livespec.dispatch.id` when a dispatch id was already assigned, and otherwise omit it and name it in `livespec.dispatch.unavailable_fields`. `livespec.dispatch.refusal_class` MUST be exactly one value of this closed set:
+> **A launch refused before any run exists.** When any launching component (the fleet launcher, the dispatch preamble, or the Dispatcher's admission valve or pre-dispatch wall) refuses to launch a work-item before any factory run is created for it, the refusing component MUST emit exactly one span named `livespec.dispatch.launch_refused` to service `livespec-dispatcher` for that refusal. It MUST emit it through a self-contained emitter that imports nothing from the dispatcher package and depends on no module whose import can fail in the refused launch: either a standalone emitter script that uses only the Python standard library, or the launcher shell posting to the telemetry collector's HTTP endpoint. A component inside the dispatcher package (the preamble, the admission valve or the pre-dispatch wall) MUST invoke that standalone emitter as a separate process. It MUST NOT import emitter code through the dispatcher package. A refusal caused by a failing import can then still be recorded. The fleet launcher emits for `preflight_import_error` and `preflight_refused`. The dispatch preamble and the Dispatcher's admission valve emit for `provider_limit`, `credential` and `capacity_hold`, whichever of them refuses. The Dispatcher's pre-dispatch wall emits for `spec_change_hold`. Whichever component refuses emits for `unclassified`. The span MUST carry `livespec.repository`, `work.item.id`, the refusal time and `livespec.dispatch.refusal_class`. It MUST also carry `livespec.dispatch.id` when a dispatch id was already assigned, and otherwise omit it and name it in `livespec.dispatch.unavailable_fields`. `livespec.dispatch.refusal_class` MUST be exactly one value of this closed set:
 >
 > - `preflight_import_error`: a launch preflight could not run, for example because a module it imports is absent.
 > - `preflight_refused`: a launch preflight ran and refused the item.
@@ -42,7 +42,7 @@ In-flight alignment: default-align. It extends the terminal-span paragraph along
 > - `capacity_hold`: a WIP cap, repository hold or factory hold refused the launch.
 > - `unclassified`: no class above matches.
 >
-> A value outside this set MUST NOT be emitted, and adding a class is a change to this paragraph. A refusal the Dispatcher later retries emits one span per refused attempt. A launch that does create a run emits no `livespec.dispatch.launch_refused` span. The receiver allowlist MUST admit `livespec.dispatch.refusal_class`. Emitting this span follows this section's bounded asynchronous telemetry rules: an export failure MUST NOT fail, delay or alter the refusal or any later dispatch.
+> A value outside this set MUST NOT be emitted, and adding a class is a change to this paragraph. A refused launch that is later retried emits one span per refused attempt. A launch that does create a run emits no `livespec.dispatch.launch_refused` span. The receiver allowlist MUST admit `livespec.dispatch.refusal_class`. Emitting this span follows this section's bounded asynchronous telemetry rules: an export failure MUST NOT fail, delay or alter the refusal or any later dispatch.
 
 **2. New scenario (`scenarios.md`, appended at the next free Scenario number when revised):**
 
@@ -56,7 +56,7 @@ Feature: A whole-factory outage is countable by refusal class
 
   Scenario Outline: Each refusal family emits its class
     Given a work-item whose launch is refused before any factory run is created because <cause>
-    When the Dispatcher records the refusal
+    When the refusing component records the refusal
     Then exactly one livespec.dispatch.launch_refused span is emitted to livespec-dispatcher
     And the span carries livespec.repository, work.item.id and livespec.dispatch.refusal_class <class>
 
@@ -70,14 +70,20 @@ Feature: A whole-factory outage is countable by refusal class
       | the repository WIP cap is reached                            | capacity_hold          |
       | a refusal no class rule matches                              | unclassified           |
 
+  Scenario: A preflight that cannot import a dispatcher module is still recorded
+    Given the launch preflight cannot import a module it needs, and that module is part of the dispatcher package
+    When the fleet launcher refuses the launch
+    Then exactly one livespec.dispatch.launch_refused span with livespec.dispatch.refusal_class preflight_import_error is still emitted
+    And emitting it imports nothing from the dispatcher package
+
   Scenario: A launch that creates a run emits no launch-refused span
     Given a work-item whose launch creates a factory run
-    When the Dispatcher records the launch
+    When the launching component records the launch
     Then no livespec.dispatch.launch_refused span is emitted for it
 
   Scenario: An export failure does not change the refusal
     Given a launch refused before any run exists while the telemetry receiver is unreachable
-    When the Dispatcher records the refusal
+    When the refusing component records the refusal
     Then the refusal and its ledger record are unchanged
 ```
 
