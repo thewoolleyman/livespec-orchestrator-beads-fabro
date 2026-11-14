@@ -204,6 +204,54 @@ def test_review_launchers_refuse_branch_writes_and_whole_suite_commands_for_ever
     assert remedy in result.stderr
 
 
+def test_review_launchers_refuse_a_whole_suite_routed_through_mise_exec(tmp_path: Path) -> None:
+    """`mise exec` must not replace the review boundary's `just` launcher."""
+    review_bin = tmp_path / "review-bin"
+    review_bin.mkdir()
+    for path, source in review_asset_sources():
+        target = review_bin / Path(path).name
+        _ = target.write_text(source, encoding="utf-8")
+        target.chmod(0o755)
+    base_bin = tmp_path / "base-bin"
+    base_bin.mkdir()
+    for name in ("mise", "just"):
+        target = base_bin / name
+        _ = target.write_text(
+            "#!/bin/sh\n" f'echo "LIVESPEC_TEST_UNGUARDED_{name.upper()}_REACHED" >&2\n' "exit 0\n",
+            encoding="utf-8",
+        )
+        target.chmod(0o755)
+    env = _hermetic_env()
+    env[CREDENTIAL_USE_UNPROTECTED_ENV_VAR] = CREDENTIAL_USE_UNPROTECTED_VALUE
+    env[REVIEW_READ_ONLY_ENV_VAR] = "1"
+    env["PATH"] = f"{base_bin}:{env['PATH']}"
+    result = subprocess.run(
+        [
+            "/bin/sh",
+            str(
+                _guard(
+                    tmp_path=tmp_path,
+                    script_text=guard_script_text().replace(REVIEW_BIN_PATH, str(review_bin)),
+                )
+            ),
+            "--",
+            "/bin/sh",
+            "-c",
+            "mise exec -- just check",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=_SETTLE_SECONDS,
+        env=env,
+        check=False,
+    )
+
+    assert result.returncode != 0
+    assert "LIVESPEC_REVIEW_GUARD_REFUSED" in result.stderr
+    assert "named test ids only" in result.stderr
+    assert "LIVESPEC_TEST_UNGUARDED_MISE_REACHED" not in result.stderr
+
+
 def _date_shim(*, bin_dir: Path, clock: Path) -> None:
     """A `date` that reads the clock file, with a fractional `%N` the guard can parse."""
     date_shim = bin_dir / "date"

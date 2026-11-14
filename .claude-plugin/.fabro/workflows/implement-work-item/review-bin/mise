@@ -1,0 +1,66 @@
+#!/bin/sh
+# The review Mise boundary. `mise exec` may replace PATH, so inspect the child
+# command before it can route around the review Git and Just launchers.
+set -u
+
+refuse_suite() {
+ echo "LIVESPEC_REVIEW_GUARD_REFUSED: stage=review refused a whole-suite check. Run named test ids only, then emit your verdict label." >&2
+ exit 1
+}
+
+refuse_branch() {
+ echo "LIVESPEC_REVIEW_GUARD_REFUSED: stage=review refused a command that moves or edits the run branch. Read the change with git diff, git log and git show, then emit your verdict label." >&2
+ exit 1
+}
+
+# `mise exec [OPTIONS] [--] COMMAND ...` is the only form that launches a
+# child. Options before its `--` do not form the child argv; after the separator
+# the first token is its executable.
+if [ "${1:-}" = "exec" ]; then
+(
+ shift
+ while [ "$#" -gt 0 ]; do
+  case "$1" in
+   --) shift; break ;;
+   -*) shift ;;
+   *) break ;;
+  esac
+ done
+ case "${1:-}" in
+  livespec-implement-check-suite) refuse_suite ;;
+  just)
+   shift
+   command="" value=0
+   for argument in "$@"; do
+    if [ "$value" -eq 1 ]; then value=0; continue; fi
+    case "$argument" in
+     -f|--justfile|-d|--working-directory|--shell|--chooser|--color|--command-color|--dump-format) value=1 ;;
+     -*) ;;
+     *) command=$argument; break ;;
+    esac
+   done
+   [ "$command" != check ] || refuse_suite
+   ;;
+  git)
+   shift
+   sub="" opts=1 value=0
+   for argument in "$@"; do
+    if [ "$opts" -eq 0 ]; then sub=$argument; break; fi
+    if [ "$value" -eq 1 ]; then value=0; continue; fi
+    case "$argument" in
+     --) opts=0 ;;
+     -c|-C|--config-env|--git-dir|--work-tree|--namespace|--super-prefix|--exec-path) value=1 ;;
+     -*) ;;
+     *) sub=$argument; break ;;
+    esac
+   done
+   case "$sub" in
+    rebase|commit|push|merge|reset|cherry-pick|revert|am|pull|checkout|switch|restore|update-ref|clean|apply|add|rm|mv|filter-branch) refuse_branch ;;
+    stash) case "${1:-}" in list|show) ;; *) refuse_branch ;; esac ;;
+   esac
+   ;;
+ esac
+) || exit $?
+fi
+
+exec "$LIVESPEC_REVIEW_REAL_MISE" "$@"
