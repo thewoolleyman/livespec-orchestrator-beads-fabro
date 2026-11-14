@@ -14,6 +14,8 @@ Ratified under delegated decision. legacy-coordinator-agent graded PASS and gave
 
 The scenario number is assigned: "## Scenario:" becomes "## Scenario 372 —", and the heading's first word is capitalized to "A", following the convention of every numbered scenario heading. 372 is the next free number: master's highest is 371, and no pending proposal or open spec pull request claims 372 or above (checked 2026-11-14 over every remote spec/* branch). The paragraph is placed after the paragraph a-seeded-dispatch-whose-seed inserts after the ruled-seed paragraph, as its change 1 directs. The tests/heading-coverage.json row carries the numbered heading (work item bd-ib-5xihdt), and tests/heading-coverage-debt.json is regenerated with `uv run python -m livespec_dev_tooling.heading_coverage_debt` in the same commit. The text is otherwise as graded.
 
+One grade fix, on legacy-coordinator-agent's grade of #5213 (2026-11-14): after the sentence that says what the seed record names, the paragraph gains one sentence stating that it holds notwithstanding the paragraph "A seed taken from the item's own publish branch is read from the reclaim's preservation ref". A stale seed taken from the item's own publish branch is read from that preservation ref, and its seed record names the reseed ref and the reseed commit, names that preservation ref and the seed's commit as the source, and still names the publish branch. That way the two paragraphs cannot be read two ways.
+
 ## Resulting Changes
 
 - contracts.md
