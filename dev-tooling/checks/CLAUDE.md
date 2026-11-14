@@ -236,6 +236,28 @@ Current checks:
   `blocked ⟹ blocked_reason ∈ {needs-human, infra-external}` ERRORS
   (exit non-zero). No git / network I/O; passes trivially on the empty
   hermetic-fake tenant.
+- `_affected_tests_selection.py` — the engine of `just check-changed`, the
+  affected-tests gate SPECIFICATION/contracts.md §"Self-contained plugin
+  dispatch" clause "An implement, fix or review_fix turn's commits run the
+  affected-tests gate" has a commit inside one of those turns run in place of the
+  full check aggregate. For each changed product module it selects the
+  mirror-paired test, its `test_<name>_*.py` siblings and EVERY test module that
+  imports the module directly or through another imported module, by a static
+  scan of the repository's import graph (a string literal naming a module counts
+  as importing it, and a conftest's fixtures reach the tests that request them);
+  for a changed `workflow.fabro`, every test that names the graph; then runs the
+  selection under coverage and holds each changed product module to 100% line and
+  branch coverage over the WHOLE selection, naming each missing line. The
+  first landing measured a module only from its mirror test and refused every
+  commit on a module that other tests cover, which stopped the fleet; the wider
+  selection is the fix. It exits 75 when it cannot determine the affected tests
+  (shared configuration, a file that does not parse, a module no test reaches, a
+  diff that could not be taken), which the pre-commit hook reads as "run the full
+  aggregate". It is an inner-loop gate: the janitor stage still runs the full
+  aggregate once per run. The import-graph scan is the sibling private module
+  `_affected_tests_scan.py`, split out so each stays under the file-size ceiling:
+  it owns which modules reach a module, while this one owns what a change selects
+  and the coverage verdict.
 - `acp_preflight_config.py` — moves the Dispatcher's ACP preflight refusal
   (Scenario 129, "Mixed, unknown or unresolvable entries refuse before claim")
   from dispatch admission to commit time. It evaluates the committed

@@ -34,14 +34,20 @@ program prints back off the run's recorded tool output through
 `DetachedCommitRunner` state machine; the report's JSON keys are therefore the
 contract between the two halves, and `REPORT_*` below names them once.
 
-IT SETS NO VARIABLE, AND REMOVES ONE. The clause forbids setting any variable
-that skips or relaxes a check, so the worker passes the agent's environment on
-as it is, except that `LIVESPEC_AGENT_STAGE` is dropped: that variable only
-activates the publication guard of the projected `push_origin` and `gh`
-wrapper, which an agent's own call must meet, and a tree's test suite run by
-the commit hook must not (Scenario 326). The hook reads no such variable, so
-no check is relaxed. Stdin is closed only so that a commit that would open an
-editor fails rather than waiting forever on a terminal nobody holds.
+IT SETS NO VARIABLE THAT SKIPS A CHECK, AND REMOVES ONE. The clause forbids
+setting any variable that skips or relaxes a check, so the worker passes the
+agent's environment on as it is, except that `LIVESPEC_AGENT_STAGE` is dropped:
+that variable only activates the publication guard of the projected `push_origin`
+and `gh` wrapper, which an agent's own call must meet, and a tree's test suite
+run by the commit hook must not (Scenario 326). The one variable it adds is
+`LIVESPEC_AUTHORING_TURN`, carrying the stage's name when that stage is an
+implement, fix or review_fix turn: it lets the repository's pre-commit hook
+choose the affected-tests gate those turns' commits are ratified to run, which
+is a different gate rather than a skipped one, and it activates no guard, so a
+test suite the hook runs is not acted on by it. An inherited value is dropped
+first, so a stage that is not one of the three never carries it. Stdin is closed
+only so that a commit that would open an editor fails rather than waiting
+forever on a terminal nobody holds.
 """
 
 from __future__ import annotations
@@ -104,6 +110,8 @@ from pathlib import Path
 RUNNING = "running"
 NO_VERDICT = "no-verdict"
 STAGE_SETTLES = {"fix": "fix_commit_settle", "review_fix": "review_fix_commit_settle"}
+AUTHORING_STAGES = ("implement", "fix", "review_fix")
+AUTHORING_TURN_VARIABLE = "LIVESPEC_AUTHORING_TURN"
 TAIL_LINES = 60
 BRIEF_TAIL_LINES = 80
 # Worst first: a settled set is described by its least settled run.
@@ -475,6 +483,19 @@ def unauthored_commit(record):
     return head
 
 
+def commit_environment():
+    """The environment a commit's hook runs under: no guard activation, plus the authoring stage."""
+    environment = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in ("LIVESPEC_AGENT_STAGE", AUTHORING_TURN_VARIABLE)
+    }
+    stage = os.environ.get("LIVESPEC_AGENT_STAGE")
+    if stage in AUTHORING_STAGES:
+        environment[AUTHORING_TURN_VARIABLE] = stage
+    return environment
+
+
 def worker(run_id):
     path = state_path(runs_directory(), run_id)
     # Written here as well as by `start`, so a start that died after launching
@@ -493,7 +514,7 @@ def worker(run_id):
             stdin=subprocess.DEVNULL,
             stdout=output,
             stderr=subprocess.STDOUT,
-            env={k: v for k, v in os.environ.items() if k != "LIVESPEC_AGENT_STAGE"},
+            env=commit_environment(),
             check=False,
         )
     if result.returncode < 0:
