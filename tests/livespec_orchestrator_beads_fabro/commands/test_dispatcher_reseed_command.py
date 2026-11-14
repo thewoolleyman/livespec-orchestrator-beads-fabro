@@ -170,7 +170,13 @@ def test_a_published_reseed_is_ruled_so_the_next_dispatch_is_seeded_from_it(
     ruling = current_ruling(comments=tuple(comments))
     assert isinstance(ruling, SeedRuling)
     origin = _Runner(stdout=f"{_COMMIT}\t{_REF}\n")
-    seed = ruled_seed(runner=origin, repo=tmp_path, ruling=ruling, earlier_run_ids=("run-1",))
+    seed = ruled_seed(
+        runner=origin,
+        repo=tmp_path,
+        work_item_id=_ITEM,
+        ruling=ruling,
+        earlier_run_ids=("run-1",),
+    )
     assert isinstance(seed, RecoverySeed)
     assert (seed.preservation_ref, seed.commit_sha) == (_REF, _COMMIT)
     assert len(seed.commit_sha) == 40
