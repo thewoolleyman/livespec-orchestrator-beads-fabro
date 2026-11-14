@@ -267,6 +267,7 @@ sys.path.insert(0, f"{sys.argv[1]}/scripts/_vendor")
 
 from livespec_orchestrator_beads_fabro.commands._dod_preflight_judgement import (
     repository_preflight_reading,
+    repository_preflight_report,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
@@ -307,12 +308,10 @@ decision = repository_preflight_reading(
     payload_root=Path(sys.argv[1]),
     governing_observed=record["governing_observed"],
 )
-if decision.outcome == "did-not-run":
-    print("DID-NOT-RUN")
-    raise SystemExit(2)
-if decision.reused:
-    print(f"REUSED {decision.outcome}")
-raise SystemExit(0 if decision.outcome == "admitted" else 1)
+lines, status = repository_preflight_report(decision=decision)
+for line in lines:
+    print(line)
+raise SystemExit(status)
 JUDGE_PY
 status=$?
 set -e

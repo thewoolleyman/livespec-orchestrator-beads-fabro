@@ -25,9 +25,12 @@ def test_failed_judge_commands_use_the_shared_candidate_chain() -> None:
 
 def test_failed_judge_commands_emit_the_typed_cannot_run_sentinel_last() -> None:
     text = _SCRIPT.read_text(encoding="utf-8")
+    judgement = (_COMMANDS / "_dod_preflight_judgement.py").read_text(encoding="utf-8")
 
-    assert 'print("DID-NOT-RUN")' in text
-    assert "raise SystemExit(2)" in text
+    assert "repository_preflight_report(decision=decision)" in text
+    assert "raise SystemExit(status)" in text
+    assert 'f"DID-NOT-RUN {cause}"' in judgement
+    assert "), 2" in judgement
 
 
 def test_an_input_bound_cannot_run_is_recorded_without_turning_into_a_refusal() -> None:
@@ -36,5 +39,7 @@ def test_an_input_bound_cannot_run_is_recorded_without_turning_into_a_refusal() 
 
     assert "did_not_run_comment" in gate
     assert "cause=cause" in gate
-    assert 'if decision.outcome == "did-not-run":' in script
-    assert "raise SystemExit(2)" in script
+    judgement = (_COMMANDS / "_dod_preflight_judgement.py").read_text(encoding="utf-8")
+
+    assert "if decision.outcome == JUDGEMENT_UNAVAILABLE:" in judgement
+    assert "repository_preflight_report(decision=decision)" in script

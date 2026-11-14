@@ -7,6 +7,7 @@ that a prior repository-preflight verdict binds an unchanged later taking.
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Protocol, cast
 
 from livespec_orchestrator_beads_fabro.commands._acp_candidate_schema import AcpCandidate
@@ -22,6 +23,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_record
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_governing_reuse import (
     governing_heading_subject_digest,
     reusable_governing_heading_verdict,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import (
+    JUDGEMENT_ADMITTED,
+    JUDGEMENT_UNAVAILABLE,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_gate import (
     DodJudgementDecision,
@@ -49,6 +54,7 @@ __all__: list[str] = [
     "preflight_dod_gate_candidates",
     "repository_preflight_governing_reading",
     "repository_preflight_reading",
+    "repository_preflight_report",
 ]
 
 _STAGE = "repository-preflight"
@@ -162,3 +168,20 @@ def repository_preflight_governing_reading(
         ]
         store.append(body="\n".join(lines))
     return reading
+
+
+def repository_preflight_report(*, decision: DodJudgementDecision) -> tuple[tuple[str, ...], int]:
+    """The lines `dev-tooling/dod-preflight.sh` prints for a decision, and its exit status.
+
+    The launchers read this output: exit 0 and a last line of PASS, exit 1 and a
+    failure JSON line last, exit 2 and the cause the judgement could not run.
+    `PASS` is added by the script on exit 0, so an admission prints only its reuse.
+    """
+    if decision.outcome == JUDGEMENT_UNAVAILABLE:
+        cause = decision.cause or "no judge candidate returned a verdict"
+        return (f"DID-NOT-RUN {cause}",), 2
+    lines = (f"REUSED {decision.outcome}",) if decision.reused else ()
+    if decision.outcome == JUDGEMENT_ADMITTED:
+        return lines, 0
+    failure = {"outcome": "failed", "failure_reason": "\n".join(decision.findings)}
+    return (*lines, json.dumps(failure)), 1

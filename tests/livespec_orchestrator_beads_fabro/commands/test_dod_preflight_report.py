@@ -88,7 +88,7 @@ def _item() -> WorkItem:
 
 def _repo(*, tmp_path: Path) -> Path:
     repo = tmp_path / "repo"
-    (repo / "SPECIFICATION").mkdir(parents=True)
+    (repo / "SPECIFICATION").mkdir(parents=True, exist_ok=True)
     (repo / ".livespec.jsonc").write_text(
         f'{{"livespec-orchestrator-beads-fabro":{{"dispatcher":{{"acp_nodes":{{"dod_gate":{_AGENT}}}}}}}}}',
         encoding="utf-8",
@@ -98,7 +98,7 @@ def _repo(*, tmp_path: Path) -> Path:
 
 def _payload(*, tmp_path: Path) -> Path:
     prompts = tmp_path / "payload" / ".fabro" / "workflows" / "implement-work-item" / "prompts"
-    prompts.mkdir(parents=True)
+    prompts.mkdir(parents=True, exist_ok=True)
     (prompts / "dod-gate.md").write_text(
         dod_gate_prompt_path().read_text(encoding="utf-8"), encoding="utf-8"
     )
