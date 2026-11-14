@@ -161,6 +161,7 @@ __all__: list[str] = [
     "PENDING_HUMAN_ATTESTATION_REASON",
     "proof_leg",
     "read_proof_leg",
+    "read_pull_request_comments",
     "read_pull_request_records",
 ]
 
@@ -173,6 +174,26 @@ PENDING_HUMAN_ATTESTATION_REASON = (
 _COMMENTS_TIMEOUT_SECONDS = 30.0
 
 
+def read_pull_request_comments(
+    *, repo: Path, pr_number: int, runner: CommandRunner
+) -> tuple[Mapping[str, object], ...] | None:
+    """Every comment on one pull request, author included, or `None` when unreadable.
+
+    The same one `gh pr view` read `read_pull_request_records` takes, kept apart
+    so a caller that also needs a comment's forge author — the publication
+    record reader accepts a comment only from the publication identity — takes
+    one read for both rather than a second forge round trip.
+    """
+    result = runner.run(
+        argv=["gh", "pr", "view", str(pr_number), "--json", "comments"],
+        cwd=repo,
+        timeout_seconds=_COMMENTS_TIMEOUT_SECONDS,
+    )
+    if result.exit_code != 0:
+        return None
+    return _comments(stdout=result.stdout)
+
+
 def read_pull_request_records(
     *, repo: Path, pr_number: int, runner: CommandRunner
 ) -> tuple[ProofRecord, ...] | None:
@@ -183,14 +204,7 @@ def read_pull_request_records(
     while a failed read is evidence of nothing at all, and the two must not
     produce the same verdict.
     """
-    result = runner.run(
-        argv=["gh", "pr", "view", str(pr_number), "--json", "comments"],
-        cwd=repo,
-        timeout_seconds=_COMMENTS_TIMEOUT_SECONDS,
-    )
-    if result.exit_code != 0:
-        return None
-    comments = _comments(stdout=result.stdout)
+    comments = read_pull_request_comments(repo=repo, pr_number=pr_number, runner=runner)
     if comments is None:
         return None
     return proof_records(comments=comments)
