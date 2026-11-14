@@ -110,8 +110,7 @@ from _checked_workflow_payloads import (  # noqa: E402  — sibling private impo
     checked_payloads,
     incompleteness,
 )
-from _fabro_client_version import client_version, is_petri_era_version  # noqa: E402
-from _fabro_graph_reporting import absence_records, finding_kind  # noqa: E402
+from _fabro_client_version import client_version, version_refusal  # noqa: E402
 from _fabro_wip_capture import wip_capture_findings  # noqa: E402  — sibling private import
 from _fork_only_settings import (  # noqa: E402  — sibling private import
     FORK_ONLY_SETTINGS,
@@ -368,25 +367,16 @@ def report(*, repo_root: Path) -> Report:
         findings.append(f"lever control: {LEVER}={lever!r} is {space}")
     binary = resolved_binary(repo_root=repo_root)
     if binary is None:
-        absent = absence_records(
-            graph_name=GRAPH_NAME,
-            lever=LEVER,
-            fail_when_absent=FAIL_WHEN_ABSENT,
-            payloads=payloads,
-        )
+        absent = _absence_records(payloads=payloads)
         if lever == FAIL_WHEN_ABSENT:
             return Report(
                 findings=[*findings, *absent], warnings=[], normalized=notes, validated=[]
             )
         return Report(findings=findings, warnings=absent, normalized=notes, validated=[])
     version = client_version(binary=binary)
-    if version is None:
-        finding = f"Petri-era client control: {binary} did not report a parseable version"
-        return Report(findings=[*findings, finding], warnings=[], normalized=notes, validated=[])
-    if not is_petri_era_version(version=version):
-        floor = "0.396.0"
-        finding = f"Petri-era client control: fabro {version} is older than required {floor}"
-        return Report(findings=[*findings, finding], warnings=[], normalized=notes, validated=[])
+    refusal = version_refusal(binary=binary, version=version)
+    if refusal is not None:
+        return Report(findings=[*findings, refusal], warnings=[], normalized=notes, validated=[])
     findings.extend(validation_findings(binary=binary, payloads=payloads))
     findings.extend(control_failures(binary=binary, payloads=payloads))
     validated = [
@@ -395,6 +385,19 @@ def report(*, repo_root: Path) -> Report:
         if (payload.directory / GRAPH_NAME).is_file()
     ]
     return Report(findings=findings, warnings=[], normalized=notes, validated=validated)
+
+
+def _absence_records(*, payloads: list[CheckedPayload]) -> list[str]:
+    """What was NOT looked at, named one graph at a time, then said out loud once."""
+    records = [
+        f"{payload.where}: {GRAPH_NAME} was NOT validated — no `fabro` binary resolved"
+        for payload in payloads
+    ]
+    lead = "NO factory graph was validated in this environment: `fabro` did not resolve"
+    said = "nothing here says the graphs are good — only that they were not looked at"
+    remedy = f"Set {LEVER}={FAIL_WHEN_ABSENT} wherever the binary is expected"
+    records.append(f"{lead}, so {said}. {remedy}")
+    return records
 
 
 def main() -> int:
@@ -412,11 +415,16 @@ def main() -> int:
         *(("info", note, "normalized") for note in found.normalized),
         *(("info", validated, "validated") for validated in found.validated),
         *(("error", warning, "not-validated") for warning in found.warnings),
-        *(("error", finding, finding_kind(finding=finding)) for finding in found.findings),
+        *(("error", finding, _finding_kind(finding=finding)) for finding in found.findings),
     ]
     for level, event, kind in records:
         getattr(log, level)(event, kind=kind)
     return 1 if found.findings else 0
+
+
+def _finding_kind(*, finding: str) -> str:
+    """Whether a finding is about the instrument or about a graph."""
+    return "control" if "control:" in finding else "graph"
 
 
 if __name__ == "__main__":  # pragma: no cover
