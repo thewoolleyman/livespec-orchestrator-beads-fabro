@@ -25,7 +25,7 @@ from pathlib import Path
 
 from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimStamp, claim_row_for
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
-    read_current_merge_hold,
+    MergeHoldReader,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_handoff import (
@@ -63,15 +63,21 @@ _LEDGER_READ_ERRORS: tuple[type[Exception], ...] = (
 )
 
 
-def surveyable(*, repo: Path, journal_path: Path, item: WorkItem) -> bool:
-    """Whether the survey grades this row's claim."""
+def surveyable(
+    *, repo: Path, journal_path: Path, item: WorkItem, merge_hold: MergeHoldReader
+) -> bool:
+    """Whether the survey grades this row's claim.
+
+    `merge_hold` is the survey's one reader, so the whole-ledger hold reading is
+    taken once for the pass and not once for every claim it asks about.
+    """
     if item.status not in (_ACTIVE_STATUS, _READY_STATUS) or item.assignee != _FABRO_ASSIGNEE:
         return False
     if item.rework_pending and not _handed_off_rework(
         repo=repo, journal_path=journal_path, item=item
     ):
         return False
-    return read_current_merge_hold(repo=repo, work_item_id=item.id) == _MERGE_HOLD_UNHELD
+    return merge_hold(work_item_id=item.id) == _MERGE_HOLD_UNHELD
 
 
 def _handed_off_rework(*, repo: Path, journal_path: Path, item: WorkItem) -> bool:
