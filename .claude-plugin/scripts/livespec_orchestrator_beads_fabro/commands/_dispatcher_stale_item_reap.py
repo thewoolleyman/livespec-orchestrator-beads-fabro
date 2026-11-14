@@ -31,6 +31,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan
+from livespec_orchestrator_beads_fabro.commands._dispatcher_rm_pacing import DeletionPacer
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel import (
     FABRO_RM_TIMEOUT_SECONDS,
 )
@@ -64,9 +65,21 @@ def stale_item_reap(
     item_status = _work_item_status(repo=plan.repo, work_item_id=plan.work_item_id)
     if item_status is None or item_status == "active":
         return None
-    rm = fabro_port_for_plan(plan=plan, runner=runner).rm(
+    port = fabro_port_for_plan(plan=plan, runner=runner)
+    permitted = DeletionPacer(repo=plan.repo).permit(
+        factory=plan.fabro_factory_name,
         run_id=run_id,
-        timeout_seconds=FABRO_RM_TIMEOUT_SECONDS,
+        caller="stale-item-reap",
+        has_running_run=True,
+        collection=False,
+        journal=journal,
+    )
+    if not permitted:
+        _ = port.server_api().cancel(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS)
+    rm_exit_code = (
+        port.rm(run_id=run_id, timeout_seconds=FABRO_RM_TIMEOUT_SECONDS).command.exit_code
+        if permitted
+        else None
     )
     journal.append(
         record={
@@ -74,7 +87,7 @@ def stale_item_reap(
             "stage": _STALE_RUN_REAP_STAGE,
             "run_id": run_id,
             "item_status": item_status,
-            "rm_exit_code": rm.command.exit_code,
+            "rm_exit_code": rm_exit_code,
         }
     )
     return item_status

@@ -122,6 +122,11 @@ class _FlakyLedger:
 
 
 def _plan(*, repo: Path, server: str | None = _SERVER) -> DispatchPlan:
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"dispatcher":{"factories":'
+        '{"hp":{"defer_collection_while_active":false,"rm_min_interval_seconds":0}}}}}',
+        encoding="utf-8",
+    )
     return build_plan(
         repo=repo,
         work_item_id=_WORK_ITEM_ID,

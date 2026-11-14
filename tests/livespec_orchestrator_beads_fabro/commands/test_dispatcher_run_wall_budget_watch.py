@@ -20,14 +20,22 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
 from livespec_orchestrator_beads_fabro.commands import _node_timeouts
-from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import CommandResult
+from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
+    CommandResult,
+    CommandRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_plan import DispatchPlan, build_plan
 from livespec_orchestrator_beads_fabro.commands._dispatcher_preserve_reference_body import (
     PRESERVE_POINTER_MARKER,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_export import (
+    LedgerComments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget import RunWallBudget
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_preserve import (
+    Preservation,
     run_wall_ledger,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_budget_records import (
@@ -40,6 +48,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_run_wall_clock impor
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stall_cancel_record import (
     STALL_CANCEL_STAGE,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_watchdog_run_probe import (
+    WatchdogRunReading,
 )
 from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
 from livespec_orchestrator_beads_fabro.commands._node_timeouts import REPOSITORY_LAYER
@@ -126,6 +137,11 @@ class _FakeLedger:
 
 
 def _plan(*, repo: Path) -> DispatchPlan:
+    _ = (repo / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"dispatcher":{"factories":'
+        '{"hp":{"defer_collection_while_active":false,"rm_min_interval_seconds":0}}}}}',
+        encoding="utf-8",
+    )
     return build_plan(
         repo=repo,
         work_item_id=_WORK_ITEM_ID,
@@ -219,6 +235,65 @@ def test_a_run_within_its_budget_is_neither_exported_nor_cancelled(tmp_path: Pat
     assert runner.calls == []
     assert ledger.writes == []
     assert journal.records == []
+
+
+def test_a_paced_budget_deletion_cancels_the_run_without_removing_its_record(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The cancellation is prompt even when deletion is deferred for pacing."""
+    watch = _watch()
+    cancelled: list[str] = []
+
+    class _Pacer:
+        def __init__(self, *, repo: Path) -> None:
+            _ = repo
+
+        def permit(self, **_: object) -> bool:
+            return False
+
+    class _Port:
+        def server_api(self) -> _Port:
+            return self
+
+        def cancel(self, *, run_id: str, timeout_seconds: float) -> object:
+            _ = timeout_seconds
+            cancelled.append(run_id)
+            return object()
+
+    monkeypatch.setattr(watch, "DeletionPacer", _Pacer)
+
+    def _preserved(
+        *, plan: DispatchPlan, runner: CommandRunner, run_id: str, ledger: LedgerComments | None
+    ) -> Preservation:
+        _ = (plan, runner, run_id, ledger)
+        return Preservation(pointer="comment-9173", failed_measurement="none")
+
+    def _reading(*, port: FabroPort, run_id: str) -> WatchdogRunReading:
+        _ = (port, run_id)
+        return WatchdogRunReading(events_json="[]", record_text="", record=None)
+
+    monkeypatch.setattr(
+        watch,
+        "preserved_pointer",
+        _preserved,
+    )
+    monkeypatch.setattr(watch, "watchdog_run_reading", _reading)
+    journal = _RecordingJournal()
+    verdict = watch.cancel_run_past_budget(
+        dispatch_id="dispatch-01",
+        plan=_plan(repo=tmp_path),
+        port=cast("FabroPort", _Port()),
+        runner=cast("CommandRunner", _ScriptedRunner()),
+        journal=journal,
+        run_id=_RUN_ID,
+        start=RunWallStart(epoch=_START_EPOCH, source=RUN_RECORD_SOURCE),
+        now_epoch=_START_EPOCH + 3601.0,
+        ledger=cast("LedgerComments", _FakeLedger()),
+    )
+
+    assert verdict == watch.RunWallVerdict.CANCELLED
+    assert cancelled == [_RUN_ID]
+    assert journal.records[-1]["rm_exit_code"] is None
 
 
 def test_a_pointer_that_does_not_read_back_leaves_the_run_running(tmp_path: Path) -> None:

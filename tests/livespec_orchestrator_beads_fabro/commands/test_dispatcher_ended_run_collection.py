@@ -111,19 +111,14 @@ def test_collects_only_ended_runs_of_closed_items_and_journals_the_provider_resu
         dry_run=False,
     )
 
-    assert runner.calls == [["fabro", "rm", "01CLOSED", "--server", "https://factory.test"]]
+    assert runner.calls == []
     assert journal.records == [
         {
-            "stage": "ended-run-collected",
+            "stage": "fabro-rm-deferred",
             "run_id": "01CLOSED",
-            "factory_name": "factory",
-            "factory_server_url": "https://factory.test",
-            "dispatching_repository": tmp_path.name,
-            "work_item_id": "bd-ib-closed",
-            "work_item_status": "done",
-            "rm_exit_code": 0,
-            "rm_stdout": "",
-            "rm_stderr": "",
+            "factory": "factory",
+            "caller": "ended-run-collection",
+            "next_deletion_may_start_at": journal.records[0]["next_deletion_may_start_at"],
         },
         {
             "stage": "ended-run-collection-refused",
