@@ -125,6 +125,37 @@ merged workflow change is live, read a dispatch's `workflow_toml` path and
 confirm the release with
 `git merge-base --is-ancestor <merge-sha> <cache-build-hash>`.
 
+### A seeded relaunch starts from the item's seed ruling, never from a rider
+
+A rider is prose for the `implement` agent. It does not choose the tree a
+relaunch starts from. Recovery routing reads the tree from one place: the
+item's newest `livespec-seed-ruling` ledger comment
+(`_dispatcher_recovery_ruled_seed.py`: "THE RULING IS READ OFF THE ITEM'S
+LEDGER COMMENTS ... and never off the journal"). So a rider that says "fetch
+`needs-human/<dispatch-id>`" on an item with no ruling still launches from
+master, and the agent has to notice the rider and fetch the tree itself.
+
+Before asking for a relaunch of an item whose earlier run preserved work:
+
+1. Have the ruling written with
+   `dispatcher.py seed-ruling --item <id> --ref <ref> --commit <sha> --reason <text>`.
+   It reads origin once and writes only when the ref stands at that commit; an
+   absent or moved ref exits 3 and writes nothing.
+2. Read the comment back on the item before the launch, and confirm it is
+   the latest ruling there: the latest seed or fresh ruling governs
+   (`_dispatcher_ruling_currency.py`).
+3. Keep the rider for what it is good at: telling the agent what is left to do.
+
+A ruled ref that has moved or been deleted by launch time HOLDS the item
+(`recovery-held`); routing never falls through to another preserved tree or to
+a fresh start, so repair the ruling rather than re-ticketing.
+
+Measured 2026-11-14 (plan `goal-template-opener-handling`): `bd-ib-it2d` run
+`01M7BRM7BWQW` carried a rider naming
+`needs-human/1857ced1130041b996e202097ec7c570` and no seed ruling, and started
+from master (the item's 27 comments held no ruling). Its sibling
+`bd-ib-engf4h` had its ruling written at 02:45Z, before its re-ticket.
+
 ## Triaging a dispatch that ended badly
 
 ### Janitor green, then a `pr`-stage pre-push red: a sibling merged mid-run
