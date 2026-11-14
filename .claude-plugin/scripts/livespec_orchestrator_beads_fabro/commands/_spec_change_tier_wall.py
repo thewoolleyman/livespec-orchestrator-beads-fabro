@@ -147,7 +147,13 @@ def classify_and_hold(
     classification ran and the standing one when it did not.
     """
     _ = classify_item_spec_change_tier(item=item, repo=repo, path=path, stage=stage, runner=runner)
-    return standing_hold(item=item, config=path, spec_root=repo / SPEC_DIRNAME)
+    spec_root = repo / SPEC_DIRNAME
+    return standing_hold(
+        item=item,
+        config=path,
+        spec_root=spec_root,
+        ratified_topics=ratified_proposal_topics(spec_root=spec_root),
+    )
 
 
 def spec_change_tier_refusal(
@@ -299,7 +305,13 @@ def _drain_drops(
     return not due
 
 
-def standing_hold(*, item: WorkItem, config: StoreConfig, spec_root: Path) -> SpecChangeHold | None:
+def standing_hold(
+    *,
+    item: WorkItem,
+    config: StoreConfig,
+    spec_root: Path,
+    ratified_topics: Collection[str],
+) -> SpecChangeHold | None:
     """This item's standing hold, taking no judgement and reaching no provider.
 
     `item_comment_bodies` answers `None` for a sidecar it could not read and the
@@ -313,7 +325,9 @@ def standing_hold(*, item: WorkItem, config: StoreConfig, spec_root: Path) -> Sp
 
     A hold on a topic NO revision record ratifies also carries the relink
     candidate the spec history shows, when there is one, so the wall's refusal and
-    the attention lane name the same topic from one reading. Only that reason
+    the attention lane name the same topic from one reading. `ratified_topics` is
+    handed in rather than read here so the lane, which grades every heldable item
+    of the tenant, walks the spec history for it once. Only that reason
     carries one: a hold with no linked topic has none to relink from, and a
     ratified one is waiting on a re-judgement rather than on a different stem.
     """
@@ -324,7 +338,7 @@ def standing_hold(*, item: WorkItem, config: StoreConfig, spec_root: Path) -> Sp
     hold = spec_change_hold(
         work_item_id=item.id,
         recorded=recorded,
-        ratified_topics=ratified_proposal_topics(spec_root=spec_root),
+        ratified_topics=ratified_topics,
     )
     if hold is None or hold.reason != REASON_UNRATIFIED_TOPIC:
         return hold
