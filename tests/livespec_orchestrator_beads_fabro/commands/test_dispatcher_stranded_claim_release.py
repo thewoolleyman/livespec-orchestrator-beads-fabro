@@ -240,17 +240,21 @@ def _survey_succeeded_run(*, tmp_path: Path, forge_stdout: str) -> object:
     ("forge_stdout", "expected_remedy"),
     [
         ('[{"number": 4008, "state": "CLOSED", "title": "x"}]', f"move:{_ITEM_ID}:ready"),
-        ('[{"number": 4008, "state": "OPEN", "title": "x"}]', None),
+        ('[{"number": 4008, "state": "OPEN", "title": "x"}]', f"move:{_ITEM_ID}:ready"),
         ('[{"number": 4008, "state": "MERGED", "title": "x"}]', None),
-        ("[]", None),
+        ("[]", f"move:{_ITEM_ID}:ready"),
     ],
 )
-def test_a_succeeded_run_names_a_release_only_when_its_pull_request_closed_unmerged(
+def test_a_succeeded_runs_claim_names_the_move_valve_unless_its_pull_request_merged(
     tmp_path: Path, forge_stdout: str, expected_remedy: str | None
 ) -> None:
     survey = _survey_succeeded_run(tmp_path=tmp_path, forge_stdout=forge_stdout)
 
     assert survey.recovered == ()
-    assert [(held.hold_reason, held.remedy) for held in survey.held] == [
-        ("run-succeeded", expected_remedy)
-    ]
+    assert [
+        (held.work_item_id, held.run_id, held.hold_reason, held.remedy) for held in survey.held
+    ] == [(_ITEM_ID, _RUN_ID, "run-succeeded", expected_remedy)]
+    # Reporting the hold writes nothing: the item stays `active` under its claim,
+    # so the run's committed tree stays available as a publish source.
+    held_item = next(iter(read_work_items(path=_config())))
+    assert (held_item.status, held_item.assignee) == ("active", "fabro")
