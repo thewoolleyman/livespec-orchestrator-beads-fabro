@@ -79,15 +79,29 @@ def run_impl_dispatch(  # noqa: PLR0913 — kw-only transport; `workflow_name` i
     )
     plan = scope.scope_plan(host=scope.default_scope_host())
     unit: str | None = None
+    detail: str | None = None
     launch = scope.LAUNCH_UNSCOPED
-    launch_argv = argv
+    result: CommandRun | None = None
     if plan is not None:
         unit = scope.scope_unit_name(work_item_ref=work_item_ref)
-        launch = scope.LAUNCH_SCOPED
-        launch_argv = scope.scoped_argv(plan=plan, unit=unit, argv=argv)
-    result = resolved_runner(argv=launch_argv, cwd=repo)
+        scoped = resolved_runner(argv=scope.scoped_argv(plan=plan, unit=unit, argv=argv), cwd=repo)
+        detail = scope.scope_launch_failure(
+            unit=unit, returncode=scoped.returncode, stderr=scoped.stderr
+        )
+        if detail is None:
+            launch = scope.LAUNCH_SCOPED
+            result = scoped
+        else:
+            unit = None
+    if result is None:
+        result = resolved_runner(argv=argv, cwd=repo)
     _record_launch(
-        repo=repo, identity=identity, work_item_ref=work_item_ref, launch=launch, scope_unit=unit
+        repo=repo,
+        identity=identity,
+        work_item_ref=work_item_ref,
+        launch=launch,
+        scope_unit=unit,
+        detail=detail,
     )
     parsed = _parse_json_object_or_array(text=result.stdout)
     status = _dispatch_status(returncode=result.returncode, parsed=parsed)
@@ -121,13 +135,16 @@ def _record_launch(
     work_item_ref: str,
     launch: str,
     scope_unit: str | None,
+    detail: str | None,
 ) -> None:
     """Append the launch's journal record; a journal fault never fails the dispatch."""
     journal = JournalFile(
         path=dispatch_journal_path(repo=repo),
         identity=default_invoker_identity() if identity is None else identity,
     )
-    record = scope.launch_record(work_item_id=work_item_ref, launch=launch, scope_unit=scope_unit)
+    record = scope.launch_record(
+        work_item_id=work_item_ref, launch=launch, scope_unit=scope_unit, detail=detail
+    )
     _ = attempt(action=lambda: journal.append(record=record), exceptions=(OSError,))
 
 

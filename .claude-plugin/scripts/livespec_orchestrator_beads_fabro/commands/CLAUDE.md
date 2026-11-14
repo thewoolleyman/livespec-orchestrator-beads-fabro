@@ -3384,6 +3384,10 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   defaults to `stop`, under which one OOM-killed child stops the whole scope and
   strands the run. And the unit is NAMED by the launch (`--unit`), so the journal
   record and the `drive` result carry it without parsing the launcher's output.
+  A scoped launch that failed before the loop ran (non-zero exit and no
+  `Running scope as unit: <unit>` announcement) falls back to exactly one
+  unscoped launch, journaled with the failure as `detail`; a loop that ran in
+  its scope and exited non-zero is never relaunched.
   The slice and the bound are host provisioning this repository does not install.
 
 Rules an agent editing this tree must follow:

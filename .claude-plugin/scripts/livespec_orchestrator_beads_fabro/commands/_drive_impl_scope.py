@@ -48,6 +48,7 @@ __all__: list[str] = [
     "SystemScopeHost",
     "default_scope_host",
     "launch_record",
+    "scope_launch_failure",
     "scope_plan",
     "scope_unit_name",
     "scoped_argv",
@@ -63,6 +64,7 @@ _SYSTEMCTL_TIMEOUT_SECONDS = 10
 # A systemd memory size: digits, an optional fraction, an optional unit suffix.
 _MEMORY_SIZE = re.compile(r"\d+(?:\.\d+)?[BKMGTPE]?")
 _UNIT_UNSAFE = re.compile(r"[^A-Za-z0-9:_.\-]")
+_FAILURE_DETAIL_LIMIT = 500
 
 
 class ScopeHost(Protocol):
@@ -176,7 +178,23 @@ def scoped_argv(*, plan: ScopePlan, unit: str, argv: tuple[str, ...]) -> tuple[s
     )
 
 
-def launch_record(*, work_item_id: str, launch: str, scope_unit: str | None) -> dict[str, object]:
+def scope_launch_failure(*, unit: str, returncode: int, stderr: str) -> str | None:
+    """Why the scoped launch failed before the loop ran, or None when the loop ran.
+
+    The launcher returns the loop's own exit status, so a non-zero exit alone is
+    NOT a failed launch: a loop that started in its scope and exited non-zero has
+    run, and its exit is the loop's result. The launcher announces the scope it
+    created (`Running scope as unit: <unit>`) before it runs the command, which
+    is what tells the two apart without parsing anything the loop prints.
+    """
+    if returncode == 0 or f"Running scope as unit: {unit}" in stderr:
+        return None
+    return stderr.strip()[:_FAILURE_DETAIL_LIMIT] or f"scope launcher exited {returncode}"
+
+
+def launch_record(
+    *, work_item_id: str, launch: str, scope_unit: str | None, detail: str | None = None
+) -> dict[str, object]:
     """The one dispatch-journal record a launch leaves, naming which launch it used."""
     record: dict[str, object] = {
         "stage": SCOPE_STAGE,
@@ -185,4 +203,6 @@ def launch_record(*, work_item_id: str, launch: str, scope_unit: str | None) -> 
     }
     if scope_unit is not None:
         record["scope_unit"] = scope_unit
+    if detail is not None:
+        record["detail"] = detail
     return record
