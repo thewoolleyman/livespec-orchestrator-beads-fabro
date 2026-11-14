@@ -42,7 +42,7 @@ module's helpers do: `_dispatcher_engine` imports this module, so a concrete
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from livespec_orchestrator_beads_fabro._store_merge_hold import read_merge_held_work_item_ids
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
@@ -68,6 +68,8 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "MERGE_HELD_STAGE",
     "CurrentMergeHold",
+    "MergeHoldReader",
+    "memoized_current_merge_hold",
     "merge_held_work_item_ids",
     "merge_hold_terminal",
     "read_current_merge_hold",
@@ -125,15 +127,45 @@ def merge_held_work_item_ids(*, repo: Path) -> frozenset[str]:
     return read_merge_held_work_item_ids(path=resolve_store_config(cwd=repo, work_items_arg=None))
 
 
+class MergeHoldReader(Protocol):
+    """One item's current merge hold, answered from a reading taken at most once."""
+
+    def __call__(self, *, work_item_id: str) -> CurrentMergeHold:
+        """The hold the ledger names for this item, or `unreadable`."""
+        ...
+
+
+def memoized_current_merge_hold(*, repo: Path) -> MergeHoldReader:
+    """A reader that takes the whole-ledger hold reading on first use and keeps it.
+
+    The reading is a whole-ledger `bd list --status all --limit 0` and a parse of
+    every record, whatever the number of items asked about, so a pass that asks of
+    every claim it surveys must take it once. A reading that failed is kept too:
+    the pass has been told the authority cannot be read, and every item it asks
+    about is `unreadable` rather than one more attempt at the same ledger. A pass
+    that asks about no item takes no reading at all.
+    """
+    readings: list[frozenset[str] | AttemptFailure] = []
+
+    def current(*, work_item_id: str) -> CurrentMergeHold:
+        if not readings:
+            readings.append(
+                attempt(
+                    action=lambda: merge_held_work_item_ids(repo=repo),
+                    exceptions=_HOLD_READ_ERRORS,
+                )
+            )
+        read = readings[0]
+        if isinstance(read, AttemptFailure):
+            return "unreadable"
+        return "held" if work_item_id in read else "unheld"
+
+    return current
+
+
 def read_current_merge_hold(*, repo: Path, work_item_id: str) -> CurrentMergeHold:
     """Whether the ledger holds this item's merge right now, or cannot say."""
-    read = attempt(
-        action=lambda: merge_held_work_item_ids(repo=repo),
-        exceptions=_HOLD_READ_ERRORS,
-    )
-    if isinstance(read, AttemptFailure):
-        return "unreadable"
-    return "held" if work_item_id in read else "unheld"
+    return memoized_current_merge_hold(repo=repo)(work_item_id=work_item_id)
 
 
 def merge_hold_terminal(
