@@ -39,6 +39,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryLoss,
     RecoveryRoute,
     RecoverySeed,
+    ReseedConflict,
 )
 
 __all__: list[str] = [
@@ -55,9 +56,10 @@ __all__: list[str] = [
 RECOVERY_ROUTE_STAGE = "recovery-route"
 RECOVERY_HELD_STAGE = "recovery-held"
 
-# Why a listed needs-human ref was passed over. `no-change` is the clause's other
-# reason, for a ref that carries no work; this build lists no such ref.
+# Why a listed ref was passed over: a needs-human ref the choice did not take, or a
+# seed whose tree equals its merge base with the default branch and so carries no work.
 _PASSED_OVER_NOT_TAKEN = "not-taken"
+_PASSED_OVER_NO_CHANGE = "no-change"
 
 # What the route row says about preserved work, for the two routes that measured
 # it. `absent` is the LOSS the clause requires recording; `verified` is the seed's
@@ -100,6 +102,9 @@ def recovery_route_record(
         "remote": None if seed is None else seed.remote,
         "commit_sha": None if seed is None else seed.commit_sha,
         "preservation_ref": None if seed is None else seed.preservation_ref,
+        "seed_source_ref": None if seed is None else seed.source_ref,
+        "seed_source_commit": None if seed is None else seed.source_commit,
+        "default_branch_tip": None if seed is None else seed.default_branch_tip,
         "preservation_sources_asked": None if loss is None else list(loss.sources_asked),
         "fresh_ruling_instant": None if fresh is None else fresh.fresh_ruling_instant,
         "passed_over_needs_human": _passed_over(seed=seed, fresh=fresh),
@@ -124,9 +129,16 @@ def _passed_over(*, seed: RecoverySeed | None, fresh: RecoveryRoute | None) -> l
         if fresh is None
         else fresh.passed_over_needs_human
     )
+    no_change = () if fresh is None else fresh.passed_over_no_change
     return [
-        {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
-        for ref, commit in passed_over
+        *(
+            {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NOT_TAKEN}
+            for ref, commit in passed_over
+        ),
+        *(
+            {"ref": ref, "commit": commit, "reason": _PASSED_OVER_NO_CHANGE}
+            for ref, commit in no_change
+        ),
     ]
 
 
@@ -149,13 +161,52 @@ def recovery_held_record(*, work_item_id: str, hold: RecoveryHold) -> dict[str, 
     the clause admits a hold caused by a measurement, by a non-fallback refusal,
     "or both" — so a reader cannot tell which to expect from the stage alone.
     """
+    conflict = hold.reseed_conflict
     return {
         "stage": RECOVERY_HELD_STAGE,
         "work_item_id": work_item_id,
         "measurements": [one.name for one in hold.measurements],
         "details": [one.detail for one in hold.measurements],
         "refusals": list(hold.refusals),
+        **(
+            {}
+            if conflict is None
+            else {
+                "seed_ref": conflict.seed_ref,
+                "seed_commit": conflict.seed_commit,
+                "default_branch_tip": conflict.default_branch_tip,
+                "conflicting_paths": list(conflict.paths),
+            }
+        ),
     }
+
+
+def _reasons(*, hold: RecoveryHold) -> tuple[str, ...]:
+    """Every reason one hold names, as the lines both renderers print.
+
+    A reseed conflict adds ONE line after its refusal token, naming the seed, the
+    tip and every path, because the token alone sends an operator to the journal
+    for what the report could have told them.
+    """
+    conflict = hold.reseed_conflict
+    return (
+        *(f"{one.name}: {one.detail}" for one in hold.measurements),
+        *hold.refusals,
+        *(() if conflict is None else (_conflict_line(conflict=conflict),)),
+    )
+
+
+def _conflict_line(*, conflict: ReseedConflict) -> str:
+    """The one line a reseed conflict adds: the seed, the tip and every path."""
+    return " ".join(
+        (
+            f"seed {conflict.seed_ref} at {conflict.seed_commit}",
+            "conflicts with the default branch at",
+            conflict.default_branch_tip,
+            "in",
+            ", ".join(conflict.paths),
+        )
+    )
 
 
 def recovery_held_detail(*, route: RecoveryRoute) -> str:
@@ -163,11 +214,7 @@ def recovery_held_detail(*, route: RecoveryRoute) -> str:
     hold = route.hold
     if hold is None:
         return "recovery held"
-    named = (
-        *(f"{one.name}: {one.detail}" for one in hold.measurements),
-        *hold.refusals,
-    )
-    return "recovery held: " + "; ".join(named)
+    return "recovery held: " + "; ".join(_reasons(hold=hold))
 
 
 def recovery_held_report(*, work_item_id: str, hold: RecoveryHold) -> str:
@@ -177,13 +224,7 @@ def recovery_held_report(*, work_item_id: str, hold: RecoveryHold) -> str:
     the same reason it applies there — an operator told only the first reason acts
     on it and drives straight into the one they were never told about.
     """
-    lines = "".join(
-        f"  - {one}\n"
-        for one in (
-            *(f"{one.name}: {one.detail}" for one in hold.measurements),
-            *hold.refusals,
-        )
-    )
+    lines = "".join(f"  - {one}\n" for one in _reasons(hold=hold))
     return (
         f"ERROR: recovery routing held {work_item_id}; it stays ready, it was not"
         f" admitted, and no run was created:\n{lines}"
