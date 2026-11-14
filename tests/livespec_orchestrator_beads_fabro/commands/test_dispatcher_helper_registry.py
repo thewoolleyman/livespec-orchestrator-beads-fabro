@@ -116,6 +116,7 @@ def test_the_proof_capture_launcher_and_hooks_are_helpers() -> None:
         "proof-capture/proof-capture-hooks/pre-push",
         "review/review-bin/git",
         "review/review-bin/just",
+        "review/review-bin/mise",
         "review/review-bin/livespec-implement-check-suite",
     } <= names
 

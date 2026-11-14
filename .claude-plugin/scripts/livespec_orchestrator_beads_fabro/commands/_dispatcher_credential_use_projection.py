@@ -86,6 +86,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_credential_use_guard
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_integration_defaults import (
     FLEET_RECIPE_RUNNER,
+    FLEET_TOOL_RUNNER,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_projection import (
     codex_freshness_required_seconds,
@@ -254,7 +255,12 @@ def review_asset_sources() -> tuple[tuple[str, str], ...]:
             f"{REVIEW_BIN_PATH}/{name}",
             (_PROOF_CAPTURE_ASSETS_DIR / "review-bin" / name).read_text(encoding="utf-8"),
         )
-        for name in ("git", FLEET_RECIPE_RUNNER, "livespec-implement-check-suite")
+        for name in (
+            "git",
+            FLEET_RECIPE_RUNNER,
+            FLEET_TOOL_RUNNER,
+            "livespec-implement-check-suite",
+        )
     )
 
 

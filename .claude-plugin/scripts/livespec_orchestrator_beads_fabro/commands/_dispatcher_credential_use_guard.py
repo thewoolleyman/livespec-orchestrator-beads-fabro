@@ -368,6 +368,7 @@ if [ -n "$review_read_only" ]; then
     if [ "$mode" != "check" ]; then
         review_bin="{REVIEW_BIN_PATH}"
         if [ ! -x "$review_bin/git" ] || [ ! -x "$review_bin/just" ] || \\
+           [ ! -x "$review_bin/mise" ] || \\
            [ ! -x "$review_bin/livespec-implement-check-suite" ]; then
             echo "LIVESPEC_REVIEW_GUARD_REFUSED: review is read-only, but its" \\
                  " stage-scoped command launchers are not executable at" \\
@@ -382,6 +383,14 @@ if [ -n "$review_read_only" ]; then
         fi
         LIVESPEC_REVIEW_REAL_JUST="$review_real_just"
         export LIVESPEC_REVIEW_REAL_JUST
+        review_real_mise="$(command -v mise || true)"
+        if [ ! -x "$review_real_mise" ]; then
+            echo "LIVESPEC_REVIEW_GUARD_REFUSED: review cannot locate the real" \\
+                 " mise executable before installing its command launchers." >&2
+            exit {GUARD_REFUSAL_EXIT_CODE}
+        fi
+        LIVESPEC_REVIEW_REAL_MISE="$review_real_mise"
+        export LIVESPEC_REVIEW_REAL_MISE
         PATH="$review_bin:$PATH"
         export PATH
     fi
