@@ -120,17 +120,28 @@ the sections they name now live in the `.ai/` files AGENTS.md routes to.
   remedy for repeat-flakes: it may be useful evidence, but repeated reruns can
   still leave master red and the fix factory-parked. If red master also makes the
   local pre-commit hook refuse every commit, use the server-side GitHub revert
-  break-glass path rather than `--no-verify`: fetch the offending PR's node id
-  with a `repository.pullRequest(number:)` GraphQL query, then call
-  `revertPullRequest` with that id, passing the query and mutation body from
-  files. Prefer re-landing the reverted change paired with whatever it broke in
-  one PR, not re-landing it alone. A revert that touches product Python is a
+  break-glass path rather than `--no-verify`. Create the revert as ONE
+  `createCommitOnBranch` GraphQL commit on a fresh branch. That commit restores
+  every path the reverted change touched to the bytes of the reverted commit's
+  first parent (for a rebase-merged PR, the first parent of its earliest
+  commit), and its message carries a `This reverts commit <sha>.` line. Pass
+  the mutation body from a file. GitHub signs that commit, and
+  `check-red-green-replay` admits a signed commit whose bytes match the first
+  parent as a forge-authored revert. Do NOT use `revertPullRequest` or the web
+  UI's Revert button: GitHub leaves those commits UNSIGNED, so
+  `check-red-green-replay` convicts them whenever the reverted change touched
+  product impl `.py`. (Measured 2026-11-14: `revertPullRequest` produced PR
+  #5275, whose five unsigned commits were all convicted; the
+  `createCommitOnBranch` replacement PR #5277 was signed and admitted. The
+  canonical rule is livespec's `.ai/ci-gate-discipline.md`.) Prefer
+  re-landing the reverted change paired with whatever it broke in one PR, not
+  re-landing it alone. A revert that touches product Python is a
   maintainer-authored pull request, so the required `check-factory-provenance`
   job (R6b of plan `mechanically-enforce-factory-usage`) goes RED on it until
-  it carries the `factory-override` label with the reason in the body; the
+  it carries the `factory-override` label with the reason in the body. The
   check reads labels from the pull_request event payload, so apply the label
-  BEFORE opening the revert PR, or push or reopen after labelling. A rerun of
-  the failed job does not see a label added afterwards.
+  before the pull request's first CI event, or close and reopen it after
+  labelling. A rerun of the failed job does not see a label added afterwards.
 - **Name the OWNING SESSION when attributing work to another session**
   (maintainer-declared 2026-07-26). When you report that another session made a
   change — a dirty file, a live branch, an in-flight PR, a concurrent worktree —
