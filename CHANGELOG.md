@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.330.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.329.1...v0.330.0) (2026-11-14)
+
+
+### Features
+
+* list needs-human refs once per routing pass and on every resume route ([e458beb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e458beb8cddffc6f716e10508175e7d9b15a0f71))
+* record repository preflight verdict ([f6061d6](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/f6061d6053974cf46b8159e8907b34705be17640))
+
+
+### Bug Fixes
+
+* **dev-tooling:** fail the check suite on a shipped workflow graph with an unreachable node ([ded66bb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ded66bb6e5d23202b2e782ab598582aaf348ba98))
+* key the held reader on the released spec identity ([9857433](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/98574338c1e3e61cd0de76e299245529cbcca3f6))
+* match the recorded spec identity in the held reader ([6b445d5](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/6b445d5ccf36d94f97768ca237c32a5dc9f9a2ba))
+* name move-to-ready as the remedy of a succeeded run's unmerged claim ([fc2c91d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/fc2c91d8a1855c2f938687538c7008478921e62b))
+* require matching Definition-of-Done spec identity ([1623675](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/1623675edefcb85a8dcdb646fe7b8695d6237d4d))
+* share released spec identity ([db3026d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/db3026d2c589075b7d607b09b886f0ce1c60aaed))
+
 ## [0.329.1](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.329.0...v0.329.1) (2026-11-14)
 
 
