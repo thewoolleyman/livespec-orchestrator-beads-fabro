@@ -1,2 +1,4 @@
-work_item=bd-ib-mexkuo
-reason=master-push coverage shards route to the dedicated livespec-orchestrator-master-k3s lane when CI_RUNNER_LABELS_MASTER is set (runs-on of check-per-file-coverage-shard, check-per-file-coverage and check-coverage); pull requests and an unset variable keep today's labels; logically additive per the maintainer's 2026-11-03 ruling ("Adding OR MODIFYING a runs on is absolutitely ADDITIVE"), coordinator GO 2026-11-12 ~21:1xZ; no CI runtime increase
+work_item=bd-ib-jpqhog
+change=additive
+ci_runtime=no-significant-increase
+reason=incident-ci prints ONLY the enablement reading the released plan recorded (one json.dumps of the plan's enablement field, then one echo), right after the step reads the plan's mode; five added lines, no existing workflow line deleted or modified, no job, trigger, permission, runner, concurrency group or required check changes, one in-process JSON read so CI runtime does not change; mirror of livespec-dev-tooling-3z6fyq (fleet follow-up to livespec-dev-tooling-ahl6vz), maintainer approval of the additive one-field echo 2026-11-13 and coordinator authorization under coordinator-duties section 12 on 2026-11-14
