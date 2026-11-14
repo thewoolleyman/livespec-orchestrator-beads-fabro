@@ -8,6 +8,7 @@ import subprocess
 __all__: list[str] = [
     "client_version",
     "is_petri_era_version",
+    "version_refusal",
 ]
 
 
@@ -25,3 +26,12 @@ def is_petri_era_version(*, version: str) -> bool:
     """Whether version reaches the first upstream release with the Petri validator."""
     release = version.split("-", maxsplit=1)[0]
     return tuple(int(part) for part in release.split(".")) >= (0, 396, 0)
+
+
+def version_refusal(*, binary: str, version: str | None) -> str | None:
+    """Why a resolved client may not validate the graphs, or `None` when it may."""
+    if version is None:
+        return f"Petri-era client control: {binary} did not report a parseable version"
+    if not is_petri_era_version(version=version):
+        return f"Petri-era client control: fabro {version} is older than required 0.396.0"
+    return None
