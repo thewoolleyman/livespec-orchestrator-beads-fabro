@@ -126,6 +126,14 @@ append_verdict() {
     } >> "$handoff"
 }
 
+# The fold leaves HEAD on the dispatch base, so the refused turn's product
+# change is discarded by returning the index and working tree to it. The
+# handoff and verdict files live in the git directory, so both survive.
+return_to_dispatch_base() {
+    git reset --hard HEAD >/dev/null
+    git clean -fd >/dev/null
+}
+
 main() {
     local handoff=""
     local output=""
@@ -148,6 +156,7 @@ main() {
         append_verdict "$handoff" 3 "$output" \
             "red turn changed product paths: ${product_paths//$'\n'/ }"
         printf '%s\n' "commit_red: red turn changed product paths: ${product_paths//$'\n'/ }" >&2
+        return_to_dispatch_base
         return 3
     fi
     git reset
