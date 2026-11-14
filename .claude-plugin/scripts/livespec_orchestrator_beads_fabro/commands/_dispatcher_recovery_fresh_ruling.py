@@ -139,7 +139,11 @@ def current_ruling_route(
             ruling=ruling,
         )
     ruled = ruled_seed(
-        runner=runner, repo=repo, ruling=ruling, earlier_run_ids=gather.earlier_run_ids
+        runner=runner,
+        repo=repo,
+        work_item_id=item.id,
+        ruling=ruling,
+        earlier_run_ids=gather.earlier_run_ids,
     )
     if isinstance(ruled, RecoveryHold):
         journal.append(record=recovery_held_record(work_item_id=item.id, hold=ruled))
