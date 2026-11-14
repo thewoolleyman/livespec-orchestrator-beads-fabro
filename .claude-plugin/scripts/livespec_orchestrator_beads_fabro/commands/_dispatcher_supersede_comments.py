@@ -55,4 +55,4 @@ def _copied_comment_body(
 
 def _sanitize(*, text: str) -> str:
     """Use the goal renderer's bracket form for every copied template opener."""
-    return text.replace("{{", "⟦⟦").replace("{%", "⟦%").replace("{#", "⟦#")
+    return text.replace("{{", "[[").replace("{%", "[%").replace("{#", "[#")
