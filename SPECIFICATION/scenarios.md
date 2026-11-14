@@ -7043,6 +7043,41 @@ Feature: A factory agent's commit leg is not bounded by one tool call
     When review_fix_open_red_route re-enters review_fix
     Then the re-entered turn's open-Red brief names the failed target check-types
     And it carries the final lines of that commit run's own recorded output
+
+  Scenario: A re-entered fix turn's brief names the uncovered files from the full recorded output
+    Given a fix_commit_settle node that settled a fix commit run as failed on check-per-file-coverage
+    And that commit run's recorded output names src/a.py with uncovered lines 10-12 before the per-target timing table that ends the output
+    When the run re-enters fix
+    Then the re-entry brief names the failed target check-per-file-coverage
+    And it names src/a.py with uncovered lines 10-12
+
+  Scenario: An ordinary implement re-entry after a refused commit names the failing files
+    Given an implement turn whose commit was refused by a hook whose recorded output names check-lint and check-per-file-coverage
+    And that output names src/b.py with uncovered lines 4-9 before the per-target timing table that ends the output
+    When implement_hook_route re-enters implement spending its ordinary re-entry
+    Then the re-entry brief names check-lint and check-per-file-coverage
+    And it names src/b.py with uncovered lines 4-9
+
+  Scenario: The open-Red brief names the failing files from the full recorded output
+    Given a review_fix_commit_settle node that settled a Green amend as failed on check-per-file-coverage
+    And that commit run's recorded output names src/c.py with uncovered lines 20-21 before the per-target timing table that ends the output
+    And the last authored commit is still an open Red
+    When review_fix_open_red_route re-enters review_fix
+    Then the open-Red brief names src/c.py with uncovered lines 20-21
+
+  Scenario: Every route's failing-file section is capped at forty and identical for the same output
+    Given a commit run whose recorded output names only check-per-file-coverage and reports 55 files below the coverage threshold
+    When implement_hook_route, a fix re-entry after fix_commit_settle and review_fix_open_red_route each build a re-entry brief from that output
+    Then each brief names the first 40 of those files in the output's order, each with its uncovered lines
+    And each brief states that 15 further files were omitted
+    And the three briefs' failed-target and failing-file sections are identical
+
+  Scenario: A re-entered fix turn's brief names an oversized file with its measured size
+    Given a fix_commit_settle node that settled a fix commit run as failed on check-file-lloc
+    And that commit run's recorded output names src/d.py at 263 logical lines against a ceiling of 250 before the per-target timing table that ends the output
+    When the run re-enters fix
+    Then the re-entry brief names the failed target check-file-lloc
+    And it names src/d.py with its measured size of 263 logical lines
 ```
 
 ## Scenario 180 — A sandbox agent cannot remove the run's working tree, and ordinary removals still run
