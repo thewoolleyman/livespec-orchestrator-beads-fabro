@@ -140,3 +140,81 @@ def test_a_host_with_the_slice_gets_a_scoped_launch_that_records_its_unit(
     assert record["work_item_id"] == _ITEM
     assert record["launch"] == "scoped"
     assert record["scope_unit"] == unit
+
+
+@dataclass(kw_only=True)
+class _ScopeLauncherRunner(_Runner):
+    """A scoped launch answers as scripted; the unscoped launch after it succeeds."""
+
+    scoped_returncode: int = 1
+    scope_created: bool = False
+
+    def __call__(self, *, argv: tuple[str, ...], cwd: Path | None = None) -> CommandRun:
+        if argv[0] != _LAUNCHER:
+            return super().__call__(argv=argv, cwd=cwd)
+        self.calls.append(argv)
+        stderr = (
+            "".join(
+                f"Running scope as unit: {element.removeprefix(_UNIT_FLAG)}\n"
+                for element in argv
+                if element.startswith(_UNIT_FLAG)
+            )
+            if self.scope_created
+            else "Failed to start transient scope unit: Access denied\n"
+        )
+        return CommandRun(argv=argv, returncode=self.scoped_returncode, stdout="", stderr=stderr)
+
+
+def _dispatch_with(
+    *, repo: Path, runner: _Runner, monkeypatch: pytest.MonkeyPatch
+) -> dict[str, Any]:
+    assert _SCOPE_MODULE.is_file(), "the launch-scope module is not delivered yet"
+    scope = importlib.import_module(_SCOPE_MODULE_NAME)
+    monkeypatch.setattr(scope, "default_scope_host", lambda: _Host())
+    return run_impl_dispatch(
+        repo=repo,
+        work_item_ref=_ITEM,
+        runner=runner,
+        dispatcher_bin=repo / "dispatcher.py",
+        acp_nodes=(),
+        workflow_name=None,
+        identity=None,
+    )
+
+
+def test_a_scoped_launch_that_fails_before_the_loop_falls_back_to_one_unscoped_launch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _ScopeLauncherRunner()
+
+    result = _dispatch_with(repo=tmp_path, runner=runner, monkeypatch=monkeypatch)
+
+    loop_argv = build_dispatcher_argv(
+        repo=tmp_path, dispatcher_bin=tmp_path / "dispatcher.py", work_item_ref=_ITEM
+    )
+    assert len(runner.calls) == 2
+    assert runner.calls[0][0] == _LAUNCHER
+    assert runner.calls[1] == loop_argv
+    assert result["launch"] == "unscoped"
+    assert "scope_unit" not in result
+    assert result["dispatcher"]["argv"] == list(loop_argv)
+    (record,) = _journal_records(repo=tmp_path)
+    assert record["stage"] == "dispatch-launch-scope"
+    assert record["launch"] == "unscoped"
+    assert "scope_unit" not in record
+    assert "Failed to start transient scope unit" in record["detail"]
+
+
+def test_a_loop_that_ran_in_its_scope_and_exited_non_zero_is_not_relaunched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    runner = _ScopeLauncherRunner(scope_created=True, scoped_returncode=3)
+
+    result = _dispatch_with(repo=tmp_path, runner=runner, monkeypatch=monkeypatch)
+
+    assert len(runner.calls) == 1
+    assert result["launch"] == "scoped"
+    assert result["dispatcher"]["exit_code"] == 3
+    (record,) = _journal_records(repo=tmp_path)
+    assert record["launch"] == "scoped"
+    assert "detail" not in record
