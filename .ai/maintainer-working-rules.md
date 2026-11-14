@@ -120,16 +120,23 @@ the sections they name now live in the `.ai/` files AGENTS.md routes to.
   remedy for repeat-flakes: it may be useful evidence, but repeated reruns can
   still leave master red and the fix factory-parked. If red master also makes the
   local pre-commit hook refuse every commit, use the server-side GitHub revert
-  break-glass path rather than `--no-verify`. Create the revert as ONE
-  `createCommitOnBranch` GraphQL commit on a fresh branch. That commit restores
-  every path the reverted change touched to the bytes of the reverted commit's
-  first parent (for a rebase-merged PR, the first parent of its earliest
-  commit), and its message carries a `This reverts commit <sha>.` line that
-  names that SAME commit (for a rebase-merged PR, the earliest one, never the
-  merge tip), because the gate compares the revert with `<sha>^`. Pass
-  the mutation body from a file. GitHub signs that commit, and
-  `check-red-green-replay` admits a signed commit whose bytes match the first
-  parent as a forge-authored revert. Do NOT use `revertPullRequest` or the web
+  break-glass path rather than `--no-verify`. First confirm that
+  `git log <tip-sha>..origin/master -- <paths the change touched>` is empty. If
+  any later commit touches those paths, a whole-file restore discards it and the
+  gate still admits the revert, so do not use this route; revert through the
+  normal lane instead. Otherwise create the revert as ONE `createCommitOnBranch`
+  GraphQL commit on a fresh branch, made with the fleet GitHub App installation
+  token (that is the token whose commits GitHub signs as verified; signing
+  through a personal access token is unverified). That commit restores every
+  path the reverted change touched to the bytes of the first parent of the
+  reverted change's EARLIEST commit, and its message carries a
+  `This reverts commit <sha>.` line naming that earliest commit AS IT LANDED ON
+  MASTER. Never name the merge tip, and never name the PR branch's pre-rebase
+  sha that `gh pr view --json commits` lists: it is not on master. The gate
+  requires `<sha>` to be on `origin/master` and compares the revert with
+  `<sha>^`. Pass the mutation body from a file. GitHub signs that commit, and
+  `check-red-green-replay` admits a signed commit whose bytes match `<sha>^`
+  as a forge-authored revert. Do NOT use `revertPullRequest` or the web
   UI's Revert button: GitHub leaves those commits UNSIGNED, so
   `check-red-green-replay` convicts them whenever the reverted change touched
   product impl `.py`. (Measured 2026-11-14: `revertPullRequest` produced PR
