@@ -118,7 +118,7 @@ if [ -n "${STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE:-}" ] \
     && [ "$(cat "$STUB_ITEM_STATUS_FILE" 2>/dev/null)" = active ] \
     && [ ! -e "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" ]; then
     : > "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE"
-    deadline=$(( $(date +%s) + 10 ))
+    deadline=$(( $(date +%s) + ${HARNESS_PREFLIGHT_HANG_GUARD_S:-300} ))
     while [ ! -e "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE" ] && [ "$(date +%s)" -lt "$deadline" ]; do
         sleep "$HARNESS_POLL_S"
     done
@@ -1968,7 +1968,7 @@ stop_pid=$!
 if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
     rm -f "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE"
     set_hold "$HOLD_FILE" 'engine restart'
-    if wait_for_file "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE" 10; then
+    if wait_for_file "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
         held_alive=0
         if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
         : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
@@ -2007,11 +2007,11 @@ if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
     set_hold "$HOLD_FILE" 'engine restart'
     # The launcher lists before its next hold re-read. The normal case above
     # proves that re-read; this control waits for the earlier board-poll state.
-    if wait_for_file "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" 10; then
+    if wait_for_file "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
         held_alive=0
         if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
         : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
-        if wait_for_file "$STUB_DRIVEN_DIR/bd-ib-hold-after-delayed" 10; then
+        if wait_for_file "$STUB_DRIVEN_DIR/bd-ib-hold-after-delayed" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
             : > "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE"
             wait "$stop_pid"
             stop_rc=$?
