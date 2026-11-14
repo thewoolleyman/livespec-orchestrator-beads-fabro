@@ -24,6 +24,7 @@ carries the reasoning; both of its fallbacks keep the row counted.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import cast
@@ -33,6 +34,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dispatch_lock import
     live_dispatch_lock,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_tenant_checkouts import (
     tenant_checkouts,
 )
@@ -202,23 +204,30 @@ def _green_terminal_after_latest_admit(*, history: _TerminalHistory | None) -> b
 
 
 def _terminal_histories(*, journal: JournalFile) -> dict[str, _TerminalHistory] | None:
-    lines = _journal_lines(path=journal.path)
-    if lines is None:
+    records = _journal_records(path=journal.path)
+    if records is None:
         return None
     histories: dict[str, _TerminalHistory] = {}
-    for index, line in enumerate(lines):
-        record = _journal_record(line=line)
+    for index, record in enumerate(records):
         if record is None:
             continue
         _record_history(histories=histories, index=index, record=record)
     return histories
 
 
-def _journal_lines(*, path: Path) -> tuple[str, ...] | None:
+def _journal_records(*, path: Path) -> Iterable[dict[str, object] | None] | None:
+    """The journal's records in order, from the pass snapshot when one is live.
+
+    The snapshot is the pass's one parsed copy of the file, shared and read-only; a
+    snapshot-less read parses its own, and `None` means the file could not be read.
+    """
+    snapshot = snapshot_records(journal_path=path)
+    if snapshot is not None:
+        return snapshot
     read = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))
     if isinstance(read, AttemptFailure):
         return None
-    return tuple(line for line in read.splitlines() if line)
+    return (_journal_record(line=line) for line in read.splitlines() if line)
 
 
 def _journal_record(*, line: str) -> dict[str, object] | None:
