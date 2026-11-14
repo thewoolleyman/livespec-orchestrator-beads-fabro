@@ -103,21 +103,14 @@ WORKFLOW_DEFAULT_LAYER = WORKFLOW_LAYER
 # `.livespec.jsonc`, which is the credential floor's own documented remedy
 # applied to work that genuinely takes milliseconds.
 #
-# `implement_hook_route` (v208, Scenario 204; work-item bd-ib-y7372n) sits on
-# `implement_completion`'s failure edge and can send an incomplete turn back to
-# `implement` ONCE, when the commit hook refused what the turn left staged, and
-# (bd-ib-xj3qqb) ONCE MORE without spending that budget when the turn ended while
-# a commit run it started was still running and that run passed. So `implement`
-# is reached by three visits of two attempts each, SIX, and the route, the
-# completion gate, the diff breaker and `implement_commit_settle` once per
-# visit, THREE; `review_fix_commit_settle` follows `review_fix`'s three and
+# The single-node incomplete-turn route and commit-settle node of the pre-split
+# graph (`implement_hook_route`, `implement_commit_settle`) were removed by
+# bd-ib-vvzd3v: the split left no edge entering either, so the engine refused
+# every run. `review_fix_commit_settle` follows `review_fix`'s three visits and
 # `fix_commit_settle` follows `fix`'s two. `janitor_admission` sits ahead of
 # each janitor visit and is likewise billed three times; it has its own
 # engine-side ninth visit only to name the exhausted eight-visit bound and
-# preserve the tree, which is not part of a successful run's longest path. The
-# route runs the repository's pre-commit hook, which can take the better part
-# of its timeout, so it is billed at its full visit count like any node that can
-# spend its ceiling.
+# preserve the tree, which is not part of a successful run's longest path.
 #
 # The three TERMINAL sentinel nodes (`dead_implementer`, `abandon`,
 # `non_converged`) are deliberately absent: each ENDS the run, so they are

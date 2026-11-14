@@ -113,14 +113,14 @@ def _settle_brief(repo: Path, plugins: Path) -> str:
     assert not isinstance(parsed, str), parsed
     environment = {**_environment(), "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins)}
     _ = subprocess.run(
-        ["sh", "-c", parsed.nodes["implement_commit_settle"]["script"]],
+        ["sh", "-c", parsed.nodes["fix_commit_settle"]["script"]],
         cwd=repo,
         check=False,
         capture_output=True,
         text=True,
         env=environment,
     )
-    brief = repo / ".git" / "livespec-implement-live-commit"
+    brief = repo / ".git" / "livespec-fix-live-commit"
     return brief.read_text(encoding="utf-8") if brief.exists() else ""
 
 
