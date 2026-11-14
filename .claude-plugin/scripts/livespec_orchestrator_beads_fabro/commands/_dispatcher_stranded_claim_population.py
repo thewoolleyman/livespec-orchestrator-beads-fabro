@@ -21,9 +21,15 @@ read is a parked rework and never a handed-off one.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Protocol
 
-from livespec_orchestrator_beads_fabro._store_dispatch_claim import ClaimStamp, claim_row_for
+from livespec_orchestrator_beads_fabro._store_dispatch_claim import (
+    ClaimStamp,
+    claim_row_for,
+    claim_stamps_for,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_current_merge_hold import (
     MergeHoldReader,
 )
@@ -45,7 +51,9 @@ from livespec_orchestrator_beads_fabro.errors import (
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
+    "ClaimStampReader",
     "claim_stamp",
+    "prefetched_claim_stamps",
     "surveyable",
 ]
 
@@ -63,8 +71,53 @@ _LEDGER_READ_ERRORS: tuple[type[Exception], ...] = (
 )
 
 
+class ClaimStampReader(Protocol):
+    """One item's claim stamp, read from the survey's batch where the batch named it."""
+
+    def __call__(self, *, work_item_id: str) -> ClaimStamp | None:
+        """The stamp, or `None` when it could not be read or the row carries none."""
+        ...
+
+
+def prefetched_claim_stamps(*, repo: Path, items: Iterable[WorkItem]) -> ClaimStampReader:
+    """A reader that takes the claim candidates' stamps in one `bd show` on first use.
+
+    The candidates are the rows the survey can grade at all: `active` or `ready` and
+    assigned `fabro`. A claim the batch could not name, or a batch that could not be
+    read, falls back to the single-row read, so a ledger fault is still reported as
+    the unreadable stamp it always was. The batch is taken once, ahead of the pass's
+    own work, which is safe because no recovery write is decided on it: each one
+    re-reads its own row and is fenced on that read.
+    """
+    candidate_ids = [
+        item.id
+        for item in items
+        if item.status in (_ACTIVE_STATUS, _READY_STATUS) and item.assignee == _FABRO_ASSIGNEE
+    ]
+    batches: list[dict[str, ClaimStamp | None]] = []
+
+    def stamp_of(*, work_item_id: str) -> ClaimStamp | None:
+        if not batches:
+            read = attempt(
+                action=lambda: claim_stamps_for(
+                    path=store_config(repo=repo), work_item_ids=candidate_ids
+                ),
+                exceptions=_LEDGER_READ_ERRORS,
+            )
+            batches.append({} if isinstance(read, AttemptFailure) else read)
+        if work_item_id in batches[0]:
+            return batches[0][work_item_id]
+        return claim_stamp(repo=repo, work_item_id=work_item_id)
+
+    return stamp_of
+
+
 def surveyable(
-    *, repo: Path, journal_path: Path, item: WorkItem, merge_hold: MergeHoldReader
+    *,
+    journal_path: Path,
+    item: WorkItem,
+    merge_hold: MergeHoldReader,
+    stamp_of: ClaimStampReader,
 ) -> bool:
     """Whether the survey grades this row's claim.
 
@@ -74,20 +127,20 @@ def surveyable(
     if item.status not in (_ACTIVE_STATUS, _READY_STATUS) or item.assignee != _FABRO_ASSIGNEE:
         return False
     if item.rework_pending and not _handed_off_rework(
-        repo=repo, journal_path=journal_path, item=item
+        journal_path=journal_path, item=item, stamp_of=stamp_of
     ):
         return False
     return merge_hold(work_item_id=item.id) == _MERGE_HOLD_UNHELD
 
 
-def _handed_off_rework(*, repo: Path, journal_path: Path, item: WorkItem) -> bool:
+def _handed_off_rework(*, journal_path: Path, item: WorkItem, stamp_of: ClaimStampReader) -> bool:
     """Whether this marked row is a rework dispatch that handed its merge wait off.
 
     Anything this cannot establish is a parked rework and stays unsurveyed: no
     readable stamp names no run to match, and an unreadable journal is an
     unobservable measurement, which is neither answer.
     """
-    stamp = claim_stamp(repo=repo, work_item_id=item.id)
+    stamp = stamp_of(work_item_id=item.id)
     if stamp is None or stamp.run_id is None:
         return False
     return (

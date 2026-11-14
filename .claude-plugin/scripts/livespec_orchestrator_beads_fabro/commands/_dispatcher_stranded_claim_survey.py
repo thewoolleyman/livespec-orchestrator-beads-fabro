@@ -86,7 +86,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_obser
     journal_records_or_none,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_population import (
-    claim_stamp,
+    ClaimStampReader,
+    prefetched_claim_stamps,
     surveyable,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_projection import (
@@ -145,17 +146,18 @@ def survey_stranded_claims(*, inputs: StrandedClaimInputs) -> StrandedClaimSurve
     """Grade every dispatch claim in the ledger, recovering only the proven ones."""
     by_name = {inventory.name: inventory for inventory in inputs.inventories}
     merge_hold = memoized_current_merge_hold(repo=inputs.repo)
+    stamp_of = prefetched_claim_stamps(repo=inputs.repo, items=inputs.items)
     recovered: list[RecoveredClaim] = []
     held: list[HeldClaim] = []
     for item in inputs.items:
         if not surveyable(
-            repo=inputs.repo,
             journal_path=inputs.journal.path,
             item=item,
             merge_hold=merge_hold,
+            stamp_of=stamp_of,
         ):
             continue
-        outcome = _survey_one(inputs=inputs, item=item, by_name=by_name)
+        outcome = _survey_one(inputs=inputs, item=item, by_name=by_name, stamp_of=stamp_of)
         if isinstance(outcome, HeldClaim):
             held.append(outcome)
             if not inputs.dry_run:
@@ -170,8 +172,9 @@ def _survey_one(
     inputs: StrandedClaimInputs,
     item: WorkItem,
     by_name: dict[str, FactoryInventory],
+    stamp_of: ClaimStampReader,
 ) -> RecoveredClaim | HeldClaim:
-    stamp = claim_stamp(repo=inputs.repo, work_item_id=item.id)
+    stamp = stamp_of(work_item_id=item.id)
     named = None if stamp is None else stamp.factory_name
     attributed = attribute_claim(
         stamp=stamp,

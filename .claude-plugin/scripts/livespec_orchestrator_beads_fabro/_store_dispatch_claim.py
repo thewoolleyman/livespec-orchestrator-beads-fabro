@@ -47,6 +47,8 @@ from livespec_orchestrator_beads_fabro._store_claim_tokens import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from livespec_orchestrator_beads_fabro._beads_client import BeadsRecord
     from livespec_orchestrator_beads_fabro.types import StoreConfig
 
@@ -61,6 +63,7 @@ __all__: list[str] = [
     "claim_row_from_record",
     "claim_stamp_from_record",
     "claim_stamp_metadata",
+    "claim_stamps_for",
     "create_claim_token",
     "record_claim_stamp",
 ]
@@ -145,6 +148,23 @@ def claim_row_for(*, path: StoreConfig, work_item_id: str) -> ClaimRow:
     return claim_row_from_record(
         record=make_beads_client(config=path).show_issue(issue_id=work_item_id)
     )
+
+
+def claim_stamps_for(
+    *, path: StoreConfig, work_item_ids: Sequence[str]
+) -> dict[str, ClaimStamp | None]:
+    """Each named item's claim stamp, read with ONE multi-id `bd show`.
+
+    An id the tenant does not hold is absent from the answer, as `show_issues` leaves
+    it out, so a caller can tell "no such item" from "an item carrying no stamp",
+    which maps to `None`.
+    """
+    records = make_beads_client(config=path).show_issues(issue_ids=list(work_item_ids))
+    return {
+        record_id: claim_stamp_from_record(record=record)
+        for record in records
+        if isinstance(record_id := record.get("id"), str)
+    }
 
 
 def claim_row_from_record(*, record: BeadsRecord) -> ClaimRow:
