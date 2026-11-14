@@ -3257,6 +3257,18 @@ Private helper modules (underscore-prefixed) carry shared plumbing:
   while plan-child disposition REFUSES — "where it cannot determine a child's
   autonomy tier from that recorded classification, it MUST refuse the
   disposition and surface it".
+  AN `unratified-topic` HOLD ALSO NAMES A RELINK CANDIDATE (`bd-ib-jnbcny`), through
+  `_spec_change_tier_relink_candidate` and `_spec_change_tier_wall.standing_hold`,
+  which the wall's refusal and the `hygiene:spec-tier-relink:<id>` attention lane
+  both read so the two cannot name different topics. Three properties an editor
+  must not invert. An amendment is a change between CONSECUTIVE history
+  snapshots, never a difference from the record's own version, because every
+  snapshot after the first amendment still carries its text and a revision that
+  left the heading alone would read as the one that amended it. A rejected
+  revision is excluded by the SAME ratification read the hold uses
+  (`ratified_topics_of_version`), not by a second decision test. And naming a
+  candidate writes nothing and releases nothing: only the `relink-spec-tier`
+  route changes the linked topic.
   TWO EXEMPTIONS ARE LOAD-BEARING. A GROOM-kind variant is exempt at both wall
   surfaces through the shared `criteria_wall_variant`, because a groom target
   reaches that door BECAUSE it is not yet decomposed: judging it holds the groom

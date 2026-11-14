@@ -46,6 +46,7 @@ enumerating a wave's every fault is a refusal nobody reads to the end.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_criteria_wall_variant import (
@@ -64,11 +65,15 @@ from livespec_orchestrator_beads_fabro.commands._spec_change_tier_gate import (
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_hold import (
     REASON_AWAITING_REJUDGEMENT,
+    REASON_UNRATIFIED_TOPIC,
     spec_change_hold,
 )
 from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
     STAGE_DISPATCH,
     recorded_spec_change_tier,
+)
+from livespec_orchestrator_beads_fabro.commands._spec_change_tier_relink_candidate import (
+    relink_candidate,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import (
@@ -89,6 +94,7 @@ __all__: list[str] = [
     "classify_and_hold",
     "spec_change_tier_refusal",
     "spec_change_unrefused_candidates",
+    "standing_hold",
 ]
 
 
@@ -141,11 +147,7 @@ def classify_and_hold(
     classification ran and the standing one when it did not.
     """
     _ = classify_item_spec_change_tier(item=item, repo=repo, path=path, stage=stage, runner=runner)
-    return _held(
-        item=item,
-        config=path,
-        ratified_topics=ratified_proposal_topics(spec_root=repo / SPEC_DIRNAME),
-    )
+    return standing_hold(item=item, config=path, spec_root=repo / SPEC_DIRNAME)
 
 
 def spec_change_tier_refusal(
@@ -297,9 +299,7 @@ def _drain_drops(
     return not due
 
 
-def _held(
-    *, item: WorkItem, config: StoreConfig, ratified_topics: Collection[str]
-) -> SpecChangeHold | None:
+def standing_hold(*, item: WorkItem, config: StoreConfig, spec_root: Path) -> SpecChangeHold | None:
     """This item's standing hold, taking no judgement and reaching no provider.
 
     `item_comment_bodies` answers `None` for a sidecar it could not read and the
@@ -310,10 +310,22 @@ def _held(
     are collapsed HERE rather than branched on: a branch whose two arms return
     the same value is a branch a later editor changes one arm of, and the arm
     that would change is the one nothing in a healthy tenant can reach.
+
+    A hold on a topic NO revision record ratifies also carries the relink
+    candidate the spec history shows, when there is one, so the wall's refusal and
+    the attention lane name the same topic from one reading. Only that reason
+    carries one: a hold with no linked topic has none to relink from, and a
+    ratified one is waiting on a re-judgement rather than on a different stem.
     """
     bodies = item_comment_bodies(path=config, work_item_id=item.id)
-    return spec_change_hold(
+    recorded = recorded_spec_change_tier(comments=bodies or ())
+    if recorded is None:
+        return None
+    hold = spec_change_hold(
         work_item_id=item.id,
-        recorded=recorded_spec_change_tier(comments=bodies or ()),
-        ratified_topics=ratified_topics,
+        recorded=recorded,
+        ratified_topics=ratified_proposal_topics(spec_root=spec_root),
     )
+    if hold is None or hold.reason != REASON_UNRATIFIED_TOPIC:
+        return hold
+    return replace(hold, relink_candidate=relink_candidate(spec_root=spec_root, recorded=recorded))
