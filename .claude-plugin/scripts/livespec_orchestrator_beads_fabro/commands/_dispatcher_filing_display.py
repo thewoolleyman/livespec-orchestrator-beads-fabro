@@ -15,8 +15,13 @@ next author happened to open, and the three that missed it would still read as
 complete. A filer who sees a different display at capture than at groom cannot
 tell which surface is behind.
 
-WHY IT RETURNS TEXT AND NEVER WRITES OR REFUSES. "Filing stays consent-gated and
-a front-end MUST NOT refuse on a finding." So every arm here renders a LINE,
+WHY IT RETURNS TEXT AND NEVER REFUSES, AND WHAT IT NOW APPENDS. It still never
+refuses; its one write is a governing-heading receipt appended to the filed item
+when a default display takes a verdict, so a repeat display of an unchanged item
+reads that record instead of paying for a second judgement. A display that cannot
+read the comments or append the receipt still renders every line. "Filing stays
+consent-gated and a front-end MUST NOT refuse on a finding." So every arm here
+renders a LINE,
 including the two that are configuration faults rather than item faults: a
 malformed `dispatcher.sandbox_capabilities` mirror and an unreadable
 `.livespec.jsonc` both produce a capability line saying so. Raising there would
@@ -55,14 +60,15 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_effective_criteria i
     EffectiveCriteria,
     effective_criteria,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
+from livespec_orchestrator_beads_fabro.commands._dispatcher_filing_governing_reading import (
+    filing_governing_heading_reading,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_capabilities import (
     UNPUBLISHED_REPORT,
     mirrored_sandbox_capabilities,
 )
 from livespec_orchestrator_beads_fabro.commands._dod_governing_heading_judge import (
     GoverningHeadingReader,
-    host_governing_heading_taking_reader,
 )
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt
 from livespec_orchestrator_beads_fabro.errors import LivespecConfigUnreadableError
@@ -145,11 +151,9 @@ def filing_display(
     """
     not_taken_reason: str | None = None
     if governing is None:
-        taking = host_governing_heading_taking_reader(runner=ShellCommandRunner())(
-            item=item, repo=cwd
-        )
-        verdict = taking.verdict
-        not_taken_reason = taking.not_taken_reason
+        reading = filing_governing_heading_reading(item=item, repo=cwd)
+        verdict = reading.verdict
+        not_taken_reason = reading.not_taken_reason
     else:
         verdict = governing(item=item, repo=cwd)
         if verdict is None:

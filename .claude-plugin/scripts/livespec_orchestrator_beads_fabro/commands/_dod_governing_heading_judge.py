@@ -225,6 +225,7 @@ def host_governing_heading_reader(*, runner: CommandRunner) -> GoverningHeadingR
                 project_root=repo,
                 runner=runner,
                 caller="dod_governing_heading",
+                journal_name=f"purpose:dod_governing_heading@{item.id}",
             ),
         )
 
@@ -242,6 +243,7 @@ def host_governing_heading_taking_reader(*, runner: CommandRunner) -> GoverningH
                 project_root=repo,
                 runner=runner,
                 caller="dod_governing_heading",
+                journal_name=f"purpose:dod_governing_heading@{item.id}",
             ),
         )
 

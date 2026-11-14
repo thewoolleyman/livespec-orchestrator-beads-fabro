@@ -80,6 +80,7 @@ class DriftJudge:
     runner: CommandRunner
     reply: ReplyShape
     caller: str
+    journal_name: str | None = None
     cause: str = ""
 
     def __call__(self, prompt: str) -> str:
@@ -90,6 +91,7 @@ class DriftJudge:
             runner=self.runner,
             reply=self.reply,
             caller=self.caller,
+            journal_name=self.journal_name,
         )
         return response
 
@@ -114,6 +116,7 @@ def drift_judge(
     caller: str,
     payload_root: Path | None = None,
     reply: ReplyShape = "verdict",
+    journal_name: str | None = None,
 ) -> DriftJudge:
     """A `ModelRunner` that puts one rendered prompt to the headless judge.
 
@@ -140,6 +143,7 @@ def drift_judge(
         runner=runner,
         reply=reply,
         caller=caller,
+        journal_name=journal_name,
     )
 
 
@@ -150,6 +154,7 @@ def _judged(
     runner: CommandRunner,
     reply: ReplyShape,
     caller: str,
+    journal_name: str | None,
 ) -> tuple[str, str]:
     """One prompt through the shared chain, or no reply when every candidate fails.
 
@@ -164,6 +169,7 @@ def _judged(
         is_verdict=lambda text: is_reply(text=text),
         timeout_seconds=resolve_drift_judge_timeout_seconds(environ=dict(os.environ)),
         caller=caller,
+        journal_name=journal_name,
         journal_spend=True,
     )
     for ran in chain.attempts:

@@ -200,6 +200,14 @@ def test_a_reply_discarded_by_the_evidence_quote_check_is_displayed_as_not_taken
     assert "definition-of-done findings: none" not in lines
 
 
+def test_a_named_reader_that_returns_no_verdict_names_the_absence(tmp_path: Path) -> None:
+    lines = _display(item=_item(), cwd=_repo(tmp_path=tmp_path), governing=lambda **_: None)
+    assert (
+        "governing-heading verdict not taken: the supplied governing-heading reader returned no verdict"
+        in lines
+    )
+
+
 def test_an_unset_capability_key_is_reported_unpublished_rather_than_empty(
     tmp_path: Path,
 ) -> None:
