@@ -8,7 +8,10 @@ import subprocess
 __all__: list[str] = [
     "client_version",
     "is_petri_era_version",
+    "version_refusal",
 ]
+
+_PETRI_ERA_FLOOR = (0, 396, 0)
 
 
 def client_version(*, binary: str) -> str | None:
@@ -24,4 +27,14 @@ def client_version(*, binary: str) -> str | None:
 def is_petri_era_version(*, version: str) -> bool:
     """Whether version reaches the first upstream release with the Petri validator."""
     release = version.split("-", maxsplit=1)[0]
-    return tuple(int(part) for part in release.split(".")) >= (0, 396, 0)
+    return tuple(int(part) for part in release.split(".")) >= _PETRI_ERA_FLOOR
+
+
+def version_refusal(*, binary: str, version: str | None) -> str | None:
+    """The finding a client that is not Petri-era earns, or `None` when it may validate."""
+    if version is None:
+        return f"Petri-era client control: {binary} did not report a parseable version"
+    if not is_petri_era_version(version=version):
+        floor = ".".join(str(part) for part in _PETRI_ERA_FLOOR)
+        return f"Petri-era client control: fabro {version} is older than required {floor}"
+    return None
