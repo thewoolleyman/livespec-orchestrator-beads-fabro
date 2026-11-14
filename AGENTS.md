@@ -281,6 +281,13 @@ Plugins, sessions and hosts:
   reload plugins in your own pane → `.ai/plugin-cache-lease-and-rebind.md`.
 - You are driving this repository from Codex or pi →
   `.ai/codex-dogfooding.md` or `.ai/pi-dogfooding.md`.
+- You are about to message, ask, direct or answer another agent session on any
+  host, or run `herdr pane send-text`, `herdr pane run`, `herdr agent prompt` or
+  `tmux send-keys` against a pane you did not create → the fleet's distributed
+  SendMessage protocol, https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md.
+  Claude sessions talk through `SendMessage` (across machines via Remote
+  Control), never by typing into each other's panes (maintainer ruling
+  2026-11-14).
 - You need a second agent session for a bounded job, or to message another
   session → `.ai/herdr-helper-sessions.md`.
 - You are opening, moving or placing a herdr tab → `.ai/herdr-plan-tabs.md`.

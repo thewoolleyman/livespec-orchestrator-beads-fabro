@@ -97,9 +97,9 @@
     "heading": "## Planning Lane realization",
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "test": "TODO",
-    "reason": "Added by the planning-lane-realization revise pass (epic livespec-zs22, increment 3a / work-items livespec-zs22.5 + livespec-zs22.3). The shared heading_coverage check is satisfied by enumerating every SPECIFICATION/ H2 heading; the plan front-end's behavior is exercised by the e2e-cli fixture and the handoff self-sufficiency gate rather than a unit test, so a real test id is populated by the governed propose-change/revise resulting_files[] mechanism once this heading gains an exercising test.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_plan_archive_completeness_review_scenario55.test_scenario55_archive_commissions_and_requires_complete_durable_review",
+    "reason": "Bound by bd-ib-h5jr5x to an integration-tier scenario test that creates a real plan and closed child through the plan package, proves the archive entry point commissions a supplied fresh completeness reviewer when no durable evidence exists, refuses a review that withholds coverage for a deferred research requirement, and archives only after valid independent evidence is durable.",
+    "work_item": "bd-ib-h5jr5x"
   },
   {
     "heading": "## Dispatch-time baseline conformance gate",
@@ -763,9 +763,9 @@
     "heading": "## Scenario 55 \u2014 plan archive commissions a missing independent completeness review",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "Added by the automatic-archive-completeness-review revision. The behavior requires an integration-tier or higher exercising test because it coordinates a real plan, ledger evidence, and archive state; the implementation slice bd-ib-ydjf7k supplies that binding.",
-    "work_item": "bd-ib-heat"
+    "test": "tests.integration.test_plan_archive_completeness_review_scenario55.test_scenario55_archive_commissions_and_requires_complete_durable_review",
+    "reason": "Bound by bd-ib-h5jr5x to an integration-tier scenario test that creates a real plan and closed child through the plan package, proves the archive entry point commissions a supplied fresh completeness reviewer when no durable evidence exists, refuses a review that withholds coverage for a deferred research requirement, and archives only after valid independent evidence is durable.",
+    "work_item": "bd-ib-h5jr5x"
   },
   {
     "heading": "## Not-human-gated decision constraints",
@@ -2579,8 +2579,8 @@
     "heading": "## Scenario 285 \u2014 Red and Green run as separate nodes and every implement commit is made by a command node",
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "test": "TODO",
-    "reason": "An integration-tier test is owed for this heading: bd-ib-vy75ws runs red, commit_red, green and commit_green in place of the single implement node and states that this row gets its real test there. Repointed from the cross-tenant owner livespec-dev-tooling-sv6m5p, which this repository's ledger cannot resolve.",
+    "test": "tests.integration.test_implement_red_green_graph_scenario285",
+    "reason": "Scenario 285 is exercised against the released workflow payload and a scratch-repository reset helper.",
     "work_item": "bd-ib-vy75ws"
   },
   {
@@ -3237,5 +3237,29 @@
     "test": "TODO",
     "work_item": "bd-ib-yw7yot",
     "reason": "A test at the integration tier or above is owed: the operator preserve tool's own suite, delivered by bd-ib-yw7yot, driving preserve_runs.sh against a local bare origin."
+  },
+  {
+    "heading": "## Scenario 371 \u2014 An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "reason": "A real test at the integration tier or above is owed for this heading. The drive impl: launch path is run against doubled systemd-run, slice and bound-file states: a host with the slice and the bound file gets a scoped launch carrying MemoryMax and OOMPolicy=continue; a host missing any condition gets the unchanged argv and environment; a failing scope launcher falls back to exactly one unscoped launch; each case appends a dispatch-launch-scope journal record naming the launch it used. bd-ib-szbxu7 owns it.",
+    "work_item": "bd-ib-szbxu7"
+  },
+  {
+    "heading": "## Scenario 348 \u2014 A seeded recovery dispatch reseeds its seed onto the current default branch, holds on a reseed conflict, and routes a seed carrying no work fresh",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-zzhy5t",
+    "reason": "A test at the integration tier or above is owed by bd-ib-zzhy5t: recovery routing driven against a local bare origin whose default branch (not named master) has advanced past a seed's merge base, covering the moved, conflicting, work-free, work-free-ruled and already-current seed routes."
+  },
+  {
+    "heading": "## Scenario 372 \u2014 A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing",
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "test": "TODO",
+    "work_item": "bd-ib-5xihdt",
+    "reason": "An integration-tier test is owed by bd-ib-5xihdt: the reseed route driven against a local bare origin whose default branch has advanced past the seed's merge base."
   }
 ]

@@ -59,8 +59,8 @@ REPOSITORY_LAYER = "repository"
 WORKFLOW_DEFAULT_LAYER = "default"
 
 # The graph's worst-case path, expressed as the visit budget each node can
-# actually consume in one run -- read off `workflow.fabro`: `dod_gate` and
-# `implement` carry `max_retries=1` (two attempts each), the janitor fix loop is
+# actually consume in one run -- read off `workflow.fabro`: `dod_gate`, `red`,
+# and `green` carry `max_retries=1` (two attempts each), the janitor fix loop is
 # bounded by the `< 3` visit guard on the janitor's own visit count (three
 # janitor visits, two fix attempts), and the review loop is bounded by the
 # default `review_fix_visit_cap` of four review visits with three
@@ -71,17 +71,26 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # `fabro run` subprocess ceiling comes from, so an omitted node is a node the
 # Dispatcher can kill the CLI out from under.
 #
-# `implementation_diff` after `implement` carries the budget of the retryable
+# `implementation_diff` after `commit_green` carries the budget of the retryable
 # node it guards, because it can be reached once per attempt of it. It is cheap
 # in practice (one `git` call) and budgeting it at the guarded node's count is
 # what keeps the ceiling ABOVE the graph rather than level with an optimistic
 # reading of it.
 #
+# THE SPLIT IMPLEMENT STAGE (Scenario 285; work-item bd-ib-vy75ws). `green` is
+# entered through `green_admission`, which admits three visits, and ONCE MORE by
+# `green_incomplete_route`, which re-enters an incomplete turn one time and fails
+# the second; so `green` has four visits of two attempts each, EIGHT, and
+# `green_incomplete_route` is entered at most TWICE. Every `green` visit that
+# does not declare the Red test wrong passes `implement_completion` once, a
+# failed one passing `green_amendment_route` first, and each completed visit
+# reaches `commit_green` once, so those three are FOUR.
+#
 # `implement_completion` (v165, Scenario 204; work-item bd-ib-ahxcjx) is the
-# OTHER postcondition of that same turn and is budgeted identically for the
-# identical reason: it sits on `implement`'s single fallthrough, so each attempt
-# of the turn can reach it once. It is cheaper still than the diff breaker --
-# one file read -- and this repository declares it DOWNWARD at 600 s in
+# postcondition of the `green` turn and is budgeted at that turn's visit count
+# for the diff breaker's reason: each visit of the turn can reach it once. It is
+# cheaper still than the diff breaker -- one file read -- and this repository
+# declares it DOWNWARD at 600 s in
 # `.livespec.jsonc`, which is the credential floor's own documented remedy
 # applied to work that genuinely takes milliseconds.
 #
@@ -165,10 +174,16 @@ WORKFLOW_DEFAULT_LAYER = "default"
 # the only path out, so nothing re-enters it.
 _WORST_CASE_VISITS: Mapping[str, int] = {
     "dod_gate": 2,
-    "implement": 6,
-    "implement_commit_settle": 3,
-    "implement_completion": 3,
-    "implement_hook_route": 3,
+    "red_admission": 4,
+    "red": 6,
+    "commit_red": 3,
+    "green_admission": 4,
+    "green": 8,
+    "green_amendment_route": 4,
+    "implement_completion": 4,
+    "green_incomplete_route": 2,
+    "commit_green": 4,
+    "test_wrong_reset": 3,
     "implementation_diff": 3,
     "janitor_admission": 3,
     "janitor": 3,

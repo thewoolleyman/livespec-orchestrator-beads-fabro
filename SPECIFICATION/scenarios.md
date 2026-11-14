@@ -5280,6 +5280,19 @@ Feature: one authoritative result reader for deadline and relay callers
     And a stale local branch file cannot satisfy the remote blob result
     And a comment saying verified cannot satisfy a typed verified proof
     And a query to the wrong repository cannot discharge the requested target
+
+  Scenario: a verified plan record that a later capture or carrier-map event displaced does not satisfy a verified_proof wait
+    Given a plan epic whose next_action awaits a verified_proof result for its plan assertions at a named build
+    And a verified plan Proof of Done record covering those assertions at that build
+    When a captured plan record is posted after that verified record
+    Then the shared reader reports the verified_proof result unsatisfied
+    And the observation's detail names the later captured record
+    When instead a carrier-map scope event is recorded after that verified record
+    Then the shared reader reports the verified_proof result unsatisfied
+    And the observation's detail names that carrier-map event
+    When instead only a ruling that is not a carrier-map event follows the verified record
+    Then the shared reader reports the verified_proof result satisfied
+    And resume_directive on an epic whose only verified record is displaced keeps the proof pointer and persists no derived review or archive pointer
 ```
 
 ## Scenario 147 — A plan deadline survives pointer rewrites and permits causal recovery
@@ -7574,6 +7587,29 @@ Feature: Recovery routing for an automatically released item
     When the item is later released for recovery again with no newer ruling
     Then its recovery route is graded by the clause's ordinary order without that ruling
 
+  Scenario: A seed ruled on the item's own publish branch is read from the reclaim's preservation ref
+    Given an item resting ready whose earlier run's publish branch feat/<item> stands on origin at commit S with no live run
+    And a livespec-seed-ruling comment on the item names refs/heads/feat/<item> at S
+    When the Dispatcher next dispatches the item
+    Then the stale publish-branch reclaim preserves S at refs/livespec/preserved-publish/<item>/S and deletes feat/<item>
+    And the seed record names refs/livespec/preserved-publish/<item>/S as its preservation reference and S as its immutable commit
+    And the run's sandbox fetches S from refs/livespec/preserved-publish/<item>/S and checks out S
+    And the item carries one livespec-seed-ruling-consumed comment naming the ruling and the run
+
+  Scenario: A seed taken from the observed published head is read from the reclaim's preservation ref
+    Given an item released for recovery whose route is seeded from the observed published head S on its publish branch feat/<item>
+    When the Dispatcher dispatches the item and the reclaim preserves S and deletes feat/<item>
+    Then the seed record names refs/livespec/preserved-publish/<item>/S as its preservation reference
+    And the run's sandbox fetches S from that preservation ref, not from feat/<item>
+
+  Scenario: A preservation ref that does not stand at the seed commit holds the item
+    Given an item routed seeded from its own publish branch at commit S
+    And the reclaim's preservation ref for the dispatch stands at a commit other than S
+    When the Dispatcher verifies the preservation ref before launch
+    Then no run is launched and the item is routed held
+    And the recovery-held record names the preservation ref, S and the commit observed at the preservation ref
+    And a current seed ruling for the item stays current
+
   Scenario: A needs-human ref named outside the run id is honoured as the run's terminal tree
     Given an item released for recovery whose earlier run has run id U
     And no ref needs-human/U exists, while ref needs-human/A's tip commit carries the trailer Fabro-Run: U
@@ -7695,6 +7731,28 @@ Feature: Recovery routing for an automatically released item
     Then the route is held and the recovery-held record names that measurement
     And the route is not seeded from needs-human/U
 
+  Scenario: An operator preserve moves a dispatch-id needs-human ref forward onto a tree that descends from it
+    Given an earlier run of the item, dispatched as D, carried by refs/heads/needs-human/D at commit S1
+    And an operator preserve of that run preserves commit S2, which descends from S1
+    When the preserve writes the run's needs-human ref
+    Then a remote ref listing of origin shows refs/heads/needs-human/D at S2
+    And it shows no ref refs/heads/needs-human/D-<first twelve hexadecimal digits of S2>
+    And the preserve's report names refs/heads/needs-human/D and S1 as the commit it moved from, and reports the write verified
+
+  Scenario: An operator preserve keeps a diverged dispatch-id needs-human ref and writes a suffixed one
+    Given an earlier run of the item, dispatched as D, carried by refs/heads/needs-human/D at commit S1
+    And an operator preserve of that run preserves commit S2, which does not descend from S1
+    When the preserve writes the run's needs-human ref
+    Then a remote ref listing of origin shows refs/heads/needs-human/D still at S1
+    And it shows refs/heads/needs-human/D-<first twelve hexadecimal digits of S2> at S2
+
+  Scenario: A forward move rejected after a concurrent write falls back to the suffixed ref
+    Given refs/heads/needs-human/D at commit S1, and an operator preserve of commit S2, which descends from S1
+    And before the preserve's push lands, another writer moves refs/heads/needs-human/D to commit S3, which is not an ancestor of S2
+    When the preserve's push, which is not forced, is rejected
+    Then a remote ref listing of origin shows refs/heads/needs-human/D still at S3
+    And it shows refs/heads/needs-human/D-<first twelve hexadecimal digits of S2> at S2
+
   Scenario: A recovery route with nothing passed over records an empty list
     Given an item released for recovery whose only needs-human tree is the one its route takes
     When the Dispatcher journals the item's recovery-route record
@@ -7704,6 +7762,40 @@ Feature: Recovery routing for an automatically released item
     Given two items released for recovery in the same pass
     When the Dispatcher grades both items' recovery routes
     Then the needs-human refs and their tip commit messages are listed once for the pass
+
+  Scenario: A commit-settle step of a run routed fresh fails when the settled commit has left the run's start commit
+    Given a run routed fresh whose base commit is B, with no refresh yet
+    And its implement stage replaced the run branch's history, so the settled commit C does not have B as an ancestor
+    When implement_commit_settle settles C
+    Then the stage is settled as failed with a cause that names B and C
+    And before it fails, the step preserves C to the run's needs-human ref, and the cause names that ref
+    And the run does not route onward as though implement had settled
+
+  Scenario: A commit-settle step of a run routed fresh passes a settled commit that descends from its start commit
+    Given a run routed fresh whose base commit is B, with no refresh yet
+    And the settled commit C has B as an ancestor
+    When fix_commit_settle settles C
+    Then the step passes
+
+  Scenario: After a refresh, a run routed fresh is checked against the refreshed tip
+    Given a run routed fresh whose refresh step rebuilt the run branch onto a newer default-branch head, producing tip R
+    And a later settled commit C has R as an ancestor
+    When review_fix_commit_settle settles C
+    Then the step passes
+
+  Scenario: publish_draft refuses a run routed fresh whose branch tip has left its start commit
+    Given a run routed fresh whose start commit is B
+    And the run branch tip T does not have B as an ancestor
+    When publish_draft runs
+    Then it pushes nothing and opens or updates no pull request
+    And it fails with a cause that names B and T
+
+  Scenario: A run routed fresh whose latest refresh tip cannot be determined is refused by name
+    Given a run routed fresh whose refresh step rebuilt the run branch
+    And the tip that refresh produced cannot be determined
+    When fix_commit_settle settles a commit C
+    Then the stage is settled as failed with the cause LIVESPEC_FRESH_START_COMMIT_UNAVAILABLE naming that refresh step
+    And the step does not compare C against the run's base commit instead
 ```
 
 ## Scenario 186 — A provider exhaustion observed on one credential account does not refuse dispatch on another account of the same vendor
@@ -15102,4 +15194,111 @@ Feature: Operator preserve copies do not accumulate, and the only copy of a run'
     When the operator preserve tool runs
     Then it pushes no commit for that copy, on this run or any later start, and keeps it
     And its standard-output summary states the count and total bytes of kept copies, and names this copy with its run id, its bytes and the reason no candidate carries work, or objects missing
+```
+
+## Scenario 371 — An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one
+
+```gherkin
+Feature: A dispatcher loop is bounded by the host's dispatch memory slice without ever depending on it
+  As the operator of a host that runs many dispatcher loops
+  I want each impl dispatch's loop launched inside the host's dispatch memory slice with its own memory bound
+  So that one runaway loop cannot exhaust the host, while a host without the slice dispatches exactly as before
+
+  Scenario: A host with the slice gets a scoped launch
+    Given the launching user's service manager loads factory-dispatch.slice and delegates the memory controller
+    And /etc/livespec/factory-dispatch-loop-memory-max holds 3500M
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then the loop process's control group lies in a transient scope under factory-dispatch.slice
+    And that scope reports a memory maximum of 3500M and an out-of-memory policy of continue
+    And the dispatch journal records stage dispatch-launch-scope with launch scoped and the scope unit
+
+  Scenario: A host without the slice launches as before
+    Given the launching user's service manager does not load factory-dispatch.slice, or the host has no /etc/livespec/factory-dispatch-loop-memory-max
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then the loop starts with the same argv and environment as a launch made without the host dispatch memory slice clause
+    And the dispatch journal records stage dispatch-launch-scope with launch unscoped
+
+  Scenario: A scoped launch that fails falls back to the unscoped launch
+    Given the launching user's service manager loads factory-dispatch.slice and delegates the memory controller
+    And /etc/livespec/factory-dispatch-loop-memory-max holds 3500M
+    And the scope launcher exits non-zero without creating a scope or starting a loop
+    When drive executes impl:<work-item-id> and launches the Dispatcher loop
+    Then exactly one loop starts, with the same argv and environment as a launch made without the host dispatch memory slice clause
+    And the dispatch journal records stage dispatch-launch-scope with launch unscoped and the scoped launch's failure as its detail
+```
+
+## Scenario 348 — A seeded recovery dispatch reseeds its seed onto the current default branch, holds on a reseed conflict, and routes a seed carrying no work fresh
+
+```gherkin
+Feature: A seeded run never starts behind the default branch
+  Scenario: A stale seed is reseeded and the run starts from the reseed commit
+    Given a repository whose default branch is named main
+    And an item released for recovery whose seed's merge base is behind main's tip and whose seed's diff against its merge base with main applies to that tip without conflict
+    When the item is dispatched
+    Then the route is seeded
+    And the run's sandbox checks out a commit whose parent chain reaches main's tip
+    And that commit is published under refs/livespec/reseed/<work-item-id>/ before the run starts
+    And the seed record names the original seed ref and commit, the reseed commit and its ref, and main's tip
+    And the original seed ref still stands at its original commit
+  Scenario: A reseed conflict holds the item and names every conflicting path
+    Given an item released for recovery whose seed's diff conflicts with the default branch's tip in two paths
+    When the item is dispatched
+    Then the route is held
+    And the recovery-held record names the refusal seed-reseed-conflict, the seed ref and commit, the default-branch commit and both paths
+    And no run is launched
+    And the seed ref still stands at its original commit
+  Scenario: A seed carrying no work routes fresh
+    Given an item released for recovery whose seed's tree is identical to its merge base with the default branch
+    When the item is dispatched
+    Then the route is fresh
+    And the recovery-route record lists the seed ref and its commit as passed over with the reason no-change
+  Scenario: A seed from a ruling that carries no work consumes the ruling
+    Given an item carrying a current seed ruling whose ruled commit's tree is identical to its merge base with the default branch
+    When the item is dispatched and its run exists
+    Then the route is fresh
+    And the item gains one livespec-seed-ruling-consumed comment naming the ruling
+  Scenario: A seed already on the default branch's tip is used unchanged
+    Given an item released for recovery whose seed's merge base with the default branch is that branch's tip
+    When the item is dispatched
+    Then the route is seeded
+    And the run's sandbox checks out the seed's immutable commit
+    And nothing is published under refs/livespec/reseed/<work-item-id>/
+```
+
+## Scenario 372 — A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing
+
+```gherkin
+Feature: A seeded relaunch far behind the default branch needs no hand-built seed
+  As the operator of a factory whose recovery relaunches start from preserved seeds
+  I want a stale seed moved onto the current default branch as one authored commit
+  So that no seed is rebased inside a run and no relaunch has to be built by hand
+
+  Scenario: A stale seed is re-seeded and the run starts from the reseed commit
+    Given a repository whose default branch on origin is main at commit T
+    And item W released for recovery whose seed ref S stands at commit P, whose merge base with main is 60 commits behind T
+    And the diff from that merge base to P applies to T's tree without conflict
+    When the Dispatcher routes and dispatches W
+    Then it records one commit R whose only parent is T and whose tree is T's tree with that diff applied
+    And R's subject is "reseed W from S onto main" and its message carries Livespec-Reseed-Source and Livespec-Reseed-Onto trailers naming S, P and T
+    And a remote read shows refs/livespec/reseed/W/R at R before the run starts
+    And the run starts from R, and the seed record names that ref, R's full commit id, S, P and T
+    And S still stands at P
+
+  Scenario: A conflicting apply publishes nothing and holds the item for its owner
+    Given item W released for recovery whose stale seed ref S at commit P has a diff that conflicts with main's tip T in two paths
+    When the Dispatcher routes W
+    Then the route is held, and the recovery-held record names seed-reseed-conflict, S, P, T and both paths
+    And the item carries one ledger comment naming the same
+    And no ref under refs/livespec/reseed/W/ exists on origin and no run is launched
+
+  Scenario: A seed that carries no work is never re-seeded
+    Given item W released for recovery whose seed ref S stands at commit P, whose tree equals the tree of its merge base with main
+    When the Dispatcher routes W
+    Then no commit is recorded and no ref under refs/livespec/reseed/W/ is published
+    And the recovery-route record lists S at P as passed over with the reason no-change
+
+  Scenario: A seed already based on the tip is used unchanged
+    Given item W released for recovery whose seed's merge base with main is main's current tip
+    When the Dispatcher routes and dispatches W
+    Then no reseed commit is recorded and the run starts from the seed commit
 ```

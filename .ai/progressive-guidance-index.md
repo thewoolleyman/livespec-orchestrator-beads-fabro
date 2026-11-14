@@ -110,11 +110,21 @@ references passes with its guidance orphaned.
   also BEFORE messaging any other session: inter-session messages go through
   Claude's `SendMessage`, never `herdr agent prompt` into another session's
   pane (maintainer ruling 2026-10-14).
+- Read the fleet's distributed SendMessage protocol,
+  https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md,
+  BEFORE messaging, asking, directing or answering another agent session on any
+  host, and before running `herdr pane send-text`, `herdr pane run`,
+  `herdr agent prompt` or `tmux send-keys` against a pane you did not create.
+  Claude sessions talk through `SendMessage` (across machines via Remote
+  Control), never by typing into each other's panes; a managed hook on the
+  interactive hosts denies it, while a Codex or pi pane and key-only picker input stay allowed (maintainer
+  ruling 2026-11-14).
 - Read `.ai/factory-dispatch-preflight-and-triage.md` BEFORE dispatching a
   work-item or triaging a dispatch that ended badly — `filing_display`
   passing does not mean `dod_gate` will, a primary behind origin fails every
-  dispatch at 0 ms, a workflow fix ships only through a `fix:` release, and a
-  post-merge janitor red names no failing target.
+  dispatch at 0 ms, a workflow fix ships only through a `fix:` release, a
+  seeded relaunch starts from the item's seed ruling and never from a rider,
+  and a post-merge janitor red names no failing target.
 - Read `.ai/factory-working-method.md` BEFORE starting a canary, test
   campaign or local build, proposing an upstream Fabro change, designing a
   measurement, or retracting a claim — the maintainer's throughput,

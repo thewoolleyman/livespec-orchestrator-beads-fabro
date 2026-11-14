@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.329.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.328.0...v0.329.0) (2026-11-14)
+
+
+### Features
+
+* split the implement graph into red and green command stages ([3e4d1a2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3e4d1a2be8d00ad8ad07445e54f5074a7da17507))
+
+
+### Bug Fixes
+
+* align Codex marketplace source registration ([573ffb0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/573ffb0b1a0987487339d6dde73b009897fd00cd))
+* read the already-satisfied ending off a failed-folded run's final step ([252f985](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/252f985a69dea4d6514d6bb50b76b13f70f8dea7))
+* sanitize engine history before publication ([8ed27e2](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/8ed27e20e8538ac3297e6717186b99ca970a5384))
+
+## [0.328.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.327.0...v0.328.0) (2026-11-13)
+
+
+### Features
+
+* **incident:** close a recorded scratch drill ([29316dc](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/29316dc8b9897619157470083bf0174e97b073e9))
+* red ([e41e7f0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/e41e7f00d38fa63a737dc5fa6c101ba24df79675))
+* repair refused publish draft pushes ([18e334c](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/18e334c34dca99c28b7798cc9f551b569741f9ae))
+
+
+### Bug Fixes
+
+* **publish_draft:** restore the newline in the pre-push failed-target parser's printf ([7ad0adb](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/7ad0adbdd4ef092a52cc568641df4f5e488ad61f))
+
+
+### Refactoring
+
+* **incident:** keep the drill evidence helper docstrings verbatim ([ed19b84](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/ed19b84631262f06ecaf8f02935faae0cdb7e0d6))
+
 ## [0.327.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.326.1...v0.327.0) (2026-11-13)
 
 

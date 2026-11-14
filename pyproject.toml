@@ -66,8 +66,8 @@ dev = [
 # module uses its types module for the canonical cross-repo manifest shape.
 # Pin matches livespec's pin (>=0.2.0; ~/livespec).
 [tool.uv.sources]
-livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.207.0" }
-livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.29.1" }
+livespec-dev-tooling = { git = "https://github.com/thewoolleyman/livespec-dev-tooling.git", tag = "v1.208.0" }
+livespec-runtime = { git = "https://github.com/thewoolleyman/livespec-runtime.git", tag = "v0.30.4" }
 
 # ---------------------------------------------------------------------------
 # Ruff — sole linter, formatter, import-sorter, complexity checker.
@@ -554,6 +554,7 @@ neutral_hook_body_path = { not_applicable = "no neutral hook body is installed i
 # spell the flag somewhere; the alternative to this entry is a second indirection
 # whose innermost layer spells it anyway and is no longer the one place to read.
 destructive_cli_allowlist = [
+    "dev-tooling/reset-test-wrong-to-dispatch-base.sh",
     ".claude-plugin/.fabro/workflows/implement-work-item/prompts/",
     ".claude-plugin/scripts/livespec_orchestrator_beads_fabro/commands/_dispatcher_publication_push.py",
     "orchestrator-image/acceptance-live-golden-master.sh",

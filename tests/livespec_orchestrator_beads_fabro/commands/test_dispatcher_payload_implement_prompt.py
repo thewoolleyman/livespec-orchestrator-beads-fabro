@@ -68,7 +68,7 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import default_no
 _PLUGIN_ROOT = Path(dispatcher.__file__).resolve().parents[3]
 _WORKFLOW_DIR = _PLUGIN_ROOT / ".fabro" / "workflows" / "implement-work-item"
 _COMMITTED_WORKFLOW = _WORKFLOW_DIR / "workflow.toml"
-_COMMITTED_PROMPT = _WORKFLOW_DIR / "prompts" / "implement.md"
+_COMMITTED_PROMPT = _WORKFLOW_DIR / "prompts" / "green.md"
 
 _CHECK_SUITE_INPUT = "sandbox_check_suite"
 # The template opener is ASSEMBLED rather than written literally, the fleet
@@ -78,15 +78,15 @@ _OPEN = "{" + "{"
 _CLOSE = "}" + "}"
 _CHECK_SUITE_TOKEN = f"{_OPEN} inputs.{_CHECK_SUITE_INPUT} {_CLOSE}"
 
-_HEADING = "## The commit hook is the full check — run only targeted tests yourself"
+_HEADING = "# Green stage — implement against the Red handoff"
 # Needles sit WITHIN one physical line of the hard-wrapped prose: one
 # straddling a line break fails while the prose says exactly the thing.
 _REQUIRED_PHRASES = (
-    "that suite contains the per-file coverage gate. That hook run IS this stage's",
-    "one full check. Before a commit, run only the targeted tests: every test file",
-    "of a file you edited. Never run the full suite, the per-file coverage check or",
-    "- Coverage is measured over the WHOLE suite, which is why it belongs to the",
-    "This relaxes NOTHING.",
+    "Read the handoff file in full",
+    "Make the Red test pass by changing implementation files only.",
+    "Never change the Red test file.",
+    "livespec-implement-gate-preview.py",
+    "Append, never rewrite an earlier section",
 )
 
 # A declared suite no fleet default can produce, so the binding direction is
@@ -125,18 +125,17 @@ def _materialized(*, payload_dir: Path) -> WorkflowPayload:
 
 
 def _dispatched_prompt(*, payload: WorkflowPayload) -> Path:
-    return payload.graph.parent / "prompts" / "implement.md"
+    return payload.graph.parent / "prompts" / "green.md"
 
 
 def _section(*, text: str) -> str:
-    """The one hook-is-the-full-check section of `text`, up to the next H2."""
+    """The dispatched Green instruction, beginning at its unique heading."""
     assert text.count(_HEADING) == 1, (
         f"the dispatched prompt carries {text.count(_HEADING)} sections headed "
         f"{_HEADING!r}; expected exactly one"
     )
     start = text.index(_HEADING)
-    rest = text.index("\n## ", start + len(_HEADING))
-    return text[start:rest]
+    return text[start:]
 
 
 def _resolved_contract(*, repo: Path) -> ResolvedIntegrationContract:
@@ -163,7 +162,7 @@ def test_the_materialized_payload_is_a_copy_the_run_reads_its_prompt_from(
     assert tmp_path in dispatched.parents
     # The graph the run receives is the one that names this prompt, so a prompt
     # the graph stopped referencing cannot satisfy the assertions below.
-    assert 'prompt="@prompts/implement.md"' in payload.graph.read_text(encoding="utf-8")
+    assert 'prompt="@prompts/green.md"' in payload.graph.read_text(encoding="utf-8")
 
 
 def test_the_dispatched_implement_prompt_carries_the_hook_is_the_full_check_instruction(
@@ -175,10 +174,6 @@ def test_the_dispatched_implement_prompt_carries_the_hook_is_the_full_check_inst
 
     for phrase in _REQUIRED_PHRASES:
         assert phrase in section, f"the dispatched hook-is-the-full-check section omits {phrase!r}"
-    assert _CHECK_SUITE_TOKEN in section, (
-        "the dispatched hook-is-the-full-check section names no check-suite input, so it cannot "
-        "resolve to the target repository's own declaration"
-    )
 
 
 def test_the_committed_run_config_declares_the_check_suite_input(tmp_path: Path) -> None:
@@ -203,19 +198,40 @@ def test_the_committed_run_config_declares_the_check_suite_input(tmp_path: Path)
 def test_the_dispatched_instruction_binds_the_repository_declared_check_suite(
     tmp_path: Path,
 ) -> None:
-    """Binding the projected inputs puts THIS repository's suite in the instruction."""
+    """Binding the projected inputs puts THIS repository's suite in the instruction.
+
+    Since bd-ib-vy75ws the implement stage's `green` prompt names no check suite:
+    its whole-suite run belongs to the `commit_green` command node, and contracts
+    "An implement turn sees its commit gate's verdict before it ends" has the
+    agent run the gate preview instead (pinned above). The agent instruction that
+    still names the repository's suite is the `fix` stage's grading section, so the
+    binding is proved on THAT dispatched prompt, in both directions.
+    """
     payload = _materialized(payload_dir=tmp_path / "payload")
     resolved = _resolved_contract(repo=tmp_path)
     variables = contract_prompt_variables(resolved=resolved)
-    bound = _dispatched_prompt(payload=payload).read_text(encoding="utf-8")
+    bound = (payload.graph.parent / "prompts" / "fix.md").read_text(encoding="utf-8")
+    assert _CHECK_SUITE_TOKEN in bound, "the dispatched fix prompt names no check-suite input"
     for name, value in variables.items():
         bound = bound.replace(f"{_OPEN} inputs.{name} {_CLOSE}", value)
-    section = _section(text=bound)
+    heading = "## A fix turn grades each tree once, through its commit hook"
+    assert bound.count(heading) == 1
+    start = bound.index(heading)
+    section = bound[start : bound.index("\n## ", start + len(heading))]
 
     assert _DECLARED_SUITE in section
     assert _CHECK_SUITE_TOKEN not in section
     # BOTH directions: a binding that fell back to the fleet convention — or
     # that never happened — reads identically on the assertion above alone.
     assert shlex.join(SANDBOX_CHECK_SUITE_DEFAULT) not in section
-    for phrase in _REQUIRED_PHRASES:
-        assert phrase in section, f"the bound coverage section omits {phrase!r}"
+
+
+def test_the_dispatched_green_prompt_leaves_no_check_suite_token_unbound(
+    tmp_path: Path,
+) -> None:
+    """The green prompt carries no check-suite token a run could render unbound."""
+    payload = _materialized(payload_dir=tmp_path / "payload")
+    green = _dispatched_prompt(payload=payload).read_text(encoding="utf-8")
+
+    assert _CHECK_SUITE_TOKEN not in green
+    assert "livespec-implement-gate-preview.py" in _section(text=green)

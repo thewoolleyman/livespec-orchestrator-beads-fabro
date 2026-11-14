@@ -57,7 +57,18 @@ esac
 export HARNESS_POLL_S=0.01
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+LOAD_PIDS=""
+stop_load() {
+    local load_pid
+    for load_pid in $LOAD_PIDS; do kill "$load_pid" 2>/dev/null || true; done
+    for load_pid in $LOAD_PIDS; do wait "$load_pid" 2>/dev/null || true; done
+    LOAD_PIDS=""
+}
+cleanup() {
+    stop_load
+    rm -rf "$WORK"
+}
+trap cleanup EXIT
 
 PASS=0
 FAIL=0
@@ -99,6 +110,19 @@ esac
 # Every listing request is recorded, one server per line, so a case can count what the
 # factory would have been asked; STUB_PS_DELAY_S makes a listing slow, as the petri server's is.
 if [ -n "${STUB_PS_LOG:-}" ]; then printf '%s\n' "$server" >> "$STUB_PS_LOG"; fi
+# Case 20c can hold the first board poll it observes after the item becomes
+# active. The harness releases the stub drive only once this rendezvous exists,
+# then releases the board read after the driven marker is present. Thus the
+# listing's ordering is observed rather than inferred from a sleep.
+if [ -n "${STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE:-}" ] \
+    && [ "$(cat "$STUB_ITEM_STATUS_FILE" 2>/dev/null)" = active ] \
+    && [ ! -e "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" ]; then
+    : > "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE"
+    deadline=$(( $(date +%s) + ${HARNESS_PREFLIGHT_HANG_GUARD_S:-300} ))
+    while [ ! -e "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE" ] && [ "$(date +%s)" -lt "$deadline" ]; do
+        sleep "$HARNESS_POLL_S"
+    done
+fi
 if [ -n "${STUB_PS_DELAY_S:-}" ]; then sleep "$STUB_PS_DELAY_S"; fi
 # A TERM test holds the direct board read that follows take_mutex, when the
 # launcher has written its holder file but has not yet released the mutex.
@@ -120,6 +144,7 @@ for marker in "$STUB_DRIVEN_DIR"/* "$STUB_RESUMED_DIR"/*; do
     marker_item=$(cut -d' ' -f2 "$marker")
     [ "$marker_server" = "$server" ] || continue
     printf 'DRIVEN000001 stub-repo running 2026-10-25 0m05s %s\n' "$marker_item" >> "$rows"
+    : > "$STUB_DRIVE_LISTED_DIR/$marker_item"
 done
 # A one-shot hook that runs AFTER this read has captured its rows and before it
 # prints them.  It lets the harness move a launch from "in flight, unlisted" to
@@ -250,7 +275,11 @@ for argument in "$@"; do
                             fi
                         fi
                     fi
-                    printf 'LEDGER-STATUS %s\n' "$(cat "$STUB_ITEM_STATUS_FILE")"
+                    item_status=$(cat "$STUB_ITEM_STATUS_FILE")
+                    if [ "$item_status" = active ] && [ -n "${STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE:-}" ]; then
+                        : > "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE"
+                    fi
+                    printf 'LEDGER-STATUS %s\n' "$item_status"
                     ;;
                 comment) printf '%s\n' "${!#}" >> "$STUB_LEDGER_COMMENTS" ;;
             esac
@@ -373,9 +402,16 @@ for argument in "$@"; do
                 # TTL, so the launcher's next listing poll reads the board with this run on it.
                 find "$FLEET_LAUNCH_BOARD_SNAPSHOT_DIR" -name '*.ps' -exec touch -d '2 hours ago' {} + 2>/dev/null
             fi
-            # A gated drive lingers after submitting, as a real drive polls the run, so the
-            # launcher's listing poll sees the run before it sees the drive exit.
-            [ -z "${STUB_DRIVE_ADMIT_GATE:-}" ] || sleep 0.5
+            # A real drive polls its run after submitting. Keep this stub alive until a
+            # board listing has observed its marker, so every case orders that observation
+            # instead of hoping a fixed linger outlasts a loaded host's next poll.
+            if [ -n "$item" ] && [ -n "$server" ]; then
+                listed_deadline=$(( $(date +%s) + 10 ))
+                while [ ! -e "$STUB_DRIVE_LISTED_DIR/$item" ] \
+                    && [ "$(date +%s)" -lt "$listed_deadline" ]; do
+                    sleep "$HARNESS_POLL_S"
+                done
+            fi
             printf '{"status": "stub-dispatched", "work_item_id": "%s"}\n' "$item"
             exit 0
             ;;
@@ -513,7 +549,7 @@ HOLD_FILE=""
 new_case() {
     CASE_NAME="$1"
     CASE_DIR="$WORK/case/$CASE_NAME"
-    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,resumed}
+    mkdir -p "$CASE_DIR"/{boards,state,inflight,queue,lock,driven,listed,resumed}
     rmdir "$CASE_DIR/lock"
     CASE_LOG="$CASE_DIR/launcher.log"
     DRIVE_LOG="$CASE_DIR/drive-log"
@@ -554,6 +590,7 @@ new_case() {
     export STUB_WIP_UNREADABLE_FILE="$CASE_DIR/wip-unreadable"
     unset STUB_DRIVE_FAIL_TIMES STUB_DRIVE_FAIL_RC STUB_DRIVE_FAIL_STDOUT STUB_DRIVE_EXPIRE_SNAPSHOT
     export STUB_DRIVEN_DIR="$CASE_DIR/driven"
+    export STUB_DRIVE_LISTED_DIR="$CASE_DIR/listed"
     export STUB_RESUMED_DIR="$CASE_DIR/resumed"
     export STUB_DRIVE_LOG="$DRIVE_LOG"
     export STUB_DRIVE_MUTEX_LOG="$DRIVE_MUTEX_LOG"
@@ -584,12 +621,14 @@ new_case() {
     export STUB_DRIVE_ADMIT_GATE_FILE="$CASE_DIR/admit-gate"
     export STUB_DRIVE_SUBMIT_GATE_FILE="$CASE_DIR/submit-gate"
     export STUB_ITEM_STATUS_UNREADABLE_FILE="$CASE_DIR/item-status-unreadable"
+    export STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE="$CASE_DIR/active-status-read"
     export STUB_ITEM_STATUS_RE_READ_OBSERVATION_FILE="$CASE_DIR/item-status-re-read-observation"
     export STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE="$CASE_DIR/post-stop-status-rendezvous"
     export STUB_DRIVE_WATCHER_ARMED_FILE="$CASE_DIR/watcher-armed"
     export STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE="$CASE_DIR/admission-written"
     export STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE="$CASE_DIR/admit-after-stop-gate"
     unset STUB_DRIVE_ADMIT_GATE STUB_DRIVE_SUBMIT_GATE STUB_DRIVE_ADMIT_ON_TERM STUB_ITEM_STATUS_AWAIT_POST_STOP
+    unset STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE STUB_PS_ACTIVE_LISTING_RELEASE_FILE
 
     export REPO_OVERRIDE="$TENANT"
     export WRAPPER="$STUB/wrapper"
@@ -1214,45 +1253,70 @@ fi
 # free on the board, the held release fills it, so the second launcher sees the
 # fleet at the cap and starts no drive of its own.
 echo "--- 10b. a queued launcher counts a held direct release as in flight"
-new_case direct-release-inflight-counted
-export FLEET_LAUNCH_MAX_WAIT_S=120
-export STUB_READY_BLOCKED_UNTIL_RELEASE=1
-export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
-write_board "$BOARD_GMK" 7 gmk
-: > "$BOARD_HL"
-printf '8\n' > "$CAP_FILE"
-DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
-RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
-held_release_pid=$!
-held_deadline=$(( $(date +%s) + 60 ))
-while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
-    sleep "$HARNESS_POLL_S"
+load_workers=$(nproc 2>/dev/null || echo 1)
+if [ -r /sys/fs/cgroup/cpu.max ]; then
+    read -r load_quota load_period < /sys/fs/cgroup/cpu.max
+    case "$load_quota:$load_period" in
+        *[!0-9:]*|:*) ;;
+        *) load_workers=$(( (load_quota + load_period - 1) / load_period )) ;;
+    esac
+fi
+case $load_workers in ''|*[!0-9]*|0) load_workers=1 ;; esac
+load_worker=0
+while [ "$load_worker" -lt "$load_workers" ]; do
+    while :; do :; done &
+    LOAD_PIDS="$LOAD_PIDS $!"
+    load_worker=$((load_worker + 1))
 done
-if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
-    && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
-    && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
-    pass "the direct release holds its in-flight marker while its drive runs and before its run lists"
-else
-    fail "the direct release did not hold a marker during its drive (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
-    tail -8 "$DIRECT_RELEASE_LOG" >&2
-fi
-SECOND_LOG="$CASE_DIR/second-launcher.log"
-FLEET_LAUNCH_MAX_WAIT_S=4 ONLY_GMK=1 "$LAUNCHER" bd-ib-second > "$SECOND_LOG" 2>&1; second_rc=$?
-if [ "$second_rc" = 75 ] && log_has "$SECOND_LOG" "fleet=8 cap=8" \
-    && ! grep -qx 'bd-ib-second' "$DRIVE_LOG"; then
-    pass "a queued launcher counts the held direct release against the cap and starts no drive"
-else
-    fail "a queued launcher did not count the held direct release (rc=$second_rc drives=$(drive_log_items))"
-    tail -6 "$SECOND_LOG" >&2
-fi
-: > "$STUB_DRIVE_ADMIT_GATE_FILE"
-wait "$held_release_pid"; held_release_rc=$?
-if [ "$held_release_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
-    pass "the direct release drops its marker once its run lists"
-else
-    fail "the direct release did not finish cleanly (rc=$held_release_rc)"
-    tail -8 "$DIRECT_RELEASE_LOG" >&2
-fi
+for held_attempt in $(seq 1 "${HARNESS_CASE_10B_ATTEMPTS:-30}"); do
+    new_case "direct-release-inflight-counted-$held_attempt"
+    # Preserve the board reading taken before launch. The drive then submits and
+    # exits while this snapshot remains young, reproducing the loaded-host race.
+    export FLEET_LAUNCH_MAX_WAIT_S=0
+    export FLEET_LAUNCH_BOARD_TTL_S=300
+    export STUB_READY_BLOCKED_UNTIL_RELEASE=1
+    export STUB_DRIVE_ADMIT_GATE="$STUB_DRIVE_ADMIT_GATE_FILE"
+    write_board "$BOARD_GMK" 7 gmk
+    : > "$BOARD_HL"
+    printf '8\n' > "$CAP_FILE"
+    mkdir -p "$SNAPSHOT_DIR"
+    . "$LAUNCH_DIR/board-snapshot.sh"
+    "$STUB/fabro" ps -a --server "$GMK_URL" > "$(board_snapshot_file "$GMK_URL")"
+    "$STUB/fabro" ps -a --server "$HL_URL" > "$(board_snapshot_file "$HL_URL")"
+    DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
+    RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
+    held_release_pid=$!
+    held_deadline=$(( $(date +%s) + 60 ))
+    while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
+        sleep "$HARNESS_POLL_S"
+    done
+    if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
+        && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
+        && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+        pass "attempt $held_attempt: the direct release holds its in-flight marker while its drive runs and before its run lists"
+    else
+        fail "attempt $held_attempt: the direct release did not hold a marker during its drive (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
+        tail -8 "$DIRECT_RELEASE_LOG" >&2
+    fi
+    SECOND_LOG="$CASE_DIR/second-launcher.log"
+    FLEET_LAUNCH_MAX_WAIT_S=4 ONLY_GMK=1 "$LAUNCHER" bd-ib-second > "$SECOND_LOG" 2>&1; second_rc=$?
+    if [ "$second_rc" = 75 ] && log_has "$SECOND_LOG" "fleet=8 cap=8" \
+        && ! grep -qx 'bd-ib-second' "$DRIVE_LOG"; then
+        pass "attempt $held_attempt: a queued launcher counts the held direct release against the cap and starts no drive"
+    else
+        fail "attempt $held_attempt: a queued launcher did not count the held direct release (rc=$second_rc drives=$(drive_log_items))"
+        tail -6 "$SECOND_LOG" >&2
+    fi
+    : > "$STUB_DRIVE_ADMIT_GATE_FILE"
+    wait "$held_release_pid"; held_release_rc=$?
+    if [ "$held_release_rc" = 0 ] && [ -z "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
+        pass "attempt $held_attempt: the direct release drops its marker once its run lists"
+    else
+        fail "attempt $held_attempt: the direct release did not finish cleanly (rc=$held_release_rc)"
+        tail -8 "$DIRECT_RELEASE_LOG" >&2
+    fi
+done
+stop_load
 
 # --- 11. a resume marker stays counted until the board lists the run --------
 # The resume client returns at once, before the run lists on the board.  The
@@ -1902,22 +1966,75 @@ STOP_LOG="$CASE_DIR/launcher.log"
 ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after > "$STOP_LOG" 2>&1 &
 stop_pid=$!
 if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
+    rm -f "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE"
     set_hold "$HOLD_FILE" 'engine restart'
-    sleep 0.3
-    held_alive=0
-    if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
-    : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
-    wait "$stop_pid"
-    stop_rc=$?
-    if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
-        && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after ]; then
-        pass "a hold set after the item reads active leaves the drive alone and the run lists"
+    if wait_for_file "$STUB_ITEM_STATUS_ACTIVE_READ_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+        held_alive=0
+        if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
+        : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+        wait "$stop_pid"
+        stop_rc=$?
+        if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
+            && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after ]; then
+            pass "a hold set after the item reads active leaves the drive alone and the run lists"
+        else
+            fail "a hold set after admission disturbed the drive (rc=$stop_rc alive=$held_alive)"
+            tail -n 8 "$STOP_LOG" >&2
+        fi
     else
-        fail "a hold set after admission disturbed the drive (rc=$stop_rc alive=$held_alive)"
-        tail -n 8 "$STOP_LOG" >&2
+        fail "the launcher did not re-read active after the hold in the hold-after-admission case"
+        stop_launcher "$stop_pid"
+        wait "$stop_pid" 2>/dev/null
     fi
 else
     fail "the stub item never read active in the hold-after-admission case ($WAIT_FAILURE_DETAIL)"
+    stop_launcher "$stop_pid"
+    wait "$stop_pid" 2>/dev/null
+fi
+
+# 20c delayed-listing control. The launcher's board read is held after it has
+# re-read the active item. Only then may the stub submit its run; the read is
+# released after the driven marker exists. This makes the former poll-versus-
+# exit race deterministic without a wall-clock allowance.
+prepare_330_case hold-after-admission-delayed-listing
+STOP_LOG="$CASE_DIR/launcher.log"
+export STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE="$CASE_DIR/active-listing-read"
+export STUB_PS_ACTIVE_LISTING_RELEASE_FILE="$CASE_DIR/release-active-listing-read"
+: > "$STUB_DRIVE_ADMIT_GATE_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-hold-after-delayed > "$STOP_LOG" 2>&1 &
+stop_pid=$!
+if wait_for_item_status active "$stop_pid" "$STOP_LOG"; then
+    set_hold "$HOLD_FILE" 'engine restart'
+    # The launcher lists before its next hold re-read. The normal case above
+    # proves that re-read; this control waits for the earlier board-poll state.
+    if wait_for_file "$STUB_PS_ACTIVE_LISTING_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+        held_alive=0
+        if kill -0 "$stop_pid" 2>/dev/null && ! drive_gone; then held_alive=1; fi
+        : > "$STUB_DRIVE_SUBMIT_GATE_FILE"
+        if wait_for_file "$STUB_DRIVEN_DIR/bd-ib-hold-after-delayed" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+            : > "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE"
+            wait "$stop_pid"
+            stop_rc=$?
+            if [ "$held_alive" = 1 ] && [ "$stop_rc" = 0 ] && ! log_has "$STOP_LOG" "stopped the drive" \
+                && log_has "$STOP_LOG" "LISTED on petri" && [ "$(drive_log_items)" = bd-ib-hold-after-delayed ]; then
+                pass "a hold set after the item reads active survives a delayed run-listing poll"
+            else
+                fail "a delayed listing poll disturbed the post-admission drive (rc=$stop_rc alive=$held_alive)"
+                tail -n 8 "$STOP_LOG" >&2
+            fi
+        else
+            fail "the delayed-listing stub never submitted its run after the observed poll"
+            : > "$STUB_PS_ACTIVE_LISTING_RELEASE_FILE"
+            stop_launcher "$stop_pid"
+            wait "$stop_pid" 2>/dev/null
+        fi
+    else
+        fail "the launcher did not enter the delayed listing poll after item admission"
+        stop_launcher "$stop_pid"
+        wait "$stop_pid" 2>/dev/null
+    fi
+else
+    fail "the stub item never read active in the delayed hold-after-admission case ($WAIT_FAILURE_DETAIL)"
     stop_launcher "$stop_pid"
     wait "$stop_pid" 2>/dev/null
 fi
@@ -1969,14 +2086,27 @@ for after_stop in admitted unreadable; do
         fi
         set_hold "$HOLD_FILE" 'engine restart'
         if [ "$after_stop" = admitted ] \
-            && { ! wait_for_drive_gone 10 || ! wait_for_file "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" 10; }; then
-            fail "the stopped drive did not exit, or its TERM watcher never ran, before case 20e released its admission rendezvous"
+            && ! wait_for_file "$STUB_ITEM_STATUS_POST_STOP_RENDEZVOUS_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+            fail "the stopped drive's TERM watcher never ran before case 20e released its admission rendezvous"
             report_case_20e_admission_order
             stop_launcher "$stop_pid"
             wait "$stop_pid" 2>/dev/null
             continue
         fi
-        if [ "$after_stop" = admitted ]; then : > "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE"; fi
+        if [ "$after_stop" = admitted ]; then
+            # The watcher was triggered by stop_drive's TERM.  Release its writer
+            # immediately and prove its admission landed before the launcher can
+            # perform its post-stop status read; waiting for the stopped primary
+            # first is a load-sensitive ordering assumption.
+            : > "$STUB_DRIVE_ADMIT_AFTER_STOP_GATE_FILE"
+            if ! wait_for_file "$STUB_ITEM_STATUS_ADMISSION_WRITTEN_FILE" "$HARNESS_PREFLIGHT_HANG_GUARD_S"; then
+                fail "the stopped drive's TERM watcher did not write its delayed admission"
+                report_case_20e_admission_order
+                stop_launcher "$stop_pid"
+                wait "$stop_pid" 2>/dev/null
+                continue
+            fi
+        fi
         wait "$stop_pid"
         stop_rc=$?
         if [ "$stop_rc" != 0 ] \
@@ -2856,6 +2986,21 @@ if [ "$zero_rc" = 0 ] && [ "$(drive_log_items)" = "bd-ib-zero bd-ib-zero" ] \
     pass "a drive that exits 0 before its run lists re-takes ticket 100 rather than dropping the item"
 else
     fail "a zero-status early drive exit dropped the item (rc=$zero_rc, dispatches: $(drive_log_items))"
+    tail -8 "$CASE_LOG" >&2
+fi
+new_case reticket-zero-exit-not-ready
+open_boards
+export FLEET_LAUNCH_MAX_WAIT_S=120
+export STUB_DRIVE_FAIL_TIMES=1
+export STUB_DRIVE_FAIL_RC=0
+printf 'active\n' > "$STUB_ITEM_STATUS_FILE"
+ONLY_GMK=1 TICKET_NS=100 "$LAUNCHER" bd-ib-zero-not-ready > "$CASE_LOG" 2>&1
+zero_not_ready_rc=$?
+if [ "$zero_not_ready_rc" = 0 ] && [ "$(drive_log_items)" = bd-ib-zero-not-ready ] \
+    && grep -qF 'terminal: item=bd-ib-zero-not-ready ticket=100 cause=drive-exit-early drive-exit=0' "$CASE_LOG"; then
+    pass "a zero-status drive with no final listing does not re-take a ticket when its item is not ready"
+else
+    fail "a zero-status drive re-took a ticket despite its item not reading ready (rc=$zero_not_ready_rc, dispatches: $(drive_log_items))"
     tail -8 "$CASE_LOG" >&2
 fi
 new_case reticket-refused

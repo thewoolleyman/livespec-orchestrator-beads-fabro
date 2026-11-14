@@ -1,12 +1,13 @@
-"""The completion field the factory implement stage must direct its turn to state.
+"""The completion field the factory Green stage must direct its turn to state.
 
 `SPECIFICATION/contracts.md` section "Self-contained plugin dispatch" ->
-"An implement turn that ends incomplete does not succeed" (v165) requires the
-`implement` prompt to direct the turn to END ITS FINAL REPLY with a structured
-completion field stating whether the work item's Definition of Done is complete
-on the committed branch. That is a claim about PROSE: the field is authored by
-the agent out of this instruction and is rendered by no Python caller, so nothing
-host-side can observe whether a turn was ever asked for it.
+"An implement turn that ends incomplete does not succeed" requires the `green`
+prompt to direct the turn to END ITS FINAL REPLY with a structured completion
+field stating whether the work item's Definition of Done is complete in the tree
+the turn leaves for `commit_green` to commit. That is a claim about PROSE: the
+field is authored by the agent out of this instruction and is rendered by no
+Python caller, so nothing host-side can observe whether a turn was ever asked
+for it.
 
 THE MECHANISM IS NOT ASSERTED HERE AND THIS INSTRUCTION IS NOT ASSERTED THERE.
 `tests/integration/test_implement_completion_field_scenario204.py` owns what the
@@ -17,18 +18,25 @@ this module derives it from the GATE'S OWN SCRIPT rather than spelling it, so a
 rename on either side fails here instead of in production — where it would
 surface as a run that recorded its completion somewhere nothing looks.
 
-The prompt under test is DERIVED from the committed graph's `implement` node
-rather than spelled, so this asserts about the file that node actually
-dispatches: a literal path would keep passing after the node was re-pointed at a
-different prompt, which is an instrument that cannot return the hit it exists to
-find. The sibling control asserts the derivation named exactly one such node and
-that the file it named is on disk.
+The prompt under test is DERIVED from the committed graph's `green` node rather
+than spelled, so this asserts about the file that node actually dispatches: a
+literal path would keep passing after the node was re-pointed at a different
+prompt, which is an instrument that cannot return the hit it exists to find.
+The sibling control asserts the derivation named exactly one such node and that
+the file it named is on disk.
+
+The graph half asserts the routing the clause requires of the split graph: every
+`green` ending other than a declared test-wrong reaches the completion gate, the
+gate reads the `green` turn's output, a complete turn proceeds to `commit_green`,
+and an incomplete one reaches the route that re-enters `green` or fails.
 """
 
 from __future__ import annotations
 
 import re
 from pathlib import Path
+
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dot_graph import parse_dot_graph
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _WORKFLOW_DIR = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
@@ -43,8 +51,9 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_IMPLEMENT_NODE = "implement"
+_GREEN_NODE = "green"
 _GATE_NODE = "implement_completion"
+_INCOMPLETE_ROUTE = "green_incomplete_route"
 
 # The record path, read off the gate's own `git rev-parse --git-path` argument.
 _RECORD_PATH = re.compile(r"git rev-parse --git-path (?P<path>livespec-[\w-]+)\)")
@@ -63,11 +72,10 @@ _SECTION = re.compile(
 _REQUIRED_PHRASES = (
     "This stage's outcome is decided from a structured COMPLETION FIELD you",
     "state, NOT from your turn merely ending. End your final reply with that",
-    "field, stating whether the work-item's Definition of Done is complete on",
-    "the committed branch, and record the SAME field — as the last thing you",
+    "field, stating whether the work-item's Definition of Done is complete in",
+    "the tree you leave for `commit_green` to commit, and record the SAME",
     '{"definition_of_done_complete": true}',
     '{"definition_of_done_complete": false}',
-    "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS",
 )
 
 # The three verdicts the clause enumerates, pinned POSITIVELY — each as its own
@@ -84,24 +92,24 @@ def _node_bodies() -> dict[str, str]:
     return {block.group("name"): block.group("body") for block in _NODE_BLOCK.finditer(graph)}
 
 
-def _implement_prompt_files() -> tuple[str, ...]:
-    """Prompt filenames of every node named `implement` in the committed graph."""
+def _green_prompt_files() -> tuple[str, ...]:
+    """Prompt filenames of every node named `green` in the committed graph."""
     names: list[str] = []
     for name, body in _node_bodies().items():
-        if name != _IMPLEMENT_NODE:
+        if name != _GREEN_NODE:
             continue
         attr = _PROMPT_ATTR.search(body)
-        assert attr is not None, f"node {_IMPLEMENT_NODE} declares no prompt"
+        assert attr is not None, f"node {_GREEN_NODE} declares no prompt"
         names.append(attr.group("file"))
     return tuple(names)
 
 
-_IMPLEMENT_PROMPT_FILES = _implement_prompt_files()
+_GREEN_PROMPT_FILES = _green_prompt_files()
 
 
-def _implement_prompt_text() -> str:
-    assert len(_IMPLEMENT_PROMPT_FILES) == 1
-    return (_PROMPTS_DIR / _IMPLEMENT_PROMPT_FILES[0]).read_text(encoding="utf-8")
+def _green_prompt_text() -> str:
+    assert len(_GREEN_PROMPT_FILES) == 1
+    return (_PROMPTS_DIR / _GREEN_PROMPT_FILES[0]).read_text(encoding="utf-8")
 
 
 def _gate_record_path() -> str:
@@ -112,22 +120,30 @@ def _gate_record_path() -> str:
     return sorted(found)[0]
 
 
-def test_the_graph_scan_names_one_implement_prompt_that_is_on_disk() -> None:
+def _edges() -> set[tuple[str, str, str | None]]:
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+    return {
+        (edge.source, edge.destination, edge.attributes.get("condition")) for edge in graph.edges
+    }
+
+
+def test_the_graph_scan_names_one_green_prompt_that_is_on_disk() -> None:
     """Control: the derivation can return a hit, and the file it names exists."""
-    assert len(_IMPLEMENT_PROMPT_FILES) == 1, (
-        f"graph declares {len(_IMPLEMENT_PROMPT_FILES)} `{_IMPLEMENT_NODE}` nodes "
+    assert len(_GREEN_PROMPT_FILES) == 1, (
+        f"graph declares {len(_GREEN_PROMPT_FILES)} `{_GREEN_NODE}` nodes "
         f"with a prompt; expected one"
     )
-    named = _PROMPTS_DIR / _IMPLEMENT_PROMPT_FILES[0]
+    named = _PROMPTS_DIR / _GREEN_PROMPT_FILES[0]
     assert named.is_file(), f"{named} is declared by the graph but absent on disk"
 
 
-def test_the_implement_prompt_directs_the_turn_to_state_a_completion_field() -> None:
+def test_the_green_prompt_directs_the_turn_to_state_a_completion_field() -> None:
     """The instruction exists, once, and says what the clause requires of it."""
-    sections = _SECTION.findall(_implement_prompt_text())
+    sections = _SECTION.findall(_green_prompt_text())
 
     assert len(sections) == 1, (
-        f"the implement prompt carries {len(sections)} sections headed "
+        f"the green prompt carries {len(sections)} sections headed "
         f"{_HEADING!r}; expected exactly one"
     )
     for phrase in _REQUIRED_PHRASES:
@@ -142,7 +158,7 @@ def test_the_instruction_enumerates_all_three_completion_verdicts() -> None:
     as incomplete, so the prompt has to SAY so rather than leave the turn to
     discover it from a failed stage.
     """
-    sections = _SECTION.findall(_implement_prompt_text())
+    sections = _SECTION.findall(_green_prompt_text())
 
     assert len(sections) == 1
     for verdict in (_COMPLETE_VERDICT, _INCOMPLETE_VERDICT, _ABSENT_VERDICT):
@@ -157,15 +173,73 @@ def test_the_instruction_names_the_record_path_the_completion_gate_reads() -> No
     recorded its completion correctly and a gate that found nothing — which the
     gate reports as partial progress, i.e. as the agent's fault.
     """
-    sections = _SECTION.findall(_implement_prompt_text())
+    sections = _SECTION.findall(_green_prompt_text())
 
     assert len(sections) == 1
     assert _gate_record_path() in sections[0]
 
 
-def test_the_instruction_is_read_before_the_turn_is_told_to_finish() -> None:
+def test_the_instruction_is_read_before_the_turn_is_told_to_end() -> None:
     """The field is directed where the turn is still deciding what it has done."""
-    prompt = _implement_prompt_text()
+    prompt = _green_prompt_text()
 
-    assert _HEADING in prompt, f"the implement prompt carries no section headed {_HEADING!r}"
-    assert prompt.index(_HEADING) < prompt.index("## Finish the run")
+    assert _HEADING in prompt, f"the green prompt carries no section headed {_HEADING!r}"
+    assert prompt.index(_HEADING) < prompt.index("## Ending the turn")
+
+
+def test_the_completion_gate_reads_the_green_turns_output() -> None:
+    """The gate grades the Green turn, not the retired single implement node."""
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+
+    assert "implement" not in graph.nodes
+    assert graph.nodes[_GATE_NODE]["stdin_source"] == "context.output.green"
+    schema = graph.nodes[_GREEN_NODE]["output_schema"]
+    assert '"definition_of_done_complete"' in schema
+    assert '"preferred_next_label"' in schema
+
+
+def test_green_endings_route_through_the_completion_gate() -> None:
+    """Only a declared test-wrong or a recorded amendment bypasses the gate.
+
+    A failed ending first passes the amendment route, which rests a recorded
+    Definition-of-Done amendment and otherwise falls through to the gate, so an
+    incomplete turn that also failed is still graded by its completion field.
+    """
+    edges = _edges()
+
+    assert ("green", "test_wrong_reset", "preferred_label=test-wrong") in edges
+    assert ("green", "green_amendment_route", "outcome=failed") in edges
+    assert ("green_amendment_route", "needs_human", "outcome=failed") in edges
+    assert ("green_amendment_route", _GATE_NODE, None) in edges
+    assert ("green", _GATE_NODE, None) in edges
+    assert not any(
+        source == "green" and destination == "commit_green" for source, destination, _ in edges
+    )
+
+
+def test_the_completion_gate_sends_complete_to_commit_green_and_incomplete_to_reentry() -> None:
+    """A complete turn is committed; an incomplete one re-enters green or fails."""
+    edges = _edges()
+
+    assert (_GATE_NODE, "commit_green", "preferred_label=complete") in edges
+    assert (_GATE_NODE, _INCOMPLETE_ROUTE, "preferred_label=incomplete") in edges
+    assert (_INCOMPLETE_ROUTE, "green", None) in edges
+    assert (_INCOMPLETE_ROUTE, "needs_human", "outcome=failed") in edges
+
+
+def test_an_exhausted_incomplete_route_names_partial_progress_in_its_cause() -> None:
+    """The partial-progress cause, now written by the route rather than the agent.
+
+    The single `implement` prompt told the agent to report
+    LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS itself. In the split graph the clause has
+    the STAGE fail on an exhausted incomplete budget with "the dispatch outcome
+    detail ... naming partial progress", and the command node that decides that
+    exhaustion is `green_incomplete_route`, so the needle is pinned on its script.
+    """
+    graph = parse_dot_graph(text=_GRAPH.read_text(encoding="utf-8"))
+    assert not isinstance(graph, str), graph
+
+    script = graph.nodes[_INCOMPLETE_ROUTE]["script"]
+    assert "LIVESPEC_IMPLEMENT_PARTIAL_PROGRESS" in script
+    assert "re-entry is spent" in script

@@ -25,6 +25,8 @@ from livespec_orchestrator_beads_fabro._incident_authority_types import (
 from livespec_orchestrator_beads_fabro._incident_completion_rules import (
     CLOSED_PHASE,
     COMPLETION_PHASE,
+    DRILL_CLOSED_OBLIGATION,
+    DRILL_CLOSED_PHASE,
     IncidentAcceptanceScope,
     IncidentCompletionEvidence,
     acceptance_scope,
@@ -47,6 +49,8 @@ if TYPE_CHECKING:
 __all__: list[str] = [
     "CLOSED_PHASE",
     "COMPLETION_PHASE",
+    "DRILL_CLOSED_OBLIGATION",
+    "DRILL_CLOSED_PHASE",
     "IncidentAcceptanceScope",
     "IncidentCompletion",
     "IncidentCompletionEvidence",

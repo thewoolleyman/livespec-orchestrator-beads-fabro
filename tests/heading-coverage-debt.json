@@ -177,13 +177,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "contracts.md",
-    "heading": "## Planning Lane realization",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-06-25"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "contracts.md",
     "heading": "## Plugin namespace",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-06-08"
@@ -828,13 +821,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 285 — Red and Green run as separate nodes and every implement commit is made by a command node",
-    "work_item": "bd-ib-vy75ws",
-    "first_seen": "2026-11-01"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 288 — An absent five-hour window is no five-hour limit, and the seven-day status still governs",
     "work_item": "bd-ib-75dpxr",
     "first_seen": "2026-11-01"
@@ -1199,6 +1185,13 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 348 — A seeded recovery dispatch reseeds its seed onto the current default branch, holds on a reseed conflict, and routes a seed carrying no work fresh",
+    "work_item": "bd-ib-zzhy5t",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 349 — Reconciliation applies the whole-run wall budget to a live run no dispatch still owns",
     "work_item": "bd-ib-ag633q",
     "first_seen": "2026-11-12"
@@ -1290,6 +1283,20 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
+    "heading": "## Scenario 371 — An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
+    "work_item": "bd-ib-szbxu7",
+    "first_seen": "2026-11-13"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
+    "heading": "## Scenario 372 — A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing",
+    "work_item": "bd-ib-5xihdt",
+    "first_seen": "2026-11-14"
+  },
+  {
+    "spec_root": "SPECIFICATION",
+    "spec_file": "scenarios.md",
     "heading": "## Scenario 39 — Ratified lesson injects into dispatch briefs",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-04"
@@ -1356,13 +1363,6 @@
     "heading": "## Scenario 53 — A dispatch proceeds when the host is busy; the scheduler queues it",
     "work_item": "bd-ib-heat",
     "first_seen": "2026-07-30"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
-    "heading": "## Scenario 55 — plan archive commissions a missing independent completeness review",
-    "work_item": "bd-ib-heat",
-    "first_seen": "2026-08-16"
   },
   {
     "spec_root": "SPECIFICATION",

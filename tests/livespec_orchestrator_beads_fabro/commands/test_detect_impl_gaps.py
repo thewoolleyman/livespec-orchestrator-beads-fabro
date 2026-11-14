@@ -319,6 +319,71 @@ def test_a_heading_whose_entry_names_an_existing_test_produces_no_gap(
     assert json.loads(captured.out)["gap_ids"] == [_GAP_ABSENT]
 
 
+def test_pytest_path_spelled_entries_cover_existing_modules_and_functions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Path-form pytest node ids resolve before coverage is graded.
+
+    The four rows share one scan so the covered rows control the dangling
+    counterpart: reporting no findings at all would conceal a missing function,
+    while reporting every path-form row dangling would make every heading a gap.
+    """
+    monkeypatch.chdir(tmp_path)
+    _write_spec(
+        root=tmp_path / "SPECIFICATION",
+        files={
+            "spec.md": (
+                "# Title\n\n## Path function heading\n\nProse.\n\n"
+                "## Path module heading\n\nProse.\n\n## Dangling heading\n\n"
+                "Prose.\n\n## Multiline function heading\n\nProse.\n"
+            )
+        },
+    )
+    module = tmp_path / "tests" / "integration" / "test_present.py"
+    module.parent.mkdir(parents=True)
+    module.write_text(
+        "def test_path_function() -> None:\n    pass\n\n\n"
+        "def test_multiline_function(\n    *,\n    value: str = 'present',\n) -> None:\n"
+        "    del value\n"
+    )
+    _write_coverage(
+        project_root=tmp_path,
+        entries=[
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Path function heading",
+                "test": "tests/integration/test_present.py::test_path_function",
+            },
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Path module heading",
+                "test": "tests/integration/test_present.py",
+            },
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Dangling heading",
+                "test": "tests/integration/test_present.py::test_missing_function",
+            },
+            {
+                "spec_root": "SPECIFICATION",
+                "spec_file": "spec.md",
+                "heading": "## Multiline function heading",
+                "test": "tests/integration/test_present.py::test_multiline_function",
+            },
+        ],
+    )
+    assert main(argv=["--json"]) == 0
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["gap_ids"] == [_GAP_DANGLING]
+    assert captured.err.count("FINDING: dangling-test") == 1
+    assert "tests/integration/test_present.py::test_missing_function" in captured.err
+
+
 def test_coverage_entries_match_on_spec_root_spec_file_and_heading_together(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

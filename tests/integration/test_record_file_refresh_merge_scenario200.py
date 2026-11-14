@@ -45,6 +45,13 @@ _EXPECTED_RECORD_FILES = [
         "path": "tests/heading-coverage-debt.json",
         "format": "json-array",
         "key": ["spec_root", "spec_file", "heading"],
+        "generator": [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "livespec_dev_tooling.heading_coverage_debt",
+        ],
     },
     {"path": "tests/integration/CLAUDE.md", "format": "markdown-insertions"},
     {"path": "tests/prompts/CLAUDE.md", "format": "markdown-insertions"},

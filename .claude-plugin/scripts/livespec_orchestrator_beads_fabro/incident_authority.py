@@ -49,6 +49,7 @@ from livespec_orchestrator_beads_fabro.effects._incident_entry_writer import (
 )
 from livespec_orchestrator_beads_fabro.effects._incident_genesis_recovery import Observations
 from livespec_orchestrator_beads_fabro.effects._incident_genesis_writer import publish_genesis
+from livespec_orchestrator_beads_fabro.incident_drill_close import close_drill
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
@@ -63,6 +64,7 @@ __all__: list[str] = [
     "IncidentAttempt",
     "IncidentReading",
     "carrier_selection",
+    "close_drill",
     "commit_incident_transition",
     "decode_filing_request",
     "file_incident",

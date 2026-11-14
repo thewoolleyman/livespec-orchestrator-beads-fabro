@@ -2,7 +2,7 @@
 
 [Back to index](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/blob/master/plan/dispatch-control-plane/research/README.md)
 
-Reconciled 2 November 2026 · **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`).
+Design elaborated 13 November 2026 · **Dispatch control plane and durable dispatcher state** (`bd-ib-k6dqwc`).
 
 ## Goal and present position
 
@@ -271,7 +271,7 @@ method when the corresponding contracts change.
 The proposed fleet-control surface owns fleet start/hold/observe operations;
 existing `drive`/Dispatcher operations retain per-item execution and admission.
 Console, coordinator and terminal clients use the same attention facts and public
-operations. Final command paths belong to the decision register below.
+operations. The draft command and API names below make the intended operator surface concrete.
 
 ## Delivery and proof before responsibility transfers
 
@@ -313,25 +313,179 @@ recovery cost. Account for tokens, calls, spend and retained compute separately;
 a time limit alone does not bound them. Prefer proportionate controls over
 mandatory multi-week shadow periods or another broad benchmark campaign.
 
+## Concrete phase-two design for review
+
+The following choices make the proposal implementable; they do not amend the
+specification, change the epic's six assertions or enable production execution.
+The appendix holds proposed additional assertions and the implementation cut.
+All command and wire names in this section are **proposed**, not installed APIs.
+
+### First question class and transfer boundary
+
+Use a disposable blocked work item with an ordinary delegated decision as the
+first integration case: ask through one adapter, lose that worker, answer from a
+second host, and reconstruct the continuation through a third adapter. The
+first public effect is `resolve-blocked:<item>:backlog` with its answer, so the
+pilot proves a real disposition without launching work. A subsequent ready-path
+fixture proves continuation; a fresh eligibility read, rather than the answer,
+decides whether dispatch follows.
+Factory runs that have terminated for input are re-dispatched; this design does
+not promise to resume a terminated run. Run-owned questions retain Fabro's own
+question identity and answering route.
+
+This target needs an extension before automation. In the November 13 source,
+`_drive_policy_valves.py` calls `deliver_answer` before the claim-guarded status
+transition. `_drive_answer.py` appends an immutable comment and local journal
+row. A losing claim can therefore leave an answer on the item. A pre-read plus a
+coordination lease cannot make that sequence atomic or safe against a later owner.
+
+Require a public target operation that accepts occurrence, evidence revision,
+expected target revision, operation identity and ownership generation. Its
+server-enforced acceptance must bind the answer and transition to those
+preconditions and make a retry recover the original receipt. Every reader that
+feeds an answer into a future goal must use the accepted receipt, so a losing or
+superseded answer cannot leak into the next run's assignment. If this cannot be
+provided through the supported Beads boundary, keep that effect disabled and
+revise the target integration explicitly. Do not imitate it with host locks,
+worker SQL access or a comment-before-claim workaround.
+
+The pilot transfers only answering and reconciling this named question class.
+It does not transfer all coordination, launch authority, protected-session
+control, credentials or account policy. Begin with isolated fixtures; name the
+legacy executor and disable its independent handling of that class before the
+production activation record. The same record identifies the new owner, current
+grant, evidence, rollback route and untransferred duties. A rollback first fences
+new application, reconciles uncertain effects, then explicitly returns ownership.
+
+### Service, wire and storage contract
+
+Start with one versioned HTTP/JSON service and one deterministic reconciler,
+packaged from the orchestrator. Use one released image with separate `api`,
+`reconcile-once` and `supply-once` commands. A pollable durable store supplies
+recovery; an optional notification is a wake hint. No broker or second workflow
+engine is needed for the first delivery. Before implementation, amend
+`constraints.md` **Process boundaries** explicitly: independently deployed API
+services and cross-tenant coordination obligations must be distinguished from
+one-process skill invocations and tenant-owned work-item/result obligations.
+The existing no-daemon/tenant-authority clause remains binding until that carveout
+is ratified; the new service cannot silently become a second item-status store.
+
+The draft CLI is `fleet-control attention`, `question submit`, `answer submit`,
+`request inspect`, `hold set|release`, and `supply once|status`. Inspection shows
+required result, observation age, last attempt, ownership generation and binding
+refusal. Mutations return a durable receipt; a network timeout returns an
+uncertain outcome to reconcile, never an implicit refusal or successful effect.
+Interactive frontends support free text and follow-up using the same identities.
+
+| Proposed HTTP capability | Conditional operation |
+| --- | --- |
+| `POST /v1/questions` | Create/recover one question by client operation identity and payload digest. |
+| `GET /v1/attention` and `GET /v1/requests/<id>` | Read current obligations and explicit source failures, with a revision and cursor. |
+| `POST /v1/questions/<id>/answers` | Accept one answer for the current occurrence, evidence and grant revisions. |
+| `POST /v1/requests/<id>/claim` | Conditionally acquire the next ownership generation for one due attempt. |
+| `POST /v1/requests/<id>/observations` | Record a target receipt or observation under the current generation. |
+| `POST /v1/holds` and `POST /v1/holds/<id>/release` | Change one scoped hold under the issuing authority and expected revision. |
+
+Use dedicated non-Beads Dolt tables for principals/grants, question occurrences,
+answers, requests, attempts, receipts, holds, reservations and handovers. Every
+record carries repository/tenant-qualified references where it names an external
+fact. An answer references an immutable question occurrence and evidence digest;
+changed facts require a new revision, and a cleared-then-recurring fact a new
+occurrence. Separate request state from attempt state and from observed required
+result. A failed attempt does not delete its obligation or reset its deadline.
+
+Enforce uniqueness on operation identity and compare payload digests on reuse:
+the same operation recovers its receipt; a changed payload conflicts. Conditional
+updates compare the expected revision and ownership generation on the server.
+Claim increment, attempt creation and recoverable notification intent belong in
+one database transaction. Prove uncertain-commit recovery, conflicting answers,
+concurrent reservations and stale-owner rejection against the deployed Dolt
+version before any mutating rollout. A coordination transaction fences only its
+own writes; each Beads, Fabro or Git effect needs the target-side contract above
+or remains disabled. Uncertain outcomes hold that request for reconciliation,
+not unrelated work.
+
+Authenticate host and pod clients through the existing deployment owners' scoped
+identity mechanism. The service maps the authenticated principal to a versioned
+grant; a supplied actor name is not authentication. Worker credentials cannot
+change grants or write SQL. Preserve actual actor separately from represented
+authority, issuer, scope, source and explicit supersession. Recheck at answer
+acceptance and at effect application; peer observations cannot revoke a grant.
+Database administration, secret delivery and backup/restore stay with existing
+owners. Both Compose and Kubernetes must demonstrate authenticated access and a
+restore that preserves accepted answers and unresolved effects before activation.
+
+### Supply and policy ownership
+
+Consume the separately owned **Radar and deterministic admission** contract
+(`livespec-dev-tooling-w7ley3`) when its versioned document is published and its
+consumer seam is proved. That plan owns ordered priorities, typed readiness,
+Honeycomb query/fallback contracts, pure placement decisions, inventory and
+thresholds. It is a dependency, not authorization to resume its parked work or
+reimplement its algorithm here. Record adoption on this epic only against a
+specific published contract and compatibility evidence. Until then the consumer
+integration is visibly unavailable. A labeled conservative fallback from that
+contract is distinct from an unreadable source being treated as an empty queue.
+
+Fleet supply owns one desired fleet concurrency policy revision. Its counted
+object is a factory-run reservation from accepted launch intent through observed
+terminal disposition; queued runs and uncertain launch outcomes retain their
+reservation. A definitive no-run refusal or cancellation before launch releases
+the reservation only after the target proves no run was attached to that operation.
+A preflight result or waiting ticket holds none. Placement budgets
+are derived allocations with that revision, never separately tunable fleet/gmktec
+copies. Tenant `wip_cap` remains the Dispatcher's counted-claim limit,
+and each Fabro scheduler still owns execution concurrency. Kubernetes owns actual
+pod placement. Every cutover launch client, including console, terminal and
+scheduled supply, uses the same reservation boundary; a still-unconstrained
+legacy/direct path prevents claiming a fleet-wide bound. Reconcile the desired
+fleet policy with those owners through an
+explicit spec amendment before introducing a new scheduler gate. In particular,
+current §"Host concurrency belongs to the Fabro scheduler" forbids Dispatcher
+host-concurrency admission; this proposal does not silently override it.
+
+Prepare a fixed bounded window of eligible queued work even while fleet execution
+is full. Preflight completion is preparation, not a launch reservation or admission.
+Bind reusable results to item content, relevant comments/configuration, effective
+policy and tool build; recheck changed evidence, holds and admission immediately
+before use. Preflight failures are routed to the owner without consuming a slot.
+The window and freshness bounds are policy data; the legacy window of ten is
+measured prior art, not a permanent requirement.
+
+Use gate pending/admission state, per-node allocatable memory, existing pod
+requests and an explicit gate reserve when judging placement feasibility. CPU
+idle alone cannot establish whether a gate pod fits. Share the resource snapshot
+with the owning admission function; do not build a competing node scheduler or
+borrow gate headroom for factories silently. Unknown resource or policy evidence
+is a visible refusal/hold with its source and age. Resource reserves and provider
+allowance remain different from the fleet concurrency number.
+
+Due times, observation freshness, preflight window, retry limits, resource
+reserves and fairness parameters live in versioned policy with issuer, evidence
+and scope. The first isolated proof supplies explicit fixture values and races
+against them; production values require measured pilot evidence and the existing
+policy owner's authorization. Retain the original required-result deadline while
+recovering overdue work. Idle checks call no model, failures use bounded retries,
+and attention reports unfulfilled results rather than relying on worker liveness.
+
 ## Decisions remaining
 
-This is the single open-decision register. Other sections describe settled
-direction or proposed behavior, rather than additional permission questions.
+This remains the single open-decision register. The choices above are a concrete
+review draft; failed implementation proofs return here rather than becoming
+silent exceptions or new permission questions scattered through the text.
 
-| Decision to finalize | Recommended starting point and evidence needed |
+| Remaining decision or prerequisite | Concrete review/activation condition |
 | --- | --- |
-| First action and handover boundary | One ordinary delegated decision with an observable result and safely reconcilable public effect. Enumerate target checks and disable legacy execution before enabling it. |
-| API/schema and concurrency | Authenticated HTTP/JSON capabilities, durable pending requests and polling/reconciliation. Prove conditional writes, conflicts, retries, ownership generations and uncertain commits against deployed Dolt. Final wire paths and schema are unselected. |
-| Authentication and grants | Bind caller identity to scoped permissions, versioned grants and explicit supersession. Choose host/pod credential delivery with existing owners; no unrestricted worker SQL access to grant policy. |
-| Numerical service and fairness policy | Specify due times, recovery/escalation budgets, fairness, acceptance capacity, cost inputs and authority to tune caps. Measure the pilot before choosing values; preserve account restrictions. |
-| Packaging and deployment | Select service commands/images and reuse existing GitOps, with corresponding Compose configuration, secrets, compatibility, upgrades and backup ownership. No new controller or privileged Docker-in-Docker is presumed. |
-| Phase-two assertions and implementation cut | Derive gradeable outcomes and a complete carrier map from reviewed design before admitting implementation children. Original six assertions stand until formally amended. |
+| Phase-two completion assertions and child cut | Confirm the session-derived additions and proposed work packages in appendix 014; retain the original six until amended through the ledger with a complete carrier map. |
+| Target-side answer application | Ratify the occurrence/revision/operation contract, including goal readers; prove it on the disposable blocked-item flow before automatic use. |
+| Fleet-policy boundary | Ratify fleet-supply ownership alongside existing Dispatcher/Fabro/Kubernetes authority; consume the published radar contract instead of duplicating it. |
+| Infrastructure integration and production policy | Existing owners select scoped host/pod credentials, resource/timeout/fairness values, backup ownership and rollout manifests from the pilot evidence. No deployment is authorized by publishing this draft. |
 
-A broker or additional workflow engine is deferred unless measured delivery or
-workflow requirements justify its cost; reconsider under the API/execution design.
-Four permanent model sessions and a production proposal sweep are outside the
-initial delivery; reconsider expansion only after proof. Retire each interim
-role only when its specified replacement exit passes and handover is explicit.
+A broker or additional workflow engine remains deferred until measured delivery or
+workflow requirements justify it. Four permanent model sessions and a production
+proposal sweep remain outside the first delivery. Automatic spec initiation,
+additional role transfers and launcher retirement are later work packages in this
+plan, not abandoned requirements or work absorbed from the legacy operators.
 
 ## Supporting evidence
 
