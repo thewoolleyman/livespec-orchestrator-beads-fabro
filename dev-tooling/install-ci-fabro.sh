@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-readonly version="v0.254.0"
+readonly version="v0.408.0-nightly.0"
 
 # Each architecture pins its own musl asset, sha256 (the release's published
 # .sha256 asset), and release asset id. Any other `uname -m` fails closed.
@@ -35,13 +35,13 @@ architecture="$(uname -m)"
 case "$architecture" in
     x86_64)
         readonly asset_dir="fabro-x86_64-unknown-linux-musl"
-        readonly sha256="27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0"
-        readonly asset_id="438318077"
+        readonly sha256="4fe592c6b1a07079d56be2d3812d955311a923eb1c9908f72e457bce3b44942e"
+        readonly asset_id="713058876"
         ;;
     aarch64)
         readonly asset_dir="fabro-aarch64-unknown-linux-musl"
-        readonly sha256="1c3e7f25410f14d2407782b1effebc450138a65e3b5e844937c5edb6474c8731"
-        readonly asset_id="438318044"
+        readonly sha256="a9c3d4efbf2c072215b0dc51f19099628e768d5ba3fd4e78dafb359b387859c4"
+        readonly asset_id="713058760"
         ;;
     *)
         printf 'install-ci-fabro: unsupported architecture %s (supported: x86_64, aarch64); nothing installed\n' "$architecture" >&2
