@@ -122,8 +122,9 @@ references passes with its guidance orphaned.
 - Read `.ai/factory-dispatch-preflight-and-triage.md` BEFORE dispatching a
   work-item or triaging a dispatch that ended badly — `filing_display`
   passing does not mean `dod_gate` will, a primary behind origin fails every
-  dispatch at 0 ms, a workflow fix ships only through a `fix:` release, and a
-  post-merge janitor red names no failing target.
+  dispatch at 0 ms, a workflow fix ships only through a `fix:` release, a
+  seeded relaunch starts from the item's seed ruling and never from a rider,
+  and a post-merge janitor red names no failing target.
 - Read `.ai/factory-working-method.md` BEFORE starting a canary, test
   campaign or local build, proposing an upstream Fabro change, designing a
   measurement, or retracting a claim — the maintainer's throughput,
