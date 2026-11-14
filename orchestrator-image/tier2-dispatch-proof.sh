@@ -55,7 +55,7 @@ Options:
   --poll-attempts N    Dispatcher PR poll attempts. Default: 3.
 
 Required env, normally supplied by the dispatch TARGET's credential_wrapper
-(fleet targets: /data/projects/1password-env-wrapper/with-livespec-env.sh):
+(fleet targets: ~/workspace/1password-env-wrapper/with-livespec-env.sh):
 
   GITHUB_APP_ID + GITHUB_PRIVATE_KEY
     (the GitHub App credential; the Dispatcher's provider mints installation

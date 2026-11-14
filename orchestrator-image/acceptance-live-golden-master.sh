@@ -51,7 +51,7 @@
 # probes secret presence by byte count only.
 #
 # Required env (normally from the 1Password wrapper):
-#   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+#   ~/workspace/1password-env-wrapper/with-livespec-env.sh -- \
 #     bash orchestrator-image/acceptance-live-golden-master.sh --run
 #
 #   LIVESPEC_E2E_GITHUB_TOKEN        org-scoped fine-grained token (livespec-e2e;
@@ -142,7 +142,7 @@ Options:
                     adapter invokes, so it runs the target version.
                     Default: empty (use the image-baked version, unchanged).
 
-Required env (normally from /data/projects/1password-env-wrapper/with-livespec-env.sh):
+Required env (normally from ~/workspace/1password-env-wrapper/with-livespec-env.sh):
   LIVESPEC_E2E_GITHUB_TOKEN   (host-side repo create/clone/delete)
   GITHUB_APP_ID + GITHUB_PRIVATE_KEY  (in-container App-token mint; the App's
                               installation must cover the livespec-e2e org)

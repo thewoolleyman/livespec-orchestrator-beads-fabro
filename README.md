@@ -147,7 +147,7 @@ If the slash skill is unavailable in a non-Claude harness, call the
 shared CLI directly:
 
 ```bash
-python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/drive.py --repo /path/to/repo --action impl:<work-item-id> --json
+python3 "$HOME/workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/drive.py" --repo /path/to/repo --action impl:<work-item-id> --json
 ```
 
 ## Dispatcher and telemetry

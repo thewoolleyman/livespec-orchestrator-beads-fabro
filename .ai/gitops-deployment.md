@@ -82,7 +82,7 @@ drained dispatch queue leaves open.
 
 Its README states it outright: "Installing it on a host is a separate operator
 action; nothing in this repository installs it" — `sudo ./install.sh --repo
-/data/projects/livespec-orchestrator-beads-fabro`. The unit TEXT is committed, so
+~/workspace/livespec-orchestrator-beads-fabro`. The unit TEXT is committed, so
 rule 3's layer already exists in git; what is missing is the applier.
 
 ### `orchestrator-image/services/work-supply/install.sh` — nothing deploys it

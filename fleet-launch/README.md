@@ -51,7 +51,7 @@ Run it from a checkout of this repository's `master`, never from a copy under
 mise exec -- just gate-start -- bash -c 'env ONLY_GMK=1 fleet-launch/dispatch-dual.sh <item-id> >> <state-dir>/seq-<item-id>.log 2>&1'
 ```
 
-For an independent tenant, add `REPO_OVERRIDE=/data/projects/<repo>` and
+For an independent tenant, add `REPO_OVERRIDE="$HOME/workspace/<repo>"` and
 `WRAPPER=<path>/fleet-launch/wrappers/with-<repo>-env-keep-path.sh`. For a
 registry-resolved capture dispatch, add `CAPTURE_NULL=1 CAPTURE_EXPECT=petri`. To keep
 a queue position across a restart, pass the old ticket's number as `TICKET_NS`.

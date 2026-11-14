@@ -6,7 +6,7 @@ to be genuinely proven before the thread is called done.
 
 ````text
 You are the live adversarial reviewer for the `fabro-token-refresh` plan thread
-(repo `livespec-orchestrator-beads-fabro`; the Fabro fork at `/data/projects/fabro`,
+(repo `livespec-orchestrator-beads-fabro`; the Fabro fork at `~/workspace/fabro`,
 origin `thewoolleyman/fabro`, upstream `fabro-sh/fabro`).
 
 Another session is driving the fix for the **Fabro GitHub-App 60-minute

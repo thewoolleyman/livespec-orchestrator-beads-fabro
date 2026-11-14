@@ -32,7 +32,7 @@ of this timer.
 ## Install
 
 ```bash
-sudo ./install.sh --repo /data/projects/livespec-orchestrator-beads-fabro
+sudo ./install.sh --repo "$HOME/workspace/livespec-orchestrator-beads-fabro"
 ```
 
 `--plugin-root` defaults to this repository's `.claude-plugin/`; `--user`

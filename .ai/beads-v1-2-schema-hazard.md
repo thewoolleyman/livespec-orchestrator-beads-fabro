@@ -29,7 +29,7 @@ which reads this repo's ledger every ten minutes and auto-migrated this tenant
 mid-cutover. That attribution came from the SUDO JOURNAL, which is the
 instrument for "which process touched a tenant": every `with-*-env.sh` wrapper
 call re-execs through `sudo`, so `journalctl --since <t1> --until <t2>
--o short-iso _COMM=sudo | grep 'PWD=/data/projects/<repo>'` lists each call
+-o short-iso _COMM=sudo | grep 'PWD=[^ ]*/<repo>'` lists each call
 with its full command, and `-o verbose` adds the owning `_SYSTEMD_UNIT`; the
 Dolt server's own journal logs nothing per connection. If a database has already been migrated to v65, do NOT
 improvise: roll the schema cursor back per upstream's `docs/RECOVERY-1.2.1.md`
