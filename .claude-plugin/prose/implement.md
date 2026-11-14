@@ -86,7 +86,10 @@ Resolve the routing before driving anything in-session:
      on a fresh branch. That commit restores every path the reverted
      change touched to the bytes of the reverted commit's first parent
      (for a rebase-merged PR, the first parent of its earliest commit),
-     and its message carries a `This reverts commit <sha>.` line. Pass
+     and its message carries a `This reverts commit <sha>.` line naming
+     that SAME commit (for a rebase-merged PR, the earliest one, never
+     the merge tip), because the gate compares the revert with
+     `<sha>^`. Pass
      the mutation body from a file. GitHub signs that commit, so
      `check-red-green-replay` admits it as a forge-authored revert. Never
      use `revertPullRequest` or the web UI's Revert button: their commits
