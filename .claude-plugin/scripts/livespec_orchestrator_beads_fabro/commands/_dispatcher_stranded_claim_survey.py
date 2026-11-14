@@ -61,6 +61,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     ACTION_TERMINAL_COMPLETION,
     ATTRIBUTION_PENDING_REMEDY,
     FORGE_CLOSED_UNMERGED_PR,
+    FORGE_NO_MERGED_PR,
+    FORGE_OPEN_PR,
     HOLD_ATTRIBUTION_PENDING,
     HOLD_RUN_SUCCEEDED,
     AttributedClaim,
@@ -112,6 +114,12 @@ __all__: list[str] = [
 ]
 
 _READY_STATUS = "ready"
+
+# The forge readings that say a succeeded run's pull request did not merge: none was
+# published, one is still open, or one closed unmerged. Each earns the terminal-claim
+# recovery `move:<id>:ready` as the held entry's remedy; a merged one is
+# `reconcile-merged`'s and an unreadable one names no remedy.
+_FORGE_READ_NOT_MERGED = frozenset({FORGE_NO_MERGED_PR, FORGE_OPEN_PR, FORGE_CLOSED_UNMERGED_PR})
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -285,7 +293,7 @@ def _held_claim(
             ATTRIBUTION_PENDING_REMEDY
             if reason == HOLD_ATTRIBUTION_PENDING
             else f"move:{item.id}:ready"
-            if reason == HOLD_RUN_SUCCEEDED and forge == FORGE_CLOSED_UNMERGED_PR
+            if reason == HOLD_RUN_SUCCEEDED and handoff is None and forge in _FORGE_READ_NOT_MERGED
             else None
         ),
         detail=(
