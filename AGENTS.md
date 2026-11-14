@@ -285,9 +285,12 @@ Plugins, sessions and hosts:
   host, or run `herdr pane send-text`, `herdr pane run`, `herdr agent prompt` or
   `tmux send-keys` against a pane you did not create → the fleet's distributed
   SendMessage protocol, https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md.
-  Claude sessions talk through `SendMessage` (across machines via Remote
-  Control), never by typing into each other's panes (maintainer ruling
-  2026-11-14).
+  Prefer `SendMessage` (across machines via Remote Control) to message another
+  Claude session, because text typed into its pane can interrupt the
+  maintainer (maintainer ruling 2026-11-14). Typing into a pane is still
+  allowed and nothing blocks it; use it when necessary, such as for a slash
+  command, a picker, a session `SendMessage` cannot reach, or a Codex or pi
+  seat.
 - You need a second agent session for a bounded job, or to message another
   session → `.ai/herdr-helper-sessions.md`.
 - You are opening, moving or placing a herdr tab → `.ai/herdr-plan-tabs.md`.

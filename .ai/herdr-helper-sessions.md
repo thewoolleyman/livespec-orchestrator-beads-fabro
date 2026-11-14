@@ -44,8 +44,8 @@ does not submit it, so successive sends pile up on one line. Measured 2026-10-12
 `/reload-plugins` and a follow-up prompt became the single command
 `/reload-plugins <follow-up>`, and nothing ran until a human pressed Enter. Every herdr
 call exited 0. Wait for the pane to go idle (`herdr agent wait <pane> --until idle --until
-done`) and only then submit — with `herdr agent prompt` into your own pane or a Codex or pi
-pane, never into another Claude session's pane (see the next paragraphs). For your own pane,
+done`) and only then submit with `herdr agent prompt`; to message another Claude session,
+prefer `SendMessage` (see the next paragraphs). For your own pane,
 run that wait in a detached waiter and end your turn; the recipe is in `.ai/plugin-cache-lease-and-rebind.md`.
 
 **Message another session with Claude's `SendMessage`, never with `herdr agent prompt`.**
@@ -60,16 +60,14 @@ start gets its whole job as the agent's launch argument instead (the brief-file 
 in rule 2, or a trailing prompt after the agent's own flags), so nothing is typed into its
 pane afterwards; reach a Claude helper later by `SendMessage`.
 
-Since 2026-11-14 this is fleet-wide and enforced: the maintainer ruled that Claude
-sessions talk only through `SendMessage` (across machines via Remote Control). On the
-interactive hosts (vps, hetzner-xubuntu, gamingpc-xubuntu) a managed PreToolUse hook denies
-`herdr pane send-text`, `herdr pane run` and `herdr agent prompt` into another pane hosting a
-Claude agent, and denies literal-text tmux input (`tmux send-keys` carrying text, and
-`tmux paste-buffer`) into EVERY pane, Claude or not, because tmux is a retired transport
-there. Drive a Codex or pi pane, which cannot receive `SendMessage`, with
-`herdr pane send-text <pane> "<text>"` and then `herdr pane send-keys <pane> Enter`; key-only
-input such as Escape, Enter or a picker digit stays allowed into any pane. The full protocol
-is the fleet's distributed SendMessage protocol,
+Since 2026-11-14 this is fleet-wide guidance: the maintainer ruled that you should prefer
+`SendMessage` (across machines via Remote Control) to message another Claude session,
+because text typed into its pane can interrupt the maintainer. Typing into a pane is still
+allowed and nothing blocks it; use it when necessary, such as for a slash command, a
+picker, a session `SendMessage` cannot reach, or a Codex or pi pane. When you type, use
+`herdr pane send-text <pane> "<text>"` and then `herdr pane send-keys <pane> Enter` (or the
+tmux equivalent), after the idle check above. The full protocol is the fleet's distributed
+SendMessage protocol,
 https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md.
 
 A Codex TUI pane is a sharper case of the busy-pane rule above:
