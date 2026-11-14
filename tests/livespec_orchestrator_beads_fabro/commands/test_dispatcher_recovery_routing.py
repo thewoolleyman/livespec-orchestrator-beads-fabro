@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_recovery_fallback as fallback
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_recovery_routing as routing
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
@@ -208,7 +209,7 @@ def test_an_unobservable_preserved_read_holds_the_fallback(
         acceptance_policy="ai-only",
     )
     monkeypatch.setattr(
-        routing,
+        fallback,
         "verified_preserved_seed",
         lambda **_kwargs: PreservedWorkUnobservable(detail="origin unavailable"),
     )

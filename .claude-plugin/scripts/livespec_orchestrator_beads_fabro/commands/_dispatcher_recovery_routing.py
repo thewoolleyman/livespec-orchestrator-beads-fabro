@@ -29,11 +29,16 @@ step that asked the forge and the factory about each of them would put two round
 trips per candidate on the critical path of every drain, to answer a question
 whose subject — an earlier dispatch that released the item — does not exist.
 
-THIS STEP MUTATES NOTHING BUT THE JOURNAL. "Routing MUST NOT mutate the ledger,
-origin, or any factory." The reads it takes are the resume's own gather, which is
-a forge listing, a forge comment read and a factory board read; none of them
-writes. The `resume` record it journals is the one the clause requires "before the
-run exists", and the journal is not the ledger.
+THIS STEP MUTATES NOTHING BUT THE JOURNAL, WITH ONE NAMED EXCEPTION. "Routing MUST
+NOT mutate the ledger, origin, or any factory." The reads it takes are the resume's
+own gather, which is a forge listing, a forge comment read and a factory board read;
+none of them writes. The `resume` record it journals is the one the clause requires
+"before the run exists", and the journal is not the ledger. The exception is the
+reseed of a stale seed (`_dispatcher_recovery_reseed_route`): the paragraph "A stale
+seed is re-seeded by diff-applying its work onto the default branch's tip" requires
+the reseed commit to be published at `refs/livespec/reseed/<work-item-id>/<commit>`
+before the run starts, and that ref is the ONLY thing routing writes to origin. It
+moves, deletes and rewrites no existing ref.
 """
 
 from __future__ import annotations
@@ -57,6 +62,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recapture_exhausted_
     RecaptureSources,
     route_recapture_exhausted,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fallback import (
+    fallback_route,
+    held_route,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_fresh_ruling import (
     current_ruling_route,
 )
@@ -72,30 +81,24 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallbac
     non_fallback_refusals,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
-    PreservedWorkAbsent,
-    PreservedWorkUnobservable,
     verified_preserved_seed,
-)
-from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_records import (
-    PRESERVED_WORK_ABSENT,
-    PRESERVED_WORK_VERIFIED,
-    recovery_held_record,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release import (
     recapture_exhausted_for_recovery,
     released_for_recovery,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_reseed_route import (
+    DefaultBranchTipReader,
+    reseed_route,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
     resume_protection,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes import (
     ROUTE_FRESH,
-    ROUTE_HELD,
     ROUTE_RESUME,
     ROUTE_SEEDED,
     RecoveryHold,
-    RecoveryLoss,
-    RecoveryMeasurement,
     RecoveryResume,
     RecoveryRoute,
 )
@@ -199,7 +202,7 @@ class RecoveryRouting:
         two readings of one decision.
 
         Keyed on the HOLD rather than on the route name, which is the same
-        question asked of the field that carries the answer: `_held_route` is
+        question asked of the field that carries the answer: `held_route` is
         the only constructor of a hold and it is also the only one that returns
         `ROUTE_HELD`, so a route carrying a hold IS a held route, and a second
         test of the name could only ever disagree with the payload it is about
@@ -230,6 +233,7 @@ def route_recovery(
     """Assign one route to every candidate, measuring only the released ones."""
     journaled = read_journal_records(journal_path=journal.path)
     runner = ShellCommandRunner()
+    tip_reader = DefaultBranchTipReader()
     routes: list[RecoveryRoute] = []
     for item in candidates:
         if recapture_exhausted_for_recovery(records=journaled, work_item_id=item.id):
@@ -250,7 +254,7 @@ def route_recovery(
             continue
         ruling = current_seed_ruling(repo=repo, item=item)
         if isinstance(ruling, RecoveryHold):
-            routes.append(_held_route(item=item, journal=journal, hold=ruling))
+            routes.append(held_route(item=item, journal=journal, hold=ruling))
             continue
         # "While an item carries a current ruling, recovery routing MUST treat the
         # item as released for recovery", whatever its latest dispatch ended in.
@@ -261,20 +265,29 @@ def route_recovery(
         ):
             routes.append(RecoveryRoute(work_item_id=item.id, route=ROUTE_FRESH))
             continue
+        # "A seed is moved onto the current default branch before its run starts":
+        # every route the grading above made `seeded` is finished here, whichever of
+        # its three constructors made it, so the tip is read once for the whole pass.
         routes.append(
-            _released_route(
-                gather=gather_resume(
-                    args=args,
-                    repo=repo,
+            reseed_route(
+                route=_released_route(
+                    gather=gather_resume(
+                        args=args,
+                        repo=repo,
+                        item=item,
+                        journal_path=journal.path,
+                        runner=runner,
+                    ),
                     item=item,
-                    journal_path=journal.path,
+                    repo=repo,
                     runner=runner,
+                    journal=journal,
+                    ruling=ruling,
                 ),
-                item=item,
-                repo=repo,
+                tip_reader=tip_reader,
                 runner=runner,
+                repo=repo,
                 journal=journal,
-                ruling=ruling,
             )
         )
     return RecoveryRouting(routes=tuple(routes))
@@ -339,7 +352,7 @@ def _released_route(
         # test identically to a fallback-permitting one — so falling through
         # would carry out a remedy the refusal exists to forbid, and would do it
         # with the record reading like an ordinary measured fallback.
-        return _held_route(item=item, journal=journal, hold=hold)
+        return held_route(item=item, journal=journal, hold=hold)
     if ruling is not None:
         # A CURRENT SEED RULING takes the seed "ahead of a `resume` and ahead of the
         # preference order", so it sits past the two gradings above (which a ruling
@@ -358,7 +371,7 @@ def _released_route(
     anchor = gather.anchor
     pull_request = gather.observation.pull_request
     if resume_refusals(observation=gather.observation) or anchor is None or pull_request is None:
-        return _fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
+        return fallback_route(gather=gather, item=item, repo=repo, runner=runner, journal=journal)
     protected = resume_protection(
         gather=gather, item=item, repo=repo, runner=runner, journal=journal
     )
@@ -374,70 +387,3 @@ def _released_route(
             workflow_name=gather.workflow_name,
         ),
     )
-
-
-def _fallback_route(
-    *,
-    gather: ResumeGather,
-    item: WorkItem,
-    repo: Path,
-    runner: CommandRunner,
-    journal: JournalFile,
-) -> RecoveryRoute:
-    """The route a refused resume falls back to: `seeded`, `fresh`, or `held`.
-
-    "`seeded`, when every applicable resume refusal is fallback-permitting and
-    preserved work is verified; `fresh`, when every applicable resume refusal is
-    fallback-permitting and preserved work is confirmed absent; `held`, when...
-    any measurement routing needs cannot be taken."
-
-    The preserved-work read is taken HERE rather than beside the gather, because
-    it is the one measurement only this arm needs: a resume that passes never asks
-    it, and asking it anyway would spend an origin round trip per released
-    candidate to answer a question the route had already settled.
-    """
-    journaled = read_journal_records(journal_path=journal.path)
-    preserved = verified_preserved_seed(
-        runner=runner,
-        repo=repo,
-        work_item_id=item.id,
-        earlier_run_ids=gather.earlier_run_ids,
-        journal_records=journaled,
-        publications=gather.publications,
-    )
-    if isinstance(preserved, PreservedWorkUnobservable):
-        return _held_route(
-            item=item,
-            journal=journal,
-            hold=RecoveryHold(
-                measurements=(
-                    RecoveryMeasurement(name=preserved.measurement, detail=preserved.detail),
-                )
-            ),
-        )
-    if isinstance(preserved, PreservedWorkAbsent):
-        # Confirmed absence: every source that could be asked was asked and named
-        # nothing, which is what permits the default branch. The LOSS is recorded
-        # by the launch's own route row, for the reason that module's docstring
-        # gives — and it carries the run being written off plus the sources the
-        # READING asked, never a re-derivation of them here.
-        return RecoveryRoute(
-            work_item_id=item.id,
-            route=ROUTE_FRESH,
-            loss=RecoveryLoss(
-                source_run_id=preserved.source_run_id, sources_asked=preserved.sources_asked
-            ),
-            preserved_work=PRESERVED_WORK_ABSENT,
-        )
-    return RecoveryRoute(
-        work_item_id=item.id,
-        route=ROUTE_SEEDED,
-        seed=preserved,
-        preserved_work=PRESERVED_WORK_VERIFIED,
-    )
-
-
-def _held_route(*, item: WorkItem, journal: JournalFile, hold: RecoveryHold) -> RecoveryRoute:
-    """Record one hold and return its route; the item is left exactly as it was."""
-    journal.append(record=recovery_held_record(work_item_id=item.id, hold=hold))
-    return RecoveryRoute(work_item_id=item.id, route=ROUTE_HELD, hold=hold)
