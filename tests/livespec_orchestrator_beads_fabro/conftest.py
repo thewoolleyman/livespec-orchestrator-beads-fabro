@@ -20,10 +20,15 @@ that never touches the store simply observes an empty fake.
 
 from __future__ import annotations
 
+import hashlib
+import shutil
+import tempfile
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from livespec_orchestrator_beads_fabro._beads_client import reset_fake_singleton
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_rm_pacing
 
 
 @pytest.fixture(autouse=True)
@@ -42,3 +47,21 @@ def _hermetic_fake_backend(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     reset_fake_singleton()
     yield
     reset_fake_singleton()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_rm_pacing_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    # The deletion pacer records the last `fabro rm` start per factory in a
+    # host-wide state file, so one test's deletion would defer the next
+    # test's for the same factory name. Each test gets its own state
+    # directory. It is a SHORT directory under the real temp root, not under
+    # pytest's long `tmp_path`, because other tests bind unix sockets whose
+    # paths must stay inside the `sun_path` limit.
+    root = Path(tempfile.mkdtemp(prefix="rmp"))
+
+    def _state_path(*, factory: str) -> Path:
+        return root / f"{hashlib.sha256(factory.encode()).hexdigest()}.json"
+
+    monkeypatch.setattr(_dispatcher_rm_pacing, "_state_path", _state_path)
+    yield
+    shutil.rmtree(root, ignore_errors=True)

@@ -53,6 +53,9 @@ orchestrator-PRIVATE tooling: core's contract sees only the three
   dispatcher.py seed-ruling --item <id> --ref <ref> --commit <sha>
                             --reason <text> [--repo <path>] [--invoker <id>]
                             [--journal <path>]
+  dispatcher.py reseed --item <id> --seed-ref <ref> [--default-branch <name>]
+                       [--reason <text>] [--repo <path>] [--invoker <id>]
+                       [--journal <path>]
   dispatcher.py file-canary --repo <path>
   dispatcher.py probe --repo <path> --item <id> [common flags]
   dispatcher.py dispatch --repo <path> --item <id> [common flags]
@@ -114,6 +117,12 @@ dispatch (Scenario 185). It reads origin once and, only when `--ref` stands at
 `seed-ruling` journal record; an absent or moved ref, or a body the shared
 template-opener detector flags, exits 3 and writes neither (see
 `_dispatcher_seed_ruling_command`).
+`reseed` moves a stale preserved seed onto the default branch's tip (see
+`_dispatcher_reseed_command`). It diff-applies the seed's merge-base diff onto the
+tip as one authored commit, publishes it at `refs/livespec/reseed/<item>/<commit>`,
+confirms the ref by a remote read, and rules that ref as the item's next seed. A seed
+carrying no work, or a diff that conflicts (every path named), exits 3 and publishes
+and writes nothing.
 `probe` is the loop probe of contracts.md: the take-never-file health command
 that drives ONE designated, ALREADY-FILED work-item through the whole cycle
 with an assertion at each stage. It refuses
@@ -427,9 +436,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_sandbox_images_comma
     add_sandbox_images_arguments,
     run_sandbox_images_command,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_ruling_command import (
-    add_seed_ruling_arguments,
-    run_seed_ruling_cli,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_seed_subcommands import (
+    SEED_SUBCOMMAND_HANDLERS,
+    add_seed_subcommands,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args import (
     add_claude_cred_status_arguments,
@@ -525,7 +534,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "reconcile-runs": run_reconcile_runs_command,
     "resume": run_resume_command,
     "sandbox-images": run_sandbox_images_command,
-    "seed-ruling": run_seed_ruling_cli,
+    **SEED_SUBCOMMAND_HANDLERS,
     "spec-check": run_spec_check,
 }
 
@@ -551,7 +560,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_janitor_check_arguments(parser=subparsers.add_parser("janitor-check"))
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
-    add_seed_ruling_arguments(parser=subparsers.add_parser("seed-ruling"))
+    add_seed_subcommands(add_parser=subparsers.add_parser)
     add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))

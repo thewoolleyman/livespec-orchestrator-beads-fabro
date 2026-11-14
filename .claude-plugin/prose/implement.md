@@ -82,11 +82,28 @@ Resolve the routing before driving anything in-session:
      as a remedy for repeat-flakes; repeated reruns can burn cycles while
      master stays red. If the local pre-commit hook itself refuses every
      commit because master is red, the sanctioned break-glass is a
-     server-side GitHub revert: fetch the offending PR's node id with a
-     `repository.pullRequest(number:)` GraphQL query, then call
-     `revertPullRequest` with that id, passing both the query and the
-     mutation body from files. Prefer re-landing the reverted change
-     paired with its fix in one PR.
+     server-side GitHub revert. First confirm that
+     `git log <tip-sha>..origin/master -- <paths the change touched>` is
+     empty. If any later commit touches those paths, a whole-file restore
+     discards it and the gate still admits the revert, so do not use this
+     route; revert through the normal lane instead. Otherwise make the
+     revert as ONE `createCommitOnBranch` commit on a fresh branch, using
+     the fleet GitHub App installation token (that is the token whose
+     commits GitHub signs as verified; signing through a personal access
+     token is unverified). That commit restores every path the reverted
+     change touched to the bytes of the first parent of the reverted
+     change's EARLIEST commit, and its message carries a
+     `This reverts commit <sha>.` line naming that earliest commit AS IT
+     LANDED ON MASTER. Never name the merge tip, and never name the PR
+     branch's pre-rebase sha that `gh pr view --json commits` lists: it
+     is not on master. The gate requires `<sha>` to be on
+     `origin/master` and compares the revert with `<sha>^`. Pass the
+     mutation body from a file. GitHub signs that commit, so
+     `check-red-green-replay` admits it as a forge-authored revert. Never
+     use `revertPullRequest` or the web UI's Revert button: their commits
+     are unsigned, so `check-red-green-replay` convicts them whenever the
+     reverted change touched product impl `.py`. Prefer re-landing the
+     reverted change paired with its fix in one PR.
    - the **maintainer explicitly directed** in-session execution for
      this item in this session.
 4. **Non-product changesets** (docs, spec prose, plans,

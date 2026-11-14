@@ -38,14 +38,17 @@ over many items reads each sibling tenant at most once.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Callable
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
 from livespec_runtime.cross_repo.types import CrossRepoManifest, CrossRepoTarget, RefStatus
+from livespec_runtime.work_items.lifecycle import is_item_ready
 
 from livespec_orchestrator_beads_fabro.commands._cross_repo import load_manifest
 from livespec_orchestrator_beads_fabro.commands._dispatcher_fabro_argv import parse_fleet_members
+from livespec_orchestrator_beads_fabro.commands._dispatcher_groom_door import groom_door_claimed
 from livespec_orchestrator_beads_fabro.commands._dispatcher_ledger_close import load_items
 from livespec_orchestrator_beads_fabro.commands._dispatcher_sibling_clones import (
     fetch_fleet_manifest_text,
@@ -63,6 +66,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "SiblingStatusLookup",
+    "is_dispatch_candidate",
     "make_sibling_status_lookup",
     "sibling_dependency_diagnostics",
 ]
@@ -251,3 +255,55 @@ def sibling_dependency_diagnostics(
         if diagnostic is not None:
             diagnostics.append(diagnostic)
     return tuple(diagnostics)
+
+
+def is_dispatch_candidate(
+    *,
+    item: WorkItem,
+    index: dict[str, WorkItem],
+    manifest: CrossRepoManifest,
+    sibling_status_lookup: Callable[[str, str], RefStatus] | None = None,
+    repo: Path | None = None,
+) -> bool:
+    """Whether this row is one the Dispatcher may launch on this pass.
+
+    Three members, and the third is the narrow one: a `ready` row, a
+    `pending-approval` row whose dependencies are clear, and an `active` row
+    the GROOM DOOR itself claimed and pinned. The door opens `backlog ->
+    active` under a claim and a groom-variant pin and then returns, so without
+    the third arm the row it prepared is one no launch path can pick up — it
+    is not `ready`, so this predicate refused it, and the `--item` preflight
+    that consumes this predicate read the door's own claim as somebody else's
+    in-flight dispatch. `groom_door_claimed` owns that recognition, and it is
+    scoped to the door's own claim: an ordinary `active` row is unaffected, so
+    this is NOT a widening to `active` work in general. The status test that
+    scopes it stays INSIDE that predicate rather than being restated as a guard
+    here, so ONE module answers "is this the door's claim?" end to end.
+
+    `repo` is the target repository the claim and pin are read against; it
+    defaults, like `sibling_status_lookup`, to the working directory.
+    """
+    effective_repo = repo if repo is not None else Path.cwd()
+    effective_sibling_status_lookup = (
+        sibling_status_lookup
+        if sibling_status_lookup is not None
+        else make_sibling_status_lookup(project_root=effective_repo)
+    )
+    if is_item_ready(
+        item=item,
+        index=index,
+        manifest=manifest,
+        sibling_status_lookup=effective_sibling_status_lookup,
+    ):
+        return True
+    if groom_door_claimed(repo=effective_repo, item=item):
+        return True
+    if item.status != "pending-approval":
+        return False
+    ready_projection = replace(item, status="ready")
+    return is_item_ready(
+        item=ready_projection,
+        index=index,
+        manifest=manifest,
+        sibling_status_lookup=effective_sibling_status_lookup,
+    )

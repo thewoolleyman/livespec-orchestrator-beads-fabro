@@ -14,12 +14,12 @@ REPOSITORY_ROOT = Path(__file__).parents[1]
 INSTALLER = REPOSITORY_ROOT / "dev-tooling/install-ci-fabro.sh"
 ARCHITECTURES = {
     "x86_64": (
-        "27ff7a930950a322fcd5debdba7e35f63e999179169ccbaadbe502090094d7b0",
-        "438318077",
+        "4fe592c6b1a07079d56be2d3812d955311a923eb1c9908f72e457bce3b44942e",
+        "713058876",
     ),
     "aarch64": (
-        "1c3e7f25410f14d2407782b1effebc450138a65e3b5e844937c5edb6474c8731",
-        "438318044",
+        "a9c3d4efbf2c072215b0dc51f19099628e768d5ba3fd4e78dafb359b387859c4",
+        "713058760",
     ),
 }
 
@@ -217,8 +217,8 @@ def test_falls_back_to_release_download_after_api_asset_failure(
         f"https://api.github.com/repos/fabro-sh/fabro/releases/assets/{asset_id}" in curl_arguments
     )
     assert (
-        f"https://github.com/fabro-sh/fabro/releases/download/v0.254.0/{asset_name}"
-        in curl_arguments
+        "https://github.com/fabro-sh/fabro/releases/download/"
+        f"v0.408.0-nightly.0/{asset_name}" in curl_arguments
     )
 
 

@@ -117,6 +117,26 @@ def test_a_pass_yields_cpu_and_is_reclaimed_and_only_backstopped_far_above_its_p
     assert _gigabytes(maxes[0]) >= 8
 
 
+def test_the_committed_unit_is_the_single_source_of_every_host_side_bound() -> None:
+    """The unit carries all four bounds itself, and the timer cadence is untouched."""
+    settings = {
+        line.partition("=")[0]: line.partition("=")[2]
+        for line in _SERVICE.read_text(encoding="utf-8").splitlines()
+        if "=" in line and not line.startswith("#")
+    }
+
+    assert settings["CPUWeight"] == "20"
+    assert settings["IOWeight"] == "20"
+    assert settings["OOMScoreAdjust"] == "500"
+    assert settings["MemorySwapMax"] == "0"
+    timer = _TIMER.read_text(encoding="utf-8")
+    assert "OnUnitInactiveSec=10min" in timer
+    assert "OnBootSec=5min" in timer
+    assert "OnUnitActiveSec" not in "\n".join(
+        line for line in timer.splitlines() if not line.startswith("#")
+    )
+
+
 def test_the_installer_refuses_without_the_project_env_wrapper(tmp_path: Path) -> None:
     completed = _install(
         tmp_path=tmp_path,
