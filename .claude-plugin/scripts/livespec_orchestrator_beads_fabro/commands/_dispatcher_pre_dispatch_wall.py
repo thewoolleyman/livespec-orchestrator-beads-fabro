@@ -37,6 +37,9 @@ import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from livespec_orchestrator_beads_fabro.commands._config_cycle_ceilings import (
+    runtime_ceiling_policy_refusal,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_acceptance_eligibility import (
     pre_dispatch_criteria_refusal,
 )
@@ -372,6 +375,12 @@ def _refusing_sequence(
     would change the bytes an operator reads from one group or the other.
     """
     return (
+        (
+            lambda: runtime_ceiling_policy_refusal(repo=repo),
+            EXIT_PRECONDITION_ERROR,
+            False,
+            "runtime-ceiling-policy",
+        ),
         (
             lambda: out_of_enum_factory_safety_refusal(items=items),
             EXIT_PRECONDITION_ERROR,
