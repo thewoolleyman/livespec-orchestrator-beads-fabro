@@ -44,6 +44,8 @@ __all__: list[str] = ["RECOVERABLE_STATUSES", "recover_repayment_phases"]
 
 # The lifecycle states an item reaches only after a factory claimed it.
 RECOVERABLE_STATUSES: frozenset[str] = frozenset(("active", "acceptance"))
+# The states ordinary admission has not yet claimed, where advance-repayment records the phase.
+_AWAITING_CLAIM: frozenset[str] = frozenset(("pending-approval", "ready"))
 _ADMISSION, _READY, _ACTIVE = REPAYMENT_PHASES[:3]
 
 
@@ -60,9 +62,12 @@ def recover_repayment_phases(
         return _refuse(code="incident-repayment-recovery-not-needed", detail=attempt.phase)
     record = client.show_issue(issue_id=attempt.item_id)
     status = record.get("status")
-    if status not in RECOVERABLE_STATUSES:
+    if status in _AWAITING_CLAIM:
         detail = f"item rests at {status}; advance-repayment records this phase"
         return _refuse(code="incident-repayment-recovery-premature", detail=detail)
+    if status not in RECOVERABLE_STATUSES:
+        detail = f"item rests at {status}, outside the repayment dispatch path"
+        return _refuse(code="incident-repayment-recovery-ineligible", detail=detail)
     if record.get("assignee") != REPAYMENT_OWNER or not factory_claimed(record=record):
         return _refuse(code="incident-repayment-claim-missing", detail=attempt.item_id)
     current, recovered = reading, True

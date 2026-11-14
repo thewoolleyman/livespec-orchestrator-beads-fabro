@@ -112,7 +112,7 @@ def test_an_attempt_past_repayment_ready_needs_no_recovery_and_reads_no_ledger_r
     assert (code, detail) == ("incident-repayment-recovery-not-needed", phase)
 
 
-@pytest.mark.parametrize("status", ["pending-approval", "ready", "blocked"])
+@pytest.mark.parametrize("status", ["pending-approval", "ready"])
 def test_an_item_ordinary_admission_has_not_claimed_is_premature(status: str) -> None:
     client = _item(status=status, assignee="fabro", dispatch_id="01DISPATCH")
     code, detail = _code(
@@ -121,6 +121,18 @@ def test_an_item_ordinary_admission_has_not_claimed_is_premature(status: str) ->
     assert code == "incident-repayment-recovery-premature"
     assert status in detail
     assert "advance-repayment" in detail
+
+
+@pytest.mark.parametrize("status", ["blocked", "closed", "backlog"])
+def test_an_item_that_left_the_dispatch_path_is_ineligible_not_premature(status: str) -> None:
+    client = _item(status=status, assignee="fabro", dispatch_id="01DISPATCH")
+    code, detail = _code(
+        recover_repayment_phases(client=client, reading=_reading(phase="repayment-admission"))
+    )
+    assert code == "incident-repayment-recovery-ineligible"
+    assert status in detail
+    # No advance-repayment step pairs with these states, so the refusal must not point there.
+    assert "advance-repayment" not in detail
 
 
 @pytest.mark.parametrize(
