@@ -55,6 +55,8 @@ _EXPECTED_KEYS = (
     "tdd.first_product_write_before_red",
     "tdd.order_refusals",
     "tdd.assertion_count",
+    "tdd.verified_pair_count",
+    "tdd.verified_pair_unobserved_reason",
     "livespec.implement.adapter",
 )
 
@@ -134,6 +136,35 @@ def test_the_signals_assemble_from_the_commit_and_hook_derivations() -> None:
     assert signals.order_refusals == 3
     assert signals.assertion_count == 2
     assert signals.adapter == "claude-acp"
+
+
+def test_the_verified_pair_count_is_projected_with_or_without_its_reason() -> None:
+    module = _module()
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_completed_cycles import (
+        observed_pair_count,
+        unobserved_pair_count,
+    )
+
+    observed_zero = module.with_verified_pairs(
+        signals=module.UNOBSERVED_TDD_SIGNALS,
+        pairs=observed_pair_count(messages=()),
+    )
+    unobserved = module.with_verified_pairs(
+        signals=module.UNOBSERVED_TDD_SIGNALS,
+        pairs=unobserved_pair_count(reason="commits-unreadable"),
+    )
+
+    # An observed zero is projected as a zero on BOTH surfaces; an unobserved
+    # count is omitted from the span and carries its reason instead.
+    assert module.tdd_span_fields(signals=observed_zero)["tdd.verified_pair_count"] == 0
+    assert "tdd.verified_pair_unobserved_reason" not in module.tdd_span_fields(
+        signals=observed_zero
+    )
+    assert unobserved.verified_pair_count is None
+    assert module.tdd_span_fields(signals=unobserved)["tdd.verified_pair_unobserved_reason"] == (
+        "commits-unreadable"
+    )
+    assert "tdd.verified_pair_count" not in module.tdd_span_fields(signals=unobserved)
 
 
 def test_the_gap_median_is_projected_as_whole_seconds() -> None:
