@@ -29,15 +29,15 @@ legacy-dispatcher-agent has measured the same topic-name reuse on jkwzwv and akl
 Design choices, stated for the grade:
 - **Unique against both sources.** The stem must not equal another item's recorded linked topic, because two holds would then share one ratification. It must not name an existing proposal or revision record either, because the hold would read a decision about different behaviour.
 - **Deterministic extension.** A collided stem is extended by a suffix derived from the item's own id, so re-deriving for the same item yields the same topic and a retried filing records no second one.
-- **Existing collisions keep the relink route.** An item already carrying a colliding topic is repaired through `relink-spec-tier`. This proposal changes derivation, not records already written.
+- **Existing collisions keep the sanctioned replacement routes.** An item already carrying a colliding topic is repaired through `relink-spec-tier`, the `record-deposit` seam, or an intake or drain pass's automatic relink, never by re-derivation. This proposal changes derivation, not records already written.
 
-In-flight alignment, all `align`: #5058 reads the hold this topic feeds and does not derive it; #5068 adds fields to the tier record without changing the topic. Fleet scope: every repository that runs the spec-change-tier classifier inherits this, because the derivation lives in the plugin.
+In-flight alignment, all `align`: #5058 reads the hold this topic feeds and does not derive it; #5068 adds fields to the tier record without changing the topic. a-held-item-s-linked (pending on master) adds the `record-deposit` seam, and #5111 (a-drain-pass-relinks-a) adds an intake or drain pass's automatic relink; both replace a recorded topic without deriving one, so this proposal names them as sanctioned replacement routes beside `relink-spec-tier`. Fleet scope: every repository that runs the spec-change-tier classifier inherits this, because the derivation lives in the plugin.
 
 ### Proposed Changes
 
 **1. A unique derived stem (`contracts.md` §"Grooming and slice-size calibration", the "An autonomy tier is assigned" bullet).** After the sentence "The linked topic is first recorded as the stem the Dispatcher derives for the item.", add:
 
-> That derived stem MUST be unique when it is first recorded. It MUST differ from the linked topic recorded on every other work item of the tenant. It MUST NOT name a proposed change under `<spec-root>/proposed_changes/`, or a revision record under `<spec-root>/history/vNNN/proposed_changes/`, that exists when the stem is derived. The item's own recorded topic, and the proposed change filed under it as the item's own linked proposal, are excluded from that check. When the title-derived stem collides with any of these, the Dispatcher MUST extend it with a suffix derived deterministically from the item's id, so a retried filing of the same item, with the tenant and spec tree unchanged, records the same topic. A topic already recorded on an item is never re-derived; a recorded topic that collides is repaired only through the `relink-spec-tier` route.
+> That derived stem MUST be unique when it is first recorded. It MUST differ from the linked topic recorded on every other work item of the tenant. It MUST NOT name a proposed change under `<spec-root>/proposed_changes/`, or a revision record under `<spec-root>/history/vNNN/proposed_changes/`, that exists when the stem is derived. The item's own recorded topic, and the proposed change filed under it as the item's own linked proposal, are excluded from that check. When the title-derived stem collides with any of these, the Dispatcher MUST extend it with a suffix derived deterministically from the item's id, so a retried filing of the same item, with the tenant and spec tree unchanged, records the same topic. A topic already recorded on an item MUST NOT be re-derived: every later derivation for that item, at groom, on a dispatch path or on an intake or drain pass, MUST keep the recorded topic, even when the item's title has changed or the recorded topic now collides. A recorded topic is replaced only through a sanctioned replacement route: the `relink-spec-tier:<work-item-id>:<topic>` route; the deposit seam `dispatcher.py record-deposit --repo <path> --item <work-item-id> --topic <topic>`, as proposal a-held-item-s-linked states it; or an intake or drain pass's automatic relink to the topic the item's deposit commit names, as proposal a-drain-pass-relinks-a states it. Each of those routes applies its own refusal conditions and records its own replacement, and none of them derives a new stem.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
@@ -55,6 +55,13 @@ Feature: one held item never inherits another's ratification through a shared to
     When the item is filed
     Then its recorded linked topic names neither
     And a retried filing of the same item, with the tenant and spec tree unchanged, records the same topic
+
+  Scenario: a topic already recorded is never re-derived
+    Given a held item whose recorded linked topic now collides with another item's topic, and whose title has since changed
+    When the item is groomed, passes a dispatch path, and is read by an intake or drain pass
+    Then its recorded linked topic is unchanged after each
+    And no new stem is derived for it
+    And only relink-spec-tier, the record-deposit seam, or a drain pass's automatic relink to its deposit commit's topic replaces it
 ```
 
 **3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-flvxx3"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row and entry MUST carry the heading as numbered at revise.
