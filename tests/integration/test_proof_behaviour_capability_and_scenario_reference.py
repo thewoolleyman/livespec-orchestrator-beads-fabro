@@ -190,6 +190,20 @@ def test_the_gate_prompt_reports_a_surface_no_capability_provides() -> None:
     assert add_image < host < human
 
 
+def test_the_gate_prompt_names_an_external_surface_before_judging_it() -> None:
+    """A missing-capability finding identifies the proof surface, not only a mode.
+
+    Scenario 272's external-cluster case is the control: a gate that says only
+    "missing capability" sends the item to implement, where no code change can
+    supply the cluster or service the proof needs.  The check must name that
+    surface before it decides whether the published capability set provides it.
+    """
+    check = _dod_gate_check(number=5)
+
+    assert "name the SURFACE its proof needs BEFORE judging it" in check
+    assert "an external cluster or service" in check
+
+
 def test_the_gate_prompt_withholds_only_the_missing_capability_finding_when_unknown() -> None:
     """An unknown set silences THAT finding and nothing else.
 

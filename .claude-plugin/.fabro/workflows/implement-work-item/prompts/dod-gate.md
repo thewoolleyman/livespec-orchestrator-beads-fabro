@@ -235,13 +235,18 @@ question of fact — the spec tree above all.
 5. **Every `factory_captured` assertion's surface is one the capability set
    provides.** Check 3 catches a mode declared too WEAK; this catches one
    declared too STRONG, and nothing used to. For each `factory_captured`
-   assertion, name the SURFACE its proof needs — a command line, a web
-   interface, a terminal multiplexer, a released build on an operator host —
-   and ask whether some capability in the set you resolved provides it.
+   assertion, name the SURFACE its proof needs BEFORE judging it — a command
+   line, a web interface, a terminal multiplexer, a released build on an
+   operator host, or an external cluster or service such as a Job on the k3s
+   gates cluster — and ask whether some capability in the set you resolved
+   provides it. An external cluster or service, a credential or kubeconfig not
+   given to the sandbox, operator-host state, and the released-build effects of
+   a prompt or workflow file the item itself changes are proof-surface classes
+   no sandbox capability provides.
 
    An assertion whose surface **no capability** in the set provides is a
-   finding. Name the assertion, name the MISSING capability, and list these
-   remedies in exactly this order, because the modes are ordered
+   finding. Name the assertion, name its proof surface, name the MISSING
+   capability, and list these remedies in exactly this order, because the modes are ordered
    `factory_captured`, `host_captured`, `human_attested` and an assertion
    must carry the FIRST one that can prove it:
    - add the capability to the sandbox image;

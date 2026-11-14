@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import snapshot_records
 from livespec_orchestrator_beads_fabro.commands._dispatcher_step_ids import STEP_IDS
 from livespec_orchestrator_beads_fabro.effects import AttemptFailure, attempt, parse_json
 
@@ -154,7 +155,14 @@ def persistence_refusal_detail(
 
 
 def _records(*, path: Path) -> list[dict[str, Any]]:
-    """Every parseable JSONL record in the journal; an absent journal has none."""
+    """Every parseable JSONL record in the journal; an absent journal has none.
+
+    Inside a live pass the records are the pass's one parsed snapshot, shared and
+    read-only, so the gate costs no second parse of a journal that was 413 MB.
+    """
+    snapshot = snapshot_records(journal_path=path)
+    if snapshot is not None:
+        return cast("list[dict[str, Any]]", list(snapshot))
     if not path.is_file():
         return []
     loaded = attempt(action=lambda: path.read_text(encoding="utf-8"), exceptions=(OSError,))

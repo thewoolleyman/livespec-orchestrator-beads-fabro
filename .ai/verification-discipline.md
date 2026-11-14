@@ -45,6 +45,19 @@ the third near-miss.
      grepping a file's contents for a fix, ask whether it *could* contain it:
      that same fork's `pr.md` had exactly ONE commit in its history, 18 days
      older than the fix. `git log -- <file>` has no wrong-answer failure mode.
+   - *Corollary — a GitHub run-level status count is not a runner-activity
+     test.* A workflow run that has ANY queued job reports `queued` at the run
+     level, even while its other jobs execute. So `actions/runs?status=in_progress`
+     returning 0 next to many `queued` runs does not show that CI is stalled.
+     *Worked example (2026-11-14):* the anthropic-burn-mitigation seat
+     reported orchestrator CI "stalled" from 60 queued runs and 0 in
+     progress. legacy-coordinator-agent read the cluster instead and found the
+     `orchestrator-cq` runner quota full: 7 of 7 pods were executing jobs and 7
+     more were gated, the fleet CI quota incident `asxhj3`. Before calling CI
+     stalled, read job-level state, or ask the seat that owns the runner pool
+     for the admitted-versus-quota view. A job queued on the
+     `livespec-orchestrator-k3s` label with no `runner_name` is usually waiting
+     for a quota slot.
    - *Corollary — read the spec clause a check implements before calling it
      defective* (coordinator ruling R187, 2026-10-28). A measured behaviour
      that looks wrong may be exactly what the ratified spec mandates.

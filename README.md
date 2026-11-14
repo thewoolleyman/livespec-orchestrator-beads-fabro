@@ -1,5 +1,7 @@
 # livespec-orchestrator-beads-fabro
 
+Built with [livespec](https://livespec-ai.org/)
+
 The **beads/Dolt-backed implementation plugin** for
 [livespec](https://github.com/thewoolleyman/livespec), and the livespec
 family's current work-items backend. It is one realization of the

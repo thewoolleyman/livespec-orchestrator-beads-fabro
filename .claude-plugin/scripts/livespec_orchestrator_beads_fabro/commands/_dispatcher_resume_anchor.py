@@ -87,6 +87,7 @@ __all__: list[str] = [
     "RESUMED_AT_FIX",
     "RESUMED_AT_PR",
     "RESUMED_AT_PROOF_CAPTURE",
+    "RESUMED_AT_PROOF_VERIFY",
     "RESUMED_AT_PR_REFRESH",
     "RESUMED_AT_REVIEW",
     "SOURCE_FACTORY_RUN",
@@ -112,6 +113,12 @@ RESUMED_AT_PR_REFRESH = "pr_refresh"
 RESUMED_AT_REVIEW = "review"
 RESUMED_AT_FIX = "fix"
 RESUMED_AT_PROOF_CAPTURE = "proof_capture"
+RESUMED_AT_PROOF_VERIFY = "proof_verify"
+
+# The terminal nodes whose name a factory record may carry as `next_node_id` for a
+# run that has ENDED. Each names no stage a resume could enter, so it is never an
+# executing node: the run ended and the factory is saying where it came to rest.
+_ENDED_AT_OR_NONE = frozenset({None, "needs_human", "non_converged"})
 
 # The rest of the publication tail, which normalizes to `pr_refresh` exactly as
 # `pr` does (v145, Scenario 184's resumed-disarm sub-scenario). These are INPUTS
@@ -275,7 +282,10 @@ def resumed_at_for_verdict(*, verdict: str) -> str:
 
 
 def resume_anchor(
-    *, records: Sequence[ProofRecord], executing_node: str | None
+    *,
+    records: Sequence[ProofRecord],
+    executing_node: str | None,
+    proof_verify_ended: bool = False,
 ) -> ResumeAnchor | None:
     """The anchor the LATEST factory record on a pull request provides, or `None`.
 
@@ -288,6 +298,15 @@ def resume_anchor(
     `executing_node` is the factory's answer and outranks the verdict fallback
     whenever the factory still holds the run, because it names the node the run
     died inside rather than the last one that published.
+
+    `proof_verify_ended` is the factory's account that the run approved the capture
+    and then ended at `proof_verify` with no record. It anchors `proof_verify` only
+    over a `captured` latest record, because a verify that posted one would have
+    left a `verified` or `not_reproduced` record instead, and only when the factory
+    names no stage the run died inside -- an ended run names none, or names the
+    terminal it came to rest at. It outranks the verdict fallback, which would send
+    that `captured` record to `review`, because the factory record shows `review`
+    already approved the same capture and only the replay is unfinished.
     """
     factory = [one for one in records if one.verdict in FACTORY_RECORD_VERDICTS]
     if not factory:
@@ -296,6 +315,18 @@ def resume_anchor(
     head = published_head(body=latest.body)
     if head is None:
         return None
+    if (
+        proof_verify_ended
+        and latest.verdict == VERDICT_CAPTURED
+        and executing_node in _ENDED_AT_OR_NONE
+    ):
+        return ResumeAnchor(
+            record=latest,
+            run_id=latest.run_id,
+            head=head,
+            resumed_at=RESUMED_AT_PROOF_VERIFY,
+            source=SOURCE_FACTORY_RUN,
+        )
     if executing_node is not None:
         return ResumeAnchor(
             record=latest,

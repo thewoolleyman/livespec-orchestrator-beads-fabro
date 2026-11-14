@@ -165,6 +165,24 @@ def test_an_unconfigured_plan_repository_is_unobservable(tmp_path: Path) -> None
     assert observation.source == SOURCE_LEDGER
 
 
+def test_a_verified_record_predating_a_later_capture_is_unsatisfied(tmp_path: Path) -> None:
+    repository = _repo(tmp_path=tmp_path)
+    _seed_epic(
+        repository=repository,
+        comments=(_record(verdict="verified"), _record(verdict="captured")),
+    )
+
+    observation = observe_verified_proof(
+        repository=repository,
+        target=VerifiedProofTarget(subject_id=_EPIC, build=_BUILD, assertions=(_ASSERTION,)),
+        runner=_NeverRuns(),
+        now=_NOW,
+    )
+
+    assert observation.status == OBSERVATION_UNSATISFIED
+    assert "captured" in observation.detail
+
+
 def test_a_verified_proof_target_on_the_epic_reads_the_plans_own_repository(
     tmp_path: Path,
 ) -> None:
