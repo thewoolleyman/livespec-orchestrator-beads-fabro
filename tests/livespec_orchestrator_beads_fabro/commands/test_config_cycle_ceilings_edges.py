@@ -2,11 +2,19 @@
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 from livespec_orchestrator_beads_fabro.commands._config_cycle_ceilings import (
     resolve_adopted_cycle_ceilings,
     runtime_ceiling_policy_refusal,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_command_common import (
+    EXIT_PRECONDITION_ERROR,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_io import JournalFile
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
+    pre_dispatch_wall_exit,
 )
 
 
@@ -53,3 +61,23 @@ def test_policy_refusal_reports_invalid_and_unreadable_committed_configuration(
 
     assert unreadable is not None
     assert "cannot resolve" in unreadable
+
+
+def test_pre_dispatch_wall_refuses_invalid_runtime_ceiling_before_admission(
+    tmp_path: Path,
+) -> None:
+    """The shared pre-claim wall carries the committed-ceiling refusal."""
+    (tmp_path / ".livespec.jsonc").write_text(
+        '{"livespec-orchestrator-beads-fabro":{"dispatcher":'
+        '{"adopted_cycle_product_lloc_ceiling":0}}}',
+        encoding="utf-8",
+    )
+
+    exit_code = pre_dispatch_wall_exit(
+        args=argparse.Namespace(workflow_name=None, workflow=None),
+        repo=tmp_path,
+        items=(),
+        journal=JournalFile(path=tmp_path / "journal.jsonl"),
+    )
+
+    assert exit_code == EXIT_PRECONDITION_ERROR
