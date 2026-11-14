@@ -286,3 +286,89 @@ def test_a_reset_chunk_is_retried_and_never_reaches_the_copy_partial(tmp_path: P
     calls = Path(env["STUB_LOG"]).read_text(encoding="utf-8").splitlines()
     ranged = [c for c in calls if c.startswith("exec dd ")]
     assert len(ranged) == len(set(ranged)) + 1, "exactly one dd range was retried"
+
+
+_DISPATCH = "dispatch-1"
+_NEEDS_HUMAN = f"refs/heads/needs-human/{_DISPATCH}"
+
+# Moves origin's dispatch-id ref to the commit named by `refs/heads/other` and refuses that one push,
+# standing in for the run's own ending writer winning the race for the ref.
+_RACE_HOOK = f"""#!/bin/sh
+while read old new ref; do
+  if [ "$ref" = {_NEEDS_HUMAN} ] && [ ! -e "$GIT_DIR/raced" ]; then
+    : > "$GIT_DIR/raced"
+    unset GIT_QUARANTINE_PATH
+    git update-ref {_NEEDS_HUMAN} "$(git rev-parse refs/heads/other)"
+    exit 1
+  fi
+done
+"""
+
+
+def _preserve_with_needs_human(env: dict[str, str]) -> list[str]:
+    result = _run({**env, "PRESERVE_WRITE_NEEDS_HUMAN": "1"})
+    assert result.returncode == 0, result.stderr
+    [row] = [line.split("\t") for line in result.stdout.splitlines()[1:]]
+    return row
+
+
+def _diverged_commit(tmp_path: Path, origin: Path) -> str:
+    """A commit on origin, on `refs/heads/other`, that does not contain the run's work."""
+    clone = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(origin), str(clone)], check=True)
+    _git("config", "user.email", "t@example.invalid", cwd=clone)
+    _git("config", "user.name", "t", cwd=clone)
+    (clone / "other.txt").write_text("somebody else's work\n", encoding="utf-8")
+    _git("add", "other.txt", cwd=clone)
+    _git("commit", "-q", "-m", "other", cwd=clone)
+    _git("push", "-q", "origin", "HEAD:refs/heads/other", cwd=clone)
+    return _git("rev-parse", "HEAD", cwd=clone)
+
+
+def _needs_human_refs(origin: Path) -> dict[str, str]:
+    lines = _git(
+        "for-each-ref", "--format=%(objectname) %(refname)", "refs/heads/needs-human", cwd=origin
+    )
+    return {ref: sha for sha, ref in (line.split(" ", 1) for line in lines.splitlines())}
+
+
+def test_an_ancestor_needs_human_ref_is_moved_forward_and_no_sibling_is_written(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    base = _git("rev-parse", "refs/heads/master", cwd=origin)
+    _git("update-ref", _NEEDS_HUMAN, base, cwd=origin)
+    row = _preserve_with_needs_human(env)
+    assert _needs_human_refs(origin) == {_NEEDS_HUMAN: work_sha}
+    assert row[5] == f"VERIFIED+NH_ADVANCED:needs-human/{_DISPATCH}:{base[:12]}"
+
+
+def test_a_diverged_needs_human_ref_stays_and_the_preserve_goes_to_a_suffixed_sibling(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    other = _diverged_commit(tmp_path, origin)
+    _git("update-ref", _NEEDS_HUMAN, other, cwd=origin)
+    row = _preserve_with_needs_human(env)
+    sibling = f"{_NEEDS_HUMAN}-{work_sha[:12]}"
+    assert _needs_human_refs(origin) == {_NEEDS_HUMAN: other, sibling: work_sha}
+    assert (
+        row[5] == f"VERIFIED+NH_KEPT:{other[:12]}+NH_SUFFIX:{sibling.removeprefix('refs/heads/')}"
+    )
+
+
+def test_a_forward_move_rejected_by_a_raced_ref_leaves_origin_and_writes_the_sibling(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    other = _diverged_commit(tmp_path, origin)
+    _git("update-ref", _NEEDS_HUMAN, _git("rev-parse", "refs/heads/master", cwd=origin), cwd=origin)
+    hook = origin / "hooks" / "pre-receive"
+    hook.write_text(_RACE_HOOK, encoding="utf-8")
+    hook.chmod(hook.stat().st_mode | stat.S_IXUSR)
+    row = _preserve_with_needs_human(env)
+    sibling = f"{_NEEDS_HUMAN}-{work_sha[:12]}"
+    assert _needs_human_refs(origin) == {_NEEDS_HUMAN: other, sibling: work_sha}
+    assert (
+        row[5] == f"VERIFIED+NH_KEPT:{other[:12]}+NH_SUFFIX:{sibling.removeprefix('refs/heads/')}"
+    )

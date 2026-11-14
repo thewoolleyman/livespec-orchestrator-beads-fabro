@@ -10,7 +10,7 @@ Constraints an agent editing this directory must satisfy:
   too.
 - **Keep every guard rule in README.md.** That means the run branch over HEAD, fsck before push, the
   ancestry guard (write a `-<sha12>` sibling, never move a ref), push retry, ls-remote verify, the
-  create-only `needs-human/<dispatch id>` ref, the merge-base work test with its reflog fallback (rule 9),
+  fast-forward-only `needs-human/<dispatch id>` ref, the merge-base work test with its reflog fallback (rule 9),
   and `EMPTY` pushing nothing (rule 10).
 - **Shell only.** There is no product Python here, so the Red-Green-Replay ritual does not apply. Commit
   changes as `chore(dev-tooling):`.
