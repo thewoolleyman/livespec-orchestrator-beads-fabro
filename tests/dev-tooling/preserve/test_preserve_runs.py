@@ -153,6 +153,7 @@ def _setup(tmp_path: Path, *, worker_nodes: str) -> tuple[dict[str, str], Path, 
         "WORKER_NODES": worker_nodes,
         "SANDBOX_ROOT": str(tmp_path / "sandbox"),
         "PRESERVE_WORK": str(tmp_path / "work"),
+        "PRESERVE_REPOS": _URL,
         "GIT_CONFIG_NOSYSTEM": "1",
         "GIT_CONFIG_GLOBAL": "/dev/null",
         "GIT_CONFIG_COUNT": "1",
@@ -307,6 +308,52 @@ def test_a_legacy_copy_uses_its_reflog_candidate_before_reading_origin(
     assert not copy.exists()
     assert f"\t{_URL}\t{work_sha}\t" in result.stdout
     assert "\tVERIFIED\t" in result.stdout
+
+
+def test_a_legacy_copy_with_no_sidecar_anywhere_is_verified_against_the_fleet_repositories(
+    tmp_path: Path,
+) -> None:
+    """The work directory holds only pre-sidecar copies, so origins come from the repository list."""
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    Path(env["PODS_JSON"]).write_text('{"items": []}', encoding="utf-8")
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    workspace = tmp_path / "sandbox" / "workspace"
+    subprocess.run(["git", "clone", "-q", "--bare", str(workspace), str(copy)], check=True)
+    _git("fetch", "-q", "origin", "+refs/heads/master:refs/remotes/origin/master", cwd=copy)
+    _git(
+        "fetch",
+        "-q",
+        str(workspace),
+        f"+refs/heads/fabro/run/{_RUN}:refs/heads/preserve/run-{_RUN}",
+        cwd=origin,
+    )
+
+    result = _run(env)
+
+    assert result.returncode == 0, result.stderr
+    assert list(copy.parent.glob("*.preserve")) == []
+    assert not copy.exists()
+    assert f"\t{_URL}\t{work_sha}\t" in result.stdout
+    assert "\tVERIFIED\t" in result.stdout
+
+
+def test_a_legacy_copy_whose_ref_no_listed_origin_holds_is_kept_with_an_unknown_repository(
+    tmp_path: Path,
+) -> None:
+    env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
+    Path(env["PODS_JSON"]).write_text('{"items": []}', encoding="utf-8")
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    workspace = tmp_path / "sandbox" / "workspace"
+    subprocess.run(["git", "clone", "-q", "--bare", str(workspace), str(copy)], check=True)
+    _git("fetch", "-q", "origin", "+refs/heads/master:refs/remotes/origin/master", cwd=copy)
+
+    result = _run(env)
+
+    assert result.returncode == 0, result.stderr
+    assert copy.exists()
+    assert "KEPT(legacy origin unknown)" in result.stdout
 
 
 def test_the_worker_exec_route_runs_only_read_commands(tmp_path: Path) -> None:

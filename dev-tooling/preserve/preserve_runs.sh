@@ -29,9 +29,20 @@ read_copy_record() {
   RECORD_REF=$(sed -n 's/^ref=//p' "$d.preserve" | head -n 1)
   RECORD_SHA=$(sed -n 's/^sha=//p' "$d.preserve" | head -n 1)
 }
-read_origin_ref() { git ls-remote "$1" "$2" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
+# The repositories this script preserves runs for: a pre-sidecar copy records none, so its preserve ref
+# is looked up on each of these. PRESERVE_REPOS (space-separated URLs) overrides the fleet default.
+fleet_repos() {
+  local r
+  if [ -n "${PRESERVE_REPOS:-}" ]; then printf '%s\n' $PRESERVE_REPOS; return; fi
+  for r in livespec livespec-dev-tooling livespec-driver-claude livespec-driver-codex livespec-driver-pi \
+           livespec-orchestrator-beads-fabro livespec-orchestrator-git-jsonl livespec-runtime \
+           livespec-console-beads-fabro livespec-overseer; do
+    printf 'https://github.com/thewoolleyman/%s\n' "$r"
+  done
+}
+read_origin_ref() { GIT_TERMINAL_PROMPT=0 git ls-remote "$1" "$2" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
 retry_kept_copies() {
-  local d run got pushed pa repo ref sha mb candidate record legacy_head legacy_rb c i k
+  local d run got pushed pa repo ref sha mb candidate record legacy_head legacy_rb legacy_repos c i k
   local -a legacy_labels legacy_shas
   RETRIED_RUNS=" "
   for d in "$WORK"/*.git; do
@@ -42,7 +53,7 @@ retry_kept_copies() {
     [ -f "$d.preserve" ] || {
       # Copies from before the sidecar existed have no repository identity. Re-run the same
       # merge-base test against the stored master ref, then look for that selected commit on
-      # origins recorded by other kept copies. Never guess an origin when none reads it back.
+      # the origin of each repository this script preserves runs for. Never guess an origin when none reads it back.
       legacy_head=$(git -C "$d" rev-parse --verify -q HEAD 2>/dev/null)
       legacy_rb=$(git -C "$d" rev-parse --verify -q "refs/heads/fabro/run/$run" 2>/dev/null)
       if [ -z "$legacy_head" ] || ! git -C "$d" rev-parse --verify -q refs/remotes/origin/master >/dev/null 2>&1; then
@@ -75,10 +86,12 @@ retry_kept_copies() {
         printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy copy is EMPTY)\t0\t-\n' "$run" "$legacy_head"
         continue
       fi
-      for record in "$WORK"/*.git.preserve; do
-        [ -f "$record" ] || continue
-        read_copy_record "${record%.preserve}"; repo=$RECORD_REPO
-        [ -n "$repo" ] || continue
+      legacy_repos=$(
+        { fleet_repos
+          for record in "$WORK"/*.git.preserve; do
+            [ -f "$record" ] && sed -n 's/^repo=//p' "$record" | head -n 1
+          done; } | awk 'NF && !seen[$0]++')
+      for repo in $legacy_repos; do
         ref=refs/heads/preserve/run-$run
         got=$(read_origin_ref "$repo" "$ref")
         if [ "$got" != "$candidate" ]; then
