@@ -201,6 +201,23 @@ def _hermetic_lifecycle_preservation_ref_deletion(monkeypatch: pytest.MonkeyPatc
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_seed_reseed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Leave every seeded recovery route as its grading made it.
+
+    The reseed step reads the default branch's tip from origin and runs a scratch
+    clone against it, which a hermetic routing case with a scripted shell has no
+    origin to answer. `test_dispatcher_recovery_reseed_route` runs the real step
+    against a local bare origin and `test_dispatcher_recovery_routing_reseed`
+    proves the routing pass calls it; a case that needs the step replaces this
+    stand-in on the routing module itself.
+    """
+    monkeypatch.setattr(
+        "livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routing.reseed_route",
+        lambda *, route, **_unused: route,
+    )
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_claude_credential_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     from livespec_orchestrator_beads_fabro.commands._dispatcher_claude_credential import (
         ClaudeCredentialStatus,
