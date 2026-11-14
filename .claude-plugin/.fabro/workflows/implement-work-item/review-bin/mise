@@ -1,6 +1,9 @@
 #!/bin/sh
-# The review Mise boundary. `mise exec` may replace PATH, so inspect the child
-# command before it can route around the review Git and Just launchers.
+# The review Mise boundary. `mise exec` (alias `x`) may replace PATH, so inspect
+# the child command before it can route around the review Git and Just
+# launchers. Every supported spelling is read: global options before the
+# subcommand, runtime tools before the child, the `--` separator, and the
+# `-c`/`--command` string form.
 set -u
 
 refuse_suite() {
@@ -13,20 +16,16 @@ refuse_branch() {
  exit 1
 }
 
-# `mise exec [OPTIONS] [--] COMMAND ...` is the only form that launches a
-# child. Options before its `--` do not form the child argv; after the separator
-# the first token is its executable.
-if [ "${1:-}" = "exec" ]; then
-(
- shift
+# classify_child EXECUTABLE [ARGUMENT...] refuses a guarded child command.
+classify_child() {
  while [ "$#" -gt 0 ]; do
   case "$1" in
-   --) shift; break ;;
-   -*) shift ;;
+   *=*|env|exec|command) shift ;;
    *) break ;;
   esac
  done
- case "${1:-}" in
+ [ "$#" -gt 0 ] || return 0
+ case "${1##*/}" in
   livespec-implement-check-suite) refuse_suite ;;
   just)
    shift
@@ -60,7 +59,73 @@ if [ "${1:-}" = "exec" ]; then
    esac
    ;;
  esac
-) || exit $?
-fi
+}
+
+# classify_string COMMAND_TEXT reads each simple command of a `-c` string.
+classify_string() {
+ segments=$(printf '%s\n' "$1" | tr ';&|()`' '\n\n\n\n\n\n' | tr -d "\"'")
+ old_ifs=$IFS
+ IFS='
+'
+ set -f
+ for segment in $segments; do
+  IFS=$old_ifs
+  # shellcheck disable=SC2086
+  classify_child $segment
+  IFS='
+'
+ done
+ IFS=$old_ifs
+ set +f
+}
+
+# classify_exec [ARGUMENT...] reads the arguments that follow `mise exec`.
+classify_exec() {
+ command_string=""
+ while [ "$#" -gt 0 ]; do
+  case "$1" in
+   --) shift; break ;;
+   -c|--command)
+    if [ "$#" -ge 2 ]; then command_string=$2; shift 2; else shift; fi
+    ;;
+   --command=*) command_string=${1#--command=}; shift ;;
+   -j|--jobs|-E|--env|-C|--cd)
+    if [ "$#" -ge 2 ]; then shift 2; else shift; fi
+    ;;
+   -c?*) command_string=${1#-c}; shift ;;
+   -*) shift ;;
+   *@*) shift ;;
+   *)
+    # Without a separator the first plain token is the child; with one,
+    # every token before it is a runtime tool.
+    separated=0
+    for argument in "$@"; do
+     if [ "$argument" = "--" ]; then separated=1; break; fi
+    done
+    [ "$separated" -eq 1 ] || break
+    shift
+    ;;
+  esac
+ done
+ classify_child "$@"
+ [ -z "$command_string" ] || classify_string "$command_string"
+}
+
+# classify_mise [ARGUMENT...] reads a whole `mise` invocation. Global options
+# precede the subcommand; the first other token names it.
+classify_mise() {
+ while [ "$#" -gt 0 ]; do
+  case "$1" in
+   -C|--cd|-E|--env|-j|--jobs) if [ "$#" -ge 2 ]; then shift 2; else shift; fi ;;
+   -*) shift ;;
+   *) break ;;
+  esac
+ done
+ case "${1:-}" in
+  exec|x) shift; classify_exec "$@" ;;
+ esac
+}
+
+classify_mise "$@"
 
 exec "$LIVESPEC_REVIEW_REAL_MISE" "$@"
