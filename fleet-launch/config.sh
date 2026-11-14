@@ -24,6 +24,12 @@
 # The committed breakage-exception list: one work-item id per line. The repository WIP gate treats the
 # cap as one above the repository's wip_cap for a listed item, and for no other.
 : "${FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE:=$FLEET_LAUNCH_ORCH_REPO/fleet-launch/breakage-exception}"
+# The shared, per-repository cache for the authoritative WIP claim-count projection.  A cache entry
+# lasts only briefly: in-flight markers are still read on every gate pass, so the cache reduces ledger
+# reads without making the launcher's early-yield margin stale.
+: "${FLEET_LAUNCH_WIP_CACHE_DIR:=$FLEET_LAUNCH_STATE_DIR}"
+: "${FLEET_LAUNCH_WIP_CACHE_TTL_S:=25}"
+: "${FLEET_LAUNCH_WIP_LOCK_WAIT_S:=120}"
 # The gmktec target setting: a one-word file. `candidate` sends a gmktec launch to the candidate
 # instance; an absent file, or any other word, selects the default instance.
 : "${FLEET_LAUNCH_GMK_TARGET_FILE:=$FLEET_LAUNCH_STATE_DIR/gmk-target}"

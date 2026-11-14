@@ -315,7 +315,7 @@ fleet_green() {
 bind_count() {
   marker="$INFLIGHT/$(date +%s%N)-$SEAT-$ITEM"
   mkdir -p "$INFLIGHT" 2>/dev/null
-  echo "owner=$SEAT pid=$$ item=$ITEM factory=$1 at=$(date -u +%FT%TZ)" > "$marker" || { marker=""; return 1; }
+  echo "owner=$SEAT pid=$$ item=$ITEM repo=$REPO_NAME factory=$1 at=$(date -u +%FT%TZ)" > "$marker" || { marker=""; return 1; }
   read_fleet_cap; read_boards direct
   if [ "$fleet" != U ] && [ "$FLEET_CAP" -gt 0 ] && [ "$fleet" -le "$FLEET_CAP" ]; then return 0; fi
   echo "$(date -u +%FT%TZ) binding count with our marker: fleet=$fleet cap=${FLEET_CAP:-?}: delete marker, skip"
@@ -400,27 +400,119 @@ sys.exit(0 if refused(document) else 1)
 PY
 }
 
-# wip_green: the repository WIP gate. It succeeds while the target repository's counted-claims count,
-# read through the Dispatcher's capacity projection, is below its configured wip_cap, or one above it
-# for an item the breakage-exception list names. This is an early yield, not an admission decision: the
-# Dispatcher still applies its own WIP cap to every drive, so a count that cannot be read never holds.
-wip_green() {
-  local report counted cap effective build_dir
+# The cache file has a deliberately small, shell-readable JSON shape.  A waiting
+# launcher can parse it before it starts the tenant wrapper and Python capacity
+# projection; the projection response is normalized into the same shape only on
+# a cache miss.
+wip_cache_path() { printf '%s/wip-claimed-cache.%s.json' "$FLEET_LAUNCH_WIP_CACHE_DIR" "$REPO_NAME"; }
+wip_cache_ttl_enabled() {
+  case "$FLEET_LAUNCH_WIP_CACHE_TTL_S" in ''|*[!0-9]*|0) return 1 ;; esac
+  return 0
+}
+wip_parse_cache() {
+  local document=$1 rest taken counted cap statuses
+  document=${document//$'\n'/}
+  case "$document" in
+    '{"taken":'*',"counted_claims":'*',"wip_cap":'*',"counted_item_statuses":'*'}') ;;
+    *) return 1 ;;
+  esac
+  rest=${document#'{"taken":'}; taken=${rest%%,*}
+  rest=${rest#*',"counted_claims":'}; counted=${rest%%,*}
+  rest=${rest#*',"wip_cap":'}; cap=${rest%%,*}
+  statuses=${rest#*',"counted_item_statuses":'}; statuses=${statuses%'}'}
+  case "$taken:$counted:$cap" in *[!0-9:]*|::*|:*:|*::*) return 1 ;; esac
+  case "$statuses" in \{*\}) ;; *) return 1 ;; esac
+  WIP_CACHE_TAKEN=$taken; WIP_COUNTED=$counted; WIP_CAP=$cap; WIP_STATUSES=$statuses
+}
+wip_parse_projection() {
+  local document=$1 rest counted cap statuses
+  document=${document//$'\n'/}; document=${document//[[:space:]]/}
+  case "$document" in
+    '{"counted_claims":'*',"wip_cap":'*',"counted_item_statuses":'*'}') ;;
+    *) return 1 ;;
+  esac
+  rest=${document#'{"counted_claims":'}; counted=${rest%%,*}
+  rest=${rest#*',"wip_cap":'}; cap=${rest%%,*}
+  statuses=${rest#*',"counted_item_statuses":'}; statuses=${statuses%'}'}
+  case "$counted:$cap" in *[!0-9:]*|:*:|*::*) return 1 ;; esac
+  case "$statuses" in \{*\}) ;; *) return 1 ;; esac
+  WIP_COUNTED=$counted; WIP_CAP=$cap; WIP_STATUSES=$statuses
+}
+wip_cache_read() {
+  local path now age document
+  wip_cache_ttl_enabled || return 1
+  path=$(wip_cache_path)
+  [ -r "$path" ] || return 1
+  IFS= read -r document < "$path" || return 1
+  wip_parse_cache "$document" || return 1
+  now=$(date +%s); age=$(( now - WIP_CACHE_TAKEN ))
+  [ "$age" -ge 0 ] && [ "$age" -lt "$FLEET_LAUNCH_WIP_CACHE_TTL_S" ]
+}
+wip_cache_write() {
+  local path temporary now
+  path=$(wip_cache_path); mkdir -p "$FLEET_LAUNCH_WIP_CACHE_DIR" || return 1
+  now=$(date +%s); temporary="$path.tmp.$$"
+  printf '{"taken":%s,"counted_claims":%s,"wip_cap":%s,"counted_item_statuses":%s}\n' \
+    "$now" "$WIP_COUNTED" "$WIP_CAP" "$WIP_STATUSES" > "$temporary" || return 1
+  mv "$temporary" "$path" 2>/dev/null || { rm -f "$temporary"; return 1; }
+}
+wip_projection_read() {
+  local report build_dir
   build_dir="$FLEET_LAUNCH_PLUGIN_CACHE/$(installed_build)"
-  report=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ready-set-check.py" "$build_dir" "$REPO" "$ITEM" capacity 2>/dev/null) || {
-    echo "$(date -u +%FT%TZ) repository WIP count unreadable: not holding, the Dispatcher's own cap still applies"; return 0
-  }
-  counted=$(printf '%s' "$report" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["counted_claims"]))' 2>/dev/null) || counted=""
-  cap=$(printf '%s' "$report" | python3 -c 'import json,sys; print(int(json.load(sys.stdin)["wip_cap"]))' 2>/dev/null) || cap=""
-  if [ -z "$counted" ] || [ -z "$cap" ]; then
+  report=$(cd "$REPO" && "$WRAP" -- python3 "$FLEET_LAUNCH_DIR/ready-set-check.py" "$build_dir" "$REPO" "$ITEM" capacity 2>/dev/null) || return 1
+  wip_parse_projection "$report"
+}
+wip_cached_projection() {
+  local path lock_fd
+  wip_cache_read && return 0
+  wip_cache_ttl_enabled || { wip_projection_read; return; }
+  mkdir -p "$FLEET_LAUNCH_WIP_CACHE_DIR" || return 1
+  path=$(wip_cache_path)
+  exec {lock_fd}>"$path.lock" || return 1
+  # The wait must outlast a legitimately slow recomputation (30-40 s in production): a launcher that
+  # gives up early fails open instead of reusing the refreshed count. The cache is re-read once the
+  # lock is held, so every waiter reuses the holder's result.
+  flock -w "$FLEET_LAUNCH_WIP_LOCK_WAIT_S" "$lock_fd" || { eval "exec ${lock_fd}>&-"; return 1; }
+  if wip_cache_read; then
+    flock -u "$lock_fd"; eval "exec ${lock_fd}>&-"; return 0
+  fi
+  wip_projection_read || { flock -u "$lock_fd"; eval "exec ${lock_fd}>&-"; return 1; }
+  wip_cache_write || true
+  flock -u "$lock_fd"; eval "exec ${lock_fd}>&-"
+}
+# wip_inflight_addition is intentionally not cached.  An absent item status is
+# treated as not-yet-active: only a cached active status proves that a marker no
+# longer needs this caller-side early-yield margin.
+wip_inflight_addition() {
+  local marker_path marker_pid marker_item marker_repo addition=0
+  for marker_path in "$INFLIGHT"/*; do
+    [ -r "$marker_path" ] || continue
+    [ "$marker_path" = "$marker" ] && continue
+    marker_pid=$(grep -oE 'pid=[0-9]+' "$marker_path" 2>/dev/null | head -1 | cut -d= -f2)
+    marker_item=$(grep -oE 'item=[^ ]+' "$marker_path" 2>/dev/null | head -1 | cut -d= -f2)
+    marker_repo=$(grep -oE 'repo=[^ ]+' "$marker_path" 2>/dev/null | head -1 | cut -d= -f2)
+    [ "$marker_repo" = "$REPO_NAME" ] || continue
+    [ "$marker_pid" = "$$" ] && [ "$marker_item" = "$ITEM" ] && continue
+    if [ -z "$marker_pid" ] || ! kill -0 "$marker_pid" 2>/dev/null; then continue; fi
+    case "$WIP_STATUSES" in *"\"$marker_item\":\"active\""*) continue ;; esac
+    addition=$(( addition + 1 ))
+  done
+  WIP_INFLIGHT=$addition
+}
+# wip_green: the repository WIP gate. It reuses a fresh per-repository
+# projection before starting the credential wrapper, then adds live, not-yet-
+# active in-flight launches on every pass. This remains an early yield only.
+wip_green() {
+  local effective sum
+  if ! wip_cached_projection; then
     echo "$(date -u +%FT%TZ) repository WIP count unreadable: not holding, the Dispatcher's own cap still applies"; return 0
   fi
-  effective=$cap
-  if grep -qxF -- "$ITEM" "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE" 2>/dev/null; then effective=$(( cap + 1 )); fi
-  [ "$counted" -lt "$effective" ] && return 0
-  WIP_COUNTED=$counted
-  WIP_CAP=$cap
-  WIP_EFFECTIVE=$effective
+  wip_inflight_addition
+  effective=$WIP_CAP
+  if grep -qxF -- "$ITEM" "$FLEET_LAUNCH_BREAKAGE_EXCEPTION_FILE" 2>/dev/null; then effective=$(( WIP_CAP + 1 )); fi
+  sum=$(( WIP_COUNTED + WIP_INFLIGHT ))
+  [ "$sum" -lt "$effective" ] && return 0
+  WIP_EFFECTIVE=$effective; WIP_SUM=$sum
   return 1
 }
 
@@ -594,7 +686,7 @@ while :; do
     if ! wip_green; then
       ensure_ticket
       yield_ticket repository-wip
-      echo "$(date -u +%FT%TZ) repository WIP at cap: counted=$WIP_COUNTED cap=$WIP_CAP effective=$WIP_EFFECTIVE item=$ITEM: yield FIFO head"
+      echo "$(date -u +%FT%TZ) repository WIP at cap: counted=$WIP_COUNTED cap=$WIP_CAP effective=$WIP_EFFECTIVE in-flight=$WIP_INFLIGHT sum=$WIP_SUM cap=$WIP_CAP item=$ITEM: yield FIFO head"
       sleep "$FLEET_LAUNCH_POLL_S"
       continue
     fi
