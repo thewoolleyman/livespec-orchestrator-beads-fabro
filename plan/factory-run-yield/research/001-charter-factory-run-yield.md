@@ -6,13 +6,15 @@
 
 ## Definition of Done assertions derived from that statement
 
-- Filing, approve and every release-to-ready path refuse a work item whose factory_captured assertion needs a surface the published sandbox capabilities cannot reach, naming the assertion and the surface.
-- Every ended factory run's terminal span in the livespec-dispatcher dataset carries its fabro run id and a failure category drawn from a closed set, so a Honeycomb query breaks the week's failed runs down by cause with no empty or 'None' group.
+- The filing display shows, and intake, approve and every release-to-ready path hold out of ready, a work item whose factory_captured assertion needs a surface that no name in the committed sandbox capability grading set provides, each naming the assertion and the surface.
+- Every factory run that ends in a terminal failure has a livespec-dispatcher span carrying its fabro run id and a fabro.failure.category drawn from a closed set, so a Honeycomb query breaks the week's failed runs down by cause with no empty or 'None' group.
 - Every ended factory run's terminal dispatch span carries its repository, run class, execution target and sandbox CPU-seconds, so a Honeycomb query attributes factory CPU by repository.
 
 # Charter — factory-run-yield
 
 Opened 2026-11-13 by plan throughput-track-organization (livespec-dev-tooling-q26e3c) as part of the maintainer's throughput track. The assertions above are SESSION-DERIVED from the maintainer's statement and the 2026-11-13 throughput report; the first session to resume this plan with the maintainer present confirms or re-words them.
+
+Re-worded 2026-11-14 by the factory-run-yield seat, and recorded as a scope event on bd-ib-ft26pi. Assertion 1 originally said filing refuses, but contracts.md §"Effective acceptance criteria" says "a front-end MUST NOT refuse on a finding", and the grading set is the committed dispatcher.sandbox_capabilities array. Assertion 2 now covers runs that end in a terminal failure, because a succeeded run has no failure category. Assertion 3 is confirmed as written. These are conformance re-words; the maintainer has not yet confirmed them. The full carrier map is the epic's latest carrier-map scope event.
 
 ## Why this plan exists
 
