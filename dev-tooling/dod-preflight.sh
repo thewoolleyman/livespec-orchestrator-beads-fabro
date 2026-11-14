@@ -93,8 +93,8 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement import
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_markers import (
     is_receipt_comment,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
-    identity_for_dod_taking,
+from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_spec_identity import (
+    spec_identity_for_governing,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import ShellCommandRunner
 from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run import (
@@ -103,6 +103,23 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_run im
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import store_config
 from livespec_orchestrator_beads_fabro.store import materialize_work_items, read_work_items
+
+# This script runs from the primary checkout, which moves with master, but every
+# import above resolves in the REGISTERED build, which moves only when a release
+# is adopted. The shared identity rule, and the gate that checks a recorded
+# repository-preflight verdict against it, arrive together in one build. A build
+# that predates them (v0.328.0 does) takes the identity as this script did
+# before the seam and records NO verdict for its gate to reuse. Importing the
+# seam unguarded made every launch's preflight exit 1 on such a build, which a
+# launcher reads as a refusal (#5270, reverted by #5277).
+# tests/test_registered_install_script_imports.py holds every unguarded import
+# here to the registered-build floor.
+try:
+    from livespec_orchestrator_beads_fabro.commands._dispatcher_dod_judgement_preflight_reuse import (
+        identity_for_dod_taking,
+    )
+except ImportError:
+    identity_for_dod_taking = None
 
 # The reading is the package's own seam: a recorded verdict the component's reuse
 # rule still allows decides and starts no judge candidate, as at the gate. The
@@ -192,8 +209,10 @@ if not reading.holds:
     with Path(f"{side}.governing").open("a", encoding="utf-8") as advisory:
         advisory.writelines(f"advisory: {finding}\n" for finding in reading.findings)
 subject = judgement_subject(item=item, cwd=repo, comments=comments, governing=governing)
-identity = identity_for_dod_taking(
-    item=item, cwd=repo, comments=comments, governing=governing
+identity = (
+    spec_identity_for_governing(item=item, cwd=repo, governing=governing)
+    if identity_for_dod_taking is None
+    else identity_for_dod_taking(item=item, cwd=repo, comments=comments, governing=governing)
 )
 Path(f"{side}.record").write_text(
     json.dumps(
@@ -205,6 +224,7 @@ Path(f"{side}.record").write_text(
             "rubric_digest": rubric_digest(rubric=rubric),
             "spec_identity_form": identity.form,
             "spec_identity": identity.value,
+            "records_verdict": identity_for_dod_taking is not None,
             "subject_characters": len(subject),
             "carried_rider_count": sum(
                 not is_receipt_comment(body=comment) for comment in comments
@@ -320,20 +340,22 @@ if chain.reply is None:
     raise SystemExit(2)
 print(chain.reply)
 judgement = parse_judgement_reply(reply=chain.reply)
-append_work_item_comment(
-    path=store_config(repo=repo),
-    work_item_id=record["item_id"],
-    body=verdict_comment(
-        item_id=record["item_id"],
-        stage="repository-preflight",
-        digest=record["subject_digest"],
-        rubric_digest=record["rubric_digest"],
-        judgement=judgement,
-        spec_identity=SpecIdentity(
-            form=record["spec_identity_form"], value=record["spec_identity"]
+# Only a build that carries the shared identity rule gets a record to reuse.
+if record["records_verdict"]:
+    append_work_item_comment(
+        path=store_config(repo=repo),
+        work_item_id=record["item_id"],
+        body=verdict_comment(
+            item_id=record["item_id"],
+            stage="repository-preflight",
+            digest=record["subject_digest"],
+            rubric_digest=record["rubric_digest"],
+            judgement=judgement,
+            spec_identity=SpecIdentity(
+                form=record["spec_identity_form"], value=record["spec_identity"]
+            ),
         ),
-    ),
-)
+    )
 outcome = judgement.outcome
 raise SystemExit(0 if outcome == "admitted" else 1)
 JUDGE_PY
