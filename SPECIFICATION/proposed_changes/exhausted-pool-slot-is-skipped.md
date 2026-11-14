@@ -25,25 +25,29 @@ Work item bd-ib-wx4yha, held at the spec-change tier (topic session-headroom-adm
 
 1. Immediately after the sentence that ends "and its projection does not call for a projection skip.", insert:
 
-> Whatever the floor, a pool slot whose opaque credential identity is named by a live provider-exhaustion record (the per-identity records of "Every observed availability record is scoped, versioned, and expires" in this section) does NOT qualify: it takes a **provider-exhaustion skip**, which the Dispatcher MUST decide before every headroom test of this clause. A floor of 0 MUST NOT disable it, because it is an observed hold on that credential's account and not a headroom skip; a floor of 0 "disables no other admission condition". A provider-exhaustion record that carries no credential identity names no slot. It leaves slot qualification unchanged and keeps the vendor-wide coverage that paragraph states. The skip lasts only while the record is live: it ends at the record's expiry, or when the record is retired by a later matching execution or an operator clearance, and it creates no record and retires none.
+> Whatever the floor, a pool slot whose opaque credential identity is named by a live provider-exhaustion record (the per-identity records of "Every observed availability record is scoped, versioned, and expires" in this section) does NOT qualify: it takes a **provider-exhaustion skip**, which the Dispatcher MUST decide before every headroom test of this clause. A floor of 0 MUST NOT disable it, because it is an observed hold on that credential's account and not a headroom skip; a floor of 0 "disables no other admission condition". A provider-exhaustion record that carries no credential identity names no slot. It leaves slot qualification unchanged and keeps the vendor-wide coverage that paragraph states. The skip lasts only while the record is live: it ends at the record's expiry, or when the record is retired by a later matching execution or an operator clearance, and it creates no record and retires none. A slot that would ALSO take a floor skip, a seven-day skip, a seven-day floor skip or a projection skip is named a provider-exhaustion skip, and only that, because the provider-exhaustion skip is decided before every headroom test. When the record ends, the slot is graded by the headroom tests alone, exactly as if no record had named it.
 
 2. Replace "With a floor of 0 every pool slot qualifies, and the ranking below still applies." with:
 
 > With a floor of 0 every pool slot that is not taken by a provider-exhaustion skip qualifies, and the ranking below still applies.
 
-3. In the sentence beginning "Every assessment's journal record MUST name the chosen slot's opaque non-secret credential identity", replace the reason list "a floor skip, a seven-day skip, a projection skip, an unobservable reading, or a qualifying slot ranked lower" with "a provider-exhaustion skip, a floor skip, a seven-day skip, a projection skip, an unobservable reading, or a qualifying slot ranked lower". Immediately after that sentence, insert:
+3. In the sentence beginning "Every assessment's journal record MUST name the chosen slot's opaque non-secret credential identity", insert "a provider-exhaustion skip, " immediately before the first "a floor skip," of its not-chosen reason list. This is an insertion, not a replacement, so it applies cleanly after the `admission-skips-a-slot-below-the-weekly-floor` revise (bd-ib-eogs2t), which revises first and inserts "a seven-day floor skip," into the same list. After both revises, the list reads: "a provider-exhaustion skip, a floor skip, a seven-day skip, a seven-day floor skip, a projection skip, an unobservable reading, or a qualifying slot ranked lower". Immediately after that sentence, insert:
 
 > The journal record of an assessment taken by a provider-exhaustion skip MUST also carry the expiry instant of the live record that named the slot's credential identity, so a reader can see when the slot becomes eligible again without consulting the exhaustion records.
 
 4. Immediately after the sentence beginning "A projection skip has exactly the semantics of a floor skip:", insert:
 
-> A provider-exhaustion skip has the same per-node semantics. When it leaves no pool slot qualifying, every covered candidate of the dispatch is skipped, and per-node selection MUST continue in configured order to the next candidate satisfying every eligibility condition, such as a node's configured `codex-acp` fallback. When it leaves an admission-required node with no eligible candidate, a `ready` item remains `ready` without a claim or blocked reason, and reevaluation follows the Per-node selection scheduling rule of §"Factory-configurable ACP fallback priority", where the earliest expiry among the records that emptied the chain is the governing hold expiry. A headroom-governed refusal record and the per-node selection record MUST name it as a provider-exhaustion skip, distinct from a floor skip, a seven-day skip and a projection skip. A dispatch whose covered candidates were all skipped this way and that proceeds on an uncovered candidate projects no covered candidate, so under "No record, current or legacy, MAY refuse a dispatch whose resolved candidates all lie outside its coverage" the skipping records do not refuse it.
+> A provider-exhaustion skip has the same per-node semantics. When it leaves no pool slot qualifying, every covered candidate of the dispatch is skipped, and per-node selection MUST continue in configured order to the next candidate satisfying every eligibility condition, such as a node's configured `codex-acp` fallback. When it leaves an admission-required node with no eligible candidate, a `ready` item remains `ready` without a claim or blocked reason, and reevaluation follows the Per-node selection scheduling rule of §"Factory-configurable ACP fallback priority", where the earliest expiry among the records that emptied the chain is the governing hold expiry. A headroom-governed refusal record and the per-node selection record MUST name it as a provider-exhaustion skip, distinct from a floor skip, a seven-day skip, a seven-day floor skip and a projection skip. A dispatch whose covered candidates were all skipped this way and that proceeds on an uncovered candidate projects no covered candidate, so under "No record, current or legacy, MAY refuse a dispatch whose resolved candidates all lie outside its coverage" the skipping records do not refuse it.
 
 No other sentence of the clause changes. The rate-window readings, the floor, the seven-day rule, the projection and the soonest-reset ranking among qualifying slots are unchanged.
 
 ### scenarios.md — add one scenario
 
-Add the following scenario after the current last scenario, numbered with the next unused scenario number when the revise lands (372 against master on 2026-11-14), and reference it from the amended paragraph as the scenario exercising the provider-exhaustion skip:
+Add the following scenario after the current last scenario, and reference it from the amended paragraph as the scenario exercising the provider-exhaustion skip. Its heading is exactly:
+
+`## Scenario <N> — A pool slot whose credential identity a live provider-exhaustion record names is skipped for the next qualifying slot`
+
+where `<N>` is the next unused scenario number at the revise cut. Master already holds 372 and 373, and the weekly-floor revise (bd-ib-eogs2t) cuts first. The `tests/heading-coverage.json` row names that full heading, number included, verbatim.
 
 ```gherkin
 Feature: A pool slot whose account a live provider-exhaustion record names is skipped
@@ -78,6 +82,28 @@ Feature: A pool slot whose account a live provider-exhaustion record names is sk
     And a live provider-exhaustion record names slot "ANTHROPIC_0"'s credential identity
     When the Dispatcher evaluates admission
     Then slot "ANTHROPIC_0" is not chosen, with the reason provider-exhaustion skip
+
+  Scenario: Every slot is exhausted and the node has no fallback, so the item waits for the earliest expiry
+    Given the implement node's covered candidate has no configured fallback
+    And live provider-exhaustion records name the credential identities of both slots
+    And the record naming slot "ANTHROPIC_1" expires before the record naming slot "ANTHROPIC_0"
+    When the Dispatcher evaluates admission
+    Then the item stays ready with no dispatch claim and no blocked_reason
+    And the per-node selection record names the covered candidate's skip as a provider-exhaustion skip
+    And the item's next admission evaluation is scheduled at the expiry of the record naming slot "ANTHROPIC_1"
+
+  Scenario: A slot whose record has expired qualifies again
+    Given a provider-exhaustion record named slot "ANTHROPIC_0"'s credential identity and has expired
+    And no live provider-exhaustion record names either slot
+    When the Dispatcher evaluates admission
+    Then slot "ANTHROPIC_0" qualifies and, resetting sooner, is projected
+    And its assessment names no provider-exhaustion skip
+
+  Scenario: A slot that would also take a floor skip is named a provider-exhaustion skip
+    Given slot "ANTHROPIC_0" reads 95 percent five-hour utilization
+    And a live provider-exhaustion record names slot "ANTHROPIC_0"'s credential identity
+    When the Dispatcher evaluates admission
+    Then the assessment names the "ANTHROPIC_0" identity as not chosen with the reason provider-exhaustion skip, not floor skip
 
   Scenario: A record that names no credential identity leaves slot qualification unchanged
     Given a live provider-exhaustion record for the anthropic provider carries no credential identity
