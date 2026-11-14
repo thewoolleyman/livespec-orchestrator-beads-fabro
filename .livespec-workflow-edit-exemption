@@ -1,2 +1,2 @@
-work_item=bd-ib-nu4sts
-reason=incident-ci job and incident-label-ci workflow so this repository can run expedited incident mode; logically additive (ci-green and export-telemetry require more), coordinator GO under coordinator-duties section 12 and the maintainer ruling of 2026-11-03
+work_item=bd-ib-mexkuo
+reason=master-push coverage shards route to the dedicated livespec-orchestrator-master-k3s lane when CI_RUNNER_LABELS_MASTER is set (runs-on of check-per-file-coverage-shard, check-per-file-coverage and check-coverage); pull requests and an unset variable keep today's labels; logically additive per the maintainer's 2026-11-03 ruling ("Adding OR MODIFYING a runs on is absolutitely ADDITIVE"), coordinator GO 2026-11-12 ~21:1xZ; no CI runtime increase
