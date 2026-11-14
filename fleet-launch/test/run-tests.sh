@@ -1286,11 +1286,22 @@ for held_attempt in $(seq 1 "${HARNESS_CASE_10B_ATTEMPTS:-30}"); do
     DIRECT_RELEASE_LOG="$CASE_DIR/direct-release-launcher.log"
     RELEASE_BLOCKED=1 ONLY_GMK=1 "$LAUNCHER" bd-ib-held-release > "$DIRECT_RELEASE_LOG" 2>&1 &
     held_release_pid=$!
-    held_deadline=$(( $(date +%s) + 60 ))
-    while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" && [ "$(date +%s)" -lt "$held_deadline" ]; do
+    # The verdict is ordered on the observed waiting marker, never on elapsed
+    # time: the shared hang guard only stops a genuinely hung release from
+    # holding the harness forever, and a wait that reaches it fails by name.
+    held_hang_deadline=$(( $(date +%s) + HARNESS_PREFLIGHT_HANG_GUARD_S ))
+    held_hung=0
+    while ! grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING"; do
+        if [ "$(date +%s)" -ge "$held_hang_deadline" ]; then
+            held_hung=1
+            break
+        fi
         sleep "$HARNESS_POLL_S"
     done
-    if grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
+    if [ "$held_hung" = 1 ]; then
+        fail "attempt $held_attempt: the wait for the held direct release to reach its drive's waiting state hung past the ${HARNESS_PREFLIGHT_HANG_GUARD_S}s guard (releases=$(tr '\n' ' ' < "$RELEASE_LOG"))"
+        tail -8 "$DIRECT_RELEASE_LOG" >&2
+    elif grep -qx 'bd-ib-held-release' "$STUB_DRIVE_WAITING" \
         && grep -qx 'resolve-blocked:bd-ib-held-release:ready' "$RELEASE_LOG" \
         && [ -n "$(find "$CASE_DIR/inflight" -type f -print -quit)" ]; then
         pass "attempt $held_attempt: the direct release holds its in-flight marker while its drive runs and before its run lists"
