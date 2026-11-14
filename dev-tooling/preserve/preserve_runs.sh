@@ -36,6 +36,8 @@ retry_kept_copies() {
   for d in "$WORK"/*.git; do
     [ -d "$d" ] || continue
     run=${d##*/}; run=${run%.git}
+    # Do not let a later live-pod pass replace a retained copy whose retry or fsck failed.
+    RETRIED_RUNS="$RETRIED_RUNS$run "
     [ -f "$d.preserve" ] || {
       # Copies from before the sidecar existed have no repository identity. Re-run the same
       # merge-base test against the stored master ref, then look for that selected commit on
