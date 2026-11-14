@@ -31,7 +31,8 @@ read_copy_record() {
 }
 read_origin_ref() { git ls-remote "$1" "$2" 2>/dev/null | awk 'NR == 1 { print $1 }'; }
 retry_kept_copies() {
-  local d run got pushed pa repo ref sha mb candidate record
+  local d run got pushed pa repo ref sha mb candidate record legacy_head legacy_rb legacy_src c i k
+  local -a legacy_labels legacy_shas
   RETRIED_RUNS=" "
   for d in "$WORK"/*.git; do
     [ -d "$d" ] || continue
@@ -42,15 +43,36 @@ retry_kept_copies() {
       # Copies from before the sidecar existed have no repository identity. Re-run the same
       # merge-base test against the stored master ref, then look for that selected commit on
       # origins recorded by other kept copies. Never guess an origin when none reads it back.
-      candidate=$(git -C "$d" rev-parse --verify -q "refs/heads/fabro/run/$run" 2>/dev/null)
-      if [ -z "$candidate" ] || ! git -C "$d" fsck --connectivity-only --no-dangling "$candidate" >/dev/null 2>&1 \
-        || ! git -C "$d" rev-parse --verify -q refs/remotes/origin/master >/dev/null 2>&1; then
+      legacy_head=$(git -C "$d" rev-parse --verify -q HEAD 2>/dev/null)
+      legacy_rb=$(git -C "$d" rev-parse --verify -q "refs/heads/fabro/run/$run" 2>/dev/null)
+      if [ -z "$legacy_head" ] || ! git -C "$d" rev-parse --verify -q refs/remotes/origin/master >/dev/null 2>&1; then
         printf '%s\t-\tunknown\t-\t-\tKEPT(legacy copy has no candidate)\t0\t-\n' "$run"
         continue
       fi
-      mb=$(git -C "$d" merge-base "$candidate" refs/remotes/origin/master 2>/dev/null)
-      if [ -z "$mb" ] || git -C "$d" diff --quiet "$mb" "$candidate" 2>/dev/null; then
-        printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy copy is EMPTY)\t0\t-\n' "$run" "$candidate"
+      [ -n "$legacy_rb" ] && legacy_head=$legacy_rb
+      legacy_labels=("$([ -n "$legacy_rb" ] && echo tip || echo HEAD)"); legacy_shas=("$legacy_head")
+      if [ -n "$legacy_rb" ]; then
+        i=0; for c in $(tac "$d/logs/refs/heads/fabro/run/$run" 2>/dev/null | awk '{print $2}'); do
+          legacy_labels+=("reflog@{$i}"); legacy_shas+=("$c"); i=$((i + 1))
+        done
+      fi
+      i=0; for c in $(tac "$d/logs/HEAD" 2>/dev/null | awk '{print $2}'); do
+        legacy_labels+=("HEAD@{$i}"); legacy_shas+=("$c"); i=$((i + 1))
+      done
+      candidate=; legacy_src=-; seen=" "
+      for k in "${!legacy_shas[@]}"; do
+        c=${legacy_shas[$k]}
+        case "$seen" in *" $c "*) continue ;; esac
+        seen="$seen$c "
+        git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null || continue
+        git -C "$d" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || continue
+        mb=$(git -C "$d" merge-base "$c" refs/remotes/origin/master 2>/dev/null) || continue
+        if ! git -C "$d" diff --quiet "$mb" "$c" 2>/dev/null; then
+          candidate=$c; legacy_src=${legacy_labels[$k]}; break
+        fi
+      done
+      if [ -z "$candidate" ]; then
+        printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy copy is EMPTY)\t0\t-\n' "$run" "$legacy_head"
         continue
       fi
       for record in "$WORK"/*.git.preserve; do
