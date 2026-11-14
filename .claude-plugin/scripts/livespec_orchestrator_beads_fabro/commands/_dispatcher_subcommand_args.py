@@ -18,12 +18,22 @@ command rather than as a usage error at the parser.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Callable
 
+from livespec_orchestrator_beads_fabro.commands._acp_hold_clear import (
+    add_clear_acp_availability_hold_arguments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_codex_identity_command import (
     add_credential_selection_arguments,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_fresh_ruling import (
+    add_fresh_ruling_arguments,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_invoker import (
     add_invoker_argument,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_provider_exhaustion_clear import (
+    add_clear_provider_exhaustion_arguments,
 )
 
 __all__: list[str] = [
@@ -37,6 +47,13 @@ __all__: list[str] = [
     "add_reconcile_runs_arguments",
     "add_spec_check_arguments",
 ]
+
+
+def add_operator_valve_subcommands(*, add_parser: Callable[[str], argparse.ArgumentParser]) -> None:
+    """Attach the cohesive group of operator-only recovery valves."""
+    add_clear_provider_exhaustion_arguments(parser=add_parser("clear-provider-exhaustion"))
+    add_clear_acp_availability_hold_arguments(parser=add_parser("clear-acp-availability-hold"))
+    add_fresh_ruling_arguments(parser=add_parser("fresh-ruling"))
 
 
 def add_ledger_check_arguments(*, parser: argparse.ArgumentParser) -> None:

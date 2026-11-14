@@ -438,9 +438,14 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_subcommand_args impo
     add_janitor_check_arguments,
     add_ledger_check_arguments,
     add_ledger_normalize_arguments,
+    add_operator_valve_subcommands,
     add_reconcile_merged_arguments,
     add_reconcile_runs_arguments,
     add_spec_check_arguments,
+)
+from livespec_orchestrator_beads_fabro.commands._dispatcher_supersede_contaminated import (
+    add_supersede_contaminated_arguments,
+    run_supersede_contaminated_command,
 )
 from livespec_orchestrator_beads_fabro.commands._plan_record_cli import (
     add_post_plan_record_arguments,
@@ -527,6 +532,7 @@ _SUBCOMMAND_HANDLERS: dict[str, Callable[..., int]] = {
     "sandbox-images": run_sandbox_images_command,
     "seed-ruling": run_seed_ruling_cli,
     "spec-check": run_spec_check,
+    "supersede-contaminated": run_supersede_contaminated_command,
 }
 
 
@@ -552,6 +558,7 @@ def _build_parser() -> argparse.ArgumentParser:
     add_idle_slot_audit_arguments(parser=subparsers.add_parser("idle-slot-audit"))
     add_sandbox_images_arguments(parser=subparsers.add_parser("sandbox-images"))
     add_seed_ruling_arguments(parser=subparsers.add_parser("seed-ruling"))
+    add_supersede_contaminated_arguments(parser=subparsers.add_parser("supersede-contaminated"))
     add_drift_run_arguments(parser=subparsers.add_parser("drift-run"))
     add_reconcile_runs_arguments(parser=subparsers.add_parser("reconcile-runs"))
     add_reconcile_merged_arguments(parser=subparsers.add_parser("reconcile-merged"))
