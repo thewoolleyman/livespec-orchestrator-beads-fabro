@@ -68,8 +68,10 @@ __all__: list[str] = [
     "RepaymentValidation",
     "advance_repayment",
     "enter_repayment",
+    "factory_claimed",
     "incident_flags_delta",
     "plan_repayment",
+    "record_repayment_successor",
     "repayment_brief",
     "repayment_operation_id",
     "repayment_scope",
@@ -195,6 +197,18 @@ def _factory_claimed(*, record: BeadsRecord) -> bool:
     """Whether the item carries a factory dispatch stamp, not none and not an incident holder's."""
     stamp = claim_stamp_from_record(record=record)
     return stamp is not None and not (stamp.dispatch_id or "").startswith(HOLDER_DISPATCH_PREFIX)
+
+
+def factory_claimed(*, record: BeadsRecord) -> bool:
+    """Whether the item carries a factory dispatch stamp, for the phase recovery action."""
+    return _factory_claimed(record=record)
+
+
+def record_repayment_successor(
+    *, client: BeadsClient, reading: IncidentReading, successor: IncidentAttempt
+) -> tuple[IncidentReading, bool] | AuthorityRefusal:
+    """Commit one repayment successor, or recover it when delivery repeats."""
+    return _record(client=client, reading=reading, successor=successor)
 
 
 def advance_repayment(

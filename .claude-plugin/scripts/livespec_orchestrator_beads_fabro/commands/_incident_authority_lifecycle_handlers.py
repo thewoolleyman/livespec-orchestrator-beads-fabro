@@ -60,6 +60,9 @@ from livespec_orchestrator_beads_fabro.incident_regression_recovery import (
     record_revert_receipt,
     reopen_for_regression,
 )
+from livespec_orchestrator_beads_fabro.incident_repayment_recovery import (
+    recover_repayment_phases,
+)
 
 if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro._beads_client import BeadsClient
@@ -76,6 +79,7 @@ LIFECYCLE_PAYLOADS: dict[str, tuple[str, ...]] = {
     "record-merge": (),
     "enter-repayment": ("master_run", "target_ref"),
     "advance-repayment": ("to_phase",),
+    "recover-repayment-phases": (),
     "bind-repayment-acceptance": ("pr",),
     "reopen-regression": ("attributed_json", "finding_json", "principal"),
     "record-deferred-finding": ("finding_json",),
@@ -131,6 +135,10 @@ def _advance(
         phase=args.to_phase,
         admission_complete=args.admission_complete,
     )
+
+
+def _recover(*, client: BeadsClient, reading: IncidentReading, **_: object) -> LifecycleReply:
+    return recover_repayment_phases(client=client, reading=reading)
 
 
 def _bind(
@@ -233,6 +241,7 @@ LIFECYCLE_HANDLERS: dict[str, _Handler] = {
     "record-merge": _record_merge,
     "enter-repayment": _enter,
     "advance-repayment": _advance,
+    "recover-repayment-phases": _recover,
     "bind-repayment-acceptance": _bind,
     "reopen-regression": _reopen,
     "record-deferred-finding": _defer,

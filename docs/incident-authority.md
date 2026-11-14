@@ -338,6 +338,7 @@ usage error (exit 2).
 | --- | --- | --- |
 | `enter-repayment` | `--master-run <run-id> --target-ref <ref>` | `enter_repayment` |
 | `advance-repayment` | `--to-phase <phase> [--admission-complete]` | `advance_repayment` |
+| `recover-repayment-phases` | none | `recover_repayment_phases` |
 | `bind-repayment-acceptance` | `--pr <number>` | `bind_repayment_acceptance` |
 | `reopen-regression` | `--attributed-json <attempt> --finding-json <finding> --principal <owner>` | `reopen_for_regression` |
 | `record-deferred-finding` | `--finding-json <finding>` | `record_deferred_finding` |
@@ -397,6 +398,22 @@ current `reverting` attempt with its release condition, writing the
 the inverse recovery is still owed, or `collecting-failures` once the resolution
 carries a revert receipt. An exact retry of either recovers the recorded
 transition.
+
+`recover-repayment-phases` records the `repayment-ready` and `repayment-active`
+generations a dispatch skipped (bd-ib-wz6bsa). An item can travel `ready`,
+`active` and `acceptance` through ordinary admission while its chain still names
+`repayment-admission`, and then no `advance-repayment` step pairs with its
+lifecycle state. Name the current `repayment-admission` or `repayment-ready`
+attempt. The action records each skipped phase only when the item already rests
+`active` or `acceptance`, assigned `fabro`, under a factory dispatch claim stamp:
+the dispatcher claims only an item ordinary admission approved to `ready`, so
+that stamp evidences both phases. It writes no lifecycle status. An item still
+at `pending-approval` or `ready` is `incident-repayment-recovery-premature`
+(use `advance-repayment`), a missing or incident-holder claim is
+`incident-repayment-claim-missing`, and an attempt already past
+`repayment-ready` is `incident-repayment-recovery-not-needed`. A repeated
+delivery recovers the recorded generations and writes nothing. After it,
+`bind-repayment-acceptance` binds the merged repayment PR.
 
 `bind-repayment-acceptance` records `repayment-acceptance` once the factory
 run's repayment PR has merged (bd-ib-pqz3nw). `advance-repayment --to-phase
