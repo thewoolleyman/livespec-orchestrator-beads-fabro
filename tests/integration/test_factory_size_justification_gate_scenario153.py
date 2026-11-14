@@ -1128,7 +1128,11 @@ def _exercise_resume_entry(*, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
         resume_outcomes.append(cast("DispatchOutcome", kwargs["outcome"]))
         return 1
 
-    monkeypatch.setattr(resume, "dispatch_tail_exit", _resume_tail)
+    monkeypatch.setattr(
+        import_module("livespec_orchestrator_beads_fabro.commands._dispatcher_resume_target"),
+        "dispatch_tail_exit",
+        _resume_tail,
+    )
     resume_rc = resume.run_resume_command(
         args=argparse.Namespace(repo=str(resume_repo), item=resume_item.id)
     )
