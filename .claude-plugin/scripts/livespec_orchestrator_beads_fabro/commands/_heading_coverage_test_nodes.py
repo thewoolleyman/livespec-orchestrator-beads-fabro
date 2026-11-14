@@ -58,7 +58,7 @@ def names_an_existing_test(*, project_root: Path, test_node: str) -> bool:
 
 
 def _module_file(*, project_root: Path, dotted: str) -> Path | None:
-    """The module file a dotted path names, or `None` when it names no file.
+    """The module file a dotted or pytest-path name names, or `None` when absent.
 
     `None` is an ANSWER rather than a gap in the reading: the read happened
     and there is no such module, which is exactly what a dangling entry looks
@@ -66,7 +66,11 @@ def _module_file(*, project_root: Path, dotted: str) -> Path | None:
     """
     if not dotted:
         return None
-    candidate = project_root.joinpath(*dotted.split(_DOT)).with_suffix(".py")
+    candidate = (
+        project_root / dotted
+        if Path(dotted).suffix == ".py"
+        else project_root.joinpath(*dotted.split(_DOT)).with_suffix(".py")
+    )
     return candidate if candidate.is_file() else None
 
 
