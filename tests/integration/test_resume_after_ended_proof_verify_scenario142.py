@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands import (
     _dispatcher_recovery_resume_protection as resume_protection,
 )
 from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_command as resume
+from livespec_orchestrator_beads_fabro.commands import _dispatcher_resume_target as resume_target
 from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     DispatchOutcome,
@@ -197,7 +198,9 @@ def _wire_command(
     monkeypatch.setattr(resume, "arm_otel_egress", lambda **_kwargs: None)
     monkeypatch.setattr(resume, "prepare", lambda **_kwargs: ([item], journal))
     monkeypatch.setattr(
-        resume, "apply_factory_size_dispatch_entry", lambda **_kwargs: Success(IO(()))
+        resume_target,
+        "apply_factory_size_dispatch_entry",
+        lambda **_kwargs: Success(IO(())),
     )
     monkeypatch.setattr(resume, "ShellCommandRunner", lambda: runner)
     monkeypatch.setattr(resume_protection, "ShellCommandRunner", lambda: runner)

@@ -63,11 +63,9 @@ default branch while the journal recorded a resume.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 from pathlib import Path
 from typing import cast
-
-from returns.pipeline import is_successful
-from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._dispatcher_admission import (
     admit_and_select,
@@ -86,22 +84,19 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_ledger impor
     args_with_dispatch_factory_target,
     explicit_dispatch_factory,
 )
-from livespec_orchestrator_beads_fabro.commands._dispatcher_factory_size_gate import (
-    apply_factory_size_dispatch_entry,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_io import (
     JournalFile,
     ShellCommandRunner,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop import dispatch_one
-from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_outcomes import (
-    failed_dispatch_outcome,
-)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_run import DispatchLaunchContext
 from livespec_orchestrator_beads_fabro.commands._dispatcher_loop_selection import prepare, run_id
 from livespec_orchestrator_beads_fabro.commands._dispatcher_otel_wiring import arm_otel_egress
+from livespec_orchestrator_beads_fabro.commands._dispatcher_overtaken_resume import (
+    bound_overtaken_resume,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import pass_snapshot
-from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path, store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_paths import journal_path
 from livespec_orchestrator_beads_fabro.commands._dispatcher_pre_dispatch_wall import (
     pre_dispatch_wall_exit,
 )
@@ -125,6 +120,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_refusals impo
 from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_reporting import (
     resume_refusal_report,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_resume_target import (
+    resume_target_or_exit,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_rework_admission import ReworkPass
 from livespec_orchestrator_beads_fabro.commands._dispatcher_run_checks import dispatch_preamble
 from livespec_orchestrator_beads_fabro.commands._dispatcher_screened_verdict import (
@@ -135,6 +133,7 @@ from livespec_orchestrator_beads_fabro.types import WorkItem
 
 __all__: list[str] = [
     "add_resume_arguments",
+    "overtaken_resume",
     "preserved_descendant_refusal",
     "resume_refusal_report",
     "run_resume_command",
@@ -194,7 +193,7 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     janitor, items, journal = started.janitor, started.items, started.journal
     target = profile.phase(
         name="target-selection",
-        action=lambda: _resume_target_or_exit(
+        action=lambda: resume_target_or_exit(
             args=args,
             repo=repo,
             items=items,
@@ -272,49 +271,6 @@ def _resume_in_pass(*, args: argparse.Namespace) -> int:
     return dispatch_tail_exit(args=resumed, repo=repo, outcome=outcome, journal=journal)
 
 
-def _resume_target_or_exit(
-    *,
-    args: argparse.Namespace,
-    repo: Path,
-    items: list[WorkItem],
-    journal: JournalFile,
-) -> WorkItem | int:
-    """Resolve and size-gate the named row before resume observation or walls."""
-    item = next((one for one in items if one.id == args.item), None)
-    if item is None:
-        _ = write_stderr(
-            text=(
-                f"ERROR: work-item {args.item} not found in the target-tenant"
-                f" ({repo.name}); --repo and --item must reference the same tenant\n"
-            )
-        )
-        return EXIT_PRECONDITION_ERROR
-    size_result = apply_factory_size_dispatch_entry(
-        cwd=repo,
-        path_factory=lambda: store_config(repo=repo),
-        items=(item,),
-        journal=journal,
-    )
-    if not is_successful(size_result):
-        failure = unsafe_perform_io(size_result.failure())
-        outcome = failed_dispatch_outcome(
-            journal=journal,
-            work_item_id=item.id,
-            stage="configuration",
-            detail=failure.detail,
-        )
-        return dispatch_tail_exit(args=args, repo=repo, outcome=outcome, journal=journal)
-    size_refusals = unsafe_perform_io(size_result.unwrap())
-    if size_refusals:
-        return dispatch_tail_exit(
-            args=args,
-            repo=repo,
-            outcome=size_refusals[0],
-            journal=journal,
-        )
-    return item
-
-
 def _admit_and_dispatch_resume(
     *,
     args: argparse.Namespace,
@@ -381,3 +337,6 @@ def _admit_and_dispatch_resume(
         for admitted in admission.admitted
     ]
     return (admission.refused + admission.deferred + dispatched)[0]
+
+
+overtaken_resume = partial(bound_overtaken_resume, admit_and_dispatch=_admit_and_dispatch_resume)
