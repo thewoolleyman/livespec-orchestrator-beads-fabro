@@ -572,6 +572,21 @@ def _hermetic_agent_stage_publication_guard(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 @pytest.fixture(autouse=True)
+def _hermetic_authoring_turn_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the commit hook's authoring-turn marker out of the test process.
+
+    The detached commit runner sets `LIVESPEC_AUTHORING_TURN=<stage>` on the commit
+    hook of an implement, fix or review_fix turn, and the hook reads it to choose the
+    affected-tests gate. The scoped tests that gate runs inherit it, so a case that
+    runs `dev-tooling/just-check-pre-commit.sh` under its own throwaway repository
+    would take the authoring-turn branch instead of the path it is written about.
+    The cases that exercise the marker set it explicitly in their own child
+    environment.
+    """
+    monkeypatch.delenv("LIVESPEC_AUTHORING_TURN", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_plan_unattended_marker(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep the overseer's unattended-resume marker out of the test process.
 

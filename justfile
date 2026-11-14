@@ -563,21 +563,26 @@ check-static:
 #     branch's commits changed vs the merge-base with origin/master;
 #   - `git diff --cached --name-only --diff-filter=AM` — added/modified
 #     `.py` currently staged but not yet committed.
-# This is the exact set `check-changed` consumes for its scoped gate.
+# This is the product `.py` slice of the set `check-changed` starts from.
 # Helper recipe (like `check-static`): NOT a member of the `check:`
 # aggregate `targets=(...)` array, NOT a canonical slug, NOT in the CI
 # matrix.
 changed-files:
     bash dev-tooling/just-changed-files.sh
 
-# `check-changed` — modified-files INNER-LOOP gate for fast scoped
-# feedback during iteration (work-item livespec-dev-tooling-7us.9). Feeds
-# the `changed-files` set into `check-check-coverage-incremental --paths
-# <set>`, which already (a) resolves each changed impl `.py` to its
-# mirror-paired test and runs that pytest SUBSET, and (b) applies the
-# path-scoped per-file coverage gate — i.e. it composes the existing
-# scoping plumbing rather than re-deriving it. An empty changed set is a
-# no-op (exit 0): nothing changed, nothing to gate.
+# `check-changed` — the affected-tests gate: the INNER-LOOP gate of a commit
+# made inside an implement, fix or review_fix turn (work-item livespec-dev-tooling-7us.9,
+# bd-ib-fde4ie). `dev-tooling/checks/_affected_tests_selection.py` takes the
+# changed set (the branch's diff against origin/master plus what is staged) and
+# (a) selects, for each changed product module, its mirror-paired test and every
+# test module that imports it directly or through another imported module, found
+# by a static scan, (b) selects, for a changed `workflow.fabro`, every test that
+# reads the graph, (c) runs the selection under coverage, and (d) holds each
+# changed product module to 100% line and branch coverage over that WHOLE
+# selection, so a module whose lines only other tests execute is not refused.
+# When it cannot determine the affected tests (a shared configuration file, a
+# file that does not parse, a module no test reaches, a diff that could not be
+# taken) it exits 75 and the pre-commit hook runs the full check aggregate.
 #
 # SCOPE — INNER-LOOP SPEEDUP ONLY, NOT a replacement for the final gate.
 # It runs only the test subset + path-scopable checks for the files this
