@@ -36,6 +36,9 @@ from pathlib import Path
 from returns.unsafe import unsafe_perform_io
 
 from livespec_orchestrator_beads_fabro.commands._config import resolve_store_config
+from livespec_orchestrator_beads_fabro.commands._dispatcher_pass_snapshot import (
+    memoized_inspection,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_policy_settings import (
     DEFAULT_READY_AGING_THRESHOLD_HOURS,
     resolve_ready_aging_threshold_hours,
@@ -169,6 +172,23 @@ class _DurableReadySince:
 
 
 def _read_instants(*, project_root: Path) -> dict[str, str | None]:
+    """The tenant's ready-dwell instants, read once per dispatch pass.
+
+    Every ordering a pass builds asks for the same instants and each asked the whole
+    ledger for them, so inside a live pass the one reading is shared, keyed on the
+    tenant's project root. Outside a pass every call reads, as it always did. Nothing
+    a pass writes moves the instant of a row that is still ready, and a row the pass
+    admits is no longer ordered, which is why a pass-old reading is safe for a
+    tiebreak.
+    """
+    return memoized_inspection(
+        factory="ready-dwell",
+        run_id=str(project_root.resolve()),
+        read=lambda: _read_instants_now(project_root=project_root),
+    )
+
+
+def _read_instants_now(*, project_root: Path) -> dict[str, str | None]:
     read = attempt(
         action=lambda: read_ready_dwell_instants(
             path=resolve_store_config(cwd=project_root, work_items_arg=None)
