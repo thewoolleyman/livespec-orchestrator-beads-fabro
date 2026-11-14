@@ -4,6 +4,9 @@
 # launchers. Every supported spelling is read: global options before the
 # subcommand, runtime tools before the child, the `--` separator, and the
 # `-c`/`--command` string form.
+# The boundary holds only for commands resolved through PATH: a reviewer that
+# names an executable by absolute path (for example /usr/bin/git) is not
+# intercepted, which is the same limit the proof-capture launcher has.
 set -u
 
 refuse_suite() {
