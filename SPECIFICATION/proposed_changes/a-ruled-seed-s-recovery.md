@@ -73,6 +73,13 @@ Feature: a ruled seed is attributed to the run whose tree it carries
     Then the seed record's source run reads unobservable, naming the cause
     And it names none of the item's runs
     And the seed record names the ruled ref and the ruled commit unchanged
+
+  Scenario: a reader given an unobservable source run attributes the tree to no run and never reports "preserved no work"
+    Given a seed record whose source run reads unobservable
+    When preserved-work attribution, the across-dispatch required-result progress reader and triage each read that seed's source run
+    Then each treats the source run as unknown
+    And none attributes the seed's tree to any run
+    And none reports any run as having preserved no work
 ```
 
 **4. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-6jo7an"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. If the revise renumbers Scenario 361, the row and entry MUST carry the renumbered heading text.
