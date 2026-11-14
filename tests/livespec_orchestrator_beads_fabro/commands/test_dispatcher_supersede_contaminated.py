@@ -154,7 +154,7 @@ def _assert_comments_and_journal(
         "FOR implement ONLY:",
         "Superseded from bd-ib-old comment rider-1 created 2026-11-13T01:00:00Z.",
     ]
-    assert "{{" not in copied[0] and "⟦⟦" in copied[0]
+    assert "{{" not in copied[0] and copied[0].endswith("retain [[ raw diagnostic")
     assert copied[1].endswith("clean instruction")
     assert all(not text.startswith("livespec-") for text in copied)
     assert "receipt-3" in copied[-1] and old.id in copied[-1]
