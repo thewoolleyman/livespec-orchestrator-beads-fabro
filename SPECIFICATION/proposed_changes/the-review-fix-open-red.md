@@ -13,7 +13,7 @@ created_at: 2026-11-14T09:59:23Z
 
 ### Summary
 
-State the scope and size of the review_fix stage's open-Red visit limit. It counts only consecutive passes of review_fix_open_red_route that find the stage's last commit an open Red. A pass that finds no open Red resets the count. Which open Red a pass finds does not matter, so an agent that authors a new Red instead of completing the open one keeps counting toward the same limit. The stage ends at needs_human with a LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED cause naming the open Red on the third such consecutive pass, which allows two re-entries per run of consecutive open-Red passes. The review_fix node's own engine visit limit is raised so that this count, and not an engine abort, ends such a run.
+State the scope and size of the review_fix stage's open-Red visit limit. It counts only consecutive passes of review_fix_open_red_route that find the stage's last commit an open Red. A pass that finds no open Red resets the count. Which open Red a pass finds does not matter, so an agent that authors a new Red instead of completing the open one keeps counting toward the same limit. The stage ends at needs_human with a LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED cause naming the open Red on the third such consecutive pass, which allows two re-entries per run of consecutive open-Red passes. The engine visit limits of the review_fix node and of its settle and route nodes are raised to cover every round the review-fix loop admits, so that this count, and not an engine abort, ends such a run.
 
 ### Motivation
 
@@ -32,7 +32,7 @@ The dispatch-time spec-change-tier judgement on the carrier item bd-ib-nkyeve (2
 
 1. In SPECIFICATION/contracts.md, paragraph '**A fix turn grades each tree once, through its commit hook.**', after the sentence 'When the stage's visit limit is reached while its last commit is still an open Red, the run MUST end at `needs_human` with a cause naming the open Red commit.' insert:
 
-'For the `review_fix` stage, that visit limit MUST count only the consecutive passes of `review_fix_open_red_route` that find the stage's last commit an open Red, whichever open Red commit each pass finds, and a pass that finds no open Red MUST reset the count to zero. Review_fix visits spent in earlier review rounds, each of which ended in a pass that found no open Red, therefore never count against a later open Red, while a turn that authors a new Red in place of completing the open one keeps counting. The limit is reached on the third such consecutive pass, which allows two re-entries: one to repair the refusal its brief names, and one more for a refusal that repair exposes, before a human looks. The cause MUST carry the marker `LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED`. The `review_fix` node's engine visit limit MUST accommodate the effective review-fix cap's rounds, each with its review_fix turn and two open-Red re-entries, so that this limit, and not an engine visit cap, ends a run that keeps an open Red.'
+'For the `review_fix` stage, that visit limit MUST count only the consecutive passes of `review_fix_open_red_route` that find the stage's last commit an open Red, whichever open Red commit each pass finds, and a pass that finds no open Red MUST reset the count to zero. `review_fix` visits spent in earlier review rounds, each of which ended in a pass that found no open Red, therefore never count against a later open Red, while a turn that authors a new Red in place of completing the open one keeps counting. The limit is reached on the third such consecutive pass, which allows two re-entries: one to repair the refusal its brief names, and one more for a refusal that repair exposes, before a human looks. The cause MUST carry the marker `LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED`. The engine visit limits of `review_fix`, `review_fix_commit_settle` and `review_fix_open_red_route` MUST each accommodate every review-fix round the review-fix loop admits, each with its `review_fix` turn and two open-Red re-entries, so that this limit, and not an engine visit cap, ends a run that keeps an open Red.'
 
 2. In SPECIFICATION/scenarios.md, under '## Scenario 199 — A fix turn grades each tree once, through its commit hook', inside the existing gherkin block, after the scenario 'An open Red at the stage's visit limit ends at needs_human naming it', add:
 
@@ -53,11 +53,11 @@ The dispatch-time spec-change-tier judgement on the carrier item bd-ib-nkyeve (2
     Given a review_fix turn whose open Red A was completed by a passing Green amend, so a pass of review_fix_open_red_route found no open Red
     And a later review_fix turn in the same run ends on a different open Red B whose Green amend its commit hook refused
     When review_fix_open_red_route runs
-    Then the count for open Red B starts at one
+    Then the count starts at one
     And the run re-enters review_fix rather than ending at needs_human
 
   Scenario: A new Red authored in place of completing the open one keeps counting
-    Given two consecutive passes of review_fix_open_red_route that found an open Red
+    Given two consecutive passes of review_fix_open_red_route that found an open Red, with no pass finding no open Red in between
     And the next review_fix turn authors a new Red commit instead of completing the open one, and ends on it
     When the third consecutive pass runs
     Then the run ends at needs_human with a LIVESPEC_REVIEW_FIX_OPEN_RED_VISIT_BOUND_EXHAUSTED cause naming that new open Red
