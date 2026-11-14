@@ -166,6 +166,9 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
             stdout=f"{_PUBLISHED_HEAD}\trefs/heads/feat/{_RELEASED_ID}\n",
             stderr="",
         ),
+        "ls-remote origin refs/heads/needs-human/": CommandResult(
+            exit_code=0, stdout="", stderr=""
+        ),
         "gh api --method POST": CommandResult(exit_code=0, stdout="", stderr=""),
         "gh api --method DELETE": CommandResult(exit_code=0, stdout="", stderr=""),
     }
@@ -391,7 +394,12 @@ def test_a_released_item_resumes_while_its_wave_mate_dispatches_plainly(
     # Neither reclaim row, for either item, and origin never asked about either
     # branch — though it carries the released item's.
     assert _rows(journal=wave.journal, stage_prefix=_RECLAIM_STAGE_PREFIX) == ()
-    assert [argv for argv in _Shell.argvs if "ls-remote" in " ".join(argv)] == []
+    # The one origin read routing takes for a resume is the pass's needs-human listing.
+    assert [
+        argv
+        for argv in _Shell.argvs
+        if "ls-remote" in " ".join(argv) and "needs-human" not in " ".join(argv)
+    ] == []
     # The wave-mate starts at `start`, on the default branch, with no resume head.
     assert getattr(wave.launched[_FRESH_ID], "resume_entry_node", None) is None
     assert getattr(wave.launched[_FRESH_ID], "resume_head", None) is None

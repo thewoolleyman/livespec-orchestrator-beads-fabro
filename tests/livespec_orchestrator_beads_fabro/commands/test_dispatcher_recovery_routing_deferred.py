@@ -131,6 +131,9 @@ def _arm(*, monkeypatch: pytest.MonkeyPatch) -> None:
             exit_code=0, stdout=json.dumps({"comments": []}), stderr=""
         ),
         "ps -a --json": CommandResult(exit_code=0, stdout="[]", stderr=""),
+        "ls-remote origin refs/heads/needs-human/": CommandResult(
+            exit_code=0, stdout="", stderr=""
+        ),
     }
     _Shell.calls = []
     monkeypatch.setattr(ShellCommandRunner, "run", _Shell.run)
@@ -334,5 +337,7 @@ def test_a_capacity_deferred_resume_routed_item_is_left_exactly_as_it_was(
     # And nothing on origin: the publish branch was never even asked about, so
     # neither it nor the pull request open on it could have changed.
     assert _rows(journal=wave.journal, stage_prefix=_RECLAIM_STAGE_PREFIX) == ()
-    assert [call for call in _Shell.calls if "ls-remote" in call] == []
+    assert [
+        call for call in _Shell.calls if "ls-remote" in call and "needs-human" not in call
+    ] == []
     assert [call for call in _Shell.calls if "gh api" in call] == []
