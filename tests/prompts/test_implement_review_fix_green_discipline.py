@@ -1,4 +1,4 @@
-"""The commit discipline shared by the implement and review-fix stage briefs.
+"""The commit discipline shared by the green and review-fix stage briefs.
 
 The stage prompts, rather than host code, tell an agent how to shape its Red
 and Green commits.  Each assertion here is therefore a prompt-tier contract.
@@ -21,7 +21,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_STAGES = ("implement", "review_fix")
+_STAGES = ("green", "review_fix")
 
 
 def _stage_prompts() -> dict[str, Path]:

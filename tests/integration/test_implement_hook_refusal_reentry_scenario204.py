@@ -49,7 +49,14 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
-_PROMPT = _PAYLOAD / "prompts" / "implement.md"
+_GREEN_PROMPT = _PAYLOAD / "prompts" / "green.md"
+_GREEN = "green"
+_GREEN_ROUTE = "green_incomplete_route"
+# `green_incomplete_route` re-enters once and fails the second time.
+_GREEN_ROUTE_VISITS = 2
+# The `implement` timeout key sets both ACP nodes of the split stage: Red's six
+# worst-case attempts and Green's eight (see `_node_timeouts._WORST_CASE_VISITS`).
+_SPLIT_STAGE_VISITS = 14
 _GRAPH = _PAYLOAD / "workflow.fabro"
 _CHECK_SUITE_TOKEN = re.compile(r"\{\{\s*inputs\.sandbox_check_suite\s*\}\}")
 
@@ -250,20 +257,21 @@ def test_the_quoted_check_suite_runner_is_inert_until_its_own_invocation(tmp_pat
     assert invoked.stdout == "declared suite output\n"
 
 
-def test_an_incomplete_turn_reaches_the_hook_route_and_the_route_can_reenter_implement() -> None:
-    """The completion gate's routing label leads to the route, and the route back to implement.
+def test_an_incomplete_turn_reaches_the_incomplete_route_and_the_route_can_reenter_green() -> None:
+    """The completion gate's routing label leads to the route, and the route back to green.
 
-    The route's fallthrough is `needs_human`, unconditional, so the ending every
-    non-qualifying turn reached before v208 is unchanged. `max_visits` cuts the
-    new cycle for the execution-budget derivation, at the re-entry budget plus
-    the visit that refuses.
+    In the split graph the incomplete turn is `green`'s, so the gate's
+    `incomplete` label reaches `green_incomplete_route`, whose fallthrough
+    re-enters `green` and whose failure ends at `needs_human`. The single-node
+    hook route is reached by nothing: it ran the pre-commit hook over a staged
+    tree, which in the split graph is `commit_green`'s job alone.
     """
-    assert (_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
+    assert (_GREEN_ROUTE, "preferred_label=incomplete") in _targets(source=_GATE)
     assert (_NEEDS_HUMAN, "outcome=failed") in _targets(source=_GATE)
-    route = _targets(source=_ROUTE)
-    assert (_IMPLEMENT, "outcome=succeeded") in route, route
-    assert (_NEEDS_HUMAN, "") in route, route
-    assert _route_attributes().get("max_visits") == str(_ROUTE_VISITS)
+    route = _targets(source=_GREEN_ROUTE)
+    assert (_GREEN, "") in route, route
+    assert (_NEEDS_HUMAN, "outcome=failed") in route, route
+    assert [target for target, _ in _targets(source=_GATE) if target == _ROUTE] == []
 
 
 def test_a_refused_commit_with_budget_left_reenters_with_the_hooks_own_verdict(
@@ -409,14 +417,19 @@ def test_an_unrefused_incomplete_turn_with_the_budget_exhausted_fails_as_partial
     assert not _git_file(repo=repo, name=_REFUSAL_GIT_PATH).exists()
 
 
-def test_the_implement_prompt_directs_a_reentered_turn_to_the_hooks_verdict() -> None:
-    """The brief is the prompt plus the per-clone file the route writes."""
-    prompt = _PROMPT.read_text(encoding="utf-8")
+def test_the_green_prompt_directs_a_reentered_turn_to_the_handoff_file() -> None:
+    """A re-entered Green turn's brief is the handoff file, which it reads in full.
 
-    assert f"git rev-parse --git-path {_REFUSAL_GIT_PATH}" in prompt
-    assert "check suite" in prompt
-    assert _NO_RECORDED_GATE in prompt
-    assert "livespec-implement-check-suite" in prompt
+    The incomplete-turn route writes no brief of its own: the previous turn's
+    `## green` section already records what changed, which tests ran and the
+    last gate preview's verdict, so the prompt's own direction to read the
+    handoff in full is the re-entry contract.
+    """
+    prompt = _GREEN_PROMPT.read_text(encoding="utf-8")
+
+    assert "git rev-parse --git-path livespec-implement-handoff.md" in prompt
+    assert "Read the handoff file in full" in prompt
+    assert f"git rev-parse --git-path {_REFUSAL_GIT_PATH}" not in prompt
 
 
 def test_the_route_never_reruns_the_declared_suite() -> None:
@@ -428,11 +441,19 @@ def test_the_route_never_reruns_the_declared_suite() -> None:
 
 
 def test_the_route_and_the_reentered_turn_are_billed_into_the_subprocess_ceiling() -> None:
-    """The route runs the hook, so it is billed; the two re-entries triple implement's visits."""
+    """The incomplete-turn route and the turn it re-enters are billed at their visit counts.
+
+    The single-node hook route is reached by no route of the split graph, so it
+    is not billed; the `implement` key sets both Red and Green.
+    """
     defaulted = node_timeouts_from_block(block={})
     assert not isinstance(defaulted, str), defaulted
     base = derive_fabro_timeout_seconds(timeouts=defaulted)
-    for node, visits in ((_ROUTE, _ROUTE_VISITS), (_IMPLEMENT, _IMPLEMENT_VISITS)):
+    for node, visits in (
+        (_GREEN_ROUTE, _GREEN_ROUTE_VISITS),
+        (_IMPLEMENT, _SPLIT_STAGE_VISITS),
+        (_ROUTE, 0),
+    ):
         configured = node_timeouts_from_block(
             block={"node_timeouts": {node: DEFAULT_NODE_TIMEOUT_SECONDS + _CONFIGURED_DELTA}}
         )

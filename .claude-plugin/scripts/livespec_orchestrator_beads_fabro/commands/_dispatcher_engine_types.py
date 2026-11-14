@@ -229,6 +229,7 @@ class DispatchOutcome:
     # acceptance pass needs the merged head, and a record of what the ending
     # proved cannot be recovered from the pull request alone.
     merged_reconcile: MergedReconcile | None = None
+    already_satisfied_base: str | None = None
     # What the sandbox provider reported about how the run's container ended
     # (Scenario 335): an OOM kill naming the run id and the memory limit, or the
     # statement that the termination was unobservable. None on every outcome that

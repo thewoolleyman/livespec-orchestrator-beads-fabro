@@ -46,7 +46,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 _PAYLOAD = _REPO_ROOT / ".claude-plugin" / ".fabro" / "workflows" / "implement-work-item"
 _GRAPH = _PAYLOAD / "workflow.fabro"
-_PROMPT = _PAYLOAD / "prompts" / "implement.md"
+# The split implement stage's two prompts (Scenario 285).
+_STAGE_PROMPTS = (_PAYLOAD / "prompts" / "red.md", _PAYLOAD / "prompts" / "green.md")
 
 _IMPLEMENT_SETTLE = "implement_commit_settle"
 _REVIEW_FIX_SETTLE = "review_fix_commit_settle"
@@ -171,11 +172,19 @@ def _routed(*, repo: Path) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_the_turn_reaches_the_settle_before_the_completion_gate_on_both_outcomes() -> None:
-    """`implement` and the amendment classifier both feed the settle; it feeds the gate."""
-    assert ("implement_commit_settle", "") in _targets(source="implement")
-    assert (_IMPLEMENT_SETTLE, "") in _targets(source="implement_amendment_route")
-    assert _targets(source=_IMPLEMENT_SETTLE) == [("implement_completion", "")]
+def test_no_implement_stage_route_reaches_the_implement_settle() -> None:
+    """The split stage commits through command nodes, so nothing of it waits on a commit run.
+
+    Scenario 285 retires the detached commit runner for the implement stage: its
+    commits are made by `commit_red` and `commit_green`, which run no model. So
+    no implement-stage node may route into the single-node settle, and `fix` and
+    `review_fix` keep theirs (asserted below).
+    """
+    for source in ("red", "green", "implement_amendment_route", "green_amendment_route"):
+        assert [
+            target for target, _ in _targets(source=source) if target == _IMPLEMENT_SETTLE
+        ] == []
+    assert ("commit_green", "preferred_label=complete") in _targets(source="implement_completion")
 
 
 def test_review_fix_reaches_the_settle_before_the_janitor() -> None:
@@ -563,26 +572,31 @@ def test_a_failed_commit_run_with_the_budget_exhausted_fails_the_stage(tmp_path:
     assert "LIVESPEC_IMPLEMENT_HOOK_REFUSED_BUDGET_EXHAUSTED" in result.stderr
 
 
-def test_the_implement_prompt_tells_a_reentered_turn_about_a_commit_run_brief() -> None:
-    """The brief file is the prompt's re-entry contract, so the commit-run case is in it."""
-    prompt = _PROMPT.read_text(encoding="utf-8")
+def test_the_red_and_green_prompts_carry_no_commit_run_brief() -> None:
+    """A Red or Green turn starts no commit run, so no prompt reads a commit-run brief."""
+    for path in _STAGE_PROMPTS:
+        prompt = path.read_text(encoding="utf-8")
 
-    assert "commit run" in prompt
-    assert "ended while a commit run" in prompt
+        assert _LIVE_GIT_PATH not in prompt, path
+        assert "livespec-commit-runner.py" not in prompt, path
 
 
 def test_the_settle_nodes_are_billed_into_the_subprocess_ceiling() -> None:
-    """A node absent from the budget is billed at zero; each settle runs once per visit of three."""
+    """A node absent from the budget is billed at zero; the review-fix settle runs once per visit.
+
+    The single-node implement settle is reached by no route of the split graph,
+    so it is NOT billed: configuring its timeout leaves the ceiling unmoved.
+    """
     defaulted = node_timeouts_from_block(block={})
     assert not isinstance(defaulted, str), defaulted
     default_ceiling = derive_fabro_timeout_seconds(timeouts=defaulted)
-    for node in (_IMPLEMENT_SETTLE, _REVIEW_FIX_SETTLE):
+    for node, visits in ((_REVIEW_FIX_SETTLE, _SETTLE_VISITS), (_IMPLEMENT_SETTLE, 0)):
         configured = node_timeouts_from_block(
             block={"node_timeouts": {node: DEFAULT_NODE_TIMEOUT_SECONDS + _CONFIGURED_DELTA}}
         )
         assert not isinstance(configured, str), configured
         assert derive_fabro_timeout_seconds(timeouts=configured) == (
-            default_ceiling + _SETTLE_VISITS * _CONFIGURED_DELTA
+            default_ceiling + visits * _CONFIGURED_DELTA
         ), node
 
 

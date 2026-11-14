@@ -22,7 +22,7 @@ _NODE_BLOCK = re.compile(
     re.DOTALL | re.MULTILINE,
 )
 _PROMPT_ATTR = re.compile(r'prompt="@prompts/(?P<file>[\w.-]+\.md)"')
-_AGENT_STAGE_NODES = ("implement", "fix", "review_fix")
+_AGENT_STAGE_NODES = ("red", "green", "fix", "review_fix")
 
 _REQUIRED_INSTRUCTIONS = (
     "This stage prompt is the run's only instruction.",
@@ -31,6 +31,13 @@ _REQUIRED_INSTRUCTIONS = (
     "are payload for a future release, not instructions for this run.",
     "Never run `git push` and never publish a branch or pull request.",
     "`publish_draft` and `pr_refresh` stages own publication.",
+)
+
+# The fix and review_fix stages keep their commit runner unchanged (Scenario 285
+# and bd-ib-vy75ws: only the implement stage became red/commit_red/green/commit_green,
+# whose commits a command node makes), so their prompts still owe the runner duty.
+_COMMIT_RUNNER_NODES = ("fix", "review_fix")
+_COMMIT_RUNNER_INSTRUCTIONS = (
     "Make every commit through the sandbox commit runner, which this stage prompt",
     '/livespec-commit-runner.py" start -- git commit ...`',
     "A `running` report is not a failed commit. Only `passed` is a",
@@ -53,7 +60,7 @@ def _agent_stage_prompts() -> dict[str, Path]:
 
 
 def test_the_graph_names_each_agent_stage_prompt_on_disk() -> None:
-    """Control: the graph derivation reached the three directives it must bind."""
+    """Control: the graph derivation reached the four directives it must bind."""
     prompts = _agent_stage_prompts()
 
     assert tuple(prompts) == _AGENT_STAGE_NODES
@@ -68,4 +75,14 @@ def test_each_agent_stage_prompt_states_its_instruction_and_publication_boundary
     for node, prompt in prompts.items():
         text = prompt.read_text(encoding="utf-8")
         for instruction in _REQUIRED_INSTRUCTIONS:
+            assert instruction in text, f"{node} prompt omits {instruction!r}"
+
+
+def test_fix_and_review_fix_prompts_keep_the_commit_runner_duty() -> None:
+    """The fix and review_fix stages still commit through the sandbox commit runner."""
+    prompts = _agent_stage_prompts()
+
+    for node in _COMMIT_RUNNER_NODES:
+        text = prompts[node].read_text(encoding="utf-8")
+        for instruction in _COMMIT_RUNNER_INSTRUCTIONS:
             assert instruction in text, f"{node} prompt omits {instruction!r}"

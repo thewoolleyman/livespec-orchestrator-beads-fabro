@@ -55,6 +55,8 @@ from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
 )
 
 _BUNDLE = Path(".claude-plugin/.fabro/workflows/implement-work-item")
+# The split implement stage's ACP nodes, which share the `implement` layer key.
+_IMPLEMENT_STAGE_NODES = frozenset({"red", "green"})
 _VARIANT = Path(".fabro/workflows/groom-work-item")
 _VERIFY = "proof_verify"
 # The groom variant's reserved nodes are entered only through one edge from `start`
@@ -281,9 +283,14 @@ def test_the_registered_variant_declares_the_verify_node_and_leaves_it_unreached
     it. `GROOM_ONLY_ACP_NODES` is read off the module that owns that scoping
     rather than respelled here, so the two cannot drift apart.
     """
-    assert (
-        _acp_node_names(payload=_VARIANT) == _acp_node_names(payload=_BUNDLE) | GROOM_ONLY_ACP_NODES
-    )
+    # The bundle realizes the `implement` layer key as the split stage's `red`
+    # and `green` nodes (Scenario 285), which the groom variant's own working
+    # node `implement` answers, so parity is compared on the layer keys.
+    layer_keys = {
+        "implement" if node in _IMPLEMENT_STAGE_NODES else node
+        for node in _acp_node_names(payload=_BUNDLE)
+    }
+    assert _acp_node_names(payload=_VARIANT) == layer_keys | GROOM_ONLY_ACP_NODES
     assert _input_value(toml=_toml(payload=_VARIANT), name=_VERIFY_ADAPTER_INPUT) is not None
     edges = [edge for edge in _edges(text=_dot(payload=_VARIANT)) if _VERIFY in edge]
     assert len(edges) == 1, edges
