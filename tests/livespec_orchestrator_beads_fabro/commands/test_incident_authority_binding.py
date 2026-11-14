@@ -39,7 +39,10 @@ from livespec_orchestrator_beads_fabro.incident_authority import (
     read_incident_authority,
 )
 from livespec_orchestrator_beads_fabro.incident_completion import read_incident_standing
-from livespec_orchestrator_beads_fabro.incident_normal_repayment import RepaymentEntry
+from livespec_orchestrator_beads_fabro.incident_normal_repayment import (
+    RepaymentEntry,
+    advance_repayment,
+)
 
 REPOSITORY = "owner/repository"
 ITEM = "test-incident"
@@ -671,5 +674,36 @@ def test_recover_repayment_phases_refuses_a_stale_observation_and_writes_nothing
     _factory_claimed(tenant)
     before = _snapshot(tenant)
     code, _ = _refused(tenant.cli("recover-repayment-phases", admission))
-    assert code.startswith("incident-")
+    assert code == "incident-generation-stale"
     assert _snapshot(tenant) == before
+
+
+def test_recover_repayment_phases_after_advance_repayment_recorded_ready_records_only_active(
+    tenant: _Tenant,
+) -> None:
+    admission = _repayment(tenant.client, through="repayment-admission")[-1]
+    # Ordinary admission approved the item, and advance-repayment recorded the ready phase.
+    tenant.client.update_issue(issue_id=ITEM, status="ready")
+    observed = read_incident_authority(
+        client=tenant.client,
+        repository=REPOSITORY,
+        item_id=ITEM,
+        query={key: getattr(admission, key) for key in _IDENTITY},
+        historical=True,
+    )
+    assert isinstance(observed, IncidentReading)
+    entry = advance_repayment(
+        client=tenant.client, reading=observed, phase="repayment-ready", admission_complete=True
+    )
+    assert isinstance(entry, RepaymentEntry)
+    ready = entry.reading.attempt
+    assert ready.operation_id == "repayment-1#repayment-ready"
+    # The factory claimed it, but nothing recorded repayment-active.
+    _factory_claimed(tenant, status="active")
+    before = read_incident_standing(client=tenant.client, item_id=ITEM).history
+    code, reply = tenant.cli("recover-repayment-phases", ready)
+    assert (code, reply["result"]["recovered"]) == (0, False)
+    after = read_incident_standing(client=tenant.client, item_id=ITEM).history
+    assert len(after) == len(before) + 1
+    assert (after[-1].phase, after[-1].generation) == ("repayment-active", ready.generation + 1)
+    assert tenant.client.show_issue(issue_id=ITEM)["status"] == "active"
