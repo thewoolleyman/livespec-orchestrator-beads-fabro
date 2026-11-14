@@ -86,6 +86,14 @@ tmux capture-pane -p -t "$WORKER_TARGET" | tail -8 \
   && echo "PICKER OPEN - do not paste" || true
 ```
 
+**A Claude worker is not driven by typing (superseded 2026-11-14).** Send a
+Claude worker its instructions with `SendMessage`, per the fleet's distributed
+SendMessage protocol (https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md);
+a managed hook denies literal-text `tmux send-keys` into a Claude pane. The
+typed-text recipes below apply only to a Codex or pi worker, which cannot
+receive `SendMessage`. Key-only input (Escape, Enter, a picker digit) to
+unblock a picker or dialog stays allowed for any worker.
+
 For a short instruction, send text, verify it landed, and send Enter
 separately:
 

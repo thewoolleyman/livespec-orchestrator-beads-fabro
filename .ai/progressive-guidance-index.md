@@ -110,6 +110,15 @@ references passes with its guidance orphaned.
   also BEFORE messaging any other session: inter-session messages go through
   Claude's `SendMessage`, never `herdr agent prompt` into another session's
   pane (maintainer ruling 2026-10-14).
+- Read the fleet's distributed SendMessage protocol,
+  https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/.ai/distributed-sendmessage-protocol.md,
+  BEFORE messaging, asking, directing or answering another agent session on any
+  host, and before running `herdr pane send-text`, `herdr pane run`,
+  `herdr agent prompt` or `tmux send-keys` against a pane you did not create.
+  Claude sessions talk through `SendMessage` (across machines via Remote
+  Control), never by typing into each other's panes; a managed hook denies it,
+  while a Codex or pi pane and key-only picker input stay allowed (maintainer
+  ruling 2026-11-14).
 - Read `.ai/factory-dispatch-preflight-and-triage.md` BEFORE dispatching a
   work-item or triaging a dispatch that ended badly — `filing_display`
   passing does not mean `dod_gate` will, a primary behind origin fails every
