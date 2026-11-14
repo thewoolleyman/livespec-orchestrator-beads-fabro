@@ -104,9 +104,7 @@ def test_a_workflow_declared_timeout_supplies_the_render_and_dispatch_record() -
 
     assert not isinstance(rendered, str)
     assert rendered.node_seconds == {"fix_commit_settle": 3900}
-    record = node_timeouts_journal_record(
-        timeouts=default_node_timeouts(), nodes=rendered.node_seconds
-    )
+    record = node_timeouts_journal_record(timeouts=rendered.timeouts, nodes=rendered.node_seconds)
     assert record["node_timeouts"]["fix_commit_settle"] == {
         "seconds": 3900,
         "layer": WORKFLOW_DEFAULT_LAYER,
