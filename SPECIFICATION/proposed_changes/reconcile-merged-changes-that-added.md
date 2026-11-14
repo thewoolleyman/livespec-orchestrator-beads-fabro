@@ -17,6 +17,8 @@ The drift run processes "every default-branch merge after the recorded frontier"
 
 ### Motivation
 
+Ruling recorded for the grade: legacy-coordinator-agent (session 719514f8, 2026-11-14) ruled that the attribution comment on the plan epic IS required, so bd-ib-76ztny's Definition of Done bullet 3 stands and this proposal states it as a clause.
+
 Work item bd-ib-76ztny (plan bd-ib-ax3rds): reconcile the merges since 2026-10-04 that added unspecified behaviour, and record the baseline frontier. It is held at spec-change tier for this linked stem: chore, verdict partial, spec 360, generalization target `## The skill surface`. The topic is the item's linked stem, so the hold links without a relink. Its dispatch stays gated on bd-ib-kojs3t (the cached prefix, #5054) by the coordinator ruling of 2026-11-01 on livespec-dev-tooling-dfixhe.
 
 The tier record names three unstated parts. Two are general rules, stated below. The third, a reconciliation comment recording BCP14 clause and word counts before and after, is a report about this one plan's outcome, not a behaviour of the drift job. It belongs to the plan's own Proof of Done, so this proposal does not state it. Once this ratifies, the item's Definition of Done should move that bullet to the plan level; the coordinator rules on that.
@@ -34,7 +36,7 @@ In-flight alignment, all `align`: #5054 changes how the drift judge receives its
 
 **1. Start merge and resolutions (`contracts.md` §"The skill surface", the "The drift run." bullet).** After the sentence ending "a later merge's success MUST NOT advance past it.", add:
 
-> When the repository's detection-coverage anchor carries no completed drift record, a drift-job run MUST take its declared scope from a START MERGE: the merge an operator names with `dispatcher.py drift-run --start <merge-sha>`, or else the start merge named by the newest attempt record on the anchor that carries one. It MUST process every default-branch merge after that start merge exactly as this bullet states. The attempt record of a run invoked with `--start` MUST record the start merge SHA and the run's `--invoker`. With no start merge from either source, the run MUST refuse and MUST NOT scan the default branch's whole history. As a stated exception to the attempt-record rule of the detection-coverage anchor, such refusals append at most one missing-start attempt record per anchor, and every refusal still reports the missing start merge in its outcome. Once a completed record exists, its frontier governs, and `--start` MUST be refused. A filed drift finding is RESOLVED by exactly one of three outcomes: a revise that accepts or modifies its proposal; a merged pull request that removes the behaviour from the default branch; or a revise that rejects its proposal together with a ledger comment on the detection-coverage anchor that names the finding identity and records the behaviour as accepted implementation detail.
+> When the repository's detection-coverage anchor carries no completed drift record, a drift-job run MUST take its declared scope from a START MERGE: the merge an operator names with `dispatcher.py drift-run --start <merge-sha>`, or else the start merge named by the newest attempt record on the anchor that carries one. It MUST process every default-branch merge after that start merge exactly as this bullet states. The attempt record of a run invoked with `--start` MUST record the start merge SHA and the run's `--invoker`. With no start merge from either source, the run MUST refuse and MUST NOT scan the default branch's whole history. As a stated exception to the attempt-record rule of the detection-coverage anchor, such refusals append at most one missing-start attempt record per anchor, and every refusal still reports the missing start merge in its outcome. Once a completed record exists, its frontier governs, and `--start` MUST be refused. Every filed drift finding MUST end in exactly one of three resolutions: (a) a revise that accepts or modifies its proposal; (b) a merged pull request that removes the behaviour from the default branch; or (c) a revise that rejects its proposal together with a ledger comment on the detection-coverage anchor that names the finding identity and records the behaviour as accepted implementation detail. A finding MUST NOT be counted resolved by any other outcome, and MUST NOT be counted under more than one; a finding with none of the three remains unresolved. When a reconciliation of drift findings is commissioned by a plan, each net addition its ratified revises make to the specification MUST be attributed, in a reconciliation comment on that plan's epic, to the drift finding identity that produced it.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
@@ -63,6 +65,19 @@ Feature: a drift backfill has a stated start and every finding a stated end
     Given an anchor holding a completed drift record
     When drift-run is invoked with --start
     Then the run refuses the start merge and the recorded frontier is unchanged
+  Scenario: every filed drift finding ends in exactly one of three resolutions
+    Given three filed drift findings
+    When the first finding's proposal is accepted or modified by a revise
+    And the second finding's behaviour is removed by a merged pull request
+    And the third finding's proposal is rejected by a revise and the detection-coverage anchor gains a comment naming its finding identity as accepted implementation detail
+    Then each finding is resolved under exactly the one resolution that applies to it
+    And a fourth filed finding with none of the three remains unresolved
+    And a finding whose proposal was rejected with no anchor comment remains unresolved
+
+  Scenario: a plan-commissioned reconciliation attributes each net spec addition on the plan epic
+    Given a reconciliation of drift findings commissioned by a plan
+    When its ratified revises add clauses to the specification
+    Then the plan's epic carries a reconciliation comment attributing each net addition to the drift finding identity that produced it
 ```
 
 **3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-76ztny"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row and entry MUST carry the heading as numbered at revise.
