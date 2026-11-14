@@ -86,19 +86,16 @@ tmux capture-pane -p -t "$WORKER_TARGET" | tail -8 \
   && echo "PICKER OPEN - do not paste" || true
 ```
 
-**The tmux typing recipes below are retired history (superseded 2026-11-14).**
-On the interactive hosts (vps, hetzner-xubuntu, gamingpc-xubuntu) a managed
-hook denies literal-text tmux input — `tmux send-keys` carrying text, and
-`tmux paste-buffer` — into EVERY pane, because tmux is a retired transport
-there. Send a Claude worker its instructions with `SendMessage`, per the
-fleet's distributed SendMessage protocol
-(https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md).
-Drive a Codex or pi worker, which cannot receive `SendMessage`, with
-`herdr pane send-text <pane> "<text>"` and then, in a separate call,
-`herdr pane send-keys <pane> Enter`. Key-only input (Escape, Enter, a picker
-digit) to unblock a picker or dialog stays allowed for any worker. The tmux
-recipes that follow are kept as history; their verify-before-Enter rule still
-applies to a `herdr pane send-text` delivery.
+**Prefer `SendMessage` for a Claude worker (maintainer ruling 2026-11-14).**
+Send a Claude worker its instructions with `SendMessage` (across machines via
+Remote Control), per the fleet's distributed SendMessage protocol
+(https://github.com/thewoolleyman/livespec-dev-tooling/blob/master/%2Eai/distributed-sendmessage-protocol.md),
+because text typed into its pane can interrupt the maintainer. Typing into a
+pane is still allowed and nothing blocks it; use it when necessary, such as
+for a slash command, a picker, a session `SendMessage` cannot reach, or a
+Codex or pi worker. When you do type, use the recipes below, or
+`herdr pane send-text <pane> "<text>"` followed by a separate
+`herdr pane send-keys <pane> Enter` with the same verify-before-Enter rule.
 
 For a short instruction, send text, verify it landed, and send Enter
 separately:
