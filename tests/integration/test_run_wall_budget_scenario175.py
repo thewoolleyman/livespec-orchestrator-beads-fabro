@@ -94,6 +94,8 @@ _START_EPOCH = 1_791_892_800.0
 # One wall-clock reading per poll, each a full budget past the one before, so a
 # run the factory reports RUNNING is past its budget by its second poll.
 _WALL_STEP = 3601.0
+# More than the wall clock's 5000 readings can ever add up to.
+_CEILING_BEYOND_THE_CLOCK = _WALL_STEP * 10_000
 
 # A `janitor` COMMAND node started and never completed. The production reader
 # finds it and the production stall decision widens its window to that node's
@@ -242,10 +244,14 @@ def _plan(*, repo: Path) -> DispatchPlan:
         janitor=None,
         janitor_checkout=repo / "janitor-co",
         run_wall_budget=_BUDGET,
-        # The scripted continuing run takes several polls to complete; its
-        # explicit ceiling keeps this scenario below the separate hard-ceiling
-        # case while it proves each fresh capture extends the ordinary budget.
-        run_wall_ceiling=RunWallCeiling(seconds=36000.0, layer=REPOSITORY_LAYER),
+        # The scripted run completes after a few polls, but the watch loop may
+        # poll several more times before it observes the launcher thread has
+        # returned, and each poll advances the wall clock a full budget. The
+        # ceiling therefore sits beyond every reading the scripted clock can
+        # supply, so this scenario never meets the hard-ceiling bound however
+        # many extra polls the thread scheduling allows; it proves only that
+        # each fresh capture extends the ordinary budget.
+        run_wall_ceiling=RunWallCeiling(seconds=_CEILING_BEYOND_THE_CLOCK, layer=REPOSITORY_LAYER),
         # A janitor timeout well past the budget, so the open-command-node case
         # below genuinely widens the stall window past it rather than merely
         # appearing to.
