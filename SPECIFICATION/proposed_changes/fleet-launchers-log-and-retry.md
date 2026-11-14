@@ -38,7 +38,7 @@ Fleet scope: every committed `fleet-launch/` launcher, impl and resume. livespec
 > - **Status read on a non-run exit.** This bullet governs only the exits on which the dropped-ticket comment depends on the "Ready item never silently dropped" rule. An exit on which another bullet of this section requires that comment unconditionally, such as the host-only and goal-template exits, appends it as that bullet states, whatever the status reads. Whether a launcher owes the one ledger comment that "Ready item never silently dropped" prescribes is decided on the work item's ledger status. When a launcher's read of that status fails on a non-run exit, it MUST read the status once more before deciding. When both reads fail, it MUST NOT append the dropped-ticket comment, and MUST write one line to its sequence log saying the dropped-ticket comment was skipped because the item's status could not be read, naming the work item and its ticket number. That line follows the terminal line of the "Terminal line" bullet and does not replace it. When a read returns any status other than `ready`, the dropped-ticket rule adds no comment. A comment another bullet of this section requires on that exit, such as the move-valve comment of a stopped-after-admission exit, is unaffected.
 > - **TERM during the poll sleep.** A TERM or INT signal that reaches a launcher while it sleeps between polls MUST end the sleep. The launcher then makes its signal exit, terminal line first, within a bound well under its poll interval, rather than after the sleep would have ended.
 
-> The `check-fleet-launch` harness cases MUST also cover these two bullets, beside the existing launch-error and exactly-one-terminal-line cases of the non-run exit rules: a status read that fails once and then reads `ready`, which appends one dropped-ticket comment; two failed reads, which append none and write the skip line; a non-`ready` status, which adds no dropped-ticket comment; and a TERM during the poll sleep, which exits well within the poll interval.
+> The `check-fleet-launch` harness cases MUST also cover the non-run exit rules this section already states, each asserting the sequence log and the item's comments: a launch-time Definition-of-Done preflight failure while the item reads `ready`, which leaves exactly one terminal line naming the work item, its ticket number and the cause, and exactly one dropped-ticket comment; a give-up after the bounded ready-set retries, which leaves exactly one terminal line naming the work item, its ticket number and that cause; and a ready-set refusal exit, which leaves exactly one terminal line naming the work item, its ticket number and that cause. They MUST also cover these two bullets: a status read that fails once and then reads `ready`, which appends one dropped-ticket comment; two failed reads, which append none and write the skip line; a non-`ready` status, which adds no dropped-ticket comment; and a TERM during the poll sleep, which exits well within the poll interval.
 
 **2. Scenario (`scenarios.md`).** Append the scenario below, numbered at revise time.
 
@@ -75,6 +75,22 @@ Feature: a launcher's non-run exit is accounted for even when the ledger misread
     Then it exits within 5 seconds of the signal
     And its terminal line names the signal
     And the item gains one dropped-ticket comment naming the signal
+
+  Scenario: a launch-time preflight failure on a ready item leaves one terminal line and one dropped-ticket comment
+    Given a fleet launcher holding a ticket for an item that reads ready
+    When its launch-time Definition-of-Done preflight fails
+    Then its sequence log holds exactly one terminal line naming the work item, its ticket number and the preflight cause
+    And the item gains exactly one dropped-ticket comment
+
+  Scenario: a give-up after the bounded ready-set retries leaves one terminal line
+    Given a fleet launcher whose ready-set check refuses on every bounded retry
+    When it gives up after the last retry
+    Then its sequence log holds exactly one terminal line naming the work item, its ticket number and the give-up cause
+
+  Scenario: a ready-set refusal exit leaves one terminal line
+    Given a fleet launcher whose ready-set check refuses the item
+    When it makes its non-run exit for that refusal
+    Then its sequence log holds exactly one terminal line naming the work item, its ticket number and the refusal cause
 ```
 
 **3. Revise co-edit.** The revise pass that accepts this proposal MUST, in the same revise commit, add one `tests/heading-coverage.json` row for the new scenario heading. The row is carried through `resulting_files[]` with the path spelled `../tests/heading-coverage.json`, or edited directly in that commit, with `test: "TODO"`, `work_item: "bd-ib-7itf42"`, and a non-empty `reason` naming integration or above as the owed test's tier. It also adds one matching `tests/heading-coverage-debt.json` entry. The row, the entry and any scenario reference MUST carry the heading as numbered at revise.
