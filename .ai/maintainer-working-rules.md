@@ -124,7 +124,9 @@ the sections they name now live in the `.ai/` files AGENTS.md routes to.
   `createCommitOnBranch` GraphQL commit on a fresh branch. That commit restores
   every path the reverted change touched to the bytes of the reverted commit's
   first parent (for a rebase-merged PR, the first parent of its earliest
-  commit), and its message carries a `This reverts commit <sha>.` line. Pass
+  commit), and its message carries a `This reverts commit <sha>.` line that
+  names that SAME commit (for a rebase-merged PR, the earliest one, never the
+  merge tip), because the gate compares the revert with `<sha>^`. Pass
   the mutation body from a file. GitHub signs that commit, and
   `check-red-green-replay` admits a signed commit whose bytes match the first
   parent as a forge-authored revert. Do NOT use `revertPullRequest` or the web
