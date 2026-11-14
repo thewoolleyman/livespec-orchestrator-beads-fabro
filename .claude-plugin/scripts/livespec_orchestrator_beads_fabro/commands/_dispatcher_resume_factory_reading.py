@@ -19,6 +19,7 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_engine import (
     CommandResult,
     CommandRunner,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_journal_file import JournalFile
 from livespec_orchestrator_beads_fabro.commands._dispatcher_reconcile_runs_attribution import (
     NON_TERMINAL_STATUS_KINDS,
 )
@@ -36,7 +37,11 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_stranded_claim_grade
     RUN_SUCCEEDED,
     run_state_from_inventory,
 )
-from livespec_orchestrator_beads_fabro.commands._fabro_port import FabroPort, FabroTarget
+from livespec_orchestrator_beads_fabro.commands._fabro_port import (
+    FabroCommand,
+    FabroPort,
+    FabroTarget,
+)
 from livespec_orchestrator_beads_fabro.commands._run_attribution import journaled_run_ids
 from livespec_orchestrator_beads_fabro.types import WorkItem
 
@@ -48,6 +53,9 @@ __all__: list[str] = [
 _PS_TIMEOUT_SECONDS = 60.0
 _INSPECT_TIMEOUT_SECONDS = 60.0
 _FACTORY_READ_WRAPPER_ENV = "LIVESPEC_FACTORY_READ_WRAPPER"
+_LIVENESS_READ_STAGE = "factory-liveness-read"
+_HOST_WRAPPER_SOURCE = "host-wrapper"
+_CLIENT_DEFAULT_SOURCE = "client-default"
 _FACTORY_READ_SHELL = (
     'factory="$1"; server="$2"; shift 2; '
     'token="$(printenv "FABRO_DEV_TOKEN__$factory")" || exit 1; '
@@ -148,6 +156,14 @@ def factory_reading(
         cwd=repo,
     )
     ps = port.ps(timeout_seconds=_PS_TIMEOUT_SECONDS)
+    JournalFile(path=journal_path).append(
+        record=_liveness_read_record(
+            args=args,
+            item=item,
+            earlier_run_id=earlier_run_id,
+            command=ps.command,
+        )
+    )
     if ps.command.exit_code != 0:
         return FactoryReading(observed=False, live_runs=(), executing_node=None)
     journaled_ids = journaled_run_ids(
@@ -193,6 +209,42 @@ def factory_reading(
         executing_node=executing_node_from_payload(payload=inspected.payload),
         earlier_run_succeeded=succeeded,
     )
+
+
+def _liveness_read_record(
+    *,
+    args: argparse.Namespace,
+    item: WorkItem,
+    earlier_run_id: str | None,
+    command: FabroCommand,
+) -> dict[str, object]:
+    """The one row a recovery-routing factory read leaves in the dispatch journal.
+
+    It names the factory, its address, the run looked for, where the credential
+    came from and the verdict, so a canary can prove the read ran and a later
+    diagnosis of a credential fault has the failing exit code and message. The
+    credential source is the NAME of the host wrapper's `FABRO_DEV_TOKEN__<factory>`
+    variable, never a value, and never anything read from the tenant's wrapper.
+    """
+    target = getattr(args, "fabro_factory_target", None)
+    factory = getattr(target, "name", "default")
+    wrapped = os.environ.get(_FACTORY_READ_WRAPPER_ENV, "") != ""
+    failed = command.exit_code != 0
+    return {
+        "stage": _LIVENESS_READ_STAGE,
+        "work_item_id": item.id,
+        "factory": factory,
+        "server": getattr(target, "server", None),
+        "earlier_run_id": earlier_run_id,
+        "credential_source": (
+            f"{_HOST_WRAPPER_SOURCE}:FABRO_DEV_TOKEN__{factory}"
+            if wrapped
+            else _CLIENT_DEFAULT_SOURCE
+        ),
+        "verdict": "unobservable" if failed else "observed",
+        "exit_code": command.exit_code,
+        "failure": command.stderr.strip() if failed else None,
+    }
 
 
 def _factory_target(*, args: argparse.Namespace) -> FabroTarget:

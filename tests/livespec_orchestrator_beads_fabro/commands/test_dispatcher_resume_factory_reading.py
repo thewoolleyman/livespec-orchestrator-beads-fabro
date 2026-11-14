@@ -189,3 +189,72 @@ def test_a_live_earlier_run_is_inspected_and_a_journal_fallback_can_succeed(tmp_
     assert live.live_runs[0].run_id == _EARLIER_RUN
     assert succeeded.observed is True
     assert succeeded.earlier_run_succeeded is True
+
+
+def _liveness_rows(*, tmp_path: Path) -> list[dict[str, object]]:
+    rows = [
+        json.loads(line)
+        for line in (tmp_path / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    return [row for row in rows if row.get("stage") == "factory-liveness-read"]
+
+
+def test_a_factory_read_journals_the_factory_the_credential_source_and_the_verdict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One row names the item, factory, address, earlier run, credential source and verdict."""
+    monkeypatch.setenv("LIVESPEC_FACTORY_READ_WRAPPER", _WRAPPER)
+    monkeypatch.setenv("FABRO_DEV_TOKEN__petri", "secret-token-value")
+    target = SimpleNamespace(name="petri", server=_SERVER, dev_token=None)
+    runner = _Runner(answers={"ps": _ok(payload=[]), "inspect": _ok(payload=[])})
+
+    _ = _reading(tmp_path=tmp_path, args=_args(target=target), runner=runner)
+
+    rows = _liveness_rows(tmp_path=tmp_path)
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["work_item_id"] == _ITEM_ID
+    assert row["factory"] == "petri"
+    assert row["server"] == _SERVER
+    assert row["earlier_run_id"] == _EARLIER_RUN
+    assert row["verdict"] == "observed"
+    assert row["exit_code"] == 0
+    assert row["failure"] is None
+    assert row["credential_source"] == "host-wrapper:FABRO_DEV_TOKEN__petri"
+    assert "secret-token-value" not in json.dumps(row)
+
+
+def test_a_failed_factory_read_journals_the_failure_and_its_exit_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An authentication refusal or unreachable server writes the row and stays unobservable."""
+    monkeypatch.setenv("LIVESPEC_FACTORY_READ_WRAPPER", _WRAPPER)
+    target = SimpleNamespace(name="petri", server=_SERVER, dev_token=None)
+    runner = _Runner(
+        answers={"ps": CommandResult(exit_code=7, stdout="", stderr="401 unauthorized")}
+    )
+
+    reading = _reading(tmp_path=tmp_path, args=_args(target=target), runner=runner)
+
+    assert reading.observed is False
+    rows = _liveness_rows(tmp_path=tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["verdict"] == "unobservable"
+    assert rows[0]["exit_code"] == 7
+    assert rows[0]["failure"] == "401 unauthorized"
+    assert rows[0]["credential_source"] == "host-wrapper:FABRO_DEV_TOKEN__petri"
+
+
+def test_a_factory_read_without_the_host_wrapper_names_the_client_default_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no host wrapper the row says so rather than naming a wrapper credential."""
+    monkeypatch.delenv("LIVESPEC_FACTORY_READ_WRAPPER", raising=False)
+    runner = _Runner(answers={"ps": _ok(payload=[])})
+
+    _ = _reading(tmp_path=tmp_path, args=_args(), runner=runner)
+
+    rows = _liveness_rows(tmp_path=tmp_path)
+    assert len(rows) == 1
+    assert rows[0]["factory"] == "default"
+    assert rows[0]["credential_source"] == "client-default"
