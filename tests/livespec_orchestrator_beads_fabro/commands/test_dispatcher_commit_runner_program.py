@@ -661,6 +661,45 @@ def test_the_worker_keeps_the_agent_stage_variable_out_of_the_commit_hook_s_proc
     assert fake.runs == [["git", "commit"]]
 
 
+@pytest.mark.parametrize("stage", ["implement", "fix", "review_fix"])
+def test_the_worker_names_an_authoring_turn_to_the_commit_hook_without_the_guard_variable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    """The hook picks the affected-tests gate from the stage, and the guard stays off."""
+    monkeypatch.setenv("LIVESPEC_AGENT_STAGE", stage)
+    fake = _FakeSubprocess(returncode=0)
+    program = _program(tmp_path, fake)
+    _ = _record(tmp_path, _RUN_ID, {"state": "running", "command": ["git", "commit"]}, 1)
+
+    assert program["worker"](_RUN_ID) == 0
+
+    [environment] = fake.environments
+    assert environment is not None
+    assert environment["LIVESPEC_AUTHORING_TURN"] == stage
+    assert "LIVESPEC_AGENT_STAGE" not in environment
+
+
+@pytest.mark.parametrize("stage", [None, "janitor", "publish_draft"])
+def test_the_worker_never_carries_an_authoring_turn_for_any_other_stage(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str | None
+) -> None:
+    """A stage that is not an authoring turn runs the repository's full commit hook."""
+    monkeypatch.setenv("LIVESPEC_AUTHORING_TURN", "fix")
+    if stage is None:
+        monkeypatch.delenv("LIVESPEC_AGENT_STAGE", raising=False)
+    else:
+        monkeypatch.setenv("LIVESPEC_AGENT_STAGE", stage)
+    fake = _FakeSubprocess(returncode=0)
+    program = _program(tmp_path, fake)
+    _ = _record(tmp_path, _RUN_ID, {"state": "running", "command": ["git", "commit"]}, 1)
+
+    assert program["worker"](_RUN_ID) == 0
+
+    [environment] = fake.environments
+    assert environment is not None
+    assert "LIVESPEC_AUTHORING_TURN" not in environment
+
+
 def test_a_commit_msg_refusal_after_a_passing_pre_commit_hook_names_its_recipe(
     tmp_path: Path,
 ) -> None:
