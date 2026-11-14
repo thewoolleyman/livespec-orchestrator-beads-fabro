@@ -55,6 +55,7 @@ class _Published:
     result: subprocess.CompletedProcess[str]
     calls: tuple[tuple[str, ...], ...]
     draft_created: bool
+    sleep_calls: tuple[str, ...]
 
 
 def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
@@ -144,6 +145,12 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LANDED_PR" && exit 0; done\n'
         "fi\n"
         'if test "$1 $2" = "pr view"; then printf \'%s\\n\' \'{"comments": []}\'; exit 0; fi\n'
+        'if test "$1 $2" = "pr list" && test -f "$GH_CREATE_REFUSED" '
+        '&& test "${LIVESPEC_OPEN_PRS_AFTER_CREATE:-}" != ""; then\n'
+        "  printf '%s\\n' \"$LIVESPEC_OPEN_PRS_AFTER_CREATE\" "
+        '| sed "s/__PUSHED_HEAD__/$(git rev-parse HEAD)/g"\n'
+        "  exit 0\n"
+        "fi\n"
         'if test "$1 $2" = "pr list" && test "${LIVESPEC_LATE_LANDED_PR:-}" != "" '
         '&& test -f "$GH_CREATE_REFUSED"; then\n'
         '  for arg in "$@"; do test "$arg" = "merged" && printf \'%s\\n\' "$LIVESPEC_LATE_LANDED_PR" && exit 0; done\n'
@@ -153,11 +160,22 @@ def _forge_double(*, tmp_path: Path, push_refusal: str | None = None) -> Path:
         '  echo "pull request create failed: No commits between master and $LIVESPEC_PUBLISH_BRANCH" >&2\n'
         "  exit 1\n"
         "fi\n"
+        'if test "$1 $2" = "pr create" && test "${LIVESPEC_CREATE_FAILURE:-}" != ""; then\n'
+        '  : > "$GH_CREATE_REFUSED"\n'
+        "  printf '%s\\n' \"$LIVESPEC_CREATE_FAILURE\" >&2\n"
+        "  exit 1\n"
+        "fi\n"
         'if test "$1 $2" = "pr create"; then : > "$GH_DRAFT_CREATED"; fi\n'
         "exit 0\n",
         encoding="utf-8",
     )
     gh.chmod(gh.stat().st_mode | stat.S_IXUSR)
+    sleep = bin_dir / "sleep"
+    sleep.write_text(
+        "#!/bin/sh\n" 'printf \'%s\\n\' "$1" >> "$SLEEP_CALLS"\n',
+        encoding="utf-8",
+    )
+    sleep.chmod(sleep.stat().st_mode | stat.S_IXUSR)
     if push_refusal is not None:
         real_git = shutil.which("git")
         assert real_git is not None
@@ -198,9 +216,12 @@ def _publish(
     dispatch_pull_requests: str | None = None,
     check_suite: str = "true",
     push_refusal: str | None = None,
+    create_failure: str | None = None,
+    open_prs_after_create: str | None = None,
 ) -> _Published:
     calls = tmp_path / "gh-calls"
     created = tmp_path / "draft-created"
+    sleep_calls = tmp_path / "sleep-calls"
     bin_dir = _forge_double(tmp_path=tmp_path, push_refusal=push_refusal)
     plugins_root = tmp_path / "plugins"
     plugins_root.mkdir()
@@ -226,8 +247,11 @@ def _publish(
             "LIVESPEC_PUBLISH_BRANCH": _PUBLISH_BRANCH,
             "LIVESPEC_LANDED_PR": landed_pr or "",
             "LIVESPEC_LATE_LANDED_PR": late_landed_pr or "",
+            "LIVESPEC_CREATE_FAILURE": create_failure or "",
+            "LIVESPEC_OPEN_PRS_AFTER_CREATE": open_prs_after_create or "",
             "LIVESPEC_DISPATCH_PULL_REQUESTS": dispatch_pull_requests or "",
             "GH_CREATE_REFUSED": str(tmp_path / "create-refused"),
+            "SLEEP_CALLS": str(sleep_calls),
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(plugins_root),
         }
     )
@@ -239,7 +263,14 @@ def _publish(
         capture_output=True,
         check=False,
     )
-    return _Published(result=result, calls=_calls(path=calls), draft_created=created.is_file())
+    return _Published(
+        result=result,
+        calls=_calls(path=calls),
+        draft_created=created.is_file(),
+        sleep_calls=tuple(sleep_calls.read_text(encoding="utf-8").splitlines())
+        if sleep_calls.exists()
+        else (),
+    )
 
 
 def _record_conflicted_run(*, tmp_path: Path) -> Path:
@@ -465,6 +496,25 @@ def test_a_refused_draft_creation_with_nothing_landed_still_fails_closed(
     assert published.result.returncode != 0
     assert "LIVESPEC_PUBLISH_DRAFT_CREATE_FAILED" in published.result.stderr
     assert "LIVESPEC_MERGED_RECONCILE" not in published.result.stderr
+
+
+def test_a_failed_draft_creation_adopts_an_open_pull_request_at_the_pushed_head(
+    tmp_path: Path,
+) -> None:
+    """Scenario 369: the forge can create a draft before reporting its 5xx."""
+    run, _, _ = _stale_run(tmp_path=tmp_path)
+
+    published = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        create_failure="HTTP 502 Bad Gateway",
+        open_prs_after_create="811\t__PUSHED_HEAD__",
+    )
+
+    assert published.result.returncode == 0, published.result.stderr
+    assert "LIVESPEC_PUBLISH_DRAFT_PUBLISHED" in published.result.stderr
+    assert "pull_request=#811" in published.result.stderr
+    assert published.draft_created is False
 
 
 @pytest.mark.parametrize("dispatch_pull_requests", ["", "12 730", "7"])
