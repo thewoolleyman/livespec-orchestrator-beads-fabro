@@ -1891,6 +1891,15 @@ a unit-tier test); its dotted node-id prefix `tests.integration` is in the
   that check a refreshed tree (`janitor`, `publish_draft`, `pr_refresh`) re-run the
   program before the declared suite.
 
+- `test_impl_dispatch_memory_slice_scenario371.py` — binds
+  `SPECIFICATION/scenarios.md` Scenario 371 and the host-dispatch-memory-slice
+  clause of `SPECIFICATION/contracts.md` (work-item `bd-ib-szbxu7`): the
+  production `run_impl_dispatch` over a stood-in host and runner and a real
+  on-disk dispatch journal. The argv is read off the runner seam rather than the
+  result, because "same argv as before" is a claim about what was executed. The
+  real cgroup placement needs a systemd user manager with memory delegation and
+  the slice installed, so it is host-captured on the dev host, not asserted here.
+
 Coverage rules: 100% line + branch on every covered module, as everywhere in
 this repo. Build state through the public store/client seam (or a small
 read-only stub for shapes the fake's public surface never produces); never read

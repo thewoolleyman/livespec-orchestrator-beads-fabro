@@ -1283,13 +1283,6 @@
   {
     "spec_root": "SPECIFICATION",
     "spec_file": "scenarios.md",
-    "heading": "## Scenario 371 — An impl dispatch launches its loop inside the host's dispatch memory slice when the host provides one",
-    "work_item": "bd-ib-szbxu7",
-    "first_seen": "2026-11-13"
-  },
-  {
-    "spec_root": "SPECIFICATION",
-    "spec_file": "scenarios.md",
     "heading": "## Scenario 372 — A stale seed is re-seeded by diff-apply onto the default branch's tip, and a conflicting or work-free seed publishes nothing",
     "work_item": "bd-ib-5xihdt",
     "first_seen": "2026-11-14"
