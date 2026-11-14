@@ -71,7 +71,18 @@ _SCRIPT = re.compile(r'script="(?P<value>(?:[^"\\]|\\.)*)"')
 # hook was running and the test failed for a reason that had nothing to do with
 # the behaviour under test. The hook below still sleeps 90 seconds, six times
 # this bound, so it outlives it by a wide margin and the assertion is unchanged.
+#
+# THE BOUND IS ALSO PINNED AGAINST THE HOST'S CLOCK. The script shrinks the bound by
+# the whole seconds the stage has already spent, and the bound floors at one second.
+# On a loaded runner the steps ahead of the push -- measured at 31 to 89 seconds across
+# these cases -- used the rest of the fifteen, so the finished-hook case was cut off at
+# a one-second bound before git had run its hook (CI run 43606417265, 2026-11-14).
+# `_publish` therefore injects the stage's elapsed figure as zero by default, so the
+# bound the cases assert against is the one `push_observation_budget_seconds` computes
+# and not one the host's load chose. Only the late-push case, whose subject IS stage
+# time spent before the push, keeps the stage's own clock.
 _TEST_LIMIT_SECONDS = 135
+_STAGE_ELAPSED_ENV = "LIVESPEC_PUBLISH_DRAFT_STAGE_ELAPSED_SECONDS"
 
 
 def _git(cwd: Path, *argv: str) -> subprocess.CompletedProcess[str]:
@@ -188,6 +199,7 @@ def _publish(
     run: Path,
     limit_seconds: int | None,
     pre_push_work_seconds: int = 0,
+    injected_stage_elapsed_seconds: int | None = 0,
 ) -> subprocess.CompletedProcess[str]:
     bin_dir = _forge_double(tmp_path=tmp_path, merged_query_delay_seconds=pre_push_work_seconds)
     root = _sandbox_helpers(tmp_path=tmp_path, limit_seconds=limit_seconds)
@@ -203,6 +215,8 @@ def _publish(
             "LIVESPEC_SANDBOX_CLAUDE_PLUGINS_ROOT": str(root),
         }
     )
+    if injected_stage_elapsed_seconds is not None:
+        env[_STAGE_ELAPSED_ENV] = str(injected_stage_elapsed_seconds)
     return subprocess.run(
         ["sh", "-c", _publish_script()],
         cwd=str(run),
@@ -301,6 +315,7 @@ def test_a_push_starting_late_in_the_stage_is_ended_by_the_bound_the_stage_leave
         run=run,
         limit_seconds=_LATE_PUSH_LIMIT_SECONDS,
         pre_push_work_seconds=_LATE_PUSH_PRE_PUSH_WORK_SECONDS,
+        injected_stage_elapsed_seconds=None,
     )
 
     assert result.returncode != 0, result.stderr
@@ -310,6 +325,41 @@ def test_a_push_starting_late_in_the_stage_is_ended_by_the_bound_the_stage_leave
     assert event.operation == "push"
     assert event.limit_seconds == _LATE_PUSH_LIMIT_SECONDS
     assert event.hook_elapsed_ms < _LATE_PUSH_HOOK_ELAPSED_CEILING_MS, event.hook_elapsed_ms
+    assert _remote_branch(run=run) == ""
+
+
+# Ten seconds of the stage are spent before the push, so the clock leaves a push
+# bound of five seconds; an injected figure of zero must leave the whole fifteen.
+_INJECTED_ELAPSED_PRE_PUSH_WORK_SECONDS = 10
+_INJECTED_ELAPSED_HOOK_ELAPSED_FLOOR_MS = 10_000
+
+
+def test_an_injected_stage_elapsed_figure_replaces_the_stage_clock_in_the_push_bound(
+    tmp_path: Path,
+) -> None:
+    """Scenario 304: the push bound can be made independent of the host's own clock.
+
+    The stage's real clock has spent ten of the push's fifteen seconds, which a
+    script reading it would turn into a five-second bound. With the elapsed figure
+    injected as zero the hook is observed after the full fifteen, so it has been
+    running for most of them when the observer is asked.
+    """
+    _, run = _run_clone(tmp_path=tmp_path)
+    _install_pre_push(run=run, seconds=90)
+
+    result = _publish(
+        tmp_path=tmp_path,
+        run=run,
+        limit_seconds=_TEST_LIMIT_SECONDS,
+        pre_push_work_seconds=_INJECTED_ELAPSED_PRE_PUSH_WORK_SECONDS,
+        injected_stage_elapsed_seconds=0,
+    )
+
+    assert result.returncode != 0, result.stderr
+    event = hook_over_limit_from_text(text=result.stderr)
+    assert event is not None, result.stderr
+    assert event.hook_elapsed_ms > _INJECTED_ELAPSED_HOOK_ELAPSED_FLOOR_MS, event.hook_elapsed_ms
+    assert "15s observation bound" in result.stderr
     assert _remote_branch(run=run) == ""
 
 
