@@ -13,7 +13,7 @@ session is a peer of the maintainer's own tabs, so here `tab create` is right.
 The recipe that worked on 2026-10-10, run from inside herdr (`HERDR_ENV=1`):
 
 ```bash
-out=$(herdr tab create --workspace <ws-id> --cwd /data/projects/<repo> --label <slug> --no-focus)
+out=$(herdr tab create --workspace <ws-id> --cwd "$HOME/workspace/<repo>" --label <slug> --no-focus)
 pane=$(echo "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["root_pane"]["pane_id"])')
 herdr agent start <slug> --kind claude --pane "$pane" --timeout 240000 -- \
   --dangerously-skip-permissions --model 'fable[1m]' --effort high -n <slug> \

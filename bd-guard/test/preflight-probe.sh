@@ -102,7 +102,7 @@ set -uo pipefail
 # "EXPECTED SCHEMA VERSION" header section above.
 EXPECTED_SCHEMA_VERSION="${EXPECTED_SCHEMA_VERSION:-53}"
 LANDMINE_VERSION=65
-WRAPPER_DIR=/data/projects/1password-env-wrapper
+WRAPPER_DIR="$HOME/workspace/1password-env-wrapper"
 
 EVENTS_COLS="issue_id, event_type, actor, old_value, new_value, comment, CAST(created_at AS CHAR)"
 COMMENTS_COLS="issue_id, author, text, CAST(created_at AS CHAR)"
@@ -230,7 +230,7 @@ check_tenant() {   # $1=repo path
 if [[ $# -ge 1 ]]; then
     check_tenant "$1"
 else
-    for cfg in /data/projects/*/.beads/config.yaml; do
+    for cfg in "$HOME"/workspace/*/.beads/config.yaml; do
         repo=$(dirname "$(dirname "$cfg")")
         grep -q "mode: *server" "$cfg" 2>/dev/null || continue
         check_tenant "$repo"

@@ -29,7 +29,7 @@ commit as failures of the workflow, not as acceptable stopping points.
 2. If the change will modify tracked files, create a dedicated worktree from the
    primary checkout's `master` and do all edits there. Every worktree lives under
    the per-user root `~/.worktrees/<repo>/<branch>` — NEVER as a peer of the
-   clones under `/data/projects`, so the workspace holds only first-class clones.
+   clones under `~/workspace`, so the workspace holds only first-class clones.
    Create it with the worktree-discipline pack's recipe, which adds the
    worktree under that root, provisions the gitignored pack into it, and
    runs the hydrate hook (run it from the primary checkout):
@@ -38,7 +38,7 @@ commit as failures of the workflow, not as acceptable stopping points.
    mise exec -- just worktree-create <branch>
    ```
 
-   A raw `mise exec -- git -C /data/projects/livespec-orchestrator-beads-fabro worktree add -b <branch>
+   A raw `mise exec -- git -C "$HOME/workspace/livespec-orchestrator-beads-fabro" worktree add -b <branch>
    "$HOME/.worktrees/livespec-orchestrator-beads-fabro/<branch>" master` also yields a usable
    worktree — the pre-commit and pre-push hooks install the pack before
    any gate reads it, so the worktree can commit and push with no
@@ -98,7 +98,7 @@ present:
   injected by THIS project's configured env wrapper. A FAMILY tenant shares the
   one family password via the family 1Password Environment wrapper
   `with-livespec-env.sh` (canonical copy at
-  `/data/projects/1password-env-wrapper/with-livespec-env.sh`); an INDEPENDENT
+  `~/workspace/1password-env-wrapper/with-livespec-env.sh`); an INDEPENDENT
   (non-family) tenant injects its own tenant password from its own 1Password
   Environment via its own `with-<project>-env.sh` wrapper. Either way `bd`
   consumes the same bare var — there is NO per-tenant

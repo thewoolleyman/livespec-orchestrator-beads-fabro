@@ -11,7 +11,10 @@ from pathlib import Path
 
 # Host configuration: the one place this script names a host value.
 ORCH = Path(
-    os.environ.get("FLEET_LAUNCH_ORCH_REPO", "/data/projects/livespec-orchestrator-beads-fabro")
+    os.environ.get(
+        "FLEET_LAUNCH_ORCH_REPO",
+        str(Path.home() / "workspace" / "livespec-orchestrator-beads-fabro"),
+    )
 )
 OUT = Path(os.environ.get("FLEET_LAUNCH_STATE_DIR", str(ORCH / "tmp/petri-canary")))
 GATE_RUNS = ORCH / "tmp/gate-runs"

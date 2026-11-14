@@ -249,7 +249,7 @@ picked up. Record the fallback, and why it was needed, in the work item's notes
   T=/home/ubuntu/.worktrees/fabro/factory-wave-c/target
   mkdir -p "$T/debug" "$T/release"
   CARGO_TARGET_DIR="$T" flock -n -E 75 "$T/release/.cargo-lock" \
-    flock -n -E 75 "$T/debug/.cargo-lock" cargo sweep --maxsize 40GB /data/projects/fabro
+    flock -n -E 75 "$T/debug/.cargo-lock" cargo sweep --maxsize 40GB "$HOME/workspace/fabro"
   ```
 
 ## Merging and the runbook duty
@@ -280,9 +280,9 @@ picked up. Record the fallback, and why it was needed, in the work item's notes
 3. Remove the fork worktree and delete the fork branch, local and remote:
 
    ```bash
-   git -C /data/projects/fabro worktree remove ~/.worktrees/fabro/<branch>
-   git -C /data/projects/fabro branch -D <branch>
-   git -C /data/projects/fabro push origin --delete <branch>
+   git -C "$HOME/workspace/fabro" worktree remove ~/.worktrees/fabro/<branch>
+   git -C "$HOME/workspace/fabro" branch -D <branch>
+   git -C "$HOME/workspace/fabro" push origin --delete <branch>
    ```
 
 4. Append the plan handoff naming the merge SHA, the closing PR, and what the

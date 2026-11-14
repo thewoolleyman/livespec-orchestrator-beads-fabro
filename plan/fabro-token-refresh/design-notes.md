@@ -232,7 +232,7 @@ tokens instead of dying on the 60-min TTL — is demonstrated.
 Reset item first each run: `with-livespec-env.sh -- bd update livespec-driver-codex-pdn --status ready`;
 `docker rm -f livespec-orch-realwork`. Then:
 ```
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- bash -c '\
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- bash -c '\
   export FABRO_LOG="warn,fabro_workflow=info,fabro_sandbox=info,fabro_github=info" \
     LIVESPEC_DISPATCH_STALL_SECONDS=5400 FABRO_DEBUG_ACP_PRE_TURN_SLEEP_SECONDS=3900 \
     FABRO_DEBUG_ACP_PRE_TURN_SLEEP_NODE=pr FABRO_PUSH_CRED_REFRESH_AHEAD=<0=B2|1=T2> \

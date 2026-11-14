@@ -10,7 +10,7 @@
 # harness points the scripts at stub boards and throwaway directories.
 
 # Repository and seat identity.
-: "${FLEET_LAUNCH_ORCH_REPO:=/data/projects/livespec-orchestrator-beads-fabro}"
+: "${FLEET_LAUNCH_ORCH_REPO:=$HOME/workspace/livespec-orchestrator-beads-fabro}"
 : "${FLEET_LAUNCH_SEAT:=petri-factory-on-gmktec}"
 
 # Data directory: logs, verdicts, the shared fleet-cap file and the hold file.
@@ -72,8 +72,8 @@
 # pass WRAPPER=<fleet-launch/wrappers/...> per launch.
 : "${FLEET_LAUNCH_DEFAULT_WRAPPER:=/usr/local/bin/with-livespec-env.sh}"
 : "${FLEET_LAUNCH_DOLT_SERVER_WRAPPER:=/usr/local/bin/with-dolt-server-env.sh}"
-: "${FLEET_LAUNCH_OPENBRAIN_WRAPPER:=/data/projects/1password-env-wrapper/with-openbrain-env.sh}"
-: "${FLEET_LAUNCH_RESUME_WRAPPER:=/data/projects/resume/with-resume-env.sh}"
+: "${FLEET_LAUNCH_OPENBRAIN_WRAPPER:=$HOME/workspace/1password-env-wrapper/with-openbrain-env.sh}"
+: "${FLEET_LAUNCH_RESUME_WRAPPER:=$HOME/workspace/resume/with-resume-env.sh}"
 : "${FLEET_LAUNCH_RESUME_COMMAND:=resume}"
 : "${FLEET_LAUNCH_HOMELAB_AWS_WRAPPER:=/usr/local/bin/with-homelab-aws.sh}"
 : "${FLEET_LAUNCH_HL_CLI:=/home/ubuntu/.nix-profile/bin/hl}"

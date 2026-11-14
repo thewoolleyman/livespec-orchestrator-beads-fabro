@@ -30,7 +30,7 @@ them; all it changes is who starts the engine.
 One invocation per tenant:
 
 ```bash
-sudo ./install.sh --repo /data/projects/livespec-orchestrator-beads-fabro --interval 30min
+sudo ./install.sh --repo "$HOME/workspace/livespec-orchestrator-beads-fabro" --interval 30min
 ```
 
 `--interval` defaults to **30min** and is REFUSED below the documented minimum

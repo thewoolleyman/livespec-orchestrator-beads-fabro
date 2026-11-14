@@ -14,7 +14,7 @@
 # MUST be run on the HOST as ubuntu (Docker access), under the 1Password wrapper
 # so the injected secrets are present:
 #
-#   /data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+#   ~/workspace/1password-env-wrapper/with-livespec-env.sh -- \
 #     ./orchestrator-image/build-and-verify.sh
 #
 # NO secret is ever printed: tokens flow via `-e VAR` (docker reads the value

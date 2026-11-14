@@ -47,7 +47,7 @@ Run on the host as `ubuntu` (Docker access) **under the 1Password env wrapper**
 so the injected secrets are present:
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   ./orchestrator-image/build-and-verify.sh
 ```
 
@@ -74,14 +74,14 @@ dispatcher journal tail, and leaves automatic item closure disabled with
 Preflight:
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   bash orchestrator-image/tier2-dispatch-proof.sh --preflight
 ```
 
 Run against a deliberately tiny ready item:
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   bash orchestrator-image/tier2-dispatch-proof.sh --run --item <tiny-ready-item>
 ```
 
@@ -106,7 +106,7 @@ count only and never prints a secret.
 Preview (deletes nothing):
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   bash orchestrator-image/reap-e2e-repos.sh --dry-run
 ```
 
@@ -114,7 +114,7 @@ Real reap (default 120-minute age gate; `--force-all` deletes regardless of
 age):
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   bash orchestrator-image/reap-e2e-repos.sh
 ```
 
@@ -777,7 +777,7 @@ you are logged into, so running them from a vps shell restarts vps, never hp.
 See "The hp factory host" below before touching hp.
 
 The vps host server is owned by the `fabro-server.service` unit distributed from
-`/data/projects/vps-info/services/fabro-server/`. Restart it through systemd:
+`~/workspace/vps-info/services/fabro-server/`. Restart it through systemd:
 
 ```bash
 sudo systemctl restart fabro-server
@@ -837,7 +837,7 @@ server; the CLI's `auth.json` entry is keyed by URL, which is also why
 ```bash
 FABRO_BASE_URL=https://hp-xubuntu.perch-rudd.ts.net:32276 \
 FABRO_CANONICAL_HOST=hp-xubuntu.perch-rudd.ts.net:32276 \
-  /data/projects/vps-info/services/fabro-server/fabro-server-verify-web
+  "$HOME/workspace/vps-info/services/fabro-server/fabro-server-verify-web"
 
 fabro ps --server https://hp-xubuntu.perch-rudd.ts.net:32276
 ```
@@ -1394,7 +1394,7 @@ wants to spend the one bounded renewal request:
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- \
-  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+  python3 "$HOME/workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py" \
     codex-cred-refresh --dry-run --json
 ```
 
@@ -1403,7 +1403,7 @@ repository root on the credential-source host:
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- \
-  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+  python3 "$HOME/workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py" \
     codex-cred-status --json
 ```
 
@@ -1465,7 +1465,7 @@ without the option the command reads the credential and writes nothing at all.
 
 ```bash
 /usr/local/bin/with-livespec-env.sh -- \
-  python3 /data/projects/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py \
+  python3 "$HOME/workspace/livespec-orchestrator-beads-fabro/.claude-plugin/scripts/bin/dispatcher.py" \
     codex-cred-status --json \
     --observe-identity-state ~/.local/state/livespec/codex-identity.json
 ```
@@ -1538,7 +1538,7 @@ the `.fabro/workflows/implement-work-item/` graph) and the dispatch target,
 so the regenerated value is identical), and dispatches one ready item:
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- \
   just w7-real-work-dispatch -- --target-repo <repo-name> --item <id> --run
 ```
 
@@ -1547,7 +1547,7 @@ bind-mount**, only the substrate volume + the injected secrets, then clones
 fresh and points the Dispatcher at the clones:
 
 ```bash
-/data/projects/1password-env-wrapper/with-livespec-env.sh -- docker run -d \
+"$HOME/workspace/1password-env-wrapper/with-livespec-env.sh" -- docker run -d \
   --name livespec-orchestrator \
   --privileged \
   --cgroupns=host \                                  # nested resource-limited Fabro sandboxes on cgroup v2

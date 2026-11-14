@@ -45,7 +45,7 @@
 # env, and redacts long opaque token-shaped runs in any captured output.
 #
 # Required env, normally supplied by the dispatch TARGET's credential_wrapper
-# (the fleet's is /data/projects/1password-env-wrapper/with-livespec-env.sh;
+# (the fleet's is ~/workspace/1password-env-wrapper/with-livespec-env.sh;
 # an adopter target injects its own App env via its own wrapper — fail-closed,
 # no fleet fallback):
 #
@@ -130,7 +130,7 @@ Options:
   --poll-attempts N    Dispatcher PR-merge poll attempts. Default: 80.
 
 Required env, normally supplied by the dispatch TARGET's credential_wrapper
-(fleet targets: /data/projects/1password-env-wrapper/with-livespec-env.sh;
+(fleet targets: ~/workspace/1password-env-wrapper/with-livespec-env.sh;
 adopter targets inject their own GitHub App env — fail-closed, no fleet
 fallback):
 

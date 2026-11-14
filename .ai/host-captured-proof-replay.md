@@ -80,7 +80,7 @@ yet for a first leg to have reproduced.
 
 ```bash
 mise exec -- <path-to-build>/dispatcher.py post-host-record \
-  --repo /data/projects/livespec-orchestrator-beads-fabro \
+  --repo "$HOME/workspace/livespec-orchestrator-beads-fabro" \
   --item <item-id> \
   --verdict host_recorded \
   --record <payload.json> \
@@ -105,7 +105,7 @@ verdict with the same primitive:
 
 ```bash
 mise exec -- <path-to-build>/dispatcher.py post-host-record \
-  --repo /data/projects/livespec-orchestrator-beads-fabro \
+  --repo "$HOME/workspace/livespec-orchestrator-beads-fabro" \
   --item <item-id> \
   --verdict host_verified \
   --record <replay-payload.json> \

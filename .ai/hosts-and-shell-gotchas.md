@@ -8,7 +8,7 @@ those of the original measurement.
 
 ## The primary checkout runs ON the vps host
 
-The `/data/projects/livespec-orchestrator-beads-fabro` primary checkout runs on
+The `~/workspace/livespec-orchestrator-beads-fabro` primary checkout runs on
 the `vps` host itself: `hostname` is `vmi3006760` (re-measured 2026-10-18) and
 the tailscale `Self` node is `vps.perch-rudd.ts.net`. The other factory host,
 `hp-xubuntu`, is the remote one. (vps is a retired factory per AGENTS.md
