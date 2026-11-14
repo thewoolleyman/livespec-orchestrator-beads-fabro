@@ -9411,6 +9411,35 @@ Feature: The Dispatcher's Fabro event reads cannot become unbounded factory load
     Then it reads the dispatch journal once for itself rather than reusing the first pass's snapshot
     And it issues its own fabro inspect for each run it needs rather than reusing the first pass's results
 
+  Scenario Outline: A standalone reconcile-runs pass parses this repository's journal once however many claims it surveys
+    Given a dispatch journal holding records for <claims> active items assigned fabro
+    And the stranded-claim survey, the journaled-runs reader and the journal-tail reader each consult the journal
+    When one standalone reconcile-runs pass runs
+    Then this repository's dispatch journal is read and parsed exactly once in that pass
+    And every one of those readers receives the same parsed snapshot
+
+    Examples:
+      | claims |
+      | 1      |
+      | 35     |
+
+  Scenario: A standalone reconcile-runs pass parses each other dispatching repository's journal once
+    Given the pass reaches two other dispatching repositories whose runs it collects
+    And more than one reader in the pass consults each of those repositories' journals
+    When one standalone reconcile-runs pass runs
+    Then each of those repositories' dispatch journals is read and parsed exactly once in that pass
+
+  Scenario: Records a reconcile-runs pass appends are visible without re-reading the journal
+    Given a standalone reconcile-runs pass that journals a stranded-claim-hold record before a later reader consults the journal
+    When the later reader consults the journal in the same pass
+    Then it sees the appended record
+    And this repository's dispatch journal file is still read only once in that pass
+
+  Scenario: Each reconcile-runs pass reads afresh
+    Given the host timer starts two standalone reconcile-runs passes in succession
+    When the second pass starts
+    Then it reads each dispatch journal once for itself rather than reusing the first pass's snapshot
+
   Scenario: Concurrent reads are capped across processes on one host
     Given two fabro events reads against one factory are already in flight from different Dispatcher processes on this host
     When another Dispatcher process needs to read a run on that factory
