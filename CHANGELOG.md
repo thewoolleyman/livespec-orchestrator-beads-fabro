@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.331.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.330.0...v0.331.0) (2026-11-14)
+
+
+### Features
+
+* record repository preflight verdict ([92c1c2b](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/92c1c2b1e376c717a909a839f0cdf938df5c1059))
+
+
+### Bug Fixes
+
+* key the held reader on the released spec identity ([2130790](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/21307901c2c2ac354b2561871ded748b6ab2c8b0))
+* match the recorded spec identity in the held reader ([3d003d9](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/3d003d905141ce9800020317d58802f48887653f))
+* require matching Definition-of-Done spec identity ([0079189](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/007918940844c4728348516ca2008089e9555874))
+* share released spec identity ([9a08c71](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/9a08c71264605463aeeb0a3948380ca641048b2d))
+* the repository preflight imports only what the registered build ships (bd-ib-v7aftf) ([40b5a7d](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/commit/40b5a7d917ddb03afcb8f02506bf961a047d73ed))
+
 ## [0.330.0](https://github.com/thewoolleyman/livespec-orchestrator-beads-fabro/compare/v0.329.1...v0.330.0) (2026-11-14)
 
 
