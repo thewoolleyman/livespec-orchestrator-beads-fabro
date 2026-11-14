@@ -63,6 +63,9 @@ if TYPE_CHECKING:
     from livespec_orchestrator_beads_fabro.commands._spec_change_tier_record import (
         RecordedSpecChangeTier,
     )
+    from livespec_orchestrator_beads_fabro.commands._spec_change_tier_relink_candidate import (
+        RelinkCandidate,
+    )
 
 __all__: list[str] = [
     "REASON_AWAITING_REJUDGEMENT",
@@ -88,6 +91,7 @@ class SpecChangeHold:
     linked_proposal_topic: str | None
     verdict_kind: str
     generalization_target: str | None
+    relink_candidate: RelinkCandidate | None = None
 
     @property
     def refusal(self) -> str:
@@ -97,6 +101,10 @@ class SpecChangeHold:
         there is none to name, because the operator's next act is about that
         topic in all three cases — filing it, ratifying it, or waiting for the
         pass that re-judges against it.
+
+        A hold carrying a relink candidate says so after the hold reason, and a
+        hold without one renders byte-for-byte as it did before the candidate
+        existed.
         """
         topic = self.linked_proposal_topic or _UNNAMED_TOPIC
         return (
@@ -104,7 +112,19 @@ class SpecChangeHold:
             f" for its linked proposed-change topic {topic}; no claim was taken and"
             " no factory run was created. The spec-stated judgement reported its"
             f" asked-for behaviour {self.verdict_kind}"
-            f"{self._target_clause()}. Hold reason: {self.reason}.\n"
+            f"{self._target_clause()}. Hold reason: {self.reason}.{self._candidate_clause()}\n"
+        )
+
+    def _candidate_clause(self) -> str:
+        if self.relink_candidate is None:
+            return ""
+        candidate = self.relink_candidate
+        return (
+            f" A relink candidate stands: proposed-change topic {candidate.topic}, ratified at"
+            f" specification version {candidate.spec_version}, amended the heading to"
+            " generalize. If it carries this item's behaviour, relink with"
+            f" relink-spec-tier:{self.work_item_id}:{candidate.topic}; naming it does not"
+            " release the hold."
         )
 
     def _target_clause(self) -> str:

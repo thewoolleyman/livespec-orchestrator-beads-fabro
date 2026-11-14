@@ -27,9 +27,12 @@ from dataclasses import dataclass
 from pathlib import Path
 
 __all__: list[str] = [
+    "HistoryVersion",
     "Obligation",
     "collect_obligations_and_supersedes",
+    "history_versions",
     "ratified_proposal_topics",
+    "ratified_topics_of_version",
 ]
 
 _HISTORY_SUBDIR = "history"
@@ -54,6 +57,14 @@ class Obligation:
 
 
 @dataclass(frozen=True, kw_only=True, slots=True)
+class HistoryVersion:
+    """One unpruned `history/vNNN/` snapshot of the governed spec tree."""
+
+    number: int
+    path: Path
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
 class _ParsedCommitments:
     """The id_hints + supersedes slugs parsed from one PC's front-matter."""
 
@@ -73,7 +84,8 @@ def collect_obligations_and_supersedes(
     """
     obligations: list[Obligation] = []
     superseded_set: set[str] = set()
-    for version_dir in _version_dirs(history_path=spec_root / _HISTORY_SUBDIR):
+    for version in history_versions(spec_root=spec_root):
+        version_dir = version.path
         for pc_stem in _pc_stems(version_dir=version_dir):
             commitments = _accepted_commitments(version_dir=version_dir, pc_stem=pc_stem)
             if commitments is None:
@@ -110,9 +122,21 @@ def ratified_proposal_topics(*, spec_root: Path) -> frozenset[str]:
     """
     return frozenset(
         pc_stem
-        for version_dir in _version_dirs(history_path=spec_root / _HISTORY_SUBDIR)
-        for pc_stem in _pc_stems(version_dir=version_dir)
-        if _topic_is_ratified(version_dir=version_dir, pc_stem=pc_stem)
+        for version in history_versions(spec_root=spec_root)
+        for pc_stem in ratified_topics_of_version(version=version)
+    )
+
+
+def ratified_topics_of_version(*, version: HistoryVersion) -> tuple[str, ...]:
+    """The topics ONE history snapshot ratified, sorted, by the same walk as above.
+
+    Public so the relink-candidate read can ask which revision cut a given
+    version without a second reading of the directory layout.
+    """
+    return tuple(
+        pc_stem
+        for pc_stem in _pc_stems(version_dir=version.path)
+        if _topic_is_ratified(version_dir=version.path, pc_stem=pc_stem)
     )
 
 
@@ -139,11 +163,12 @@ def _accepted_commitments(*, version_dir: Path, pc_stem: str) -> _ParsedCommitme
     return _pc_file_commitments(pc_path=version_dir / _PROPOSED_CHANGES_DIR / f"{pc_stem}.md")
 
 
-def _version_dirs(*, history_path: Path) -> list[Path]:
-    """Return vNNN dirs under history/ in version order, skipping pruned markers."""
+def history_versions(*, spec_root: Path) -> tuple[HistoryVersion, ...]:
+    """Every unpruned `history/vNNN/` snapshot under `spec_root`, in version order."""
+    history_path = spec_root / _HISTORY_SUBDIR
     if not history_path.is_dir():
-        return []
-    pairs: list[tuple[int, Path]] = []
+        return ()
+    versions: list[HistoryVersion] = []
     for child in sorted(history_path.iterdir()):
         if not child.is_dir():
             continue
@@ -152,9 +177,8 @@ def _version_dirs(*, history_path: Path) -> list[Path]:
             continue
         if (child / _PRUNED_MARKER).is_file():
             continue
-        pairs.append((int(match.group(1)), child))
-    pairs.sort(key=lambda pair: pair[0])
-    return [version_dir for _, version_dir in pairs]
+        versions.append(HistoryVersion(number=int(match.group(1)), path=child))
+    return tuple(sorted(versions, key=lambda version: version.number))
 
 
 def _pc_stems(*, version_dir: Path) -> list[str]:
