@@ -189,6 +189,67 @@ def test_a_head_bound_by_a_publication_record_is_ranked_as_one_a_proof_record_na
     )
 
 
+_DISPATCH_ID = "5050cbf4d5e04322b8247d8125016192"
+_FABRO_RUN = "01M7DE3JH6D2X5S68HME1E2GM5"
+_LATER_FABRO_RUN = "01M7LATERFABRORUN00000000"
+
+
+@pytest.mark.parametrize("preserved", [_DISPATCH_ID, _FABRO_RUN])
+def test_a_binding_naming_both_run_identifiers_ranks_the_head_as_the_preserved_runs_own(
+    preserved: str,
+) -> None:
+    """A preserved ref names its run by the dispatch id or the Fabro run id, never both.
+
+    The binding is posted from inside the run's sandbox, which knows both
+    identifiers; the ref may carry either. With an empty journal (a host that did
+    not dispatch the run) the head is still the preserved run's own publication.
+    """
+    pairs = _module().publications_of(
+        records=(),
+        comments=(_comment(body=_record_body(run=f"{_DISPATCH_ID} {_FABRO_RUN}")),),
+        publication_identity=_BOT,
+    )
+
+    assert (
+        published_head_relation(
+            records=(), preserved_run_id=preserved, published_head=_HEAD, publications=pairs
+        )
+        is False
+    )
+
+
+def test_a_binding_naming_neither_identifier_of_the_preserved_run_stays_unattributed() -> None:
+    """Another run's identifiers never read as the preserved run's, and nothing orders them."""
+    pairs = _module().publications_of(
+        records=(),
+        comments=(_comment(body=_record_body(run=f"{_LATER_RUN} {_LATER_FABRO_RUN}")),),
+        publication_identity=_BOT,
+    )
+
+    assert (
+        published_head_relation(
+            records=(), preserved_run_id=_FABRO_RUN, published_head=_HEAD, publications=pairs
+        )
+        is None
+    )
+
+
+def test_a_binding_ranks_a_later_run_through_whichever_identifier_the_journal_names() -> None:
+    """The journal names runs by Fabro run id; the binding's dispatch id is not found there."""
+    journal: tuple[dict[str, object], ...] = (
+        {"run_id": _FABRO_RUN, "work_item_id": _ITEM_ID},
+        {"run_id": _LATER_FABRO_RUN, "work_item_id": _ITEM_ID},
+    )
+    pairs = ((_HEAD, f"{_LATER_RUN} {_LATER_FABRO_RUN}"),)
+
+    assert (
+        published_head_relation(
+            records=journal, preserved_run_id=_FABRO_RUN, published_head=_HEAD, publications=pairs
+        )
+        is True
+    )
+
+
 def test_a_head_that_nothing_names_stays_unattributed() -> None:
     """With no record of any kind the ranking is still the unobservable `None`."""
     pairs = _module().publications_of(
