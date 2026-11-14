@@ -30,7 +30,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_payload import (
     prepare_workflow_payload,
     remove_workflow_payload,
 )
-from livespec_orchestrator_beads_fabro.commands._node_timeouts import default_node_timeouts
+from livespec_orchestrator_beads_fabro.commands._node_timeouts import (
+    default_node_timeouts,
+    derive_fabro_timeout_seconds,
+)
 
 _CONFIG_NAME = ".livespec.jsonc"
 _FAKE_TOKEN = "test-oauth-token"
@@ -161,6 +164,38 @@ def test_prepare_journals_the_resolved_timeouts_with_their_layers(tmp_path: Path
     assert record["stage"] == "node-timeouts"
     assert record["work_item_id"] == "bd-ib-test"
     assert record["node_timeouts"] == {"implement": {"seconds": 7200, "layer": "repository"}}
+
+
+def test_prepare_journals_the_workflow_layer_for_every_declared_value(tmp_path: Path) -> None:
+    """A node declared at exactly the default still reads as workflow-supplied."""
+    graph = (
+        "digraph ImplementWorkItem {\n"
+        '    graph [stall_timeout="7200s"]\n'
+        '    pr_route [shape=parallelogram, timeout="1800s", script="true"]\n'
+        '    fix_commit_settle [shape=parallelogram, timeout="3900s", script="true"]\n'
+        '    undeclared_node [shape=parallelogram, script="true"]\n'
+        "}\n"
+    )
+    committed = _committed_workflow(root=tmp_path, graph_text=graph)
+    journal = _RecordingJournal()
+    payload = prepare_workflow_payload(
+        repo=tmp_path,
+        committed=committed,
+        payload_dir=tmp_path / "payload",
+        journal=journal,
+        work_item_id="bd-ib-test",
+        adapters={},
+    )
+    assert isinstance(payload, WorkflowPayload)
+    record = journal.records[0]
+    assert record["node_timeouts"] == {
+        "fix_commit_settle": {"seconds": 3900, "layer": "workflow"},
+        "pr_route": {"seconds": 1800, "layer": "workflow"},
+        "undeclared_node": {"seconds": 1800, "layer": "default"},
+    }
+    assert record["fabro_timeout_seconds"] == derive_fabro_timeout_seconds(
+        timeouts=payload.timeouts
+    )
 
 
 def test_prepare_refuses_an_invalid_timeout_before_materializing(tmp_path: Path) -> None:

@@ -347,7 +347,7 @@ def node_timeouts_journal_record(
         "node_timeouts": {
             node: {
                 "seconds": seconds,
-                "layer": _rendered_layer(timeouts=timeouts, node=node, seconds=seconds),
+                "layer": timeouts.layer_for(node=node),
             }
             for node, seconds in sorted(nodes.items())
         },
@@ -357,14 +357,6 @@ def node_timeouts_journal_record(
         },
         "fabro_timeout_seconds": derive_fabro_timeout_seconds(timeouts=timeouts),
     }
-
-
-def _rendered_layer(*, timeouts: NodeTimeouts, node: str, seconds: int) -> str:
-    """Name the layer that supplied a value read back from a rendered graph."""
-    layer = timeouts.layer_for(node=node)
-    if layer == BUILT_IN_DEFAULT_LAYER and seconds != DEFAULT_NODE_TIMEOUT_SECONDS:
-        return WORKFLOW_LAYER
-    return layer
 
 
 def _with_stall(*, block: dict[str, Any], configured: dict[str, int]) -> NodeTimeouts | str:

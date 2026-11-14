@@ -183,7 +183,7 @@ def prepare_workflow_payload(  # noqa: PLR0913 — kw-only; adapters and entry_n
         record={
             "stage": _NODE_TIMEOUTS_STAGE,
             "work_item_id": work_item_id,
-            **node_timeouts_journal_record(timeouts=timeouts, nodes=payload.node_seconds),
+            **node_timeouts_journal_record(timeouts=payload.timeouts, nodes=payload.node_seconds),
             **run_wall_budget_journal_record(budget=budget),
             **credential_queue_allowance_journal_record(allowance=queue_allowance),
         }
