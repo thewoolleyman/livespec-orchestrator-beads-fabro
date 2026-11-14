@@ -71,6 +71,9 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_measurement
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_non_fallback import (
     non_fallback_refusals,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_pass_listing import (
+    PassListingRunner,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_preserved import (
     PreservedWorkAbsent,
     PreservedWorkUnobservable,
@@ -85,6 +88,10 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_release imp
     recapture_exhausted_for_recovery,
     released_for_recovery,
 )
+from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_listing import (
+    resume_of,
+    resume_with_listing,
+)
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_resume_protection import (
     resume_protection,
 )
@@ -96,7 +103,6 @@ from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_routes impo
     RecoveryHold,
     RecoveryLoss,
     RecoveryMeasurement,
-    RecoveryResume,
     RecoveryRoute,
 )
 from livespec_orchestrator_beads_fabro.commands._dispatcher_recovery_ruled_seed import (
@@ -229,7 +235,9 @@ def route_recovery(
 ) -> RecoveryRouting:
     """Assign one route to every candidate, measuring only the released ones."""
     journaled = read_journal_records(journal_path=journal.path)
-    runner = ShellCommandRunner()
+    # ONE runner for the pass, so the needs-human identification every item grades
+    # against is taken once; see `_dispatcher_recovery_pass_listing`.
+    runner = PassListingRunner(inner=ShellCommandRunner())
     routes: list[RecoveryRoute] = []
     for item in candidates:
         if recapture_exhausted_for_recovery(records=journaled, work_item_id=item.id):
@@ -362,17 +370,13 @@ def _released_route(
     protected = resume_protection(
         gather=gather, item=item, repo=repo, runner=runner, journal=journal
     )
-    return protected or RecoveryRoute(
-        work_item_id=item.id,
-        route=ROUTE_RESUME,
-        resume=RecoveryResume(
-            entry_node=anchor.resumed_at,
-            head=anchor.head,
-            pull_request=pull_request,
-            earlier_run_ids=gather.earlier_run_ids,
-            source=anchor.source,
-            workflow_name=gather.workflow_name,
-        ),
+    return protected or resume_with_listing(
+        runner=runner,
+        repo=repo,
+        item=item,
+        journal=journal,
+        gather=gather,
+        resume=resume_of(gather=gather, anchor=anchor, pull_request=pull_request),
     )
 
 
