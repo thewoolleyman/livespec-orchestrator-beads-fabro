@@ -356,6 +356,75 @@ def test_a_legacy_copy_whose_ref_no_listed_origin_holds_is_kept_with_an_unknown_
     assert "KEPT(legacy origin unknown)" in result.stdout
 
 
+def _refuse_pushes(origin: Path, tmp_path: Path) -> None:
+    """Origin rejects every push, and `sleep` is stubbed so the script's push backoff costs nothing."""
+    hook = origin / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\necho refused >&2\nexit 1\n", encoding="utf-8")
+    hook.chmod(0o755)
+    _stub(tmp_path / "bin", "sleep", "#!/bin/bash\nexit 0\n")
+
+
+def test_a_failed_push_keeps_the_copy_and_records_the_repository_and_sha(tmp_path: Path) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    _refuse_pushes(origin, tmp_path)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    assert copy.is_dir()
+    record = Path(f"{copy}.preserve").read_text(encoding="utf-8")
+    assert f"repo={_URL}\n" in record and f"sha={work_sha}\n" in record
+    assert "FAILED(push" in result.stdout
+
+
+def test_a_kept_copy_whose_retry_push_fails_stays_for_the_next_pass(tmp_path: Path) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    _refuse_pushes(origin, tmp_path)
+    assert "FAILED(push" in _run(env).stdout
+    Path(env["PODS_JSON"]).write_text('{"items": []}', encoding="utf-8")
+    result = _run(env)
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    assert copy.is_dir() and Path(f"{copy}.preserve").is_file()
+    assert "KEPT(push failed)" in result.stdout
+    (origin / "hooks" / "pre-receive").unlink()
+    result = _run(env)
+    assert "\tVERIFIED\t" in result.stdout
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+    assert not copy.exists() and not Path(f"{copy}.preserve").exists()
+
+
+def test_a_copy_whose_run_commit_is_unreadable_is_kept_and_names_the_fsck_reason(
+    tmp_path: Path,
+) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    objects = tmp_path / "sandbox" / "workspace" / ".git" / "objects"
+    (objects / work_sha[:2] / work_sha[2:]).unlink()
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert (Path(env["PRESERVE_WORK"]) / f"{_RUN}.git").is_dir()
+    assert "fsck" in result.stdout, result.stdout
+    assert (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", "-q", f"refs/heads/preserve/run-{_RUN}"],
+            cwd=origin,
+            check=False,
+            capture_output=True,
+        ).returncode
+        != 0
+    )
+
+
+def test_an_empty_legacy_copy_does_not_hide_its_live_pod(tmp_path: Path) -> None:
+    env, origin, work_sha = _setup(tmp_path, worker_nodes=_WORKER)
+    copy = Path(env["PRESERVE_WORK"]) / f"{_RUN}.git"
+    copy.parent.mkdir()
+    subprocess.run(["git", "clone", "-q", "--bare", str(origin), str(copy)], check=True)
+    _git("fetch", "-q", "origin", "+refs/heads/master:refs/remotes/origin/master", cwd=copy)
+    result = _run(env)
+    assert result.returncode == 0, result.stderr
+    assert f"\t{work_sha}\t" in result.stdout and "\tVERIFIED\t" in result.stdout
+    assert _git("rev-parse", f"refs/heads/preserve/run-{_RUN}", cwd=origin) == work_sha
+
+
 def test_the_worker_exec_route_runs_only_read_commands(tmp_path: Path) -> None:
     env, _, _ = _setup(tmp_path, worker_nodes=_WORKER)
     result = _run(env)

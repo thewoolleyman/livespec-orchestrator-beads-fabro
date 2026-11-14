@@ -128,5 +128,6 @@ In zsh, `"$sha:refs/..."` applies the `:r` modifier to `$sha`. Always write `"${
     A copy from before the sidecar existed names no repository, so the script re-runs rule 9's candidate choice on
     it and looks for that commit on `refs/heads/preserve/run-<RUN>` (or its `-<sha12>` sibling) in each repository
     of the fleet list (`PRESERVE_REPOS`, space-separated URLs, overrides the default list) and of every sidecar. When
-    none reads it back, the copy is kept and its row names the repository `unknown`. An `EMPTY` verdict or an fsck
+    none reads it back, the copy is kept and its row names the repository `unknown`; a live pod of that run is still
+    read and rewrites the copy, so an `EMPTY` early copy never hides a run that has since done work. An `EMPTY` verdict or an fsck
     missing object also keeps the copy, and its row names the reason in `KEPT(...)`.

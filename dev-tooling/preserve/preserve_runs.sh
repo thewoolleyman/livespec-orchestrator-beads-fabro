@@ -48,8 +48,6 @@ retry_kept_copies() {
   for d in "$WORK"/*.git; do
     [ -d "$d" ] || continue
     run=${d##*/}; run=${run%.git}
-    # Do not let a later live-pod pass replace a retained copy whose retry or fsck failed.
-    RETRIED_RUNS="$RETRIED_RUNS$run "
     [ -f "$d.preserve" ] || {
       # Copies from before the sidecar existed have no repository identity. Re-run the same
       # merge-base test against the stored master ref, then look for that selected commit on
@@ -70,18 +68,25 @@ retry_kept_copies() {
       i=0; for c in $(tac "$d/logs/HEAD" 2>/dev/null | awk '{print $2}'); do
         legacy_labels+=("HEAD@{$i}"); legacy_shas+=("$c"); i=$((i + 1))
       done
-      candidate=; seen=" "
+      candidate=; legacy_bad=0; seen=" "
       for k in "${!legacy_shas[@]}"; do
         c=${legacy_shas[$k]}
         case "$seen" in *" $c "*) continue ;; esac
         seen="$seen$c "
-        git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null || continue
-        git -C "$d" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || continue
+        if ! git -C "$d" cat-file -e "$c^{commit}" 2>/dev/null; then
+          [ "$k" = 0 ] && { legacy_bad=1; break; }
+          continue
+        fi
+        git -C "$d" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || { legacy_bad=1; break; }
         mb=$(git -C "$d" merge-base "$c" refs/remotes/origin/master 2>/dev/null) || continue
         if ! git -C "$d" diff --quiet "$mb" "$c" 2>/dev/null; then
           candidate=$c; break
         fi
       done
+      if [ "$legacy_bad" = 1 ]; then
+        printf '%s\t-\tunknown\t%s\t-\tKEPT(fsck missing object)\t0\tlegacy\n' "$run" "$legacy_head"
+        continue
+      fi
       if [ -z "$candidate" ]; then
         printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy copy is EMPTY)\t0\t-\n' "$run" "$legacy_head"
         continue
@@ -106,6 +111,10 @@ retry_kept_copies() {
       [ -d "$d" ] && printf '%s\t-\tunknown\t%s\t-\tKEPT(legacy origin unknown)\t0\tlegacy\n' "$run" "$candidate"
       continue
     }
+    # A copy with a sidecar has a recorded sha to push: do not let a later live-pod pass replace it
+    # while its retry or fsck fails. A legacy copy records nothing to retry, so a live pod is still
+    # read and rewrites it (an EMPTY copy of a run that has since done work must not hide that run).
+    RETRIED_RUNS="$RETRIED_RUNS$run "
     read_copy_record "$d"; repo=$RECORD_REPO; ref=$RECORD_REF; sha=$RECORD_SHA
     if [ -z "$repo" ] || [ -z "$ref" ] || [ -z "$sha" ]; then
       printf '%s\t-\tunknown\t%s\t%s\tKEPT(incomplete metadata)\t0\t-\n' "$run" "${sha:--}" "${ref:--}"
@@ -290,7 +299,7 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
   # `HEAD` when there is no run branch), then the run branch's reflog newest first (`reflog@{N}`),
   # then the HEAD reflog newest first (`HEAD@{N}`). With none carrying work the row reads EMPTY and
   # NOTHING is pushed, so represerve.sh writes no alias either.
-  src=-; carries=0; decided=0
+  src=-; carries=0; decided=0; fsck_bad=0
   if [ "$fail" = 0 ] && [ -n "$sha" ] && [ -n "$repo" ] \
      && git -C "$D" fetch -q "$repo" "+refs/heads/master:refs/remotes/origin/master" 2>/dev/null; then
     decided=1
@@ -308,8 +317,13 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
       label=${labels[$k]}; c=${shas[$k]}
       case "$seen" in *" $c "*) continue ;; esac
       seen="$seen$c "
-      git -C "$D" cat-file -e "$c^{commit}" 2>/dev/null || continue
-      git -C "$D" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || continue
+      if ! git -C "$D" cat-file -e "$c^{commit}" 2>/dev/null; then
+        [ "$k" = 0 ] && { fsck_bad=1; break; }
+        continue
+      fi
+      # A missing object keeps the copy: pushing an older candidate would let the copy go while the
+      # run's newest work is unreadable (README rule 12).
+      git -C "$D" fsck --connectivity-only --no-dangling "$c" >/dev/null 2>&1 || { fsck_bad=1; break; }
       mb=$(git -C "$D" merge-base "$c" refs/remotes/origin/master 2>/dev/null) || continue
       if ! git -C "$D" diff --quiet "$mb" "$c" 2>/dev/null; then sha=$c; src=$label; carries=1; break; fi
     done
@@ -318,7 +332,8 @@ sys.exit(1 if inp.read(1) else 0)' "$D" "$D.sizes" || fail=1
   if [ "$carries" = 0 ]; then
     # Either nothing carried work (EMPTY) or the choice could not be made (copy, fsck or master fetch
     # failed); never push a commit whose content was not established.
-    if [ "$decided" = 1 ]; then v=EMPTY
+    if [ "$fsck_bad" = 1 ]; then v="KEPT(fsck missing object)"
+    elif [ "$decided" = 1 ]; then v=EMPTY
     else v="FAILED(fail=$fail sha=${sha:-none} repo=${repo:-none}: copy, fsck or master fetch failed)"; fi
     printf "$out\t%s\t%s\t-\t%s\t%s\t-\n" "${repo:--}" "${sha:-none}" "$v" $(( $(date +%s)-t0 ))
     printf 'KEPT %s: %s\n' "$D" "$v" >&2
