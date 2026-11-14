@@ -10,7 +10,10 @@ that retires them is bd-ib-vraou4 (cancel-for-restart preserve path).
 
 ## Usage
 
-Run from the control node (the VPS) with this host's own GitHub auth:
+Run from any control host that has the bare factory-node ssh aliases (`poweredge-xubuntu`, `gmktec-xubuntu`,
+`hp-xubuntu`, `gamingpc-xubuntu`), the petri client named by `.livespec.jsonc` (`dispatcher.factories.petri.bin`)
+and that host's own `~/.fabro/auth.json` and GitHub auth. The VPS and hetzner-xubuntu both qualify; the scripts
+were verified from hetzner on 2026-11-14 (seat move of plan kubernetes-sandbox-backend, bd-ib-nmuyjc).
 
 ```bash
 dev-tooling/preserve/preserve_runs.sh [RUN_ULID ...]   # no args: every Running pod in the factory namespace
